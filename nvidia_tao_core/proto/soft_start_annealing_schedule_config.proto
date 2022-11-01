@@ -1,4 +1,4 @@
-// Copyright (c) 2017-2019, NVIDIA CORPORATION.  All rights reserved.
+// Copyright (c) 2022-2023, NVIDIA CORPORATION.  All rights reserved.
 
 /**
 * Protocol buffer definition for specifying soft start annealing learning rate schedule parameters.

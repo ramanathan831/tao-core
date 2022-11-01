@@ -1,4 +1,4 @@
-// Copyright (c) 2017-2019, NVIDIA CORPORATION.  All rights reserved.
+// Copyright (c) 2022-2023, NVIDIA CORPORATION.  All rights reserved.
 
 /**
 * Protocol buffer definition for specifying optimizer parameters.
@@ -6,9 +6,9 @@
 
 syntax = "proto3";
 
-import "iva/common/proto/sgd_optimizer_config.proto";
-import "iva/common/proto/adam_optimizer_config.proto";
-import "iva/common/proto/rmsprop_optimizer_config.proto";
+import "nvidia_tao_core/proto/sgd_optimizer_config.proto";
+import "nvidia_tao_core/proto/adam_optimizer_config.proto";
+import "nvidia_tao_core/proto/rmsprop_optimizer_config.proto";
 
 message OptimizerConfig {
 	oneof optimizer {
