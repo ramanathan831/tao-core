@@ -1,3 +1,4 @@
+// Copyright (c) 2022-2023, NVIDIA CORPORATION.  All rights reserved.
 // Message to store the mapping from class label strings to class id. Datasets
 // use string labels to represent classes while the object detection framework
 // works with class ids. This message maps them so they can be converted back
