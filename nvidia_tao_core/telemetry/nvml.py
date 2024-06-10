@@ -1,4 +1,18 @@
-# Copyright (c) 2017-2020, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2024, NVIDIA CORPORATION.  All rights reserved.
+#
+# Original source taken from https://github.com/NVIDIA/NeMo
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 
 """Utilities using the NVML library for GPU devices."""
 
@@ -6,23 +20,23 @@ import json
 import pynvml
 
 BRAND_NAMES = {
-    pynvml.NVML_BRAND_UNKNOWN             :  "Unknown",
-    pynvml.NVML_BRAND_QUADRO              :  "Quadro",
-    pynvml.NVML_BRAND_TESLA               :  "Tesla",
-    pynvml.NVML_BRAND_NVS                 :  "NVS",
-    pynvml.NVML_BRAND_GRID                :  "Grid",
-    pynvml.NVML_BRAND_TITAN               :  "Titan",
-    pynvml.NVML_BRAND_GEFORCE             :  "GeForce",
-    pynvml.NVML_BRAND_NVIDIA_VAPPS        :  "NVIDIA Virtual Applications",
-    pynvml.NVML_BRAND_NVIDIA_VPC          :  "NVIDIA Virtual PC",
-    pynvml.NVML_BRAND_NVIDIA_VCS          :  "NVIDIA Virtual Compute Server",
-    pynvml.NVML_BRAND_NVIDIA_VWS          :  "NVIDIA RTX Virtual Workstation",
-    pynvml.NVML_BRAND_NVIDIA_CLOUD_GAMING :  "NVIDIA Cloud Gaming",
-    pynvml.NVML_BRAND_QUADRO_RTX          :  "Quadro RTX",
-    pynvml.NVML_BRAND_NVIDIA_RTX          :  "NVIDIA RTX",
-    pynvml.NVML_BRAND_NVIDIA              :  "NVIDIA",
-    pynvml.NVML_BRAND_GEFORCE_RTX         :  "GeForce RTX",
-    pynvml.NVML_BRAND_TITAN_RTX           :  "TITAN RTX",
+    pynvml.NVML_BRAND_UNKNOWN:              "Unknown",
+    pynvml.NVML_BRAND_QUADRO:               "Quadro",
+    pynvml.NVML_BRAND_TESLA:                "Tesla",
+    pynvml.NVML_BRAND_NVS:                  "NVS",
+    pynvml.NVML_BRAND_GRID:                 "Grid",
+    pynvml.NVML_BRAND_TITAN:                "Titan",
+    pynvml.NVML_BRAND_GEFORCE:              "GeForce",
+    pynvml.NVML_BRAND_NVIDIA_VAPPS:         "NVIDIA Virtual Applications",
+    pynvml.NVML_BRAND_NVIDIA_VPC:           "NVIDIA Virtual PC",
+    pynvml.NVML_BRAND_NVIDIA_VCS:           "NVIDIA Virtual Compute Server",
+    pynvml.NVML_BRAND_NVIDIA_VWS:           "NVIDIA RTX Virtual Workstation",
+    pynvml.NVML_BRAND_NVIDIA_CLOUD_GAMING:  "NVIDIA Cloud Gaming",
+    pynvml.NVML_BRAND_QUADRO_RTX:           "Quadro RTX",
+    pynvml.NVML_BRAND_NVIDIA_RTX:           "NVIDIA RTX",
+    pynvml.NVML_BRAND_NVIDIA:               "NVIDIA",
+    pynvml.NVML_BRAND_GEFORCE_RTX:          "GeForce RTX",
+    pynvml.NVML_BRAND_TITAN_RTX:            "TITAN RTX",
 }
 
 
@@ -83,7 +97,7 @@ def pynvml_context(fn):
         output of f.
     """
     def _fn_wrapper(*args, **kwargs):
-        "Wrapper setting up nvml context."
+        """Wrapper setting up nvml context."""
         try:
             pynvml.nvmlInit()
             return fn(*args, **kwargs)
@@ -111,7 +125,7 @@ def get_device_details():
         device_list (list): List of GPUDevice objects.
     """
     num_gpus = pynvml.nvmlDeviceGetCount()
-    device_list = list()
+    device_list = []
     assert num_gpus > 0, "Atleast 1 GPU is required for TAO Toolkit to run."
     for idx in range(num_gpus):
         handle = pynvml.nvmlDeviceGetHandleByIndex(idx)

@@ -1,4 +1,17 @@
-# Copyright (c) 2022-2023, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2024, NVIDIA CORPORATION.  All rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
 """Helper utils for packaging."""
 
 from __future__ import absolute_import
@@ -55,11 +68,9 @@ def rename_py_files(path, ext, new_ext, ignore_files):
 
 def get_version_details():
     """Simple function to get packages for setup.py."""
-    # Define env paths.
-    LAUNCHER_SDK_PATH = os.path.join(TOP_LEVEL_DIR, "nvidia_tao_core") 
-    # Get current __version__.
+    SDK_PATH = os.path.join(TOP_LEVEL_DIR, "release/python/") 
     version_locals = {}
-    with open(os.path.join(LAUNCHER_SDK_PATH, 'version.py')) as version_file:
+    with open(os.path.join(SDK_PATH, 'version.py')) as version_file:
         exec(version_file.read(), {}, version_locals)
 
     return  version_locals
@@ -68,11 +79,8 @@ def get_version_details():
 def cleanup():
     """Cleanup directories after the build process."""
     req_subdirs = get_subdirs(TOP_LEVEL_DIR)
-    # Cleanup. Rename all .py_tmp files back to .py and delete pyc files
     for dir_path in req_subdirs:
         dir_path = os.path.join(TOP_LEVEL_DIR, dir_path)
-        # TODO: @vpraveen Think about removing python files before the final
-        # release.
         rename_py_files(dir_path, '.py_tmp', '.py', ignore_list)
         pyc_list = glob.glob(dir_path + '/*.pyc')
         for pyc_file in pyc_list:
