@@ -1,4 +1,18 @@
-# Copyright (c) 2017-2020, NVIDIA CORPORATION. All rights reserved.
+# Copyright (c) 2024, NVIDIA CORPORATION.  All rights reserved.
+#
+# Original source taken from https://github.com/NVIDIA/NeMo
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 
 """Utilties to send data to the TAO Toolkit Telemetry Remote Service."""
 
@@ -40,8 +54,8 @@ def url_exists(url):
     url_request = urllib.request.Request(url)
     url_request.get_method = lambda: 'HEAD'
     try:
-        urllib.request.urlopen(url_request)
-        return True
+        with urllib.request.urlopen(url_request):
+            return True
     except urllib.request.HTTPError:
         return False
 
@@ -56,16 +70,13 @@ def get_certificates():
     if not url_exists(certificates_url):
         raise urllib.request.HTTPError("Url for the certificates not found.")
     tmp_dir = tempfile.mkdtemp()
-    download_command = "wget {} -P {} --quiet".format(
-        certificates_url,
-        tmp_dir
-    )
+    download_command = f"wget {certificates_url} -P {tmp_dir} --quiet"
     try:
         subprocess.check_call(
             download_command, shell=True, stdout=sys.stdout
         )
-    except subprocess.CalledProcessError:
-        raise urllib.request.HTTPError("Download certificates.tar.gz failed.")
+    except subprocess.CalledProcessError as exc:
+        raise urllib.request.HTTPError("Download certificates.tar.gz failed.") from exc
     tarfile_path = os.path.join(tmp_dir, "certificates.tar.gz")
     assert tarfile.is_tarfile(tarfile_path), (
         "The downloaded file isn't a tar file."
@@ -113,8 +124,9 @@ def send_telemetry_data(network, action, gpu_data, num_gpus=1, time_lapsed=None)
         requests.post(
             url,
             json=data,
-            cert=tuple([os.path.join(certificate_dir, item) for item in cert]),
-            verify=os.path.join(certificate_dir, verify)
+            cert=tuple((os.path.join(certificate_dir, item) for item in cert)),
+            verify=os.path.join(certificate_dir, verify),
+            timeout=10
         )
         print(f"Telemetry data posted: \n{json.dumps(data, indent=4)}")
         shutil.rmtree(certificate_dir)

@@ -1,4 +1,18 @@
-# Copyright (c) 2017-2020, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2024, NVIDIA CORPORATION.  All rights reserved.
+#
+# Original source taken from https://github.com/NVIDIA/NeMo
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 
 """Logger class for TLT IVA models."""
 
@@ -69,22 +83,14 @@ class BaseLogger(object):
         """Get date from the status."""
         date_time = datetime.now()
         date_object = date_time.date()
-        return "{}/{}/{}".format(
-            date_object.month,
-            date_object.day,
-            date_object.year
-        )
+        return f"{date_object.month}/{date_object.day}/{date_object.year}"
 
     @property
     def time(self):
         """Get date from the status."""
         date_time = datetime.now()
         time_object = date_time.time()
-        return "{}:{}:{}".format(
-            time_object.hour,
-            time_object.minute,
-            time_object.second
-        )
+        return f"{time_object.hour}:{time_object.minute}:{time_object.second}"
 
     @property
     def categorical(self):
@@ -181,9 +187,10 @@ class StatusLogger(BaseLogger):
         super().__init__(is_master=is_master, verbosity=verbosity)
         self.log_path = os.path.realpath(filename)
         if os.path.exists(self.log_path):
-            logger.info("Log file already exists at {}".format(self.log_path))
+            logger.info(f"Log file already exists at {self.log_path}".format)
         if is_master:
-            self.l_file = open(self.log_path, "a" if append else "w")
+            with open(self.log_path, "a" if append else "w", encoding="utf-8") as file:
+                self.l_file = file
             atexit.register(self.l_file.close)
 
     def log(self, level, string):
@@ -192,7 +199,7 @@ class StatusLogger(BaseLogger):
             self.l_file.write(string + "\n")
 
     def flush(self):
-        "Flush contents of the log file."
+        """Flush contents of the log file."""
         if self.is_master:
             self.l_file.flush()
 

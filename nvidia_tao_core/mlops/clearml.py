@@ -1,4 +1,18 @@
-# Copyright (c) 2017-2022, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2024, NVIDIA CORPORATION.  All rights reserved.
+#
+# Original source taken from https://github.com/NVIDIA/NeMo
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
 
 """Module to instantiate and return a clearml task."""
 
@@ -11,7 +25,7 @@ from clearml import Task
 logger = logging.getLogger(__name__)
 
 
-def get_clearml_task(clearml_config, network_name: str, action: str="train"):
+def get_clearml_task(clearml_config, network_name: str, action: str = "train"):
     """Get clearml task.
 
     Args:
@@ -32,7 +46,7 @@ def get_clearml_task(clearml_config, network_name: str, action: str="train"):
             task_name=task_name,
             deferred_init=clearml_config.deferred_init,
             reuse_last_task_id=clearml_config.reuse_last_task_id,
-            tags=[item for item in clearml_config.tags] if clearml_config.tags else None,
+            tags=list(clearml_config.tags) if clearml_config.tags else None,
             continue_last_task=clearml_config.continue_last_task,
         )
         tao_base_container = os.getenv("TAO_DOCKER", None)
@@ -41,7 +55,7 @@ def get_clearml_task(clearml_config, network_name: str, action: str="train"):
         return task
     except Exception as e:
         logger.warning(
-            "ClearML task init failed with error {}".format(e)
+            f"ClearML task init failed with error {e}"
         )
         logger.warning(
             "Training will still continue."
