@@ -13,7 +13,6 @@
 # limitations under the License.
 
 """Utility functions for Cloud Storage handler"""
-import ast
 import glob
 import json
 import logging
@@ -82,17 +81,10 @@ def _extract_images(tar_path, dest):
     logger.info("Deleted data tar file")
 
 
-def search_for_ptm(root, network="", additional_id_info=""):
+def search_for_ptm(root, network=""):
     """Return path of the PTM file under the PTM root folder"""
     models = None
-    if network == "action_recognition":
-        additional_id_info_list = additional_id_info.split(",")
-        if len(additional_id_info_list) == 1:
-            models = glob.glob(root + f"/**/*{additional_id_info_list[0]}*.tlt", recursive=True)
-        if len(additional_id_info_list) == 2:
-            models = glob.glob(root + f"/**/*{additional_id_info_list[0]}*{additional_id_info_list[1]}*.tlt", recursive=True)
-    else:
-        models = glob.glob(root + "/**/*.tlt", recursive=True) + glob.glob(root + "/**/*.hdf5", recursive=True) + glob.glob(root + "/**/*.pth", recursive=True) + glob.glob(root + "/**/*.pth.tar", recursive=True) + glob.glob(root + "/**/*.pt", recursive=True)
+    models = glob.glob(root + "/**/*.tlt", recursive=True) + glob.glob(root + "/**/*.hdf5", recursive=True) + glob.glob(root + "/**/*.pth", recursive=True) + glob.glob(root + "/**/*.pth.tar", recursive=True) + glob.glob(root + "/**/*.pt", recursive=True)
     # TODO: remove after next nvaie release, Varun and Subha
     if network == "classification_pyt":
         models += glob.glob(root + "/**/*.ckpt", recursive=True)
@@ -226,7 +218,7 @@ def download_files(cloud_storage, cloud_file_path, local_path):
         _extract_images(os.path.join(local_path, os.path.basename(cloud_file_path)), local_path)
         dir_name = cloud_file_path.split("/")[-1].split(".")[0]
         destination_path = f"{local_path}{dir_name}"
-        if not os.path.exists (destination_path):
+        if not os.path.exists(destination_path):
             raise ValueError("Folder name not same as the file name")
     else:
         file_name = cloud_file_path.split("/")[-1]
@@ -234,53 +226,6 @@ def download_files(cloud_storage, cloud_file_path, local_path):
         if not os.path.isfile(destination_path):
             raise ValueError("Unable to download the file")
     return destination_path
-
-
-def pull_files_required_for_action(cloud_meta):
-    """Pull required files based on cloud metadata."""
-    spec_file = None
-    experiment_cs_instance = None
-
-    for key_type, key_list in cloud_meta.items():
-        for key_info in key_list:
-            metadata = key_info.get('metadata', {})
-            cloud_workspace_info = key_info.get('workspace', {})
-            local_path = key_info.get('path', {})
-
-            if key_type != "ptm":
-                cloud_type, bucket_name, access_key, secret_key, region, download_url, token = extract_cloud_details(cloud_workspace_info)
-                cloud_file_path = metadata.get('cloud_file_path', '')
-
-                # Initialize CloudStorage instance
-                if cloud_type in ("aws", "azure"):
-                    cloud_storage = initialize_cloud_storage(cloud_type, bucket_name, region, access_key, secret_key)
-
-                    if key_type == "experiment":
-                        spec_file = cloud_file_path
-                        experiment_cs_instance = cloud_storage
-                    elif cloud_storage.is_folder(local_path[1:]):  # For Dataset convert jobs, we need to download those results for subsequent actions
-                        cloud_storage.download_folder(local_path[1:], local_path, maintain_src_folder_structure=True)
-                    # Download the file
-                    download_files(cloud_storage, cloud_file_path, local_path)
-                else:
-                    assert key_type != "experiment"
-                    if cloud_type == "self_hosted":
-                        logger.info("Downloading from http link")
-                        download_from_https_link(download_url, local_path)
-                    elif cloud_type == "huggingface":
-                        download_huggingface_dataset(download_url, local_path, token)
-                    dataset_path = search_for_dataset(local_path)
-                    if dataset_path:
-                        _extract_images(dataset_path, local_path)
-
-    if spec_file:
-        with open(spec_file, 'r', encoding='utf-8') as file:
-            spec_parameters = yaml.safe_load(file)
-            download_files_from_spec(spec_parameters, experiment_cs_instance, cloud_meta.get("ptm", []))
-        with open(spec_file, 'w', encoding='utf-8') as file:
-            yaml.dump(spec_parameters, file)
-
-    return experiment_cs_instance
 
 
 def logging_callback_server_login(timeout, base_url, ngc_api_key, retry=0):
@@ -453,90 +398,39 @@ def monitor_and_upload(local_path, cloud_storage, exit_event, seek_position=0, l
         exit_event.set()
 
 
-def download_files_from_dnn_spec(cloud_data, spec_data, dest_dir, network_arch=None, ngc_api_key=None):
-    """Recursively download files from a spec file to download cloud files.
-
-    Args:
-        cloud_data: Cloud storage metadata.
-        spec_data: Model spec.
-        dest_dir: Destination directory to save the files.
-        ngc_api_key: NGC API key.
-    """
-    print("download_files_from_dnn_spec :: ngc_api_key :: ", ngc_api_key)
-    if isinstance(spec_data, dict):
-        for key, value in spec_data.items():
-            if isinstance(value, (dict, list)):
-                download_files_from_dnn_spec(cloud_data, value, dest_dir, network_arch, ngc_api_key)
-            else:
-                if isinstance(value, str):
-                    if value.startswith("cloud://"):
-                        bucket_name = value.split("//")[1].split("/")[0]
-                        cloud_file_path = value[len(f"cloud://{bucket_name}/"):]
-                        cloud_storage = CloudStorage(cloud_data[bucket_name]["cloud_type"], 
-                                                                 bucket_name, 
-                                                                 cloud_data[bucket_name]["cloud_region"], 
-                                                                 cloud_data[bucket_name]["access_key"], 
-                                                                 cloud_data[bucket_name]["secret_key"])
-                        destination_path = download_files(cloud_storage, cloud_file_path, dest_dir)
-                        logger.info(f"Download files from DNN spec :: Downloaded: {cloud_file_path}")
-                        spec_data[key] = destination_path
-                    elif value.startswith("http://") or value.startswith("https://"):
-                        file_name = value.split("/")[-1]
-                        destination_path = f"{dest_dir}/{file_name.split('.')[0]}"
-                        spec_data[key] = destination_path
-                        download_from_https_link(value, dest_dir)
-                        logger.info(f"Download files from DNN spec :: Downloaded: {value}")
-                        if os.path.isfile(f"{dest_dir}/{file_name}"):
-                            spec_data[key] = f"{dest_dir}/{file_name}"
-                        else:
-                            if not os.path.exists (destination_path):
-                                raise ValueError("Folder name not same as the file name")
-                            spec_data[key] = destination_path
-                    elif value.startswith("ngc://"):
-                        if not ngc_api_key:
-                            raise ValueError("NGC API key has not been provided")
-                        ngc_model = value.split("ngc://")[-1]
-                        if not download_ngc_model(ngc_model, f"{dest_dir}/model", ngc_api_key):
-                            raise ValueError("Unable to download the PTM")
-                        ptm_path = search_for_ptm(f"{dest_dir}/model", network_arch)
-                        spec_data[key] = ptm_path
-    return spec_data
-
-
-def process_cloud_string(cloud_string):
-    """Process spec param value to obtain cloud_file_path and workspace_id"""
-    prefix = "cloud://"
-    index_of_prefix = cloud_string.find(prefix)
-    workspace_id = cloud_string[:index_of_prefix - 1]
-    cloud_file_path = cloud_string[index_of_prefix + len(prefix):]
-    cloud_file_path = cloud_file_path.replace("//", "/")
-    return workspace_id, cloud_file_path
-
-
-def get_cloud_storage_class_object(cloud_string, cloud_data, workspace_id=None):
+def get_cloud_storage_class_object(cloud_data, cloud_string):
     """Initalize Apache LibCloud class"""
-    if "cloud://" in cloud_string:
-        if cloud_string.startswith("cloud://"):
-            bucket_name = cloud_string.split("//")[1].split("/")[0]
-            cloud_storage = CloudStorage(cloud_data[bucket_name]["cloud_type"], 
-                                                        bucket_name, 
-                                                        cloud_data[bucket_name]["cloud_region"], 
-                                                        cloud_data[bucket_name]["access_key"], 
-                                                        cloud_data[bucket_name]["secret_key"])    
-        else:
-            workspace_metadata = cloud_data["workspaces"][workspace_id]
-            cloud_type, bucket_name, access_key, secret_key, region, _, _ = extract_cloud_details(workspace_metadata)
-            cloud_storage = initialize_cloud_storage(cloud_type, bucket_name, region, access_key, secret_key)
-        return cloud_storage
-    return None
+    csp_provider = cloud_string.split(":")[0]
+    bucket_name = cloud_string.split("//")[1].split("/")[0]
+    cloud_file_path = cloud_string[cloud_string.find(bucket_name) + len(bucket_name):]
+    cloud_storage = CloudStorage(csp_provider,
+                                 bucket_name,
+                                 cloud_data[csp_provider][bucket_name]["cloud_region"],
+                                 cloud_data[csp_provider][bucket_name]["access_key"],
+                                 cloud_data[csp_provider][bucket_name]["secret_key"])
+    while cloud_file_path.find("//") != -1:
+        cloud_file_path = cloud_file_path.replace("//", "/")
+    return cloud_storage, cloud_file_path
 
 
-def download_files_from_cloud(cloud_data, dictionary, key, value, job_id, ptm_meta, reset_value=False):
+def download_files_from_cloud(cloud_data, dictionary, key, value, job_id, network_arch, ngc_api_key, reset_value=False):
     """Based on the cloud dype, download the file"""
-    if "cloud://" in value:
-        workspace_id, cloud_file_path = process_cloud_string(value)
-        print("value", value, workspace_id, cloud_file_path)
-        cloud_storage = get_cloud_storage_class_object(value, cloud_data, workspace_id)
+    if value.startswith("https://"):
+        destination_path = value[len("https://"):]
+        destination_folder = os.path.dirname(destination_path)
+        download_from_https_link(value, destination_folder)
+
+    if value.startswith("ngc://"):
+        if not ngc_api_key:
+            raise ValueError("NGC API key has not been provided")
+        ngc_model = value.split("ngc://")[-1]
+        if not download_ngc_model(ngc_model, f"/ptm/model", ngc_api_key):
+            raise ValueError("Unable to download the PTM")
+        ptm_path = search_for_ptm(f"/ptm/model", network_arch)
+        dictionary[key] = ptm_path
+
+    elif "://" in value:
+        cloud_storage, cloud_file_path = get_cloud_storage_class_object(cloud_data, value)
         local_path_of_dataset_file = f"/results/{job_id}/{cloud_file_path}"
         if reset_value:
             # Update the dictionary value with the local path
@@ -559,37 +453,24 @@ def download_files_from_cloud(cloud_data, dictionary, key, value, job_id, ptm_me
 
         logger.info("Downloaded: {}".format(cloud_file_path))  # noqa pylint: disable=C0209
         return local_path_of_dataset_file.replace(".tar.gz", "").replace("/dataset_convert", "/dataset_convert/*.tfrecord")
-
-    if value.startswith("https://"):
-        destination_path = value[len("https://"):]
-        destination_folder = os.path.dirname(destination_path)
-        download_from_https_link(value, destination_folder)
-
-    if value.startswith("ngc://") and ptm_meta:
-        ptm_download_path = ptm_meta[0].get("path", "/")
-        ptm_metadata = ptm_meta[0].get("metadata", {})
-        download_ngc_model(ptm_metadata.get("ngc_path"), ptm_download_path)
-        ptm_path = search_for_ptm(ptm_download_path, ptm_metadata.get("network_arch"), ptm_metadata.get("additional_id_info"))
-        dictionary[key] = ptm_path
     return None
 
 
-def download_files_from_spec(cloud_data, data, job_id, ptm_meta=[], network_arch=None, ngc_api_key=None):
+def download_files_from_spec(cloud_data, data, job_id, network_arch=None, ngc_api_key=None):
     """Recursively download files from a nested dictionary where values starting with "cloud://" are considered cloud file paths.
 
     data: Nested dictionary.
     cloud_storage: Instance of the CloudStorage class.
     """
-    print("\n\ndata", data)
     if isinstance(data, dict):
         for key, value in data.items():
             if isinstance(value, dict):
-                download_files_from_spec(cloud_data, value, job_id, ptm_meta, network_arch=network_arch, ngc_api_key=ngc_api_key)
+                download_files_from_spec(cloud_data, value, job_id, network_arch=network_arch, ngc_api_key=ngc_api_key)
             elif isinstance(value, list):
                 override_list = []
                 for list_element in value:
                     if isinstance(list_element, str):
-                        override_value = download_files_from_cloud(cloud_data, data, key, list_element, job_id, ptm_meta)
+                        override_value = download_files_from_cloud(cloud_data, data, key, list_element, job_id, network_arch, ngc_api_key)
                         if not override_value:
                             override_value = list_element
                         override_list.append(override_value)
@@ -597,7 +478,7 @@ def download_files_from_spec(cloud_data, data, job_id, ptm_meta=[], network_arch
                         override_dict = {}
                         for list_dict_key, list_dict_value in list_element.items():
                             if isinstance(list_dict_value, str):
-                                override_value = download_files_from_cloud(cloud_data, data, key, list_dict_value, job_id, ptm_meta)
+                                override_value = download_files_from_cloud(cloud_data, data, key, list_dict_value, job_id, network_arch, ngc_api_key)
                                 if not override_value:
                                     override_value = list_dict_value
                             else:
@@ -609,12 +490,11 @@ def download_files_from_spec(cloud_data, data, job_id, ptm_meta=[], network_arch
                 data[key] = override_list
             else:
                 if isinstance(value, str):
-                    download_files_from_cloud(cloud_data, data, key, value, job_id, ptm_meta, reset_value=True)
+                    download_files_from_cloud(cloud_data, data, key, value, job_id, network_arch, ngc_api_key, reset_value=True)
 
 
 def get_results_cloud_data(cloud_data, spec_data, dest_dir):
     """Obtain the CloudStorage instance for uploading the results.
-    
     Args:
     cloud_data: Cloud storage metadata.
     spec_data: Model spec.
@@ -625,24 +505,16 @@ def get_results_cloud_data(cloud_data, spec_data, dest_dir):
     spec_data: Updated model spec.
     """
     results_dir = spec_data["results_dir"]
-    print("\n\nresults_dir", results_dir)
-    if "cloud://" in results_dir:
-        if results_dir.startswith("cloud://"):
-            bucket_name = results_dir.split("//")[1].split("/")[0]
-            cloud_storage = CloudStorage(cloud_data[bucket_name]["cloud_type"], 
-                                                        bucket_name, 
-                                                        cloud_data[bucket_name]["cloud_region"], 
-                                                        cloud_data[bucket_name]["access_key"], 
-                                                        cloud_data[bucket_name]["secret_key"])    
-            spec_data["results_dir"] = f'{dest_dir}/results'
-        else:
-            workspace_id, cloud_file_path = process_cloud_string(results_dir)
-            workspace_metadata = cloud_data["workspaces"][workspace_id]
-            cloud_type, bucket_name, access_key, secret_key, region, _, _ = extract_cloud_details(workspace_metadata)
-            print("\n\ncloud_type, bucket_name, access_key, secret_key, region", cloud_type, bucket_name, access_key, secret_key, region)
-            cloud_storage = initialize_cloud_storage(cloud_type, bucket_name, region, access_key, secret_key)
-            spec_data["results_dir"] = cloud_file_path
-        return cloud_storage, spec_data 
-    else:
-        spec_data["results_dir"] = f'{dest_dir}/{spec_data["results_dir"]}'
-        return None, spec_data
+    if "://" in results_dir:
+        csp_provider = results_dir.split(":")[0]
+        bucket_name = results_dir.split("//")[1].split("/")[0]
+        cloud_file_path = results_dir[results_dir.find(bucket_name) + len(bucket_name):]
+        cloud_storage = CloudStorage(csp_provider,
+                                     bucket_name,
+                                     cloud_data[csp_provider][bucket_name]["cloud_region"],
+                                     cloud_data[csp_provider][bucket_name]["access_key"],
+                                     cloud_data[csp_provider][bucket_name]["secret_key"])
+        spec_data["results_dir"] = cloud_file_path
+        return cloud_storage, spec_data
+    spec_data["results_dir"] = f'{dest_dir}/{spec_data["results_dir"]}'
+    return None, spec_data

@@ -15,8 +15,6 @@
 """Cloud storage Apache client"""
 import os
 import io
-import sys
-import pathlib
 import functools
 import time
 
