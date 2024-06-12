@@ -273,12 +273,12 @@ def upload_files(local_path, cloud_storage, file_last_modified):
             current_last_modified = os.path.getmtime(file_path)
 
             # Check if the file is new or modified
-            if filename not in file_last_modified or current_last_modified > file_last_modified[filename]:
+            if file_path not in file_last_modified or current_last_modified > file_last_modified[file_path]:
                 logger.info("File event created/modified {}".format(file_path))  # noqa pylint: disable=C0209
                 cloud_storage.upload_file(file_path, file_path)
 
                 # Update the last modification time for the file
-                file_last_modified[filename] = current_last_modified
+                file_last_modified[file_path] = current_last_modified
 
 
 def get_log_file_name(job_id, automl_expt_number):
@@ -378,9 +378,10 @@ def monitor_and_upload(local_path, cloud_storage, exit_event, seek_position=0, l
 
     # Initialize file_last_modified with files that are already part of results dir
     for root, _, files in os.walk(local_path):
+        print("files", root, files)
         for filename in files:
             file_path = os.path.join(root, filename)
-            file_last_modified[filename] = os.path.getmtime(file_path)
+            file_last_modified[file_path] = os.path.getmtime(file_path)
 
     try:
         while True:
