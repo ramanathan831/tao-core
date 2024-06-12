@@ -54,7 +54,8 @@
             ".": [
                 "__init__.py",
                 "nvml.py",
-                "telemetry.py"
+                "telemetry.py",
+                "metrics.py"
             ]
         }
     }
