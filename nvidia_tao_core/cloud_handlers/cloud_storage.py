@@ -48,6 +48,7 @@ def retry_method(func):
 class CloudStorage:
     """Class for CRUD Cloud storage operations."""
 
+    @retry_method
     def __init__(self, cloud_type, bucket_name, region="us-west-1", access_key="", secret_key=""):
         """Initialize the CloudStorage object.
 

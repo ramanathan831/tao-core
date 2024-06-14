@@ -47,7 +47,7 @@ def send_admin_get_request(endpoint, headers, retry=0):
     return r
 
 
-def download_ngc_model(ngc_path, ptm_root, api_key, is_cookie_set=False):
+def download_ngc_model(ngc_path, ptm_root, api_key, is_cookie_set, use_ngc_production):
     """Download models from NGC model registry.
 
     Args:
@@ -72,11 +72,15 @@ def download_ngc_model(ngc_path, ptm_root, api_key, is_cookie_set=False):
         logging.info("API key/Cookie is None")
         return False
 
-    if is_cookie_set:
+    url = 'https://stg.authn.nvidia.com/token?service=ngc'
+    if use_ngc_production == "True":
+        url = 'https://authn.nvidia.com/token?service=ngc'
+
+    if is_cookie_set == "True":
         headers = {'Accept': 'application/json', 'Cookie': api_key}
     else:
         headers = {'Accept': 'application/json', 'Authorization': 'ApiKey ' + api_key}
-        response = send_admin_get_request("https://authn.nvidia.com/token?service=ngc", headers=headers)
+        response = send_admin_get_request(url, headers=headers)
         if not response.ok:
             logging.info("API response is not ok")
             return False
