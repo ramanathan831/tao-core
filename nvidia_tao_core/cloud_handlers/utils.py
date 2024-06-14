@@ -31,6 +31,7 @@ from nvidia_tao_core.cloud_handlers.ngc_handler import download_ngc_model
 
 logger = logging.getLogger(__name__)
 NUM_RETRY = 3
+REQUESTS_TIMEOUT = 180
 
 
 def _untar_file(tar_path, dest, strip_components=0):
@@ -228,7 +229,7 @@ def download_files(cloud_storage, cloud_file_path, local_path):
     return destination_path
 
 
-def logging_callback_server_login(timeout, base_url, ngc_api_key, retry=0):
+def logging_callback_server_login(timeout, retry=0):
     """Login to the TAO Hosted API and retrieve authentication headers.
 
     Args:
@@ -240,6 +241,8 @@ def logging_callback_server_login(timeout, base_url, ngc_api_key, retry=0):
     if retry >= NUM_RETRY:
         raise ValueError("Login to TAO Hosted API was unsuccessful after multiple retries")
 
+    base_url = os.getenv("TAO_API_SERVER", "")
+    ngc_api_key = os.getenv("TAO_ADMIN_KEY", "")
     data = json.dumps({"ngc_api_key": ngc_api_key})
 
     try:
@@ -281,74 +284,74 @@ def upload_files(local_path, cloud_storage, file_last_modified):
                 file_last_modified[file_path] = current_last_modified
 
 
-def get_log_file_name(job_id, automl_expt_number):
+def get_log_file_name():
     """Return log file name"""
+    job_id = os.getenv("JOB_ID")
     log_file = f'/{job_id}.txt'
-    if automl_expt_number:
-        log_file = f'/{job_id}_{automl_expt_number}.txt'
     return log_file
 
 
-def send_logs_to_server(seek_position, log_callback_url, experiment_number, timeout=30, retry=0):
+def send_logs_to_server(seek_position, retry=0):
     """Sends TTY logs back to Hosted API"""
-    if retry >= NUM_RETRY:
-        raise ValueError("Log Callback was unsuccessfull")
+    if os.getenv("CLOUD_BASED") == "True":
+        if retry >= NUM_RETRY:
+            raise ValueError("Log Callback was unsuccessfull")
 
-    log_file = get_log_file_name()
+        log_file = get_log_file_name()
 
-    if os.path.isfile(log_file):
-        with open(log_file, 'r', encoding='utf-8') as log_file:
-            log_file.seek(seek_position)
-            log_contents = log_file.read()
-            seek_position = log_file.tell()
-            headers = logging_callback_server_login(timeout)
-            if log_contents and headers:
-                log_callback_url = log_callback_url + ":log_update"
-                if log_callback_url:
-                    headers['Content-Type'] = 'application/json'
-                    data = {
-                        'experiment_number': experiment_number,
-                        'log_contents': log_contents
-                    }
-                    try:
-                        response = requests.post(log_callback_url, json=data, headers=headers, timeout=timeout)
-                        if response.ok:
-                            return seek_position
-                        logger.info("Failed to send logs. Status code: {}".format(response.status_code))  # noqa pylint: disable=C0209
-                        seek_position -= len(log_contents)
-                        retry += 1
+        if os.path.isfile(log_file):
+            with open(log_file, 'r', encoding='utf-8') as log_file:
+                log_file.seek(seek_position)
+                log_contents = log_file.read()
+                seek_position = log_file.tell()
+                headers = logging_callback_server_login(REQUESTS_TIMEOUT)
+                if log_contents and headers:
+                    log_callback_url = os.getenv("TAO_LOGGING_SERVER_URL") + ":log_update"
+                    if log_callback_url:
+                        headers['Content-Type'] = 'application/json'
+                        data = {
+                            'experiment_number': os.getenv("AUTOML_EXPERIMENT_NUMBER", "0"),
+                            'log_contents': log_contents
+                        }
+                        try:
+                            response = requests.post(log_callback_url, json=data, headers=headers, timeout=REQUESTS_TIMEOUT)
+                            if response.ok:
+                                return seek_position
+                            logger.info("Failed to send logs. Status code: {}".format(response.status_code))  # noqa pylint: disable=C0209
+                            seek_position -= len(log_contents)
+                            retry += 1
 
-                    except requests.RequestException as e:
-                        logger.info("Exception during log sending: {}".format(e))  # noqa pylint: disable=C0209
-                        seek_position -= len(log_contents)
-                        retry += 1
+                        except requests.RequestException as e:
+                            logger.info("Exception during log sending: {}".format(e))  # noqa pylint: disable=C0209
+                            seek_position -= len(log_contents)
+                            retry += 1
 
-                    time.sleep(5)
-                    return send_logs_to_server(seek_position, retry)
+                        time.sleep(5)
+                        return send_logs_to_server(seek_position, retry)
     return seek_position
 
 
-def status_callback(data_string, cloud_based, status_url, experiment_number=0, timeout=30, retry=0):
+def status_callback(data_string, retry=0):
     """Sends status update data back to the server.
 
     Args:
         data_string (str): The status data to be sent.
         retry (int, optional): The current retry attempt (default is 0).
     """
-    if cloud_based:
+    if os.getenv("CLOUD_BASED") == "True":
         if retry >= NUM_RETRY:
             raise ValueError("Status Callback was unsuccessful after multiple retries")
 
-        headers = logging_callback_server_login(timeout)
+        headers = logging_callback_server_login(REQUESTS_TIMEOUT)
         if data_string and headers:
-            status_url = status_url + ":status_update"
+            status_url = os.getenv("TAO_LOGGING_SERVER_URL", "") + ":status_update"
             if status_url:
                 data = {
-                    "experiment_number": experiment_number,
+                    "experiment_number": os.getenv("AUTOML_EXPERIMENT_NUMBER", "0"),
                     "status": data_string,
                 }
                 try:
-                    response = requests.post(status_url, json=data, headers=headers, timeout=timeout)
+                    response = requests.post(status_url, json=data, headers=headers, timeout=REQUESTS_TIMEOUT)
                     if response.ok:
                         return
                     logger.error("Failed to send status update. Status code: {}".format(response.status_code))  # noqa pylint: disable=C0209
@@ -362,7 +365,7 @@ def status_callback(data_string, cloud_based, status_url, experiment_number=0, t
                 status_callback(data_string, retry)
 
 
-def monitor_and_upload(local_path, cloud_storage, exit_event, seek_position=0, log_callback_url=None, experiment_number=None):
+def monitor_and_upload(local_path, cloud_storage, exit_event, seek_position=0):
     """Monitors the specified local path and its subdirectories for new or modified files.
 
     Args:
@@ -386,12 +389,10 @@ def monitor_and_upload(local_path, cloud_storage, exit_event, seek_position=0, l
     try:
         while True:
             upload_files(local_path, cloud_storage, file_last_modified)
-            if log_callback_url:
-                seek_position = send_logs_to_server(seek_position, log_callback_url, experiment_number)
+            seek_position = send_logs_to_server(seek_position)
             if exit_event.is_set():
                 upload_files(local_path, cloud_storage, file_last_modified)
-                if log_callback_url:
-                    seek_position = send_logs_to_server(seek_position, log_callback_url, experiment_number)
+                seek_position = send_logs_to_server(seek_position)
                 break
             time.sleep(30)  # Adjust the sleep interval as needed
 
@@ -414,7 +415,7 @@ def get_cloud_storage_class_object(cloud_data, cloud_string):
     return cloud_storage, cloud_file_path
 
 
-def download_files_from_cloud(cloud_data, dictionary, key, value, job_id, network_arch, ngc_api_key, reset_value=False):
+def download_files_from_cloud(cloud_data, dictionary, key, value, job_id, network_arch, ngc_api_key, tao_api_ui_cookie="", use_ngc_production="", reset_value=False):
     """Based on the cloud dype, download the file"""
     if value.startswith("https://"):
         destination_path = value[len("https://"):]
@@ -425,7 +426,7 @@ def download_files_from_cloud(cloud_data, dictionary, key, value, job_id, networ
         if not ngc_api_key:
             raise ValueError("NGC API key has not been provided")
         ngc_model = value.split("ngc://")[-1]
-        if not download_ngc_model(ngc_model, f"/ptm/model", ngc_api_key):
+        if not download_ngc_model(ngc_model, f"/ptm/model", ngc_api_key, is_cookie_set=tao_api_ui_cookie, use_ngc_production=use_ngc_production):
             raise ValueError("Unable to download the PTM")
         ptm_path = search_for_ptm(f"/ptm/model", network_arch)
         dictionary[key] = ptm_path
@@ -457,7 +458,7 @@ def download_files_from_cloud(cloud_data, dictionary, key, value, job_id, networ
     return None
 
 
-def download_files_from_spec(cloud_data, data, job_id, network_arch=None, ngc_api_key=None):
+def download_files_from_spec(cloud_data, data, job_id, network_arch=None, ngc_api_key=None, tao_api_ui_cookie="", use_ngc_production=""):
     """Recursively download files from a nested dictionary where values starting with "cloud://" are considered cloud file paths.
 
     data: Nested dictionary.
@@ -466,12 +467,12 @@ def download_files_from_spec(cloud_data, data, job_id, network_arch=None, ngc_ap
     if isinstance(data, dict):
         for key, value in data.items():
             if isinstance(value, dict):
-                download_files_from_spec(cloud_data, value, job_id, network_arch=network_arch, ngc_api_key=ngc_api_key)
+                download_files_from_spec(cloud_data, value, job_id, network_arch=network_arch, ngc_api_key=ngc_api_key, tao_api_ui_cookie=tao_api_ui_cookie, use_ngc_production=use_ngc_production)
             elif isinstance(value, list):
                 override_list = []
                 for list_element in value:
                     if isinstance(list_element, str):
-                        override_value = download_files_from_cloud(cloud_data, data, key, list_element, job_id, network_arch, ngc_api_key)
+                        override_value = download_files_from_cloud(cloud_data, data, key, list_element, job_id, network_arch, ngc_api_key, tao_api_ui_cookie=tao_api_ui_cookie, use_ngc_production=use_ngc_production)
                         if not override_value:
                             override_value = list_element
                         override_list.append(override_value)
@@ -479,7 +480,7 @@ def download_files_from_spec(cloud_data, data, job_id, network_arch=None, ngc_ap
                         override_dict = {}
                         for list_dict_key, list_dict_value in list_element.items():
                             if isinstance(list_dict_value, str):
-                                override_value = download_files_from_cloud(cloud_data, data, key, list_dict_value, job_id, network_arch, ngc_api_key)
+                                override_value = download_files_from_cloud(cloud_data, data, key, list_dict_value, job_id, network_arch, ngc_api_key, tao_api_ui_cookie=tao_api_ui_cookie, use_ngc_production=use_ngc_production)
                                 if not override_value:
                                     override_value = list_dict_value
                             else:
@@ -491,11 +492,12 @@ def download_files_from_spec(cloud_data, data, job_id, network_arch=None, ngc_ap
                 data[key] = override_list
             else:
                 if isinstance(value, str):
-                    download_files_from_cloud(cloud_data, data, key, value, job_id, network_arch, ngc_api_key, reset_value=True)
+                    download_files_from_cloud(cloud_data, data, key, value, job_id, network_arch, ngc_api_key, tao_api_ui_cookie=tao_api_ui_cookie, use_ngc_production=use_ngc_production, reset_value=True)
 
 
-def get_results_cloud_data(cloud_data, spec_data, dest_dir):
+def get_results_cloud_data(cloud_data, spec_data):
     """Obtain the CloudStorage instance for uploading the results.
+
     Args:
     cloud_data: Cloud storage metadata.
     spec_data: Model spec.
@@ -506,16 +508,15 @@ def get_results_cloud_data(cloud_data, spec_data, dest_dir):
     spec_data: Updated model spec.
     """
     results_dir = spec_data["results_dir"]
-    if "://" in results_dir:
-        csp_provider = results_dir.split(":")[0]
-        bucket_name = results_dir.split("//")[1].split("/")[0]
-        cloud_file_path = results_dir[results_dir.find(bucket_name) + len(bucket_name):]
-        cloud_storage = CloudStorage(csp_provider,
-                                     bucket_name,
-                                     cloud_data[csp_provider][bucket_name]["cloud_region"],
-                                     cloud_data[csp_provider][bucket_name]["access_key"],
-                                     cloud_data[csp_provider][bucket_name]["secret_key"])
-        spec_data["results_dir"] = cloud_file_path
-        return cloud_storage, spec_data
-    spec_data["results_dir"] = f'{dest_dir}/{spec_data["results_dir"]}'
-    return None, spec_data
+    if "://" not in results_dir:
+        raise ValueError("Results directory format is wrong")
+    csp_provider = results_dir.split(":")[0]
+    bucket_name = results_dir.split("//")[1].split("/")[0]
+    cloud_file_path = results_dir[results_dir.find(bucket_name) + len(bucket_name):]
+    cloud_storage = CloudStorage(csp_provider,
+                                    bucket_name,
+                                    cloud_data[csp_provider][bucket_name]["cloud_region"],
+                                    cloud_data[csp_provider][bucket_name]["access_key"],
+                                    cloud_data[csp_provider][bucket_name]["secret_key"])
+    spec_data["results_dir"] = cloud_file_path
+    return cloud_storage, spec_data
