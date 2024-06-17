@@ -1,3 +1,16 @@
-# TAO Toolkit Core
+# TAO Toolkit - Core
 
-The module containing core packages for TAO Toolkit DNNs.
+* [Overview](#Overview)
+* [Getting Started](#Getti
+
+## <a name='Overview'></a>Overview
+TAO-Core is a Python package hosted on the NVIDIA Python Package Index. It comprises of modules containing core packages for TAO Toolkit DNN containers. 
+
+Getting Started
+TAO-Core needs to be re-compiled depending upon the Python version required. To build the wheel, initialize the required environment and execute
+```sh
+bash release/python/build_wheel.sh
+```
+
+## <a name='License'></a>License
+This project is licensed under the [Apache-2.0](./LICENSE) License.
