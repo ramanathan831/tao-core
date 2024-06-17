@@ -1,7 +1,7 @@
 # TAO Toolkit - Core
 
 * [Overview](#Overview)
-* [Getting Started](#Getting Started
+* [Getting Started](#Getting Started)
 
 ## <a name='Overview'></a>Overview
 TAO-Core is a Python package hosted on the NVIDIA Python Package Index. It comprises of modules containing core packages for TAO Toolkit DNN containers. 
