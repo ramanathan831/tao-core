@@ -415,7 +415,7 @@ def get_cloud_storage_class_object(cloud_data, cloud_string):
     return cloud_storage, cloud_file_path
 
 
-def download_files_from_cloud(cloud_data, dictionary, key, value, job_id, network_arch, ngc_api_key, tao_api_ui_cookie="", use_ngc_production="", reset_value=False):
+def download_files_from_cloud(cloud_data, dictionary, key, value, job_id, network_arch, ngc_api_key, tao_api_ui_cookie="", use_ngc_staging="", reset_value=False):
     """Based on the cloud dype, download the file"""
     if value.startswith("https://"):
         destination_path = value[len("https://"):]
@@ -426,7 +426,7 @@ def download_files_from_cloud(cloud_data, dictionary, key, value, job_id, networ
         if not ngc_api_key:
             raise ValueError("NGC API key has not been provided")
         ngc_model = value.split("ngc://")[-1]
-        if not download_ngc_model(ngc_model, f"/ptm/model", ngc_api_key, is_cookie_set=tao_api_ui_cookie, use_ngc_production=use_ngc_production):
+        if not download_ngc_model(ngc_model, f"/ptm/model", ngc_api_key, is_cookie_set=tao_api_ui_cookie, use_ngc_staging=use_ngc_staging):
             raise ValueError("Unable to download the PTM")
         ptm_path = search_for_ptm(f"/ptm/model", network_arch)
         dictionary[key] = ptm_path
@@ -458,7 +458,7 @@ def download_files_from_cloud(cloud_data, dictionary, key, value, job_id, networ
     return None
 
 
-def download_files_from_spec(cloud_data, data, job_id, network_arch=None, ngc_api_key=None, tao_api_ui_cookie="", use_ngc_production=""):
+def download_files_from_spec(cloud_data, data, job_id, network_arch=None, ngc_api_key=None, tao_api_ui_cookie="", use_ngc_staging=""):
     """Recursively download files from a nested dictionary where values starting with "cloud://" are considered cloud file paths.
 
     data: Nested dictionary.
@@ -467,12 +467,12 @@ def download_files_from_spec(cloud_data, data, job_id, network_arch=None, ngc_ap
     if isinstance(data, dict):
         for key, value in data.items():
             if isinstance(value, dict):
-                download_files_from_spec(cloud_data, value, job_id, network_arch=network_arch, ngc_api_key=ngc_api_key, tao_api_ui_cookie=tao_api_ui_cookie, use_ngc_production=use_ngc_production)
+                download_files_from_spec(cloud_data, value, job_id, network_arch=network_arch, ngc_api_key=ngc_api_key, tao_api_ui_cookie=tao_api_ui_cookie, use_ngc_staging=use_ngc_staging)
             elif isinstance(value, list):
                 override_list = []
                 for list_element in value:
                     if isinstance(list_element, str):
-                        override_value = download_files_from_cloud(cloud_data, data, key, list_element, job_id, network_arch, ngc_api_key, tao_api_ui_cookie=tao_api_ui_cookie, use_ngc_production=use_ngc_production)
+                        override_value = download_files_from_cloud(cloud_data, data, key, list_element, job_id, network_arch, ngc_api_key, tao_api_ui_cookie=tao_api_ui_cookie, use_ngc_staging=use_ngc_staging)
                         if not override_value:
                             override_value = list_element
                         override_list.append(override_value)
@@ -480,7 +480,7 @@ def download_files_from_spec(cloud_data, data, job_id, network_arch=None, ngc_ap
                         override_dict = {}
                         for list_dict_key, list_dict_value in list_element.items():
                             if isinstance(list_dict_value, str):
-                                override_value = download_files_from_cloud(cloud_data, data, key, list_dict_value, job_id, network_arch, ngc_api_key, tao_api_ui_cookie=tao_api_ui_cookie, use_ngc_production=use_ngc_production)
+                                override_value = download_files_from_cloud(cloud_data, data, key, list_dict_value, job_id, network_arch, ngc_api_key, tao_api_ui_cookie=tao_api_ui_cookie, use_ngc_staging=use_ngc_staging)
                                 if not override_value:
                                     override_value = list_dict_value
                             else:
@@ -492,10 +492,10 @@ def download_files_from_spec(cloud_data, data, job_id, network_arch=None, ngc_ap
                 data[key] = override_list
             else:
                 if isinstance(value, str):
-                    download_files_from_cloud(cloud_data, data, key, value, job_id, network_arch, ngc_api_key, tao_api_ui_cookie=tao_api_ui_cookie, use_ngc_production=use_ngc_production, reset_value=True)
+                    download_files_from_cloud(cloud_data, data, key, value, job_id, network_arch, ngc_api_key, tao_api_ui_cookie=tao_api_ui_cookie, use_ngc_staging=use_ngc_staging, reset_value=True)
 
 
-def get_results_cloud_data(cloud_data, spec_data):
+def get_results_cloud_data(cloud_data, spec_data, dest_dir=None):
     """Obtain the CloudStorage instance for uploading the results.
 
     Args:
@@ -508,15 +508,18 @@ def get_results_cloud_data(cloud_data, spec_data):
     spec_data: Updated model spec.
     """
     results_dir = spec_data["results_dir"]
-    if "://" not in results_dir:
-        raise ValueError("Results directory format is wrong")
-    csp_provider = results_dir.split(":")[0]
-    bucket_name = results_dir.split("//")[1].split("/")[0]
-    cloud_file_path = results_dir[results_dir.find(bucket_name) + len(bucket_name):]
-    cloud_storage = CloudStorage(csp_provider,
-                                    bucket_name,
-                                    cloud_data[csp_provider][bucket_name]["cloud_region"],
-                                    cloud_data[csp_provider][bucket_name]["access_key"],
-                                    cloud_data[csp_provider][bucket_name]["secret_key"])
-    spec_data["results_dir"] = cloud_file_path
-    return cloud_storage, spec_data
+    if "://" in results_dir:
+        csp_provider = results_dir.split(":")[0]
+        bucket_name = results_dir.split("//")[1].split("/")[0]
+        cloud_file_path = results_dir[results_dir.find(bucket_name) + len(bucket_name):]
+        cloud_storage = CloudStorage(csp_provider,
+                                     bucket_name,
+                                     cloud_data[csp_provider][bucket_name]["cloud_region"],
+                                     cloud_data[csp_provider][bucket_name]["access_key"],
+                                     cloud_data[csp_provider][bucket_name]["secret_key"])
+        spec_data["results_dir"] = cloud_file_path
+        return cloud_storage, spec_data
+    if not dest_dir:
+        raise ValueError("Destination directory is not provided")
+    spec_data["results_dir"] = f'{dest_dir}/{spec_data["results_dir"]}'
+    return None, spec_data
