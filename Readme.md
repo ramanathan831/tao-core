@@ -7,7 +7,7 @@
 TAO-Core is a Python package hosted on the NVIDIA Python Package Index. It comprises of modules containing core packages for TAO Toolkit DNN containers. 
 
 ## <a name='Getting Started'></a>Getting Started
-TAO-Core needs to be re-compiled depending upon the Python version required. To build the wheel, initialize the required environment and execute
+TAO-Core needs to be re-compiled depending upon the Python version required. To build the wheel, initialize the required python environment and execute
 ```sh
 bash release/python/build_wheel.sh
 ```
