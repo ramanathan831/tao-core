@@ -91,6 +91,8 @@ def download_ngc_model(ngc_path, ptm_root, api_key, is_cookie_set, use_ngc_stagi
     if team and team != "no-team":
         url_substring = f"team/{team}"
     base_url = "https://api.ngc.nvidia.com"
+    if use_ngc_staging == "True":
+        base_url = "https://api.stg.ngc.nvidia.com"
     files_endpoint = f"v2/org/{org}/{url_substring}/models/{model}/versions/{version}/files".replace("//", "/")
     files_url = f"{base_url}/{files_endpoint}"
     logging.info("Calling NGC API to list base_experiment files {}".format(files_url))  # noqa pylint: disable=C0209
