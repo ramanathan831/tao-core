@@ -89,7 +89,8 @@ def search_for_ptm(root, network=""):
     # TODO: remove after next nvaie release, Varun and Subha
     if network == "classification_pyt":
         models += glob.glob(root + "/**/*.ckpt", recursive=True)
-
+    if network in ("classification_tf2", "efficientdet_tf2"):
+        models = [os.path.join(root, os.listdir(root)[0])]
     if models:
         model_path = models[0]  # pick one arbitrarily
         logger.info("Found valid PTM at {}".format(model_path)) # noqa pylint: disable=C0209
