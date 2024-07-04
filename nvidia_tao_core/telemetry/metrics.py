@@ -13,7 +13,7 @@ __c29tZSByYW5kb20gc3RyaW5n = b'TEVUIE1FIElO'
 
 
 def report(data={}, base_url='https://api.tao.ngc.nvidia.com', timeout=10):
-    """"report metrics"""
+    """report metrics"""
     url = f'{base_url}/api/v1/metrics'
     if isinstance(data, dict):
         data = json.dumps(data)
