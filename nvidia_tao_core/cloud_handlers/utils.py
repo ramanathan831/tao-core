@@ -454,7 +454,7 @@ def download_files_from_cloud(cloud_data, dictionary, key, value, job_id, networ
                         _extract_images(abs_filepath, os.path.dirname(abs_filepath))
 
         logger.info("Downloaded: {}".format(cloud_file_path))  # noqa pylint: disable=C0209
-        return local_path_of_dataset_file.replace(".tar.gz", "").replace("/dataset_convert", "/dataset_convert/*.tfrecord")
+        return local_path_of_dataset_file.replace(".tar.gz", "")
     return None
 
 
