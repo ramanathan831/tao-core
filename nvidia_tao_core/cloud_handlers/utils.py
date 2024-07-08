@@ -23,7 +23,6 @@ import subprocess
 import sys
 import tarfile
 import time
-import yaml
 
 from nvidia_tao_core.cloud_handlers.cloud_storage import CloudStorage
 from nvidia_tao_core.cloud_handlers.ngc_handler import download_ngc_model
@@ -89,7 +88,8 @@ def search_for_ptm(root, network=""):
     # TODO: remove after next nvaie release, Varun and Subha
     if network == "classification_pyt":
         models += glob.glob(root + "/**/*.ckpt", recursive=True)
-
+    if network in ("classification_tf2", "efficientdet_tf2"):
+        models = [os.path.join(root, os.listdir(root)[0])]
     if models:
         model_path = models[0]  # pick one arbitrarily
         logger.info("Found valid PTM at {}".format(model_path)) # noqa pylint: disable=C0209
@@ -426,9 +426,9 @@ def download_files_from_cloud(cloud_data, dictionary, key, value, job_id, networ
         if not ngc_api_key:
             raise ValueError("NGC API key has not been provided")
         ngc_model = value.split("ngc://")[-1]
-        if not download_ngc_model(ngc_model, f"/ptm/model", ngc_api_key, is_cookie_set=tao_api_ui_cookie, use_ngc_staging=use_ngc_staging):
+        if not download_ngc_model(ngc_model, "/ptm/model", ngc_api_key, is_cookie_set=tao_api_ui_cookie, use_ngc_staging=use_ngc_staging):
             raise ValueError("Unable to download the PTM")
-        ptm_path = search_for_ptm(f"/ptm/model", network_arch)
+        ptm_path = search_for_ptm("/ptm/model", network_arch)
         dictionary[key] = ptm_path
 
     elif "://" in value:
@@ -454,7 +454,7 @@ def download_files_from_cloud(cloud_data, dictionary, key, value, job_id, networ
                         _extract_images(abs_filepath, os.path.dirname(abs_filepath))
 
         logger.info("Downloaded: {}".format(cloud_file_path))  # noqa pylint: disable=C0209
-        return local_path_of_dataset_file.replace(".tar.gz", "").replace("/dataset_convert", "/dataset_convert/*.tfrecord")
+        return local_path_of_dataset_file.replace(".tar.gz", "")
     return None
 
 
