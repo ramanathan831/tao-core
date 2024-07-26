@@ -47,6 +47,23 @@ def send_admin_get_request(endpoint, headers, retry=0):
     return r
 
 
+def split_ngc_path(ngc_path):
+    """Split ngc path into org, team and model name, model version"""
+    path_split = ngc_path.replace("/no-team", "").split("/")
+    if len(path_split) == 3:
+        org, team, model_name = path_split
+    elif len(path_split) == 2:
+        org, model_name = path_split
+        team = ""
+    else:
+        raise ValueError(f"Invalid ngc_path: {ngc_path}")
+    if ":" in model_name:
+        model_name, model_version = model_name.split(":")
+    else:
+        model_version = ""
+    return org, team, model_name, model_version
+
+
 def download_ngc_model(ngc_path, ptm_root, api_key, is_cookie_set, use_ngc_staging):
     """Download models from NGC model registry.
 

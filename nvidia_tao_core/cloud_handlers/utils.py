@@ -25,7 +25,7 @@ import tarfile
 import time
 
 from nvidia_tao_core.cloud_handlers.cloud_storage import CloudStorage
-from nvidia_tao_core.cloud_handlers.ngc_handler import download_ngc_model
+from nvidia_tao_core.cloud_handlers.ngc_handler import download_ngc_model, split_ngc_path
 
 
 logger = logging.getLogger(__name__)
@@ -426,9 +426,10 @@ def download_files_from_cloud(cloud_data, dictionary, key, value, job_id, networ
         if not ngc_api_key:
             raise ValueError("NGC API key has not been provided")
         ngc_model = value.split("ngc://")[-1]
-        if not download_ngc_model(ngc_model, "/ptm/model", ngc_api_key, is_cookie_set=tao_api_ui_cookie, use_ngc_staging=use_ngc_staging):
+        org, team, model_name, model_version = split_ngc_path(ngc_model)
+        if not download_ngc_model(ngc_model, f"/ptm/{org}/{team}/{model_name}/{model_version}/model", ngc_api_key, is_cookie_set=tao_api_ui_cookie, use_ngc_staging=use_ngc_staging):
             raise ValueError("Unable to download the PTM")
-        ptm_path = search_for_ptm("/ptm/model", network_arch)
+        ptm_path = search_for_ptm(f"/ptm/{org}/{team}/{model_name}/{model_version}/model", network_arch)
         dictionary[key] = ptm_path
 
     elif "://" in value:
