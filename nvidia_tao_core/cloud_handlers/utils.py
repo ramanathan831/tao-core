@@ -23,6 +23,7 @@ import subprocess
 import sys
 import tarfile
 import time
+import traceback
 
 from nvidia_tao_core.cloud_handlers.cloud_storage import CloudStorage
 from nvidia_tao_core.cloud_handlers.ngc_handler import download_ngc_model, split_ngc_path
@@ -262,6 +263,20 @@ def logging_callback_server_login(timeout, retry=0):
     return logging_callback_server_login(timeout, retry)
 
 
+def get_file_modification_time(local_path):
+    """Gets file modification time and ignores any issue in getting so.
+
+    Args:
+        local_path (str): The local path to monitor.
+        cloud_storage: An instance of the CloudStorage class for uploading files.
+        file_last_modified: Dictionary to find modified files
+    """
+    try:
+        return os.path.getmtime(local_path)
+    except Exception:
+        return 0
+
+
 def upload_files(local_path, cloud_storage, file_last_modified):
     """Uploads any detected changes to the specified cloud storage.
 
@@ -273,15 +288,18 @@ def upload_files(local_path, cloud_storage, file_last_modified):
     for root, _, files in os.walk(local_path):
         for filename in files:
             file_path = os.path.join(root, filename)
-            current_last_modified = os.path.getmtime(file_path)
+            current_last_modified = get_file_modification_time(file_path)
+            if current_last_modified:
 
-            # Check if the file is new or modified
-            if file_path not in file_last_modified or current_last_modified > file_last_modified[file_path]:
-                logger.info("File event created/modified {}".format(file_path))  # noqa pylint: disable=C0209
-                cloud_storage.upload_file(file_path, file_path)
+                # Check if the file is new or modified
+                if file_path not in file_last_modified or current_last_modified > file_last_modified[file_path]:
+                    logger.info("File event created/modified {}".format(file_path))  # noqa pylint: disable=C0209
+                    cloud_storage.upload_file(file_path, file_path)
 
-                # Update the last modification time for the file
-                file_last_modified[file_path] = current_last_modified
+                    # Update the last modification time for the file
+                    file_last_modified[file_path] = current_last_modified
+            else:
+                print("File could not be uploaded", file_path, flush=True)
 
 
 def get_log_file_name():
@@ -381,7 +399,6 @@ def monitor_and_upload(local_path, cloud_storage, exit_event, seek_position=0):
 
     # Initialize file_last_modified with files that are already part of results dir
     for root, _, files in os.walk(local_path):
-        print("files", root, files)
         for filename in files:
             file_path = os.path.join(root, filename)
             file_last_modified[file_path] = os.path.getmtime(file_path)
@@ -397,6 +414,7 @@ def monitor_and_upload(local_path, cloud_storage, exit_event, seek_position=0):
             time.sleep(30)  # Adjust the sleep interval as needed
 
     except (KeyboardInterrupt, SystemExit, Exception):
+        print("traceback", traceback.format_exc(), flush=True)
         exit_event.set()
 
 
