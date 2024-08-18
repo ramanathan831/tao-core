@@ -71,10 +71,10 @@ def send_telemetry_data(network, action, gpu_data, num_gpus=1, time_lapsed=None,
         if time_lapsed is not None:
             data["time_lapsed"] = time_lapsed
         if METRICS_MODULE_EXISTS:
-            logging.info(f"Sending ${data} to ${url}.")
+            logging.info(f"Sending {data} to {url}.")
             response = metrics.report(data=data, base_url=url, timeout=TELEMETRY_TIMEOUT)
             if response:
-                logging.info(f"Failed with reponse: ${response}")
+                logging.info(f"Failed with reponse: {response}")
             else:
                 logging.info("Telemetry sent successfully.")
     else:
