@@ -17,18 +17,22 @@
 import os
 import urllib3
 
-import logging
-logger = logging.getLogger(__name__)
+import logging as _logging
+_logging.basicConfig(
+    format='[%(asctime)s - TAO Toolkit - %(name)s - %(levelname)s] %(message)s',
+    level='INFO'
+)
+logging = _logging
 
 try:
-    import metrics
+    from nvidia_tao_core.telemetry import metrics
     METRICS_MODULE_EXISTS = True
 except Exception as e:
-    logging.info(f"Telemetry reporting script cannot import with [Error]: {e}")
+    logging.warning(f"Telemetry reporting script cannot import with [Error]: {e}")
     METRICS_MODULE_EXISTS = False
 
 
-TAO_SERVER_URL = "https://api.tao.ngc.nvidia.com/api/v1/metrics"
+TAO_SERVER_URL = "https://api.tao.ngc.nvidia.com"
 TELEMETRY_TIMEOUT = int(os.getenv("TELEMETRY_TIMEOUT", "30"))
 
 
@@ -45,13 +49,15 @@ def send_telemetry_data(network, action, gpu_data, num_gpus=1, time_lapsed=None,
 
     Environment variables:
         TELEMETRY_OPT_OUT (str): Whether to opt out of telemetry reporting, default: no.
-        TAO_TELEMETRY_SERVER (str): Telemetry reporting url, default: https://api.tao.ngc.nvidia.com/api/v1/metrics.
+        TAO_TELEMETRY_SERVER (str): Telemetry reporting url, default: https://api.tao.ngc.nvidia.com.
         TAO_TOOLKIT_VERSION (str): Verson of TAO Toolkit used, default: 5.3.0.
         TELEMETRY_TIMEOUT (int): Telemetry reporting request timeout limit, default: 30.
 
     Returns:
         No explicit returns.
     """
+    logging.info("================> Start Reporting Telemetry <================")
+
     urllib3.disable_warnings(urllib3.exceptions.SubjectAltNameWarning)
     if os.getenv('TELEMETRY_OPT_OUT', "no").lower() in ["no", "false", "0"]:
         url = os.getenv("TAO_TELEMETRY_SERVER", TAO_SERVER_URL)
@@ -65,4 +71,13 @@ def send_telemetry_data(network, action, gpu_data, num_gpus=1, time_lapsed=None,
         if time_lapsed is not None:
             data["time_lapsed"] = time_lapsed
         if METRICS_MODULE_EXISTS:
-            metrics.report(data=data, base_url=url, timeout=TELEMETRY_TIMEOUT)
+            logging.info(f"Sending ${data} to ${url}.")
+            response = metrics.report(data=data, base_url=url, timeout=TELEMETRY_TIMEOUT)
+            if response:
+                logging.info(f"Failed with reponse: ${response}")
+            else:
+                logging.info("Telemetry sent successfully.")
+    else:
+        logging.info("Opted out of telemetry reporting. Skipped.")
+
+    logging.info("================> End Reporting Telemetry <================")
