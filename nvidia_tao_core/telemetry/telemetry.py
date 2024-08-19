@@ -15,7 +15,6 @@
 """Utilties to send data to the TAO Toolkit Telemetry Remote Service."""
 
 import os
-import urllib3
 
 import logging as _logging
 _logging.basicConfig(
@@ -58,7 +57,6 @@ def send_telemetry_data(network, action, gpu_data, num_gpus=1, time_lapsed=None,
     """
     logging.info("================> Start Reporting Telemetry <================")
 
-    urllib3.disable_warnings(urllib3.exceptions.SubjectAltNameWarning)
     if os.getenv('TELEMETRY_OPT_OUT', "no").lower() in ["no", "false", "0"]:
         url = os.getenv("TAO_TELEMETRY_SERVER", TAO_SERVER_URL)
         data = {
