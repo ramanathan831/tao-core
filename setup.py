@@ -55,7 +55,7 @@ setuptools.setup(
     zip_safe=False,
     install_requires=[
         "PyYAML==6.0.1",
-        "requests==2.31.0",
+        "requests==2.32.0",
         "apache-libcloud==3.8.0"
     ]
 )
