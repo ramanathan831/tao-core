@@ -1,0 +1,106 @@
+stages:
+  - validate-mr-title
+  - check-mr-lines
+  - check-jenkins-status
+
+validate_mr_title:
+  stage: validate-mr-title
+  script:
+    - |
+      # Extract the MR title from the environment variable provided by GitLab CI
+      MR_TITLE=$CI_MERGE_REQUEST_TITLE
+
+      # Regular expression for the MR title validation
+      REGEX="^\[(JIRA|TLT)-[0-9]+\]\[(CI|CD|Bugfix|Hotfix|CV|LLM|Feature|Model-Cards|Docs)\] .+$"
+
+      # Validate the MR title
+      if [[ "$MR_TITLE" =~ $REGEX ]]; then
+        echo "MR title is valid: $MR_TITLE"
+        exit 0
+      else
+        echo "Invalid MR title format: $MR_TITLE"
+        echo "Expected format: [JIRA-ID][CI/CD/Bugfix/Hotfix/CV/LLM/Feature/Model-Cards/Docs] MR Title"
+        exit 1
+      fi
+  tags: ["trigger-jenkins"]
+  only:
+    refs:
+      - merge_requests
+
+check_mr_lines:
+  stage: check-mr-lines
+  script:
+    - python3 ci/check_mr_lines.py
+  tags: ["trigger-jenkins"]
+  only:
+    - merge_requests
+  variables:
+    GITLAB_PRIVATE_TOKEN: $GITLAB_PRIVATE_TOKEN
+
+check_jenkins_status:
+  stage: check-jenkins-status
+  script:
+    - |
+      # Define Jenkins parameters
+      FORKED_REPO_URL=$CI_MERGE_REQUEST_SOURCE_PROJECT_URL
+      FORKED_REPO_BRANCH=$CI_MERGE_REQUEST_SOURCE_BRANCH_NAME
+
+      JENKINS_URL="https://prod.blsm.nvidia.com/metropolis-iva-tlt-jenkins"
+      
+      # Step 1: Fetch the last build number before triggering a new build
+      last_build_number=$(curl -s -X POST -u "$JENKINS_USER:$JENKINS_TOKEN" "$JENKINS_URL/job/tao-core-develop/lastBuild/buildNumber")
+
+      # Step 2: Trigger the new build
+      curl -X POST -u "$JENKINS_USER:$JENKINS_TOKEN" \
+      "$JENKINS_URL/view/tao-core/job/tao-core-develop/buildWithParameters?token=$JENKINS_JOB_TOKEN&GITLAB_BRANCH=$FORKED_REPO_BRANCH&GITLAB_REPO_URL=$FORKED_REPO_URL"
+
+      # Step 3: Poll until a new build number is detected
+      while true; do
+          current_build_number=$(curl -s -X POST -u "$JENKINS_USER:$JENKINS_TOKEN" "$JENKINS_URL/job/tao-core-develop/lastBuild/buildNumber")
+          
+          if [ "$current_build_number" -gt "$last_build_number" ]; then
+              echo "New build detected: Build Number $current_build_number"
+              break
+          fi
+
+          sleep 1
+      done
+
+      build_url="$JENKINS_URL/job/tao-core-develop/${current_build_number}/"
+      echo "You can view the build details at: $build_url"
+
+      # STEP3 : Poll Jenkins job status and get details for each stage
+      while true; do
+          # Fetch job status and stage details
+          response=$(curl -s -u "$JENKINS_USER:$JENKINS_TOKEN" \
+          "$JENKINS_URL/job/tao-core-develop/${current_build_number}/wfapi/describe")
+
+          # Extract job status (SUCCESS, FAILURE, ABORTED, etc.)
+          JOB_STATUS=$(curl -s -u "$JENKINS_USER:$JENKINS_TOKEN" \
+          "$JENKINS_URL/job/tao-core-develop/${current_build_number}/api/json" | jq -r '.result')
+
+          # Check and display the current status of each stage
+          echo ""
+          echo "$response" | jq -r '.stages[] | "\(.name): \(.status)"'
+          echo ""
+
+          # Handle the overall job status
+          if [ "$JOB_STATUS" == "SUCCESS" ]; then
+              echo "Jenkins job succeeded"
+              break
+          elif [ "$JOB_STATUS" == "FAILURE" ]; then
+              echo "Jenkins job failed"
+              exit 1
+          elif [ "$JOB_STATUS" == "ABORTED" ]; then
+              echo "Jenkins job was aborted"
+              exit 1
+          else
+              sleep 10
+          fi
+      done
+  timeout: 2h
+  tags: ["trigger-jenkins"]
+  only:
+    refs:
+      - merge_requests
+
