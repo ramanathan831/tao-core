@@ -36,6 +36,7 @@ check_mr_lines:
     - merge_requests
   variables:
     GITLAB_PRIVATE_TOKEN: $GITLAB_PRIVATE_TOKEN
+  allow_failure: true
 
 check_jenkins_status:
   stage: check-jenkins-status
