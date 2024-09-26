@@ -77,6 +77,9 @@ def download_ngc_model(ngc_path, ptm_root, api_key, is_cookie_set, use_ngc_stagi
     if ngc_path == "":
         logging.info("Invalid ngc path.")
         return False
+    if not api_key.startswith("nvapi"):
+        logging.info('Credentials error: Invalid NGC_PERSONAL_KEY, NGC_API_KEYs are no longer valid, generate a personal key with Cloud Functions, NGC Catalog and Private registry services https://org.ngc.nvidia.com/setup/personal-keys')
+        return False
     ngc_configs = ngc_path.split('/')
     org = ngc_configs[0]
     model, version = ngc_configs[-1].split(':')
@@ -89,20 +92,10 @@ def download_ngc_model(ngc_path, ptm_root, api_key, is_cookie_set, use_ngc_stagi
         logging.info("API key/Cookie is None")
         return False
 
-    url = 'https://authn.nvidia.com/token?service=ngc'
-    if use_ngc_staging == "True":
-        url = 'https://stg.authn.nvidia.com/token?service=ngc'
-
     if is_cookie_set == "True":
         headers = {'Accept': 'application/json', 'Cookie': api_key}
     else:
-        headers = {'Accept': 'application/json', 'Authorization': 'ApiKey ' + api_key}
-        response = send_admin_get_request(url, headers=headers)
-        if not response.ok:
-            logging.info("API response is not ok")
-            return False
-        token = response.json()["token"]
-        headers = {"Authorization": f"Bearer {token} "}
+        headers = {'Accept': 'application/json', 'Authorization': 'Bearer ' + api_key}
 
     url_substring = ""
     if team and team != "no-team":
