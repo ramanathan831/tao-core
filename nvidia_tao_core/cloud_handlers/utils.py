@@ -243,8 +243,11 @@ def logging_callback_server_login(timeout, retry=0):
         raise ValueError("Login to TAO Hosted API was unsuccessful after multiple retries")
 
     base_url = os.getenv("TAO_API_SERVER", "")
-    ngc_api_key = os.getenv("TAO_ADMIN_KEY", "")
-    data = json.dumps({"ngc_api_key": ngc_api_key})
+    ngc_key = os.getenv("TAO_ADMIN_KEY", "")
+    jobs_url = os.getenv("TAO_LOGGING_SERVER_URL")
+    org_name = jobs_url.split("/orgs/")[1].split("/")[0]
+    data = json.dumps({"ngc_org_name": org_name,
+                       "ngc_key": ngc_key})
 
     try:
         response = requests.post(f"{base_url}/api/v1/login", data=data, timeout=timeout)
@@ -433,7 +436,7 @@ def get_cloud_storage_class_object(cloud_data, cloud_string):
     return cloud_storage, cloud_file_path
 
 
-def download_files_from_cloud(cloud_data, dictionary, key, value, job_id, network_arch, ngc_api_key, tao_api_ui_cookie="", use_ngc_staging="", reset_value=False):
+def download_files_from_cloud(cloud_data, dictionary, key, value, job_id, network_arch, ngc_key, tao_api_ui_cookie="", use_ngc_staging="", reset_value=False):
     """Based on the cloud dype, download the file"""
     if value.startswith("https://"):
         destination_path = value[len("https://"):]
@@ -441,11 +444,11 @@ def download_files_from_cloud(cloud_data, dictionary, key, value, job_id, networ
         download_from_https_link(value, destination_folder)
 
     if value.startswith("ngc://"):
-        if not ngc_api_key:
-            raise ValueError("NGC API key has not been provided")
+        if not ngc_key:
+            raise ValueError("NGC Personal key has not been provided")
         ngc_model = value.split("ngc://")[-1]
         org, team, model_name, model_version = split_ngc_path(ngc_model)
-        if not download_ngc_model(ngc_model, f"/ptm/{org}/{team}/{model_name}/{model_version}/model", ngc_api_key, is_cookie_set=tao_api_ui_cookie, use_ngc_staging=use_ngc_staging):
+        if not download_ngc_model(ngc_model, f"/ptm/{org}/{team}/{model_name}/{model_version}/model", ngc_key, is_cookie_set=tao_api_ui_cookie, use_ngc_staging=use_ngc_staging):
             raise ValueError("Unable to download the PTM")
         ptm_path = search_for_ptm(f"/ptm/{org}/{team}/{model_name}/{model_version}/model", network_arch)
         dictionary[key] = ptm_path
@@ -477,7 +480,7 @@ def download_files_from_cloud(cloud_data, dictionary, key, value, job_id, networ
     return None
 
 
-def download_files_from_spec(cloud_data, data, job_id, network_arch=None, ngc_api_key=None, tao_api_ui_cookie="", use_ngc_staging=""):
+def download_files_from_spec(cloud_data, data, job_id, network_arch=None, ngc_key=None, tao_api_ui_cookie="", use_ngc_staging=""):
     """Recursively download files from a nested dictionary where values starting with "cloud://" are considered cloud file paths.
 
     data: Nested dictionary.
@@ -486,12 +489,12 @@ def download_files_from_spec(cloud_data, data, job_id, network_arch=None, ngc_ap
     if isinstance(data, dict):
         for key, value in data.items():
             if isinstance(value, dict):
-                download_files_from_spec(cloud_data, value, job_id, network_arch=network_arch, ngc_api_key=ngc_api_key, tao_api_ui_cookie=tao_api_ui_cookie, use_ngc_staging=use_ngc_staging)
+                download_files_from_spec(cloud_data, value, job_id, network_arch=network_arch, ngc_key=ngc_key, tao_api_ui_cookie=tao_api_ui_cookie, use_ngc_staging=use_ngc_staging)
             elif isinstance(value, list):
                 override_list = []
                 for list_element in value:
                     if isinstance(list_element, str):
-                        override_value = download_files_from_cloud(cloud_data, data, key, list_element, job_id, network_arch, ngc_api_key, tao_api_ui_cookie=tao_api_ui_cookie, use_ngc_staging=use_ngc_staging)
+                        override_value = download_files_from_cloud(cloud_data, data, key, list_element, job_id, network_arch, ngc_key, tao_api_ui_cookie=tao_api_ui_cookie, use_ngc_staging=use_ngc_staging)
                         if not override_value:
                             override_value = list_element
                         override_list.append(override_value)
@@ -499,7 +502,7 @@ def download_files_from_spec(cloud_data, data, job_id, network_arch=None, ngc_ap
                         override_dict = {}
                         for list_dict_key, list_dict_value in list_element.items():
                             if isinstance(list_dict_value, str):
-                                override_value = download_files_from_cloud(cloud_data, data, key, list_dict_value, job_id, network_arch, ngc_api_key, tao_api_ui_cookie=tao_api_ui_cookie, use_ngc_staging=use_ngc_staging)
+                                override_value = download_files_from_cloud(cloud_data, data, key, list_dict_value, job_id, network_arch, ngc_key, tao_api_ui_cookie=tao_api_ui_cookie, use_ngc_staging=use_ngc_staging)
                                 if not override_value:
                                     override_value = list_dict_value
                             else:
@@ -511,7 +514,7 @@ def download_files_from_spec(cloud_data, data, job_id, network_arch=None, ngc_ap
                 data[key] = override_list
             else:
                 if isinstance(value, str):
-                    download_files_from_cloud(cloud_data, data, key, value, job_id, network_arch, ngc_api_key, tao_api_ui_cookie=tao_api_ui_cookie, use_ngc_staging=use_ngc_staging, reset_value=True)
+                    download_files_from_cloud(cloud_data, data, key, value, job_id, network_arch, ngc_key, tao_api_ui_cookie=tao_api_ui_cookie, use_ngc_staging=use_ngc_staging, reset_value=True)
 
 
 def get_results_cloud_data(cloud_data, spec_data, dest_dir=None):

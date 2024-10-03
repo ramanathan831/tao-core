@@ -64,7 +64,7 @@ def split_ngc_path(ngc_path):
     return org, team, model_name, model_version
 
 
-def download_ngc_model(ngc_path, ptm_root, api_key, is_cookie_set, use_ngc_staging):
+def download_ngc_model(ngc_path, ptm_root, key, is_cookie_set, use_ngc_staging):
     """Download models from NGC model registry.
 
     Args:
@@ -77,8 +77,8 @@ def download_ngc_model(ngc_path, ptm_root, api_key, is_cookie_set, use_ngc_stagi
     if ngc_path == "":
         logging.info("Invalid ngc path.")
         return False
-    if not api_key.startswith("nvapi"):
-        logging.info('Credentials error: Invalid NGC_PERSONAL_KEY, NGC_API_KEYs are no longer valid, generate a personal key with Cloud Functions, NGC Catalog and Private registry services https://org.ngc.nvidia.com/setup/personal-keys')
+    if not key.startswith("nvapi"):
+        logging.info('Credentials error: Invalid NGC_PERSONAL_KEY, NGC_keys are no longer valid, generate a personal key with Cloud Functions, NGC Catalog and Private registry services https://org.ngc.nvidia.com/setup/personal-keys')
         return False
     ngc_configs = ngc_path.split('/')
     org = ngc_configs[0]
@@ -88,14 +88,14 @@ def download_ngc_model(ngc_path, ptm_root, api_key, is_cookie_set, use_ngc_stagi
         team = ngc_configs[1]
 
     # Get access token using k8s admin secret
-    if not api_key:
-        logging.info("API key/Cookie is None")
+    if not key:
+        logging.info("Personal key/Cookie is None")
         return False
 
     if is_cookie_set == "True":
-        headers = {'Accept': 'application/json', 'Cookie': api_key}
+        headers = {'Accept': 'application/json', 'Cookie': key}
     else:
-        headers = {'Accept': 'application/json', 'Authorization': 'Bearer ' + api_key}
+        headers = {'Accept': 'application/json', 'Authorization': 'Bearer ' + key}
 
     url_substring = ""
     if team and team != "no-team":
