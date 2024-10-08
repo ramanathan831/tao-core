@@ -29,7 +29,7 @@ TEST_MODULES = [
     "nvidia_tao_core/cloud_handlers"
 ]
 STATIC_TESTS = [
-    #f"pylint --rcfile {RCFILE}",
+    f"pylint --rcfile {RCFILE}",
     "pydocstyle --ignore=D400,D213,D203,D211,D4",
     "flake8 --ignore=E24,W504,E501",
 ]

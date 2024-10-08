@@ -56,7 +56,8 @@ spec:
 
       stage ('static_tests') {
         gitlabCommitStatus(name: "static_tests", connection: gitLabConnection('git-lab-master')) {
-          sh "pip install pylint pydocstyle flake8"
+	        sh "ls -larth"        
+	        sh "pip install pylint==3.0.3 pydocstyle flake8"
           sh "python3 ci/run_static_tests.py"
         }
       }
@@ -72,7 +73,7 @@ spec:
     container('docker') {
       stage ('wheeltamer_tests') {
         gitlabCommitStatus(name: "wheeltamer_tests", connection: gitLabConnection('git-lab-master')) {
-          docker.withRegistry('https://gitlab-master.nvidia.com:5005', 'jenkins-TLT-pkg') {
+          docker.withRegistry('https://gitlab-master.nvidia.com:5005', 'tao-launcher-api-ptkn') {
             sh "docker pull gitlab-master.nvidia.com:5005/dl/pypi/wheel-ci-cd:wheeltamer"
             sh "docker run --rm -v ${WORKSPACE}/dist:/workspace \
                 -e 'EXPECTED_PKG_LICENSE=NVIDIA Proprietary Software' \
