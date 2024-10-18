@@ -15,18 +15,12 @@
 """Static tests execution"""
 
 import argparse
-import os
 import subprocess
 import sys
 
 RCFILE = ".pylintrc"
 TEST_MODULES = [
-    "nvidia_tao_core/hydra",
-    "nvidia_tao_core/logging",
-    "nvidia_tao_core/mlops",
-    "nvidia_tao_core/proto",
-    "nvidia_tao_core/telemetry",
-    "nvidia_tao_core/cloud_handlers"
+    "nvidia_tao_core",
 ]
 STATIC_TESTS = [
     f"pylint --rcfile {RCFILE}",
