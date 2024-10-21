@@ -69,10 +69,10 @@ SUPPORTED_BACKBONES = [
     # *list(convnext_model_dict.keys()),
     # *list(fan_model_dict.keys()),
     # *list(efficientvit_model_dict.keys()),
-    resnet_model_list,
-    convnext_model_list,
-    fan_model_list,
-    efficientvit_model_list
+    *resnet_model_list,
+    *convnext_model_list,
+    *fan_model_list,
+    *efficientvit_model_list
 ]
 
 
