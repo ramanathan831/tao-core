@@ -39,7 +39,6 @@ SUPPORTED_BACKBONES = [
 ]
 
 
-
 @dataclass
 class ImgNormConfig:
     """Configuration parameters for Img Normalization."""
@@ -220,7 +219,7 @@ class TrainExpConfig:
 
 
 @dataclass
-class InferenceExpConfig(InferenceConfig)
+class InferenceExpConfig(InferenceConfig):
     """Inference experiment config."""
 
     exp_config: ExpConfig = DATACLASS_FIELD(ExpConfig())

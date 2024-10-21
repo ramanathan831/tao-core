@@ -32,7 +32,7 @@ from nvidia_tao_core.config.common.common_config import (
     TrainConfig,
     EvaluateConfig,
     InferenceConfig
- )
+)
 
 
 @dataclass

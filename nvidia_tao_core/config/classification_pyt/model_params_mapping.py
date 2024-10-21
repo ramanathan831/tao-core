@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-""" Model Parameters Mapping Module """
+"""Model Parameters Mapping Module"""
 
 map_params = {"head": {"in_channels": {
     "fan_tiny_8_p4_hybrid": 192,  # FAN
