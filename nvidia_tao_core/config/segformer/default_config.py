@@ -210,7 +210,7 @@ class SFDatasetExpConfig:
 
 @dataclass
 class SFEnvConfig:
-    """ Env Config for Segformer. """
+    """Env Config for Segformer."""
 
     cudnn_benchmark: bool = BOOL_FIELD(value=True, description="Bool whether to use cudnn benchmark", display_name="Cudnn Benchmark")
     mp_cfg: Dict[Any, Any] = DICT_FIELD(hashMap={'mp_start_method': 'fork', 'opencv_num_threads': 0}, description="mp config dictionary")
@@ -219,7 +219,7 @@ class SFEnvConfig:
 
 @dataclass
 class SFExpConfig:
-    """ Overall Exp Config for Segformer. """
+    """Overall Exp Config for Segformer."""
 
     manual_seed: int = INT_FIELD(value=47, description="Manual seed", display_name="Manual Seed")
     distributed: bool = BOOL_FIELD(value=True, description="Bool whether to use distributed", display_name="Distributed")
