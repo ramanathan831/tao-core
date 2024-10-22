@@ -244,7 +244,7 @@ def logging_callback_server_login(timeout, retry=0):
 
     base_url = os.getenv("TAO_API_SERVER", "")
     ngc_key = os.getenv("TAO_ADMIN_KEY", "")
-    jobs_url = os.getenv("TAO_LOGGING_SERVER_URL")
+    jobs_url = os.getenv("TAO_LOGGING_SERVER_URL", "")
     org_name = jobs_url.split("/orgs/")[1].split("/")[0]
     data = json.dumps({"ngc_org_name": org_name,
                        "ngc_key": ngc_key})
@@ -255,7 +255,7 @@ def logging_callback_server_login(timeout, retry=0):
             token = response.json()["token"]
             headers = {"Authorization": f"Bearer {token}"}
             return headers
-        logger.error("Failed to log in. Status code: {}".format(response.status_code))  # noqa pylint: disable=C0209
+        logger.error("Failed to log in. Status code: {}. Status message {}".format(response.status_code, response.text))  # noqa pylint: disable=C0209
         retry += 1
 
     except requests.RequestException as e:
@@ -308,7 +308,8 @@ def upload_files(local_path, cloud_storage, file_last_modified):
 def get_log_file_name():
     """Return log file name"""
     job_id = os.getenv("JOB_ID")
-    log_file = f'/{job_id}.txt'
+    logs_dir = os.getenv('TAO_MICROSERVICES_TTY_LOG', '/results')
+    log_file = f'{logs_dir}/{job_id}/microservices_log.txt'
     return log_file
 
 
