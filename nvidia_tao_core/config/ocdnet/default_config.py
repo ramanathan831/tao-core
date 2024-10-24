@@ -32,7 +32,8 @@ from nvidia_tao_core.config.common.common_config import (
     EvaluateConfig,
     InferenceConfig,
     GenTrtEngineConfig,
-    TrtConfig
+    TrtConfig,
+    CalibrationConfig
 )
 
 
@@ -853,37 +854,6 @@ class OCDNetExportExpConfig:
         default_value=False,
         display_name="verbose",
         description="""Flag to enable verbose exporting logging."""
-    )
-
-
-@dataclass
-class CalibrationConfig:
-    """Calibration config."""
-
-    cal_image_dir: str = STR_FIELD(
-        value=MISSING,
-        display_name="calibration image directories",
-        description="""The image directories to be used for calibration
-                    when running Post Training Quantization using TensorRT.""",
-    )
-    cal_cache_file: str = STR_FIELD(
-        value=MISSING,
-        display_name="calibration cache file",
-        description="""The path to save the calibration cache file containing
-                    scales that were generated during Post Training Quantization.""",
-    )
-    cal_batch_size: int = INT_FIELD(
-        value=1,
-        default_value=1,
-        description="""The batch size of the input TensorRT to run calibration on.""",
-        display_name="min batch size"
-    )
-    cal_num_batches: int = INT_FIELD(
-        value=1,
-        default_value=1,
-        description="""The number of input tensor batches to run calibration on.
-                    It is recommended to use atleast 10% of the training images.""",
-        display_name="number of calibration batches"
     )
 
 
