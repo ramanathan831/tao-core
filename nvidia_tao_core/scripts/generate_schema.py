@@ -1,7 +1,5 @@
 # Copyright (c) 2024, NVIDIA CORPORATION.  All rights reserved.
 #
-# Original source taken from https://github.com/NVIDIA/NeMo
-#
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
 # You may obtain a copy of the License at
@@ -14,4 +12,14 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""TAO Core module"""
+"""Generating JSON schemas"""
+
+from nvidia_tao_core.api_utils import dataclass2json_converter
+
+
+def generate_schema(neural_network_name):
+    """Generates JSON schema for network"""
+    imported_module = dataclass2json_converter.import_module_from_path(f"nvidia_tao_core.config.{neural_network_name}.default_config")
+    expConfig = imported_module.ExperimentConfig()
+    json_with_meta_config = dataclass2json_converter.dataclass_to_json(expConfig)
+    return dataclass2json_converter.create_json_schema(json_with_meta_config)

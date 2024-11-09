@@ -70,7 +70,7 @@ def STR_FIELD(value, **meta_args):
         metadata[k] = v
     if metadata["default_value"] in (None, "") and value not in (None, ""):
         metadata["default_value"] = value
-    return field(default=value, metadata=metadata)
+    return field(default=value, metadata=metadata)  # noqa pylint: disable=E3701
 
 
 def INT_FIELD(value, **meta_args):
@@ -104,7 +104,7 @@ def INT_FIELD(value, **meta_args):
         metadata[k] = v
     if metadata["default_value"] in (None, "") and value not in (None, ""):
         metadata["default_value"] = value
-    return field(default=value, metadata=metadata)
+    return field(default=value, metadata=metadata)  # noqa pylint: disable=E3701
 
 
 def FLOAT_FIELD(value, **meta_args):
@@ -138,7 +138,7 @@ def FLOAT_FIELD(value, **meta_args):
         metadata[k] = v
     if metadata["default_value"] in (None, "") and value not in (None, ""):
         metadata["default_value"] = value
-    return field(default=value, metadata=metadata)
+    return field(default=value, metadata=metadata)  # noqa pylint: disable=E3701
 
 
 def BOOL_FIELD(value, **meta_args):
@@ -172,7 +172,7 @@ def BOOL_FIELD(value, **meta_args):
         metadata[k] = v
     if metadata["default_value"] in (None, "") and value not in (None, ""):
         metadata["default_value"] = value
-    return field(default=value, metadata=metadata)
+    return field(default=value, metadata=metadata)  # noqa pylint: disable=E3701
 
 
 def LIST_FIELD(arrList, **meta_args):
@@ -204,7 +204,7 @@ def LIST_FIELD(arrList, **meta_args):
     }
     for k, v in meta_args.items():
         metadata[k] = v
-    return field(default_factory=lambda: arrList, metadata=metadata)
+    return field(default_factory=lambda: arrList, metadata=metadata)  # noqa pylint: disable=E3701
 
 
 def DICT_FIELD(hashMap, **meta_args):
@@ -236,7 +236,7 @@ def DICT_FIELD(hashMap, **meta_args):
     }
     for k, v in meta_args.items():
         metadata[k] = v
-    return field(default_factory=lambda: hashMap, metadata=metadata)
+    return field(default_factory=lambda: hashMap, metadata=metadata)  # noqa pylint: disable=E3701
 
 
 def DATACLASS_FIELD(hashMap, **meta_args):
@@ -268,4 +268,4 @@ def DATACLASS_FIELD(hashMap, **meta_args):
     }
     for k, v in meta_args.items():
         metadata[k] = v
-    return field(default_factory=lambda: hashMap, metadata=metadata)
+    return field(default_factory=lambda: hashMap, metadata=metadata)  # noqa pylint: disable=E3701
