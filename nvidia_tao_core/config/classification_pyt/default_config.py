@@ -54,7 +54,7 @@ class TrainData:
 
     type: str = STR_FIELD(value="ImageNet", default_value="", description="Type of training data")
     data_prefix: Optional[str] = STR_FIELD(value="", default_value="", description="Dataset directory path")
-    pipeline: List[Any] = LIST_FIELD([{"type": "RandomResizedCrop", "scale": 224}, {"type": "RandomFlip", "prob": 0.5, "direction": "horizontal"},], description="Augmentation pipeline")
+    pipeline: List[Any] = LIST_FIELD([{"type": "RandomResizedCrop", "scale": 224}, {"type": "RandomFlip", "prob": 0.5, "direction": "horizontal"}], description="Augmentation pipeline")
     classes: Optional[str] = STR_FIELD(value=None, default_value="", description="Path to text file containing class names")
 
 

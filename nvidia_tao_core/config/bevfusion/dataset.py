@@ -139,8 +139,8 @@ class BEVFusionDatasetExpConfig:
         description="A path to the root directory of the given dataset"
     )
     classes: List[str] = LIST_FIELD(
-        arrList=['person',],
-        default_value=['person',],
+        arrList=['person'],
+        default_value=['person'],
         display_name="list of classes",
         description="A List of the classes to be trained."
     )
