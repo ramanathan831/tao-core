@@ -155,15 +155,15 @@ class RTExportExpConfig:
         valid_min=3,
     )
     input_width: int = INT_FIELD(
-        value=960,
-        default_value=960,
+        value=640,
+        default_value=640,
         description="Width of the input image tensor.",
         display_name="input width",
         valid_min=32,
     )
     input_height: int = INT_FIELD(
-        value=544,
-        default_value=544,
+        value=640,
+        default_value=640,
         description="Height of the input image tensor.",
         display_name="input height",
         valid_min=32,
