@@ -84,7 +84,7 @@ def __array_type_fix(value_type, value):
     if value in (None, ""):
         return None
     values = value.replace(" ", "").split(",")
-    if value_type == "integer":
+    if value_type in ("integer", "ordered_int"):
         return [int(i) for i in values]
     if value_type == "number":
         return [float(i) for i in values]
