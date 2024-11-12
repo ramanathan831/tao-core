@@ -52,7 +52,7 @@ def __basic_type_fix(value_type, value):
     Returns:
         Converted value (various types): The value converted to the appropriate datatype, or None for invalid inputs.
     """
-    if value_type == "string" and value in (None, ""):
+    if value_type == "string" and not value:
         return "" if value == "" else None
     if value in (None, ""):
         return None
@@ -386,11 +386,11 @@ def create_json_schema(json_data):
         # if parent_default:
         #     parent_default[param_name] = default_value
 
-        if display_name not in (None, ""):
+        if display_name:
             props[param_name]["title"] = display_name
-        if description not in (None, ""):
+        if description:
             props[param_name]["description"] = description
-        if examples not in (None, []):
+        if examples:
             props[param_name]["examples"] = examples
         if default_value == "" or default_value is not None:
             props[param_name]["default"] = default_value
@@ -398,33 +398,33 @@ def create_json_schema(json_data):
         # if default_value not in (None, ""):
         #     props[param_name]["default"] = default_value
         #     parent_default[param_name] = default_value
-        if valid_min is not None:
+        if valid_min:
             props[param_name]["minimum"] = valid_min
-        if valid_max is not None:
+        if valid_max:
             props[param_name]["maximum"] = valid_max
-        if math_cond is not None:
+        if math_cond:
             props[param_name]["math_cond"] = math_cond
-        if parent_param is not None:
+        if parent_param:
             props[param_name]["parent_param"] = parent_param
-        if depends_on is not None:
+        if depends_on:
             props[param_name]["depends_on"] = depends_on
-        if valid_options not in (None, []):
+        if valid_options:
             props[param_name]["enum"] = valid_options
-        if regex not in (None, "") and value_type == "string":
+        if regex and value_type == "string":
             props[param_name]["pattern"] = regex
-        if link is not None and link.startswith("http"):
+        if link and link.startswith("http"):
             props[param_name]["link"] = link
-        if required is not None and required.lower() == "yes":
+        if required and required.lower() == "yes":
             required_parameter.append(".".join(hierarchy))
-        if popular is not None and popular.lower() == "yes":
+        if popular and popular.lower() == "yes":
             popular_parameter.append(".".join(hierarchy))
-        if automl_enabled is not None and automl_enabled.lower() == "true":
+        if automl_enabled and automl_enabled.lower() == "true":
             props[param_name]["automl_enabled"] = True
             if parent_default.get("automl_default_parameters") is None:
                 parent_default["automl_default_parameters"] = []
             parent_default["automl_default_parameters"].append(".".join(hierarchy))
             auto_ml_parameters.append(".".join(hierarchy))
-        if automl_enabled is not None and automl_enabled.lower() == "false":
+        if automl_enabled and automl_enabled.lower() == "false":
             props[param_name]["automl_enabled"] = False
             if parent_default.get("automl_disabled_parameters") is None:
                 parent_default["automl_disabled_parameters"] = []
