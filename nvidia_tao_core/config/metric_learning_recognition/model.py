@@ -58,12 +58,14 @@ class MLModelConfig:
         default_value=224,
         description="The input width of the images.",
         display_name="input_width",
+        parent_param="TRUE",
     )
     input_height: int = INT_FIELD(
         value=224,
         default_value=224,
         description="The input height of the images.",
         display_name="input_height",
+        parent_param="TRUE",
     )
     input_channels: int = INT_FIELD(
         value=3,
