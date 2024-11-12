@@ -229,6 +229,16 @@ def auto_ml_parameters_fix(json_schema):
                 del obj["automl_default_parameters"]
             return
 
+        if "automl_disabled_parameters" in obj:
+            if key == "default":
+                parentObj["automl_disabled_parameters"] = obj[
+                    "automl_disabled_parameters"
+                ]
+                del obj["automl_disabled_parameters"]
+            else:
+                del obj["automl_disabled_parameters"]
+            return
+
         if obj.get("properties") == {}:
             del obj["properties"]
 
@@ -296,6 +306,7 @@ def create_json_schema(json_data):
     """
     schema = {"type": "object", "properties": {}, "default": {}}
     auto_ml_parameters = []
+    auto_ml_disabled_parameters = []
     popular_parameter = []
     required_parameter = []
 
@@ -336,6 +347,9 @@ def create_json_schema(json_data):
         valid_max = param_meta.get("valid_max")
         valid_options = param_meta.get("valid_options")
         required = param_meta.get("required")
+        math_cond = param_meta.get("math_cond")
+        parent_param = param_meta.get("parent_param")
+        depends_on = param_meta.get("depends_on")
         popular = param_meta.get("popular")
         automl_enabled = param_meta.get("automl_enabled")
         regex = param_meta.get("regex")
@@ -362,7 +376,7 @@ def create_json_schema(json_data):
             parent_default[param_name] = default_value
             hierarchy.pop()
             return
-        props[param_name] = {"type": value_type, "properties": {}, "default": {}}
+        props[param_name] = {"type": param_meta.get("value_type"), "properties": {}, "default": {}}
 
         # print("param_name :: ", param_name)
         # print("parent_default :: ", parent_default)
@@ -388,6 +402,12 @@ def create_json_schema(json_data):
             props[param_name]["minimum"] = valid_min
         if valid_max is not None:
             props[param_name]["maximum"] = valid_max
+        if math_cond is not None:
+            props[param_name]["math_cond"] = math_cond
+        if parent_param is not None:
+            props[param_name]["parent_param"] = parent_param
+        if depends_on is not None:
+            props[param_name]["depends_on"] = depends_on
         if valid_options not in (None, []):
             props[param_name]["enum"] = valid_options
         if regex not in (None, "") and value_type == "string":
@@ -399,10 +419,17 @@ def create_json_schema(json_data):
         if popular is not None and popular.lower() == "yes":
             popular_parameter.append(".".join(hierarchy))
         if automl_enabled is not None and automl_enabled.lower() == "true":
+            props[param_name]["automl_enabled"] = True
             if parent_default.get("automl_default_parameters") is None:
                 parent_default["automl_default_parameters"] = []
             parent_default["automl_default_parameters"].append(".".join(hierarchy))
             auto_ml_parameters.append(".".join(hierarchy))
+        if automl_enabled is not None and automl_enabled.lower() == "false":
+            props[param_name]["automl_enabled"] = False
+            if parent_default.get("automl_disabled_parameters") is None:
+                parent_default["automl_disabled_parameters"] = []
+            parent_default["automl_disabled_parameters"].append(".".join(hierarchy))
+            auto_ml_disabled_parameters.append(".".join(hierarchy))
 
         # add object hierarchy
         if value_type == "object":
@@ -429,6 +456,7 @@ def create_json_schema(json_data):
     # auto-ml parameter addition in json-schema
     schema = auto_ml_parameters_fix(schema)
     schema["automl_default_parameters"] = list(set(auto_ml_parameters))
+    schema["automl_disabled_parameters"] = list(set(auto_ml_disabled_parameters))
 
     # `popular` field correction in json-schema
     if popular_parameter:
