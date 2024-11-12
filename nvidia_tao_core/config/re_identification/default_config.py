@@ -81,7 +81,7 @@ class OptimConfig:
 
     name: str = STR_FIELD(value="Adam", description="Name of the optimizer.", display_name="Optimizer Name")
     lr_monitor: str = STR_FIELD(value="val_loss", description="Metric to monitor for learning rate adjustments.", display_name="LR Monitor Metric")
-    lr_steps: List[int] = LIST_FIELD(arrList=[40, 70], description="Epochs at which the learning rate will decrease.", display_name="LR Decay Steps")
+    lr_steps: List[int] = LIST_FIELD(arrList=[40, 70], description="Epochs at which the learning rate will decrease.", display_name="LR Decay Steps", value_type="list_2", automl_enabled="TRUE")
     gamma: float = FLOAT_FIELD(value=0.1, default_value=0.1, valid_min=0.0, valid_max=1.0, description="Factor by which the learning rate will decrease.", display_name="LR Decay Factor")
     bias_lr_factor: float = FLOAT_FIELD(value=1, default_value=1, valid_min=0, valid_max=1, description="Learning rate factor for bias parameters.", display_name="Bias LR Factor")
     weight_decay: float = FLOAT_FIELD(value=0.0005, default_value=0.0005, valid_min=0, valid_max=1, description="Weight decay for regularization.", display_name="Weight Decay")
