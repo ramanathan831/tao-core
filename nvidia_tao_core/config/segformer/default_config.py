@@ -192,7 +192,7 @@ class SFDatasetExpConfig:
     train_dataset: SFListDatasetConfig = DATACLASS_FIELD(SFListDatasetConfig())
     val_dataset: SFDatasetConfig = DATACLASS_FIELD(SFDatasetConfig())
     test_dataset: SFDatasetConfig = DATACLASS_FIELD(SFDatasetConfig())
-    palette: Optional[List[dict]] = LIST_FIELD(arrList=[{"label_id": 0, "mapping_class": "foreground", "rgb": [0, 0, 0], "seg_class": "foreground"}, {"label_id": 1, "mapping_class": "background", "rgb": [255, 255, 255], "seg_class": "background"}], description="Palette", display_name="Palette")
+    palette: Optional[List[Dict[Any, Any]]] = LIST_FIELD(arrList=[{"label_id": 0, "mapping_class": "foreground", "rgb": [0, 0, 0], "seg_class": "foreground"}, {"label_id": 1, "mapping_class": "background", "rgb": [255, 255, 255], "seg_class": "background"}], description="Palette", display_name="Palette")
     seg_class_default: seg_class = DATACLASS_FIELD(seg_class())
     dataloader: str = STR_FIELD(value="DataLoader", description="Dataloader", valid_options="DataLoader")
     img_suffix: Optional[str] = STR_FIELD(value=".png", description="Image suffix", display_name="Image Suffix")
