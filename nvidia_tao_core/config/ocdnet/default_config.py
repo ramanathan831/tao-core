@@ -908,8 +908,8 @@ class OCDNetGenTrtEngineExpConfig(GenTrtEngineConfig):
         display_name="img_mode",
         valid_options="BGR,RGB,GRAY",
     )
-    tensorrt: TrtConfig = DATACLASS_FIELD(
-        TrtConfig(),
+    tensorrt: OCDNetTrtConfig = DATACLASS_FIELD(
+        OCDNetTrtConfig(),
         description="Hyper parameters to configure the TensorRT Engine builder.",
         display_name="TensorRT hyper params."
     )
