@@ -164,8 +164,8 @@ class BEVFusionDatasetExpConfig:
         description="The origin of the given center point in ground truth 3D bounding boxes.",
     )
     default_cam_key: str = STR_FIELD(
-        value="CAM0",
-        default_value="CAM0",
+        value="CAM2",
+        default_value="CAM2",
         display_name="default camera name",
         description="Default camera name in dataset"
     )
