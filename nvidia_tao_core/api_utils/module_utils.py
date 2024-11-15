@@ -17,8 +17,12 @@
 import importlib
 import pkg_resources
 
-module = pkg_resources.iter_entry_points('console_scripts')[0].module_name.split('.')[0]
-entry_points = [ep for ep in pkg_resources.iter_entry_points('console_scripts') if ep.module_name.startswith(module)]
+entrypoint_paths = {"nvidia_tao_pytorch": "nvidia_tao_pytorch.core.entrypoint",
+                    "nvidia_tao_deploy": "nvidia_tao_deploy.cv.common.entrypoint.entrypoint_hydra",
+                    "nvidia_tao_tf2": "nvidia_tao_tf2.common.entrypoint.entrypoint",
+                    "nvidia_tao_ds": "nvidia_tao_ds.core.entrypoint.entrypoint"}
+
+entry_points = [p for p in pkg_resources.iter_entry_points('console_scripts') if p.module_name.split('.')[0] in entrypoint_paths.keys()]
 
 
 def get_entry_points():
