@@ -15,11 +15,13 @@
 """Default config file."""
 
 from dataclasses import dataclass
+from typing import List
 
 from nvidia_tao_core.config.utils.types import (
     BOOL_FIELD,
     DATACLASS_FIELD,
-    FLOAT_FIELD
+    FLOAT_FIELD,
+    LIST_FIELD,
 )
 
 from nvidia_tao_core.config.common.common_config import CommonExperimentConfig
@@ -55,6 +57,11 @@ class MaskGDINOModelConfig(GDINOModelConfig):
         default_value=True,
         display_name="has mask",
         description="Flag to enable mask head in grounding dino."
+    )
+    loss_types: List[str] = LIST_FIELD(
+        arrList=['labels', 'boxes', 'masks'],
+        description="Losses to be used during training",
+        display_name="loss_types",
     )
     mask_loss_coef: float = FLOAT_FIELD(
         value=2.0,
