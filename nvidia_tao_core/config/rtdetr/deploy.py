@@ -19,6 +19,7 @@ from dataclasses import dataclass
 from nvidia_tao_core.config.utils.types import (
     DATACLASS_FIELD,
     STR_FIELD,
+    INT_FIELD,
 )
 from nvidia_tao_core.config.common.common_config import (
     GenTrtEngineConfig,
@@ -37,6 +38,14 @@ class RTTrtConfig(TrtConfig):
         description="The precision to be set for building the TensorRT engine.",
         display_name="data type",
         valid_options=",".join(["FP32", "FP16"])
+    )
+    max_batch_size: int = INT_FIELD(
+        value=4,
+        default_value=4,
+        valid_min=1,
+        description="""The maximum batch size in the optimization profile for
+                    the input tensor of the TensorRT engine.""",
+        display_name="Maximum batch size",
     )
     calibration: CalibrationConfig = DATACLASS_FIELD(
         CalibrationConfig(),

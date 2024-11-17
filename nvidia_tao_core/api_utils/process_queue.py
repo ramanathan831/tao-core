@@ -19,7 +19,6 @@
 
 import importlib
 import os
-import pkg_resources
 import threading
 import time
 import traceback
@@ -27,12 +26,9 @@ import yaml
 from nvidia_tao_core.api_utils import module_utils
 from nvidia_tao_core.cloud_handlers.utils import download_files_from_spec, get_results_cloud_data, monitor_and_upload
 import nvidia_tao_core.loggers.logging as status_logging
+from nvidia_tao_core.api_utils.module_utils import entrypoint_paths, entry_points
 
-entrypoint_paths = {"nvidia_tao_pytorch": "nvidia_tao_pytorch.core.entrypoint",
-                    "nvidia_tao_deploy": "nvidia_tao_deploy.cv.common.entrypoint.entrypoint_hydra",
-                    "nvidia_tao_tf2": "nvidia_tao_tf2.common.entrypoint.entrypoint",
-                    "nvidia_tao_ds": "nvidia_tao_ds.core.entrypoint.entrypoint"}
-module = pkg_resources.iter_entry_points('console_scripts')[0].module_name.split('.')[0]
+module = entry_points[0].module_name.split('.')[0]
 entrypoint = importlib.import_module(entrypoint_paths[module])
 
 # Initialize empty queue, processing jobs, and completed jobs lists

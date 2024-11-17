@@ -14,7 +14,7 @@
 
 """Default config file"""
 
-from typing import Optional, List
+from typing import Optional, List, Dict, Any
 from dataclasses import dataclass
 from omegaconf import MISSING
 
@@ -407,7 +407,7 @@ class Trainargs:
         description="List of labels that are not used to train",
         display_name="ignore_tags"
     )
-    pre_processes: Optional[List[dict]] = LIST_FIELD(
+    pre_processes: Optional[List[Dict[Any, Any]]] = LIST_FIELD(
         arrList=[{"args": {"keep_ratio": True, "max_tries": 50, "size": [640, 640]}, "type": "EastRandomCropData"}, {"args": {"shrink_ratio": 0.4, "thresh_max": 0.7, "thresh_min": 0.3}, "type": "MakeBorderMap"}, {"args": {"min_text_size": 8, "shrink_ratio": 0.4}, "type": "MakeShrinkMap"}],
         description="The pre-processing configuration.",
         display_name="pre_processes"
@@ -502,7 +502,7 @@ class Validateargs:
         description="List of labels that are not used to evaluate",
         display_name="ignore_tags"
     )
-    pre_processes: Optional[List[dict]] = LIST_FIELD(
+    pre_processes: Optional[List[Dict[Any, Any]]] = LIST_FIELD(
         arrList=[{"args": {"resize_text_polys": True, "short_size": [1280, 736]}, "type": "Resize2D"}],
         description="The pre-processing configuration.",
         display_name="pre_processes"
@@ -908,8 +908,8 @@ class OCDNetGenTrtEngineExpConfig(GenTrtEngineConfig):
         display_name="img_mode",
         valid_options="BGR,RGB,GRAY",
     )
-    tensorrt: TrtConfig = DATACLASS_FIELD(
-        TrtConfig(),
+    tensorrt: OCDNetTrtConfig = DATACLASS_FIELD(
+        OCDNetTrtConfig(),
         description="Hyper parameters to configure the TensorRT Engine builder.",
         display_name="TensorRT hyper params."
     )

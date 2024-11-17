@@ -72,7 +72,7 @@ class OptimConfig:
 class LRConfig:
     """Learning rate config."""
 
-    scheduler: str = STR_FIELD(valid_options="cosine,soft_anneal,step")
+    scheduler: str = STR_FIELD(value="cosine", valid_options="cosine,soft_anneal,step")
     learning_rate: float = FLOAT_FIELD(value=0.05)
     soft_start: float = FLOAT_FIELD(value=0.05)
     annealing_points: List[float] = LIST_FIELD([0.33, 0.66, 0.88])
