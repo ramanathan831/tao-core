@@ -219,24 +219,18 @@ def auto_ml_parameters_fix(json_schema):
         if type(obj) is not dict:
             return
 
-        if "automl_default_parameters" in obj:
-            if key == "default":
-                parentObj["automl_default_parameters"] = obj[
-                    "automl_default_parameters"
-                ]
-                del obj["automl_default_parameters"]
-            else:
-                del obj["automl_default_parameters"]
-            return
-
-        if "automl_disabled_parameters" in obj:
-            if key == "default":
-                parentObj["automl_disabled_parameters"] = obj[
-                    "automl_disabled_parameters"
-                ]
-                del obj["automl_disabled_parameters"]
-            else:
-                del obj["automl_disabled_parameters"]
+        automl_flag = False
+        for key_name in ["automl_default_parameters", "automl_disabled_parameters" ]:
+            if key_name in obj:
+                automl_flag = True
+                if key == "default":
+                    parentObj[key_name] = obj[
+                       key_name
+                    ]
+                    del obj[key_name]
+                else:
+                    del obj[key_name]
+        if automl_flag:
             return
 
         if obj.get("properties") == {}:
@@ -531,3 +525,35 @@ def import_module_from_path(module_name):
     except ImportError as e:
         print(f"Error importing module: {e}")
         return None
+
+
+def remove_none_empty_fields(json_schema):
+    """Recursively remove all None and empty string values and their corresponding keys from a dictionary.
+
+    Parameters:
+    json_schema (dict): The input dictionary from which None and empty string values should be removed.
+
+    Returns:
+    dict: A new dictionary with all None and empty string values removed.
+    """
+    if not isinstance(json_schema, dict):
+        return json_schema
+
+    new_dict = {}
+    for key, value in json_schema.items():
+        if isinstance(value, dict):
+            nested_dict = remove_none_empty_fields(value)
+            if nested_dict:  # only add if nested_dict is not empty
+                new_dict[key] = nested_dict
+        elif isinstance(value, list):
+            new_list = [
+                remove_none_empty_fields(item)
+                for item in value
+                if item is not None and item != ""
+            ]
+            if new_list:  # only add if new_list is not empty
+                new_dict[key] = new_list
+        elif value is not None and value != "":
+            new_dict[key] = value
+
+    return new_dict
