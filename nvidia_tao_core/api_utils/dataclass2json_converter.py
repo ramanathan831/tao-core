@@ -220,13 +220,11 @@ def auto_ml_parameters_fix(json_schema):
             return
 
         automl_flag = False
-        for key_name in ["automl_default_parameters", "automl_disabled_parameters" ]:
+        for key_name in ["automl_default_parameters", "automl_disabled_parameters"]:
             if key_name in obj:
                 automl_flag = True
                 if key == "default":
-                    parentObj[key_name] = obj[
-                       key_name
-                    ]
+                    parentObj[key_name] = obj[key_name]
                     del obj[key_name]
                 else:
                     del obj[key_name]
