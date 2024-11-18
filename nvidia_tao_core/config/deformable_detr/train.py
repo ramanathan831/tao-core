@@ -97,7 +97,8 @@ class OptimConfig:
         arrList=[40],
         description="""The steps at which the learning rate must be decreased.
                     This is applicable only with the MultiStep LR.""",
-        display_name="learning rate decay steps"
+        display_name="learning rate decay steps",
+        value_type="list_2",
     )
     lr_step_size: int = INT_FIELD(
         value=40,

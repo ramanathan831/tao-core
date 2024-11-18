@@ -13,6 +13,7 @@
 # limitations under the License.
 
 """Utility functions for Cloud Storage handler"""
+import ast
 import glob
 import json
 import logging
@@ -439,12 +440,15 @@ def get_cloud_storage_class_object(cloud_data, cloud_string):
 
 def download_files_from_cloud(cloud_data, dictionary, key, value, job_id, network_arch, ngc_key, tao_api_ui_cookie="", use_ngc_staging="", reset_value=False):
     """Based on the cloud dype, download the file"""
-    if value.startswith("https://"):
-        destination_path = value[len("https://"):]
+    if "'link': 'https://" in value:
+        https_dictionary = ast.literal_eval(value)
+        link = https_dictionary.get("link", "")
+        destination_path = https_dictionary.get("destination_path", "ptm/download")
         destination_folder = os.path.dirname(destination_path)
-        download_from_https_link(value, destination_folder)
+        download_from_https_link(link, destination_folder)
+        dictionary[key] = destination_path
 
-    if value.startswith("ngc://"):
+    elif value.startswith("ngc://"):
         if not ngc_key:
             raise ValueError("NGC Personal key has not been provided")
         ngc_model = value.split("ngc://")[-1]

@@ -161,7 +161,7 @@ class ModelConfig:
     use_pooling: bool = BOOL_FIELD(value=True)
     all_projections: bool = BOOL_FIELD(value=False)
     freeze_bn: bool = BOOL_FIELD(value=False)
-    freeze_blocks: List[int] = LIST_FIELD([])
+    freeze_blocks: List[int] = LIST_FIELD(arrList=[], default_value=[], value_type="list_1_backbone")
     retain_head: bool = BOOL_FIELD(value=False)
     dropout: float = FLOAT_FIELD(value=0, valid_min=0, valid_max=1)
     resize_interpolation_method: str = STR_FIELD(

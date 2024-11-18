@@ -117,7 +117,8 @@ class DDAugmentationConfig:
     scales: List[int] = LIST_FIELD(
         arrList=[480, 512, 544, 576, 608, 640, 672, 704, 736, 768, 800],
         description="A list of sizes to perform random resize.",
-        display_name="scales"
+        display_name="scales",
+        value_type="list_2",
     )
     input_mean: List[float] = LIST_FIELD(
         arrList=[0.485, 0.456, 0.406],

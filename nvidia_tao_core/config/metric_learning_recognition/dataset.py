@@ -41,7 +41,9 @@ class GaussianBlur:
     kernel: List[int] = LIST_FIELD(
         arrList=[15, 15],
         description="The kernel size for the Gaussian blur.",
-        display_name="kernel"
+        display_name="kernel",
+        value_type="list_3",
+        depends_on="model.input_height,model.input_width",
     )
     sigma: List[float] = LIST_FIELD(
         arrList=[0.3, 0.7],

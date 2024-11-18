@@ -169,7 +169,8 @@ class OptimConfig:
     lr_steps: List[int] = LIST_FIELD(
         arrList=[10, 60],
         description="The steps to decrease the learning rate for the MultiStep scheduler.",
-        display_name="learning rate steps"
+        display_name="learning rate steps",
+        value_type="list_2",
     )
     lr_decay: float = FLOAT_FIELD(
         value=0.1,

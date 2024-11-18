@@ -130,7 +130,7 @@ class ModelConfig:
     max_level: int = INT_FIELD(value=7, valid_options="7")
     num_scales: int = INT_FIELD(value=3, valid_min=1, valid_max="inf")
     freeze_bn: bool = BOOL_FIELD(value=False)
-    freeze_blocks: List[int] = LIST_FIELD([])
+    freeze_blocks: List[int] = LIST_FIELD(arrList=[], default_value=[], value_type="list_1_backbone")
     input_width: int = INT_FIELD(value=512)
     input_height: int = INT_FIELD(value=512)
 

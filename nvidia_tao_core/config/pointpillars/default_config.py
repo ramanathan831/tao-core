@@ -592,7 +592,8 @@ class PPTrainConfig:
         default_value=[35, 45],
         display_name="decay_step_list",
         description="List of steps for decaying learning rate.",
-        automl_enabled="True"
+        automl_enabled="True",
+        value_type="list_2",
     )
     lr_decay: float = FLOAT_FIELD(
         value=0.1,

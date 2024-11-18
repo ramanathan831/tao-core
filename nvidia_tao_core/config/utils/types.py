@@ -61,7 +61,7 @@ def STR_FIELD(value, **meta_args):
         "required": "",
         "popular": "",
         "regex": "",
-        "automl_enabled": "FALSE",
+        "automl_enabled": "",
         "math_cond": "",
         "parent_param": "",
         "depends_on": "",
@@ -70,6 +70,8 @@ def STR_FIELD(value, **meta_args):
         metadata[k] = v
     if metadata["default_value"] in (None, "") and value not in (None, ""):
         metadata["default_value"] = value
+    if metadata["valid_options"] not in (None, ""):
+        metadata["value_type"] = "categorical"
     return field(default=value, metadata=metadata)  # noqa pylint: disable=E3701
 
 
@@ -95,13 +97,15 @@ def INT_FIELD(value, **meta_args):
         "required": "",
         "popular": "",
         "regex": "",
-        "automl_enabled": "FALSE",
+        "automl_enabled": "",
         "math_cond": "",
         "parent_param": "",
         "depends_on": "",
     }
     for k, v in meta_args.items():
         metadata[k] = v
+    if metadata["valid_options"] not in (None, ""):
+        metadata["value_type"] = "ordered_int"
     if metadata["default_value"] in (None, "") and value not in (None, ""):
         metadata["default_value"] = value
     return field(default=value, metadata=metadata)  # noqa pylint: disable=E3701
@@ -129,7 +133,7 @@ def FLOAT_FIELD(value, **meta_args):
         "required": "",
         "popular": "",
         "regex": "",
-        "automl_enabled": "FALSE",
+        "automl_enabled": "",
         "math_cond": "",
         "parent_param": "",
         "depends_on": "",
@@ -163,7 +167,7 @@ def BOOL_FIELD(value, **meta_args):
         "required": "",
         "popular": "",
         "regex": "",
-        "automl_enabled": "FALSE",
+        "automl_enabled": "",
         "math_cond": "",
         "parent_param": "",
         "depends_on": "",

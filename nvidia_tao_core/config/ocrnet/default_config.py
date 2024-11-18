@@ -281,7 +281,8 @@ class OCRNetAugmentationConfig:
         arrList=[1, 2, 3, 4],
         default_value=[1, 2, 3, 4],
         description="The gaussian raidus list for gaussian blur.",
-        display="gaussian radius list"
+        display="gaussian radius list",
+        value_type="list_2",
     )
 
 

@@ -41,7 +41,7 @@ def validate_schema(_value, _properties, hierarchy):
     if _properties:
         # type check
         if "type" in _properties:
-            if _properties["type"] == "integer" and not isinstance(_value, int):
+            if _properties["type"] in ("integer", "ordered_int") and not isinstance(_value, int):
                 return f"Type Error : {hierarchy_str} should be of type integer. "
 
             if _properties["type"] == "number" and not (isinstance(_value, (float, int))):
@@ -50,7 +50,7 @@ def validate_schema(_value, _properties, hierarchy):
             if _properties["type"] == "boolean" and not isinstance(_value, int):
                 return f"Type Error : {hierarchy_str} should be of type boolean. "
 
-            if _properties["type"] == "string" and not isinstance(_value, str):
+            if _properties["type"] == ("string", "categorical") and not isinstance(_value, str):
                 return f"Type Error : {hierarchy_str} should be of type string. "
 
             # valid_min range check

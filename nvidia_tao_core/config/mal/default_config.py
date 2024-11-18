@@ -76,7 +76,7 @@ class MALModelConfig:
     """Model configuration template."""
 
     arch: str = STR_FIELD(value='vit-mae-base/16', value_type="ordered", default_value="vit-mae-base/16", valid_options="vit-deit-tiny/16,vit-deit-small/16,vit-mae-base/16,vit-mae-large/16,vit-mae-huge/14,fan_tiny_12_p16_224,fan_small_12_p16_224,fan_base_18_p16_224,fan_large_24_p16_224,fan_tiny_8_p4_hybrid,fan_small_12_p4_hybrid,fan_base_16_p4_hybrid,fan_large_16_p4_hybrid")
-    frozen_stages: List[int] = LIST_FIELD(arrList=[-1], value_type="list_1_backbone", default_value=[-1])
+    frozen_stages: List[int] = LIST_FIELD(arrList=[-1], default_value=[-1], value_type="list_1_backbone")
     mask_head_num_convs: int = INT_FIELD(value=4, default_value=4, valid_min=1, valid_max="inf")
     mask_head_hidden_channel: int = INT_FIELD(value=256, default_value=256, valid_min=1, valid_max="inf")
     mask_head_out_channel: int = INT_FIELD(value=256, default_value=256, valid_min=1, valid_max="inf")

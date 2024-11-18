@@ -52,7 +52,7 @@ def __basic_type_fix(value_type, value):
     Returns:
         Converted value (various types): The value converted to the appropriate datatype, or None for invalid inputs.
     """
-    if value_type == "string" and value in (None, ""):
+    if value_type == "string" and not value:
         return "" if value == "" else None
     if value in (None, ""):
         return None
@@ -84,7 +84,7 @@ def __array_type_fix(value_type, value):
     if value in (None, ""):
         return None
     values = value.replace(" ", "").split(",")
-    if value_type == "integer":
+    if value_type in ("integer", "ordered_int"):
         return [int(i) for i in values]
     if value_type == "number":
         return [float(i) for i in values]
@@ -219,14 +219,16 @@ def auto_ml_parameters_fix(json_schema):
         if type(obj) is not dict:
             return
 
-        if "automl_default_parameters" in obj:
-            if key == "default":
-                parentObj["automl_default_parameters"] = obj[
-                    "automl_default_parameters"
-                ]
-                del obj["automl_default_parameters"]
-            else:
-                del obj["automl_default_parameters"]
+        automl_flag = False
+        for key_name in ["automl_default_parameters", "automl_disabled_parameters"]:
+            if key_name in obj:
+                automl_flag = True
+                if key == "default":
+                    parentObj[key_name] = obj[key_name]
+                    del obj[key_name]
+                else:
+                    del obj[key_name]
+        if automl_flag:
             return
 
         if obj.get("properties") == {}:
@@ -296,6 +298,7 @@ def create_json_schema(json_data):
     """
     schema = {"type": "object", "properties": {}, "default": {}}
     auto_ml_parameters = []
+    auto_ml_disabled_parameters = []
     popular_parameter = []
     required_parameter = []
 
@@ -336,6 +339,9 @@ def create_json_schema(json_data):
         valid_max = param_meta.get("valid_max")
         valid_options = param_meta.get("valid_options")
         required = param_meta.get("required")
+        math_cond = param_meta.get("math_cond")
+        parent_param = param_meta.get("parent_param")
+        depends_on = param_meta.get("depends_on")
         popular = param_meta.get("popular")
         automl_enabled = param_meta.get("automl_enabled")
         regex = param_meta.get("regex")
@@ -362,7 +368,7 @@ def create_json_schema(json_data):
             parent_default[param_name] = default_value
             hierarchy.pop()
             return
-        props[param_name] = {"type": value_type, "properties": {}, "default": {}}
+        props[param_name] = {"type": param_meta.get("value_type"), "properties": {}, "default": {}}
 
         # print("param_name :: ", param_name)
         # print("parent_default :: ", parent_default)
@@ -372,11 +378,11 @@ def create_json_schema(json_data):
         # if parent_default:
         #     parent_default[param_name] = default_value
 
-        if display_name not in (None, ""):
+        if display_name:
             props[param_name]["title"] = display_name
-        if description not in (None, ""):
+        if description:
             props[param_name]["description"] = description
-        if examples not in (None, []):
+        if examples:
             props[param_name]["examples"] = examples
         if default_value == "" or default_value is not None:
             props[param_name]["default"] = default_value
@@ -384,25 +390,38 @@ def create_json_schema(json_data):
         # if default_value not in (None, ""):
         #     props[param_name]["default"] = default_value
         #     parent_default[param_name] = default_value
-        if valid_min is not None:
+        if valid_min:
             props[param_name]["minimum"] = valid_min
-        if valid_max is not None:
+        if valid_max:
             props[param_name]["maximum"] = valid_max
-        if valid_options not in (None, []):
+        if math_cond:
+            props[param_name]["math_cond"] = math_cond
+        if parent_param:
+            props[param_name]["parent_param"] = parent_param
+        if depends_on:
+            props[param_name]["depends_on"] = depends_on
+        if valid_options:
             props[param_name]["enum"] = valid_options
-        if regex not in (None, "") and value_type == "string":
+        if regex and value_type == "string":
             props[param_name]["pattern"] = regex
-        if link is not None and link.startswith("http"):
+        if link and link.startswith("http"):
             props[param_name]["link"] = link
-        if required is not None and required.lower() == "yes":
+        if required and required.lower() == "yes":
             required_parameter.append(".".join(hierarchy))
-        if popular is not None and popular.lower() == "yes":
+        if popular and popular.lower() == "yes":
             popular_parameter.append(".".join(hierarchy))
-        if automl_enabled is not None and automl_enabled.lower() == "true":
+        if automl_enabled and automl_enabled.lower() == "true":
+            props[param_name]["automl_enabled"] = True
             if parent_default.get("automl_default_parameters") is None:
                 parent_default["automl_default_parameters"] = []
             parent_default["automl_default_parameters"].append(".".join(hierarchy))
             auto_ml_parameters.append(".".join(hierarchy))
+        if automl_enabled and automl_enabled.lower() == "false":
+            props[param_name]["automl_enabled"] = False
+            if parent_default.get("automl_disabled_parameters") is None:
+                parent_default["automl_disabled_parameters"] = []
+            parent_default["automl_disabled_parameters"].append(".".join(hierarchy))
+            auto_ml_disabled_parameters.append(".".join(hierarchy))
 
         # add object hierarchy
         if value_type == "object":
@@ -429,6 +448,7 @@ def create_json_schema(json_data):
     # auto-ml parameter addition in json-schema
     schema = auto_ml_parameters_fix(schema)
     schema["automl_default_parameters"] = list(set(auto_ml_parameters))
+    schema["automl_disabled_parameters"] = list(set(auto_ml_disabled_parameters))
 
     # `popular` field correction in json-schema
     if popular_parameter:
@@ -503,3 +523,35 @@ def import_module_from_path(module_name):
     except ImportError as e:
         print(f"Error importing module: {e}")
         return None
+
+
+def remove_none_empty_fields(json_schema):
+    """Recursively remove all None and empty string values and their corresponding keys from a dictionary.
+
+    Parameters:
+    json_schema (dict): The input dictionary from which None and empty string values should be removed.
+
+    Returns:
+    dict: A new dictionary with all None and empty string values removed.
+    """
+    if not isinstance(json_schema, dict):
+        return json_schema
+
+    new_dict = {}
+    for key, value in json_schema.items():
+        if isinstance(value, dict):
+            nested_dict = remove_none_empty_fields(value)
+            if nested_dict:  # only add if nested_dict is not empty
+                new_dict[key] = nested_dict
+        elif isinstance(value, list):
+            new_list = [
+                remove_none_empty_fields(item)
+                for item in value
+                if item is not None and item != ""
+            ]
+            if new_list:  # only add if new_list is not empty
+                new_dict[key] = new_list
+        elif value is not None and value != "":
+            new_dict[key] = value
+
+    return new_dict
