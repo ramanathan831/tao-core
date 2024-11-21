@@ -29,10 +29,10 @@ from nvidia_tao_core.config.common.common_config import (
     EvaluateConfig,
     InferenceConfig
 )
-from nvidia_tao_core.config.metric_learning_recognition.deploy import MLGenTrtEngineExpConfig
-from nvidia_tao_core.config.metric_learning_recognition.model import MLModelConfig
-from nvidia_tao_core.config.metric_learning_recognition.train import MLTrainExpConfig
-from nvidia_tao_core.config.metric_learning_recognition.dataset import MLDatasetConfig
+from nvidia_tao_core.config.ml_recog.deploy import MLGenTrtEngineExpConfig
+from nvidia_tao_core.config.ml_recog.model import MLModelConfig
+from nvidia_tao_core.config.ml_recog.train import MLTrainExpConfig
+from nvidia_tao_core.config.ml_recog.dataset import MLDatasetConfig
 
 
 @dataclass
