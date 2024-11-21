@@ -50,14 +50,16 @@ class OptimConfig:
     )
     lr: float = FLOAT_FIELD(
         value=2e-4,
-        math_cond="> 0.0",
+        valid_min=0,
+        valid_max="inf",
         display_name="learning rate",
         description="The initial learning rate for training the model, excluding the backbone.",
         automl_enabled="TRUE"
     )
     lr_backbone: float = FLOAT_FIELD(
         value=2e-5,
-        math_cond="> 0.0",
+        valid_min=0,
+        valid_max="inf",
         display_name="learning rate - backbone",
         description="The initial learning rate for training the backbone.",
         automl_enabled="TRUE",
@@ -65,7 +67,8 @@ class OptimConfig:
     )
     lr_linear_proj_mult: float = FLOAT_FIELD(
         value=0.1,
-        math_cond="> 0.0",
+        valid_min=0,
+        valid_max="inf",
         display_name="learning rate - linear projection",
         description="The initial learning rate for training the linear projection layer.",
         automl_enabled="TRUE",
@@ -73,7 +76,8 @@ class OptimConfig:
     )
     momentum: float = FLOAT_FIELD(
         value=0.9,
-        math_cond="> 0.0",
+        valid_min=0,
+        valid_max="inf",
         display_name="momentum - AdamW",
         description="The momentum for the AdamW optimizer.",
         automl_enabled="TRUE",
@@ -81,7 +85,8 @@ class OptimConfig:
     )
     weight_decay: float = FLOAT_FIELD(
         value=1e-4,
-        math_cond="> 0.0",
+        valid_min=0,
+        valid_max="inf",
         display_name="weight decay",
         description="The weight decay coefficient.",
         automl_enabled="TRUE",
@@ -105,14 +110,16 @@ class OptimConfig:
     )
     lr_step_size: int = INT_FIELD(
         value=10,
-        math_cond="> 0",
+        valid_min=0,
+        valid_max="inf",
         display_name="learning rate step size",
         description="The number of steps to decrease the learning rate in the StepLR.",
         automl_enabled="TRUE"
     )
     lr_decay: float = FLOAT_FIELD(
         value=0.1,
-        math_cond="> 0.0",
+        valid_min=0,
+        valid_max="inf",
         display_name="learning rate decay",
         description="The decreasing factor for the learning rate scheduler.",
         automl_enabled="TRUE"
