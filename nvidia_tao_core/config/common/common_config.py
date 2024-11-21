@@ -306,40 +306,6 @@ class GenTrtEngineConfig:
         display_name="Verbose",
         description="""Flag to enable verbose TensorRT logging."""
     )
-    # TODO @seanf: remove these after TRT upgrade as they're unnecessary
-    input_channel: int = INT_FIELD(
-        value=3,
-        default_value=3,
-        valid_min=3,
-        valid_max=3,
-        description="Input channel.",
-        display_name="Input Channel"
-    )
-    input_width: int = INT_FIELD(
-        value=512,
-        default_value=512,
-        valid_min=512,
-        valid_max=512,
-        description="Input width.",
-        display_name="Input Width"
-    )
-    input_height: int = INT_FIELD(
-        value=512,
-        default_value=512,
-        valid_min=512,
-        valid_max=512,
-        description="Input height.",
-        display_name="Input Height"
-    )
-    opset_version: int = INT_FIELD(
-        value=16,
-        default_value=16,
-        valid_min=16,
-        valid_max=16,
-        description="ONNX opset version.",
-        display_name="Opset Version",
-        popular="16"
-    )
 
 
 @dataclass
