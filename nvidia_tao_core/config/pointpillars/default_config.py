@@ -730,6 +730,12 @@ class PPEvalConfig:
         display_name="trt_engine",
         description="Path to TensorRT engine to evaluate on."
     )
+    results_dir: Optional[str] = STR_FIELD(
+        value=None,
+        default_value="",
+        display_name="results_dir",
+        description="Path to evaluation results directory."
+    )
 
 
 @dataclass
@@ -775,6 +781,12 @@ class PPInferConfig:
         default_value="",
         display_name="trt_engine",
         description="Path to TensorRT engine to do inference on."
+    )
+    results_dir: Optional[str] = STR_FIELD(
+        value=None,
+        default_value="",
+        display_name="results_dir",
+        description="Path to inference results directory."
     )
 
 
@@ -881,6 +893,7 @@ class ExperimentConfig:
     evaluate: PPEvalConfig = DATACLASS_FIELD(PPEvalConfig())
     inference: PPInferConfig = DATACLASS_FIELD(PPInferConfig())
     export: PPExportConfig = DATACLASS_FIELD(PPExportConfig())
+    gen_trt_engine: PPExportConfig = DATACLASS_FIELD(PPExportConfig())
     prune: PPPruneConfig = DATACLASS_FIELD(PPPruneConfig())
     key: Optional[str] = STR_FIELD(
         value=None,
