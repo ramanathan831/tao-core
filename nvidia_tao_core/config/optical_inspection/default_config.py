@@ -42,10 +42,10 @@ from nvidia_tao_core.config.common.common_config import (
 class ModelConfig:
     """Optical recognition model config."""
 
-    model_type: str = STR_FIELD(value="Siamese_3", default_value="Siamese_3", description="Model Architecture type", valid_options="Siamese,Siamese_3", automl_enabled="TRUE")
+    model_type: str = STR_FIELD(value="Siamese_3", default_value="Siamese_3", description="Model Architecture type", valid_options="Siamese,Siamese_3")
     margin: float = FLOAT_FIELD(value=2.0, default_value=2.0, valid_min=1.0, valid_max="inf", automl_enabled="TRUE")
     model_backbone: str = STR_FIELD(value="custom", default_value="custom", description="Model backbone type")
-    embedding_vectors: int = INT_FIELD(value=5, default_value=5, valid_min=1, valid_max="inf", automl_enabled="TRUE")
+    embedding_vectors: int = INT_FIELD(value=5, default_value=5, valid_min=1, valid_max="inf")
     imagenet_pretrained: bool = BOOL_FIELD(value=False, default_value=False, description="flag to use imagenet_pretrained backbone weights")
 
 
@@ -120,8 +120,8 @@ class DatasetConfig:
     test_dataset: DataPathFormat = DATACLASS_FIELD(DataPathFormat())
     infer_dataset: DataPathFormat = DATACLASS_FIELD(DataPathFormat())
     image_ext: Optional[str] = STR_FIELD(value=None, default_value=".jpg", description="Image extension")
-    batch_size: int = INT_FIELD(value=32, default_value=8, valid_min=1, valid_max="inf", description="Batch size", display_name="Batch Size", automl_enabled="TRUE")
-    workers: int = INT_FIELD(value=8, default_value=1, valid_min=0, valid_max="inf", description="Workers", display_name="Workers", automl_enabled="TRUE")
+    batch_size: int = INT_FIELD(value=32, default_value=8, valid_min=1, valid_max="inf", description="Batch size", display_name="Batch Size")
+    workers: int = INT_FIELD(value=8, default_value=1, valid_min=0, valid_max="inf", description="Workers", display_name="Workers")
     fpratio_sampling: float = FLOAT_FIELD(value=0.1, default_value=0.1, valid_min=0.0, valid_max=1.0, description="Sampling ratio for minority class", automl_enabled="TRUE")
     num_input: int = INT_FIELD(value=8, default_value=4, valid_min=1, valid_max="inf", description="Number of input lighting conditions")
     input_map: Optional[Dict[str, int]] = DICT_FIELD(None, default_value={"LowAngleLight": 0, "SolderLight": 1, "UniformLight": 2, "WhiteLight": 3}, description="input mapping")

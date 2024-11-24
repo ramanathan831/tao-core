@@ -84,8 +84,8 @@ class TestData:
 class DataConfig:
     """Data Config"""
 
-    samples_per_gpu: int = INT_FIELD(value=1, valid_min=1, valid_max="inf", description="samples per gpu", display_name="samples per gpu", automl_enabled="TRUE")
-    workers_per_gpu: int = INT_FIELD(value=2, valid_min=0, valid_max="inf", description="Workers", display_name="Workers", automl_enabled="TRUE")
+    samples_per_gpu: int = INT_FIELD(value=1, valid_min=1, valid_max="inf", description="samples per gpu", display_name="samples per gpu")
+    workers_per_gpu: int = INT_FIELD(value=2, valid_min=0, valid_max="inf", description="Workers", display_name="Workers")
     train: TrainData = DATACLASS_FIELD(TrainData())
     val: ValData = DATACLASS_FIELD(ValData())
     test: TestData = DATACLASS_FIELD(TestData())
@@ -115,7 +115,7 @@ class RunnerConfig:
     """Configuration parameters for Runner."""
 
     type: str = STR_FIELD(value="TAOEpochBasedRunner", default_value="TAOEpochBasedRunner", description="Runner config")  # Currently We support only Epochbased Runner - Non configurable
-    max_epochs: int = INT_FIELD(value=20, default_value=40, valid_min=1, valid_max="inf", parent_param="TRUE", automl_enabled="TRUE", description="Max epochs")  # Set this if Epoch based runner
+    max_epochs: int = INT_FIELD(value=20, default_value=40, valid_min=1, valid_max="inf", parent_param="TRUE", description="Max epochs")  # Set this if Epoch based runner
     auto_scale_lr_bs: int = INT_FIELD(value=1024, description="auto scale lr batch size")
 
 
@@ -223,7 +223,7 @@ class InferenceExpConfig(InferenceConfig):
     """Inference experiment config."""
 
     exp_config: ExpConfig = DATACLASS_FIELD(ExpConfig())
-    batch_size: int = INT_FIELD(value=1, default_value=1, valid_min=1, valid_max="inf", description="Batch size", display_name="Batch Size", automl_enabled="TRUE")
+    batch_size: int = INT_FIELD(value=1, default_value=1, valid_min=1, valid_max="inf", description="Batch size", display_name="Batch Size")
 
 
 @dataclass
@@ -231,7 +231,7 @@ class EvalExpConfig(EvaluateConfig):
     """Inference experiment config."""
 
     exp_config: ExpConfig = DATACLASS_FIELD(ExpConfig())
-    batch_size: int = INT_FIELD(value=1, default_value=8, valid_min=1, valid_max="inf", description="Batch size", display_name="Batch Size", automl_enabled="TRUE")
+    batch_size: int = INT_FIELD(value=1, default_value=8, valid_min=1, valid_max="inf", description="Batch size", display_name="Batch Size")
     topk: int = INT_FIELD(value=1, valid_min=1, valid_max="inf", description="topk accuracy")  # Configurable
 
 
@@ -261,9 +261,9 @@ class LRHeadConfig:
     """Logistic Regression Head Config"""
 
     C: float = FLOAT_FIELD(0.316, default_value=0.316, valid_min=0, valid_max="inf", automl_enabled="TRUE", description="C parameter for Logistic Regression")
-    max_iter: int = INT_FIELD(value=5000, default_value=10000, valid_min=0, valid_max="inf", automl_enabled="TRUE", description="max iterations for LR head")
+    max_iter: int = INT_FIELD(value=5000, default_value=10000, valid_min=0, valid_max="inf", description="max iterations for LR head")
     class_weight: Optional[str] = STR_FIELD(value=None, default_value="balanced", description="Class weights for LR head")
-    solver: Optional[str] = STR_FIELD(value="lbfgs", valid_options="lbfgs,liblinear,newton-cg,newton-cholesky,sag,saga", automl_enabled="TRUE", description="solver")
+    solver: Optional[str] = STR_FIELD(value="lbfgs", valid_options="lbfgs,liblinear,newton-cg,newton-cholesky,sag,saga", description="solver")
     hpo: bool = BOOL_FIELD(value=False, description="Flag to enable hyperparameter search during training")
     cs_tune: List[float] = LIST_FIELD(arrList=[0.001, 0.01,  0.316, 1, 10, 1000, 10000], description="List of C values to search from durin training")
     criteria: str = STR_FIELD(value="accuracy", description="Criteria for HPO")
@@ -296,7 +296,7 @@ class InitCfg:
 class BackboneConfig:
     """Configuration parameters for Backbone."""
 
-    type: str = STR_FIELD(value="fan_tiny_8_p4_hybrid", valid_options=",".join(SUPPORTED_BACKBONES), automl_enabled="TRUE", description="Type of backbone")
+    type: str = STR_FIELD(value="fan_tiny_8_p4_hybrid", valid_options=",".join(SUPPORTED_BACKBONES), description="Type of backbone")
     custom_args: Optional[Dict[Any, Any]] = DICT_FIELD(None, default_value=None, description="custom backbone config")
     freeze: bool = BOOL_FIELD(value=False, default_value=False, description="Flag to freeze backbone weights during training")
     pretrained: Optional[str] = STR_FIELD(value=None, default_value="", description="Path to pretrained file")

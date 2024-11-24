@@ -65,10 +65,10 @@ class ChangeNetHeadConfig:
 class BackboneConfig:
     """Configuration parameters for Backbone."""
 
-    type: str = STR_FIELD(value="fan_small_12_p4_hybrid", default_value="fan_small_12_p4_hybrid", description="Backbone architure", display_name="Backbone architectures", valid_options="fan_tiny_8_p4_hybrid,fan_small_12_p4_hybrid,fan_base_16_p4_hybrid,fan_large_16_p4_hybrid,vit_large_nvdinov2", automl_enabled="TRUE")
+    type: str = STR_FIELD(value="fan_small_12_p4_hybrid", default_value="fan_small_12_p4_hybrid", description="Backbone architure", display_name="Backbone architectures", valid_options="fan_tiny_8_p4_hybrid,fan_small_12_p4_hybrid,fan_base_16_p4_hybrid,fan_large_16_p4_hybrid,vit_large_nvdinov2")
     feat_downsample: bool = BOOL_FIELD(value=False, default_value=False, display_name="Feature downsample", description="Feature downsample")
     pretrained_backbone_path: Optional[str] = STR_FIELD(value=None, default_value="", description="Path to the pretrained model")
-    freeze_backbone: bool = BOOL_FIELD(value=False, default_value=False, description="Flag to freeze backbone", automl_enabled="TRUE")
+    freeze_backbone: bool = BOOL_FIELD(value=False, default_value=False, description="Flag to freeze backbone")
 
 
 @dataclass
@@ -77,10 +77,10 @@ class CNModelClassifyConfig:
 
     train_margin_euclid: float = FLOAT_FIELD(value=2.0, default_value=2.0, valid_min=1, valid_max="inf", description="Contrastive loss training margin", automl_enabled="TRUE")
     eval_margin: float = FLOAT_FIELD(value=2.0, default_value=2.0, valid_min=0, valid_max="inf", description="Evaluation threshold score for contrastive loss", automl_enabled="TRUE")
-    embedding_vectors: int = INT_FIELD(value=5, default_value=5, valid_min=1, valid_max="inf", description="Number of embedding vectors - architecture 1", automl_enabled="TRUE")
-    embed_dec: int = INT_FIELD(value=5, default_value=5, valid_min=1, valid_max="inf", description="Number of embedding vectors - architecture 2", automl_enabled="TRUE")
+    embedding_vectors: int = INT_FIELD(value=5, default_value=5, valid_min=1, valid_max="inf", description="Number of embedding vectors - architecture 1")
+    embed_dec: int = INT_FIELD(value=5, default_value=5, valid_min=1, valid_max="inf", description="Number of embedding vectors - architecture 2")
     learnable_difference_modules: int = INT_FIELD(value=4, default_value=4, valid_min=1, valid_max=4, description="Number of learnable difference modules", automl_enabled="TRUE")
-    difference_module: Optional[str] = STR_FIELD("learnable", default_value="euclidean", valid_options="learnable,euclidean", description="Type of difference module used - Choose architecture type", automl_enabled="TRUE")
+    difference_module: Optional[str] = STR_FIELD("euclidean", default_value="euclidean", valid_options="learnable,euclidean", description="Type of difference module used - Choose architecture type")
 
 
 @dataclass
@@ -237,7 +237,7 @@ class TensorBoardLogger:
 class CNTrainClassifyConfig:
     """Classifier loss config."""
 
-    loss: str = STR_FIELD(value="ce", default_value="contrastive", valid_options="ce,contrastive", description="ChangeNet Classify loss")
+    loss: str = STR_FIELD(value="contrastive", default_value="contrastive", valid_options="ce,contrastive", description="ChangeNet Classify loss")
     cls_weight: List[float] = LIST_FIELD([1.0, 10.0], default_value=[1.0, 10.0], description="ChangeNet Classify ce loss class weight")
 
 
@@ -297,6 +297,14 @@ class CNExportExpConfig:
 class CNTrtConfig(TrtConfig):
     """Trt config."""
 
+    max_batch_size: int = INT_FIELD(
+        value=8,
+        default_value=8,
+        valid_min=1,
+        description="""The maximum batch size in the optimization profile for
+                    the input tensor of the TensorRT engine.""",
+        display_name="Maximum batch size",
+    )
     data_type: str = STR_FIELD(value="FP32", default_value="fp16", description="Data type", display_name="Data type")
     calibration: CalibrationConfig = DATACLASS_FIELD(CalibrationConfig())
 

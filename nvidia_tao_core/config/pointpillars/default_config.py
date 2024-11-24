@@ -670,6 +670,14 @@ class PPTrainConfig:
         valid_min=1,
         valid_max="inf"
     )
+    validation_interval: int = INT_FIELD(
+        value=1,
+        default_value=1,
+        display_name="checkpoint_interval",
+        description="Interval of epochs to save checkpoints.",
+        valid_min=1,
+        valid_max="inf"
+    )
     max_checkpoint_save_num: int = INT_FIELD(
         value=30,
         default_value=30,
