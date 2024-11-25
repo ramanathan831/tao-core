@@ -14,7 +14,7 @@
 
 """Default config file."""
 
-from typing import Optional, Dict
+from typing import Optional, Dict, List
 from dataclasses import dataclass
 from omegaconf import MISSING
 
@@ -24,12 +24,17 @@ from nvidia_tao_core.config.utils.types import (
     DICT_FIELD,
     FLOAT_FIELD,
     INT_FIELD,
-    STR_FIELD
+    STR_FIELD,
+    LIST_FIELD
 )
 from nvidia_tao_core.config.common.common_config import (
     CommonExperimentConfig,
     EvaluateConfig,
     InferenceConfig
+)
+from nvidia_tao_core.config.common.distillation_config import (
+    DistillationBindingConfig,
+    DistillationConfig
 )
 from nvidia_tao_core.config.rtdetr.dataset import (
     RTDatasetConfig
@@ -37,6 +42,36 @@ from nvidia_tao_core.config.rtdetr.dataset import (
 from nvidia_tao_core.config.rtdetr.deploy import RTGenTrtEngineExpConfig
 from nvidia_tao_core.config.rtdetr.model import RTModelConfig
 from nvidia_tao_core.config.rtdetr.train import RTTrainExpConfig
+
+
+@dataclass
+class RTDistillationConfig(DistillationConfig):
+    """Distillation config"""
+
+    teacher: RTModelConfig = DATACLASS_FIELD(
+        RTModelConfig(),
+        descripton="Configuration hyper parameters for the RTDETR based teacher model.",
+        display_name="teacher"
+    )
+    pretrained_teacher_model_path: Optional[str] = STR_FIELD(
+        value=MISSING,
+        display_name="Pretrained teacher model path",
+        description="Path to the pre-trained teacher model."
+    )
+    bindings: List[DistillationBindingConfig] = LIST_FIELD(
+        arrList=[],
+        default_value=[],
+        description="List of bindings for distillation. Each element is an instance of RTModelDistillationBindingConfig.",
+        display_name="bindings"
+    )
+    results_dir: Optional[str] = STR_FIELD(
+        value=None,
+        default_value="",
+        display_name="Results directory",
+        description="""
+        Path to where all the assets generated from a task are stored.
+        """
+    )
 
 
 @dataclass
@@ -223,4 +258,8 @@ class ExperimentConfig(CommonExperimentConfig):
     gen_trt_engine: RTGenTrtEngineExpConfig = DATACLASS_FIELD(
         RTGenTrtEngineExpConfig(),
         description="Configurable parameters to construct the TensorRT engine builder for a RT-DETR experiment.",
+    )
+    distill: Optional[RTDistillationConfig] = DATACLASS_FIELD(
+        None,
+        description="Configurable parameters to construct the distiller for a RT-DETR experiment.",
     )

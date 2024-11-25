@@ -101,7 +101,12 @@ class RTModelConfig:
         description="""Flag to set backbone weights as trainable or frozen.
                     When set to `False`, the backbone weights will be frozen.""",
     )
-
+    load_teacher_enc_dec: bool = BOOL_FIELD(
+        value=False,
+        default_value=False,
+        display_name="Load teacher's encoder and decoder weights",
+        description="""Flag to load teacher's encoder and decoder weights.""",
+    )
     num_queries: int = INT_FIELD(
         value=300,
         default_value=300,
@@ -246,13 +251,12 @@ class RTModelConfig:
         valid_min=-1,
         valid_max="inf"
     )
-
     vfl_loss_coef: float = FLOAT_FIELD(
         value=1.0,
         default_value=1.0,
         valid_min=0.0,
         valid_max="inf",
-        description="The relative weight of the varifocal error in the matching cost.",
+        description="The relative weight of the varifocal error in the loss function.",
         display_name="varifocal loss coefficient",
     )
     bbox_loss_coef: float = FLOAT_FIELD(
@@ -260,7 +264,7 @@ class RTModelConfig:
         default_value=5.0,
         valid_min=0.0,
         valid_max="inf",
-        description="The relative weight of the L1 error of the bounding box coordinates in the matching cost.",
+        description="The relative weight of the L1 error of the bounding box coordinates in the loss function.",
         display_name="BBox loss coefficient",
     )
     giou_loss_coef: float = FLOAT_FIELD(
@@ -268,10 +272,33 @@ class RTModelConfig:
         default_value=2.0,
         valid_min=0.0,
         valid_max="inf",
-        description="The relative weight of the GIoU loss of the bounding box in the matching cost.",
+        description="The relative weight of the GIoU loss of the bounding box in the loss function.",
         display_name="GIoU loss coefficient",
     )
-
+    class_cost: float = FLOAT_FIELD(
+        value=2.0,
+        default_value=2.0,
+        valid_min=0.0,
+        valid_max="inf",
+        description="The relative weight of the classification error in the matching cost.",
+        display_name="Class cost coefficient",
+    )
+    bbox_cost: float = FLOAT_FIELD(
+        value=5.0,
+        default_value=5.0,
+        valid_min=0.0,
+        valid_max="inf",
+        description="The relative weight of the L1 error of the bounding box coordinates in the matching cost.",
+        display_name="BBox cost coefficient",
+    )
+    giou_cost: float = FLOAT_FIELD(
+        value=2.0,
+        default_value=2.0,
+        valid_min=0.0,
+        valid_max="inf",
+        description="The relative weight of the GIoU loss of the bounding box in the matching cost.",
+        display_name="GIoU cost coefficient",
+    )
     alpha: float = FLOAT_FIELD(
         value=0.75,
         description="The alpha value in the varifocal loss.",
@@ -314,4 +341,12 @@ class RTModelConfig:
         arrList=['reference_points', 'sampling_offsets'],
         display_name="linear projection names",
         description="Linear projection layer names."
+    )
+    # Distillation specific
+    distillation_loss_coef: float = FLOAT_FIELD(
+        value=1.0,
+        default_value=1.0,
+        display_name="distillation loss coefficient",
+        description="The coefficient for the distillation loss during distill.",
+        valid_min=0.0,
     )
