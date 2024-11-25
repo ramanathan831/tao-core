@@ -84,7 +84,7 @@ class SegformerHeadConfig:
 class BackboneConfig:
     """Configuration parameters for Backbone."""
 
-    type: str = STR_FIELD(value="mit_b1", description="Type of backbone to use", valid_options=",".join(["mit_b0", "mit_b1", "mit_b2", "mit_b3", "mit_b4", "mit_b5", "fan_tiny_8_p4_hybrid", "fan_large_16_p4_hybrid", "fan_small_12_p4_hybrid", "fan_base_16_p4_hybrid", "vit_large_nvdinov2", "vit_giant_nvdinov2", "vit_base_nvclip_16_siglip", "vit_huge_nvclip_14_siglip"]), automl_enabled="TRUE")
+    type: str = STR_FIELD(value="mit_b1", description="Type of backbone to use", valid_options=",".join(["mit_b0", "mit_b1", "mit_b2", "mit_b3", "mit_b4", "mit_b5", "fan_tiny_8_p4_hybrid", "fan_large_16_p4_hybrid", "fan_small_12_p4_hybrid", "fan_base_16_p4_hybrid", "vit_large_nvdinov2", "vit_giant_nvdinov2", "vit_base_nvclip_16_siglip", "vit_huge_nvclip_14_siglip"]))
     init_cfg: Dict[str, Any] = DICT_FIELD(hashMap={"type": "Pretrained", "checkpoint": None}, description="Model backbone initialisation config")
 
 
@@ -198,8 +198,8 @@ class SFDatasetExpConfig:
     img_suffix: Optional[str] = STR_FIELD(value=".png", description="Image suffix", display_name="Image Suffix")
     seg_map_suffix: Optional[str] = STR_FIELD(value=".png", description="Segmentation map suffix", display_name="Segmentation Map Suffix")
     repeat_data_times: int = INT_FIELD(value=2, description="Repeat data times", display_name="Repeat Data Times")
-    batch_size: int = INT_FIELD(value=32, description="Batch size", display_name="Batch Size", valid_min=1, valid_max="inf", automl_enabled="TRUE")
-    workers_per_gpu: int = INT_FIELD(value=8, description="Workers per GPU", display_name="Workers per GPU", valid_min=1, valid_max="inf", automl_enabled="TRUE")
+    batch_size: int = INT_FIELD(value=32, description="Batch size", display_name="Batch Size", valid_min=1, valid_max="inf")
+    workers_per_gpu: int = INT_FIELD(value=8, description="Workers per GPU", display_name="Workers per GPU", valid_min=1, valid_max="inf")
     shuffle: bool = BOOL_FIELD(value=True, description="Bool whether to shuffle", display_name="Shuffle")
     input_type: str = STR_FIELD(value="grayscale", description="Input type", valid_options="rgb,grayscale")
 

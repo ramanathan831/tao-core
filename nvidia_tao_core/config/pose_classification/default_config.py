@@ -233,14 +233,12 @@ class PCDatasetConfig:
         default_value=False,
         description="Specifies whether to randomly choose a portion of the input sequence.",
         display_name="random choose",
-        automl_enabled="TRUE"
     )
     random_move: bool = BOOL_FIELD(
         value=False,
         default_value=False,
         description="Specifies whether to randomly move the input sequence.",
         display_name="random move",
-        automl_enabled="TRUE"
     )
     window_size: int = INT_FIELD(
         value=-1,

@@ -160,7 +160,6 @@ class GDINODatasetConfig:
         valid_min=1,
         valid_max="inf",
         description="The batch size for training and validation",
-        automl_enabled="TRUE",
         display_name="batch size"
     )
     workers: int = INT_FIELD(
@@ -169,7 +168,6 @@ class GDINODatasetConfig:
         valid_min=1,
         valid_max="inf",
         description="The number of parallel workers processing data",
-        automl_enabled="TRUE",
         display_name="batch size"
     )
     pin_memory: bool = BOOL_FIELD(

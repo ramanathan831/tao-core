@@ -69,7 +69,6 @@ class GDINOModelConfig:
         display_name="number of queries",
         valid_min=1,
         valid_max="inf",
-        automl_enabled="TRUE",
         popular="yes",
     )
     num_feature_levels: int = INT_FIELD(

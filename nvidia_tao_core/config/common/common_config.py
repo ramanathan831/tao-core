@@ -74,7 +74,6 @@ class TrainConfig:
         valid_min=1,
         valid_max="inf",
         description="Number of epochs to run the training.",
-        automl_enabled="TRUE",
         display_name="Number of epochs",
     )
     checkpoint_interval: int = INT_FIELD(
