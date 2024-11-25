@@ -57,7 +57,10 @@ map_params = {"head": {"in_channels": {
     "vit_giant_patch14_reg4_dinov2_swiglu": 1536,
     "ViT-H-14-SigLIP-CLIPA-224": 1024,
     "ViT-L-14-SigLIP-CLIPA-336": 768,
-    "ViT-L-14-SigLIP-CLIPA-224": 768
+    "ViT-L-14-SigLIP-CLIPA-224": 768,
+    "c_radio_p1_vit_huge_patch16_224_mlpnorm": 3840,
+    "c_radio_p2_vit_huge_patch16_224_mlpnorm": 5120,
+    "c_radio_p3_vit_huge_patch16_224_mlpnorm": 3840
 }}}
 
 # Map input resolution for different backbones
