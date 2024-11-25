@@ -166,7 +166,6 @@ class Mask2FormerDatasetConfig:
         valid_min=1,
         valid_max="inf",
         description="The number of parallel workers processing data",
-        automl_enabled="TRUE",
         display_name="workers"
     )
     pin_memory: bool = BOOL_FIELD(

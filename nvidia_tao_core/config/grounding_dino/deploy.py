@@ -31,6 +31,15 @@ from nvidia_tao_core.config.common.common_config import (
 class GDINOTrtConfig(TrtConfig):
     """Trt config."""
 
+    workspace_size: int = INT_FIELD(
+        value=8192,
+        default_value=8192,
+        valid_min=0,
+        description="""The size (in MB) of the workspace TensorRT has
+                    to run it's optimization tactics and generate the
+                    TensorRT engine.""",
+        display_name="Max workspace size",
+    )
     max_batch_size: int = INT_FIELD(
         value=4,
         default_value=4,
