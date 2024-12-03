@@ -95,7 +95,12 @@ class TrainConfig:
     clip_gradients_norm: float = FLOAT_FIELD(value=10.0, valid_min=0, valid_max="inf")
     skip_checkpoint_variables: str = STR_FIELD(value="-predict*")
     checkpoint_interval: int = INT_FIELD(
-        value=10, default_value=5, valid_min=1, valid_max="inf"
+        value=10, default_value=5, valid_min=1, valid_max="inf",
+        description="Interval in epochs to save intermediate model checkpoints."
+    )
+    validation_interval: int = INT_FIELD(
+        value=10, default_value=5, valid_min=1, valid_max="inf",
+        description="Interval in epochs to run model evaluation during training."
     )
     image_preview: bool = BOOL_FIELD(value=True)
     qat: bool = BOOL_FIELD(value=False)
