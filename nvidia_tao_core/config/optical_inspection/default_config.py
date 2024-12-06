@@ -186,7 +186,7 @@ class ExportExpConfig:
 class TrtExpConfig(TrtConfig):
     """Trt config."""
 
-    data_type: str = STR_FIELD(value="fp16", default_value="fp16", description="Data type", display_name="Data type")
+    data_type: str = STR_FIELD(value="fp32", default_value="fp32,fp16", description="Data type", display_name="Data type")
     calibration: CalibrationConfig = DATACLASS_FIELD(CalibrationConfig())
 
 

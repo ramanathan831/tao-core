@@ -349,7 +349,7 @@ class SFEvalExpConfig(EvaluateConfig):
 class SFTrtConfig(TrtConfig):
     """Trt config."""
 
-    data_type: str = STR_FIELD(value="fp32", description="Data type", display_name="Data type")
+    data_type: str = STR_FIELD(value="fp32", default_value="fp32,fp16", description="Data type", display_name="Data type")
 
 
 @dataclass

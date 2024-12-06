@@ -348,8 +348,18 @@ class OCRNetDatasetConfig:
 class OCRNetTrtConfig(TrtConfig):
     """Trt config."""
 
-    data_type: str = STR_FIELD(value="fp16")
-    calibration: CalibrationConfig = DATACLASS_FIELD(CalibrationConfig())
+    data_type: str = STR_FIELD(
+        value="FP32",
+        default_value="FP32",
+        description="The precision to be set for building the TensorRT engine.",
+        display_name="data type",
+        valid_options=",".join(["FP32", "FP16", "INT8"])
+    )
+    calibration: CalibrationConfig = DATACLASS_FIELD(
+        CalibrationConfig(),
+        description="""The configuration elements to define the
+                    TensorRT calibrator for int8 PTQ.""",
+    )
 
 
 @dataclass

@@ -873,11 +873,6 @@ class OCDNetTrtConfig(TrtConfig):
         description="""The configuration elements to define the
                     TensorRT calibrator for int8 PTQ.""",
     )
-    layers_precision: Optional[List[str]] = LIST_FIELD(
-        arrList=[],
-        description="The list to specify layer precision.",
-        display_name="layers_precision"
-    )
 
 
 @dataclass

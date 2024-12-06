@@ -258,6 +258,11 @@ class TrtConfig:
                     the input tensor of the TensorRT engine.""",
         display_name="Maximum batch size",
     )
+    layers_precision: Optional[List[str]] = LIST_FIELD(
+        arrList=[],
+        description="The list to specify layer precision.",
+        display_name="layers_precision"
+    )
 
 
 @dataclass
