@@ -36,7 +36,7 @@ class DINOTrtConfig(TrtConfig):
         default_value="FP32",
         description="The precision to be set for building the TensorRT engine.",
         display_name="data type",
-        valid_options=",".join(["FP32", "FP16"])
+        valid_options=",".join(["FP32", "FP16", "INT8"])
     )
     calibration: CalibrationConfig = DATACLASS_FIELD(
         CalibrationConfig(),

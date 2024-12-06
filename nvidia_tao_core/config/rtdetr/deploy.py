@@ -37,7 +37,7 @@ class RTTrtConfig(TrtConfig):
         default_value="FP32",
         description="The precision to be set for building the TensorRT engine.",
         display_name="data type",
-        valid_options=",".join(["FP32", "FP16"])
+        valid_options=",".join(["FP32", "FP16", "INT8"])
     )
     max_batch_size: int = INT_FIELD(
         value=4,

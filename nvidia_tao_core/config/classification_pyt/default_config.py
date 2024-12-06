@@ -239,7 +239,7 @@ class EvalExpConfig(EvaluateConfig):
 class ClassificationTrtConfig(TrtConfig):
     """Trt config."""
 
-    data_type: str = STR_FIELD(value="fp16", valid_options="fp32,fp16,int8", popular="yes", display_name="min_batch_size", description="TensorRT data type")
+    data_type: str = STR_FIELD(value="fp32", valid_options="fp32,fp16", popular="yes", display_name="Data type", description="TensorRT data type")
 
 
 @dataclass

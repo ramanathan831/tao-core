@@ -306,7 +306,7 @@ class CNTrtConfig(TrtConfig):
                     the input tensor of the TensorRT engine.""",
         display_name="Maximum batch size",
     )
-    data_type: str = STR_FIELD(value="FP32", default_value="fp16", description="Data type", display_name="Data type")
+    data_type: str = STR_FIELD(value="fp32", default_value="fp32,fp16", description="Data type", display_name="Data type")
     calibration: CalibrationConfig = DATACLASS_FIELD(CalibrationConfig())
 
 
