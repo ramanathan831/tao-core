@@ -90,7 +90,12 @@ class TrainConfig:
     resume_training_checkpoint_path: str = STR_FIELD(value="")
     checkpoint: str = STR_FIELD(value="")
     checkpoint_interval: int = INT_FIELD(
-        value=1, default_value=1, valid_min=1, valid_max="inf"
+        value=1, default_value=1, valid_min=1, valid_max="inf",
+        description="Interval in epochs to save the intermediate checkpoints."
+    )
+    validation_interval: int = INT_FIELD(
+        value=10, default_value=5, valid_min=1, valid_max="inf",
+        description="Interval in epochs to run evaluation during training."
     )
     batch_size_per_gpu: int = INT_FIELD(value=64)
     num_epochs: int = INT_FIELD(
