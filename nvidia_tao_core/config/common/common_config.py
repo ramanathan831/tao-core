@@ -46,18 +46,21 @@ class TrainConfig:
         valid_min=1,
         display_name="Number of GPUs",
         description="""The number of GPUs to run the train job.""",
+        popular="yes",
     )
     gpu_ids: List[int] = LIST_FIELD(
         arrList=[0],
         display_name="GPU IDs",
         description="""
         List of GPU IDs to run the training on. The length of this list
-        must be equal to the number of gpus in train.num_gpus.""")
+        must be equal to the number of gpus in train.num_gpus.""",
+        popular="yes")
     num_nodes: int = INT_FIELD(
         value=1,
         display_name="Number of nodes",
         description="Number of nodes to run the training on. If > 1, then multi-node is enabled.",
         valid_min=1,
+        popular="yes",
     )
     seed: int = INT_FIELD(
         value=1234,
@@ -75,12 +78,14 @@ class TrainConfig:
         valid_max="inf",
         description="Number of epochs to run the training.",
         display_name="Number of epochs",
+        popular="yes",
     )
     checkpoint_interval: int = INT_FIELD(
         value=1,
         valid_min=1,
         display_name="Checkpoint interval",
         description="The interval (in epochs) at which a checkpoint will be saved. Helps resume training.",
+        popular="yes",
     )
     validation_interval: int = INT_FIELD(
         value=1,
@@ -89,12 +94,13 @@ class TrainConfig:
         description="""
         The interval (in epochs) at which a evaluation
         will be triggered on the validation dataset.""",
+        popular="yes",
     )
 
     resume_training_checkpoint_path: Optional[str] = STR_FIELD(
         value=None,
         description="Path to the checkpoint to resume training from.",
-        display_name="Resume checkpoint path."
+        display_name="Resume checkpoint path"
     )
     results_dir: Optional[str] = STR_FIELD(
         value=None,
@@ -113,23 +119,27 @@ class EvaluateConfig:
         valid_min=1,
         display_name="Number of GPUs",
         description="""The number of GPUs to run the evaluation job.""",
+        popular="yes",
     )
     gpu_ids: List[int] = LIST_FIELD(
         arrList=[0],
         display_name="GPU IDs",
         description="""
         List of GPU IDs to run the evaluation on. The length of this list
-        must be equal to the number of gpus in evaluate.num_gpus.""")
+        must be equal to the number of gpus in evaluate.num_gpus.""",
+        popular="yes",
+    )
     num_nodes: int = INT_FIELD(
         value=1,
         valid_min=1,
         display_name="Number of nodes",
         description="Number of nodes to run the evaluation on. If > 1, then multi-node is enabled.",
+        popular="yes",
     )
     checkpoint: str = STR_FIELD(
         value=MISSING,
         description="Path to the checkpoint used for evaluation.",
-        display_name="Checkpoint path."
+        display_name="Checkpoint path",
     )
     trt_engine: Optional[str] = STR_FIELD(
         value=None,
@@ -154,23 +164,27 @@ class InferenceConfig:
         valid_min=1,
         display_name="Number of GPUs",
         description="""The number of GPUs to run the inference job.""",
+        popular="yes",
     )
     gpu_ids: List[int] = LIST_FIELD(
         arrList=[0],
         display_name="GPU IDs",
         description="""
         List of GPU IDs to run the inference on. The length of this list
-        must be equal to the number of gpus in inference.num_gpus.""")
+        must be equal to the number of gpus in inference.num_gpus.""",
+        popular="yes",
+    )
     num_nodes: int = INT_FIELD(
         value=1,
         valid_min=1,
         display_name="Number of nodes",
         description="Number of nodes to run the inference on. If > 1, then multi-node is enabled.",
+        popular="yes",
     )
     checkpoint: str = STR_FIELD(
         value=MISSING,
         description="Path to the checkpoint used for inference.",
-        display_name="Checkpoint path."
+        display_name="Checkpoint path"
     )
     trt_engine: Optional[str] = STR_FIELD(
         value=None,
@@ -210,6 +224,7 @@ class CalibrationConfig:
         valid_min=1,
         description="""The batch size of the input TensorRT to run calibration on.""",
         display_name="Calibration batch size",
+        popular="yes",
     )
     cal_batches: int = INT_FIELD(
         value=1,
@@ -218,6 +233,7 @@ class CalibrationConfig:
         description="""The number of input tensor batches to run calibration on.
                     It is recommended to use atleast 10% of the training images.""",
         display_name="Number of calibration batches",
+        popular="yes",
     )
 
 
@@ -241,6 +257,7 @@ class TrtConfig:
         description="""The minimum batch size in the optimization profile for
                     the input tensor of the TensorRT engine.""",
         display_name="Min batch size",
+        popular="yes",
     )
     opt_batch_size: int = INT_FIELD(
         value=1,
@@ -249,6 +266,7 @@ class TrtConfig:
         description="""The optimum batch size in the optimization profile for
                     the input tensor of the TensorRT engine.""",
         display_name="Optimum batch size",
+        popular="yes",
     )
     max_batch_size: int = INT_FIELD(
         value=1,
@@ -257,6 +275,7 @@ class TrtConfig:
         description="""The maximum batch size in the optimization profile for
                     the input tensor of the TensorRT engine.""",
         display_name="Maximum batch size",
+        popular="yes",
     )
     layers_precision: Optional[List[str]] = LIST_FIELD(
         arrList=[],
@@ -282,6 +301,7 @@ class GenTrtEngineConfig:
         valid_min=0,
         description="""The index of the GPU to build the TensorRT engine.""",
         display_name="GPU ID",
+        popular="yes",
     )
     onnx_file: str = STR_FIELD(
         value=MISSING,
@@ -302,7 +322,8 @@ class GenTrtEngineConfig:
         valid_min=-1,
         description="""The batch size of the input Tensor for the engine.
                     A value of :code:`-1` implies dynamic tensor shapes.""",
-        display_name="Batch size"
+        display_name="Batch size",
+        popular="yes",
     )
     verbose: bool = BOOL_FIELD(
         value=False,

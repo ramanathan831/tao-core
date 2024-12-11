@@ -115,7 +115,7 @@ class RunnerConfig:
     """Configuration parameters for Runner."""
 
     type: str = STR_FIELD(value="TAOEpochBasedRunner", default_value="TAOEpochBasedRunner", description="Runner config")  # Currently We support only Epochbased Runner - Non configurable
-    max_epochs: int = INT_FIELD(value=20, default_value=40, valid_min=1, valid_max="inf", parent_param="TRUE", description="Max epochs")  # Set this if Epoch based runner
+    max_epochs: int = INT_FIELD(value=20, default_value=40, valid_min=1, valid_max="inf", parent_param="TRUE", display_name="Max Epochs", description="Max epochs", popular="yes")  # Set this if Epoch based runner
     auto_scale_lr_bs: int = INT_FIELD(value=1024, description="auto scale lr batch size")
 
 
@@ -123,8 +123,8 @@ class RunnerConfig:
 class CheckpointConfig:
     """Configuration parameters for Checkpointing."""
 
-    interval: int = INT_FIELD(value=1, default_value=1, valid_min=1, valid_max="inf", math_cond="<" + str(RunnerConfig.max_epochs), description="checkpointing interval")  # Epochs or Iterations accordingly
-    by_epoch: bool = BOOL_FIELD(value=True, description="Flag to enable by epoch")  # By default it trains by iters
+    interval: int = INT_FIELD(value=1, default_value=1, valid_min=1, valid_max="inf", math_cond="<" + str(RunnerConfig.max_epochs), display_name="Checkpoint interval", description="checkpointing interval", popular="yes")  # Epochs or Iterations accordingly
+    by_epoch: bool = BOOL_FIELD(value=True, description="Flag to enable by epoch", popular="yes")  # By default it trains by iters
 
 
 # Default Runtime Config
@@ -141,7 +141,7 @@ class LogConfig:
 class ValidationConfig:
     """Validation Config."""
 
-    interval: int = INT_FIELD(value=100, valid_min=1, description="validation interval")
+    interval: int = INT_FIELD(value=100, valid_min=1, display_name="Validation interval", description="validation interval", popular="yes")
 
 
 @dataclass
@@ -157,7 +157,7 @@ class ParamwiseConfig:
 class EvaluationConfig:
     """Evaluation Config."""
 
-    interval: int = INT_FIELD(value=1, valid_min=1, description="Evaluation interval")
+    interval: int = INT_FIELD(value=1, valid_min=1, display_name="Evaluation interval", description="Evaluation interval", popular="yes")
     metric: str = STR_FIELD(value="accuracy", description="Evaluation metric")
 
 
@@ -213,8 +213,8 @@ class TrainExpConfig:
     exp_config: ExpConfig = DATACLASS_FIELD(ExpConfig())
     validate: bool = BOOL_FIELD(value=False, default_value=False, description="Flag to validate")
     train_config: TrainConfig = DATACLASS_FIELD(TrainConfig())  # Could change across networks
-    num_gpus: int = INT_FIELD(value=1, valid_min=1, valid_max="inf", description="Number of GPUs")  # non configurable here
-    gpu_ids: List[int] = LIST_FIELD([0], description="GPU ID")
+    num_gpus: int = INT_FIELD(value=1, valid_min=1, valid_max="inf", display_name="Number of GPUs", description="Number of GPUs", popular="yes")  # non configurable here
+    gpu_ids: List[int] = LIST_FIELD([0], description="GPU ID", popular="yes")
     results_dir: Optional[str] = STR_FIELD(value=None, default_value="", description="Results directory", display_name="Results directory")
 
 
@@ -223,7 +223,7 @@ class InferenceExpConfig(InferenceConfig):
     """Inference experiment config."""
 
     exp_config: ExpConfig = DATACLASS_FIELD(ExpConfig())
-    batch_size: int = INT_FIELD(value=1, default_value=1, valid_min=1, valid_max="inf", description="Batch size", display_name="Batch Size")
+    batch_size: int = INT_FIELD(value=1, default_value=1, valid_min=1, valid_max="inf", description="Batch size", display_name="Batch Size", popular="yes")
 
 
 @dataclass
@@ -231,7 +231,7 @@ class EvalExpConfig(EvaluateConfig):
     """Inference experiment config."""
 
     exp_config: ExpConfig = DATACLASS_FIELD(ExpConfig())
-    batch_size: int = INT_FIELD(value=1, default_value=8, valid_min=1, valid_max="inf", description="Batch size", display_name="Batch Size")
+    batch_size: int = INT_FIELD(value=1, default_value=8, valid_min=1, valid_max="inf", description="Batch size", display_name="Batch Size", popular="yes")
     topk: int = INT_FIELD(value=1, valid_min=1, valid_max="inf", description="topk accuracy")  # Configurable
 
 
@@ -239,7 +239,7 @@ class EvalExpConfig(EvaluateConfig):
 class ClassificationTrtConfig(TrtConfig):
     """Trt config."""
 
-    data_type: str = STR_FIELD(value="fp32", valid_options="fp32,fp16", popular="yes", display_name="Data type", description="TensorRT data type")
+    data_type: str = STR_FIELD(value="fp32", valid_options="fp32,fp16", popular="yes", display_name="Precision", description="TensorRT precision data type")
 
 
 @dataclass
@@ -249,9 +249,9 @@ class ExportExpConfig:
     verify: bool = BOOL_FIELD(value=False, description="Flag to verify export")
     opset_version: int = INT_FIELD(value=14, default_value=14, valid_min=14, valid_max=17, display_name="opset version", description="""Operator set version of the ONNX model used to generate the TensorRT engine.""")
     checkpoint: Optional[str] = STR_FIELD(value=None, default_value="", description="Path to checkpoint file", display_name="Path to checkpoint file")
-    input_channel: int = INT_FIELD(value=3, default_value=3, description="Input channel", display_name="Input channel")
-    input_width: int = INT_FIELD(value=224, default_value=224, description="Input width", display_name="Input width")
-    input_height: int = INT_FIELD(value=224, default_value=224, description="Input height", display_name="Input height")
+    input_channel: int = INT_FIELD(value=3, default_value=3, description="Input channel", display_name="Input channel", popular="yes")
+    input_width: int = INT_FIELD(value=224, default_value=224, description="Input width", display_name="Input width", popular="yes")
+    input_height: int = INT_FIELD(value=224, default_value=224, description="Input height", display_name="Input height", popular="yes")
     onnx_file: Optional[str] = STR_FIELD(value=None, default_value="", description="ONNX file", display_name="ONNX file")
     results_dir: Optional[str] = STR_FIELD(value=None, default_value="", description="Results directory", display_name="Results directory")
 

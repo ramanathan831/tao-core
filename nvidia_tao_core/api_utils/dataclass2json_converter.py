@@ -409,6 +409,7 @@ def create_json_schema(json_data):
         if required and required.lower() == "yes":
             required_parameter.append(".".join(hierarchy))
         if popular and popular.lower() == "yes":
+            props[param_name]["popular"] = True
             popular_parameter.append(".".join(hierarchy))
         if automl_enabled and automl_enabled.lower() == "true":
             props[param_name]["automl_enabled"] = True
