@@ -90,14 +90,14 @@ class TrainConfig:
     resume_training_checkpoint_path: str = STR_FIELD(value="")
     checkpoint: str = STR_FIELD(value="")
     checkpoint_interval: int = INT_FIELD(
-        value=1, default_value=1, valid_min=1, valid_max="inf",
+        value=1, default_value=1, valid_min=1, valid_max="inf", popular="yes", display_name="Checkpoint Interval",
         description="Interval in epochs to save the intermediate checkpoints."
     )
     validation_interval: int = INT_FIELD(
-        value=10, default_value=5, valid_min=1, valid_max="inf",
+        value=10, default_value=5, valid_min=1, valid_max="inf", popular="yes", display_name="Validation Interval",
         description="Interval in epochs to run evaluation during training."
     )
-    batch_size_per_gpu: int = INT_FIELD(value=64)
+    batch_size_per_gpu: int = INT_FIELD(value=64, popular="yes", display_name="Batch Size Per GPU")
     num_epochs: int = INT_FIELD(
         value=100, default_value=80, valid_min=1, valid_max="inf"
     )
@@ -157,10 +157,10 @@ class ModelConfig:
         value="efficientnet-b0",
         valid_options="efficientnet-b0,efficientnet-b1,efficientnet-b2,efficientnet-b3,efficientnet-b4,efficientnet-b5",
     )
-    input_width: int = INT_FIELD(value=256, valid_min=32)
-    input_height: int = INT_FIELD(value=256, valid_min=32)
-    input_channels: int = INT_FIELD(value=3, valid_options="1,3")
-    input_image_depth: int = INT_FIELD(value=8, valid_options="8,16")
+    input_width: int = INT_FIELD(value=256, valid_min=32, popular="yes", display_name="Input Image Width")
+    input_height: int = INT_FIELD(value=256, valid_min=32, popular="yes", display_name="Input Image Height")
+    input_channels: int = INT_FIELD(value=3, valid_options="1,3", popular="yes", display_name="Input Image Channels")
+    input_image_depth: int = INT_FIELD(value=8, valid_options="8,16", popular="yes", display_name="Input Image Depth")
     use_batch_norm: bool = BOOL_FIELD(value=True)
     use_bias: bool = BOOL_FIELD(value=False)
     use_pooling: bool = BOOL_FIELD(value=True)
@@ -185,7 +185,7 @@ class EvalConfig:
     dataset_path: str = STR_FIELD(value=MISSING)
     checkpoint: str = STR_FIELD(value=MISSING)
     trt_engine: Optional[str] = STR_FIELD(value=None)
-    batch_size: int = INT_FIELD(value=64, default_value=1, valid_min=1, valid_max="inf")
+    batch_size: int = INT_FIELD(value=64, default_value=1, valid_min=1, valid_max="inf", popular="yes", display_name="Batch Size", description="Batch size to use for evaluation.")
     n_workers: int = INT_FIELD(value=64, default_value=1, valid_min=1, valid_max="inf")
     top_k: int = INT_FIELD(value=3, default_value=1, valid_min=1, valid_max="inf")
     classmap: str = STR_FIELD(value="")
@@ -207,8 +207,8 @@ class CalibrationConfig:
 
     cal_image_dir: str = STR_FIELD(value="")
     cal_cache_file: str = STR_FIELD(value="")
-    cal_batch_size: int = INT_FIELD(value=1, default_value=16)
-    cal_batches: int = INT_FIELD(value=1, default_value=10)
+    cal_batch_size: int = INT_FIELD(value=1, default_value=16, popular="yes", display_name="Calibration Batch Size", description="Batch size to use for calibration.")
+    cal_batches: int = INT_FIELD(value=1, default_value=10, popular="yes", display_name="Calibration Batches", description="Number of batches to use for calibration.")
     cal_data_file: str = STR_FIELD(value="")
 
 
@@ -218,9 +218,9 @@ class TrtConfig:
 
     data_type: str = STR_FIELD(value="fp32", valid_options="fp32,int8,fp16")
     max_workspace_size: int = INT_FIELD(value=2)  # in Gb
-    min_batch_size: int = INT_FIELD(value=1)
-    opt_batch_size: int = INT_FIELD(value=1)
-    max_batch_size: int = INT_FIELD(value=1)
+    min_batch_size: int = INT_FIELD(value=1, popular="yes", display_name="Min Batch Size", description="Minimum batch size for TensorRT engine.")
+    opt_batch_size: int = INT_FIELD(value=1, popular="yes", display_name="Opt Batch Size", description="Optimal batch size for TensorRT engine.")
+    max_batch_size: int = INT_FIELD(value=1, popular="yes", display_name="Max Batch Size", description="Maximum batch size for TensorRT engine.")
     calibration: CalibrationConfig = DATACLASS_FIELD(CalibrationConfig())
 
 
@@ -281,7 +281,7 @@ class ExperimentConfig:
     """Experiment config."""
 
     model_name: Optional[str] = STR_FIELD(value=None)
-    num_gpus: int = INT_FIELD(value=1)
+    num_gpus: int = INT_FIELD(value=1, popular="yes", display_name="Number of GPUs")
     gpu_ids: List[int] = LIST_FIELD(arrList=[0])
     results_dir: str = STR_FIELD(value="/results")
     encryption_key: Optional[str] = STR_FIELD(None)
