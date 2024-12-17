@@ -17,6 +17,7 @@
 """Job queue handling."""
 
 
+import sys
 import importlib
 import os
 import threading
@@ -52,8 +53,10 @@ def process_queue():
 
             try:
                 telemetry_opt_out = job["data"].get('telemetry_opt_out', "no")
+                nvcf_helm = job["data"].get('nvcf_helm', "")
                 use_ngc_staging = job["data"].get('use_ngc_staging', "False")
                 tao_api_ui_cookie = job["data"].get('tao_api_ui_cookie', "")
+                tao_api_user_key = job["data"].get('ngc_key', "")
                 tao_api_admin_key = job["data"].get('tao_api_admin_key', "")
                 tao_api_base_url = job["data"].get('tao_api_base_url', "")
                 tao_api_status_callback_url = job["data"].get('tao_api_status_callback_url', "")
@@ -65,7 +68,10 @@ def process_queue():
                     os.environ.update(docker_env_vars)
 
                 os.environ["CLOUD_BASED"] = hosted_service_interaction
+                if nvcf_helm:
+                    os.environ["NVCF_HELM"] = nvcf_helm
                 os.environ["TELEMETRY_OPT_OUT"] = telemetry_opt_out
+                os.environ["TAO_USER_KEY"] = tao_api_user_key
                 os.environ["TAO_ADMIN_KEY"] = tao_api_admin_key
                 os.environ["TAO_API_SERVER"] = tao_api_base_url
                 os.environ["TAO_LOGGING_SERVER_URL"] = tao_api_status_callback_url
@@ -108,10 +114,11 @@ def process_queue():
                 is_completed = entrypoint.launch(args, "", actions, network=job["neural_network_name"])
 
             except Exception:
-                print(traceback.format_exc())
+                print("Traceback", file=sys.stderr)
+                print(traceback.format_exc(), file=sys.stderr)
                 job['status'] = 'Error'
                 status_logging.get_status_logger().write(
-                    message=f"{job['action']} action failed for {job['neural_network_name']}",
+                    message=f"{job['action']} action couldn't be launched for {job['neural_network_name']}",
                     status_level=status_logging.Status.FAILURE
                 )
             finally:
