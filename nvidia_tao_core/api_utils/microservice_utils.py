@@ -37,6 +37,8 @@ def invoke_microservices(request_dict):
     tao_api_status_callback_url = request_dict.get('tao_api_status_callback_url', "https://nvidia.com")
     automl_experiment_number = request_dict.get('automl_experiment_number', "")
     hosted_service_interaction = request_dict.get('hosted_service_interaction', "")
+    nvcf_helm = request_dict.get('nvcf_helm', "")
+    docker_env_vars = request_dict.get('docker_env_vars', {})
 
     response = None
     if api_endpoint == "get_networks":
@@ -61,6 +63,8 @@ def invoke_microservices(request_dict):
                    "tao_api_status_callback_url": tao_api_status_callback_url,
                    "automl_experiment_number": automl_experiment_number,
                    "hosted_service_interaction": hosted_service_interaction,
+                   "nvcf_helm": nvcf_helm,
+                   "docker_env_vars": docker_env_vars,
                    }
         response = requests.post(f"{url}/neural_networks/{neural_network_name}/actions/{action_name}", data=json.dumps(req_obj))   # noqa pylint: disable=W3101
     elif api_endpoint == "get_jobs":

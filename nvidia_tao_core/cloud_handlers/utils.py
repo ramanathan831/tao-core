@@ -15,7 +15,6 @@
 """Utility functions for Cloud Storage handler"""
 import ast
 import glob
-import json
 import logging
 import os
 import re
@@ -28,6 +27,7 @@ import traceback
 
 from nvidia_tao_core.cloud_handlers.cloud_storage import CloudStorage
 from nvidia_tao_core.cloud_handlers.ngc_handler import download_ngc_model, split_ngc_path
+from nvidia_tao_core.cloud_handlers.nvcf_handler import invoke_function
 
 
 logger = logging.getLogger(__name__)
@@ -231,42 +231,6 @@ def download_files(cloud_storage, cloud_file_path, local_path):
     return destination_path
 
 
-def logging_callback_server_login(timeout, retry=0):
-    """Login to the TAO Hosted API and retrieve authentication headers.
-
-    Args:
-        timeout (int): The timeout for the login request.
-        retry (int, optional): The current retry attempt (default is 0).
-    Returns:
-        dict: Authentication headers.
-    """
-    if retry >= NUM_RETRY:
-        raise ValueError("Login to TAO Hosted API was unsuccessful after multiple retries")
-
-    base_url = os.getenv("TAO_API_SERVER", "")
-    ngc_key = os.getenv("TAO_ADMIN_KEY", "")
-    jobs_url = os.getenv("TAO_LOGGING_SERVER_URL", "")
-    org_name = jobs_url.split("/orgs/")[1].split("/")[0]
-    data = json.dumps({"ngc_org_name": org_name,
-                       "ngc_key": ngc_key})
-
-    try:
-        response = requests.post(f"{base_url}/api/v1/login", data=data, timeout=timeout)
-        if response.ok:
-            token = response.json()["token"]
-            headers = {"Authorization": f"Bearer {token}"}
-            return headers
-        logger.error("Failed to log in. Status code: {}. Status message {}".format(response.status_code, response.text))  # noqa pylint: disable=C0209
-        retry += 1
-
-    except requests.RequestException as e:
-        logger.error("Exception during login: {}".format(e))  # noqa pylint: disable=C0209
-        retry += 1
-
-    time.sleep(5)
-    return logging_callback_server_login(timeout, retry)
-
-
 def get_file_modification_time(local_path):
     """Gets file modification time and ignores any issue in getting so.
 
@@ -327,8 +291,10 @@ def send_logs_to_server(seek_position, retry=0):
                 log_file.seek(seek_position)
                 log_contents = log_file.read()
                 seek_position = log_file.tell()
-                headers = logging_callback_server_login(REQUESTS_TIMEOUT)
+                ngc_key = os.getenv("TAO_USER_KEY")
+                headers = {"Authorization": f"Bearer {ngc_key}"}
                 if log_contents and headers:
+                    nvcf_helm_deployment = os.getenv("NVCF_HELM")
                     log_callback_url = os.getenv("TAO_LOGGING_SERVER_URL") + ":log_update"
                     if log_callback_url:
                         headers['Content-Type'] = 'application/json'
@@ -336,21 +302,22 @@ def send_logs_to_server(seek_position, retry=0):
                             'experiment_number': os.getenv("AUTOML_EXPERIMENT_NUMBER", "0"),
                             'log_contents': log_contents
                         }
-                        try:
-                            response = requests.post(log_callback_url, json=data, headers=headers, timeout=REQUESTS_TIMEOUT)
-                            if response.ok:
-                                return seek_position
-                            logger.info("Failed to send logs. Status code: {}".format(response.status_code))  # noqa pylint: disable=C0209
-                            seek_position -= len(log_contents)
-                            retry += 1
+                        if not nvcf_helm_deployment:
+                            try:
+                                response = requests.post(log_callback_url, json=data, headers=headers, timeout=REQUESTS_TIMEOUT)
+                                if response.ok:
+                                    return seek_position
+                                logger.info("Failed to send logs. Status code: {}".format(response.status_code))  # noqa pylint: disable=C0209
+                                seek_position -= len(log_contents)
+                                retry += 1
 
-                        except requests.RequestException as e:
-                            logger.info("Exception during log sending: {}".format(e))  # noqa pylint: disable=C0209
-                            seek_position -= len(log_contents)
-                            retry += 1
+                            except requests.RequestException as e:
+                                logger.info("Exception during log sending: {}".format(e))  # noqa pylint: disable=C0209
+                                seek_position -= len(log_contents)
+                                retry += 1
 
-                        time.sleep(5)
-                        return send_logs_to_server(seek_position, retry)
+                            time.sleep(5)
+                            return send_logs_to_server(seek_position, retry)
     return seek_position
 
 
@@ -365,7 +332,8 @@ def status_callback(data_string, retry=0):
         if retry >= NUM_RETRY:
             raise ValueError("Status Callback was unsuccessful after multiple retries")
 
-        headers = logging_callback_server_login(REQUESTS_TIMEOUT)
+        ngc_key = os.getenv("TAO_USER_KEY")
+        headers = {"Authorization": f"Bearer {ngc_key}"}
         if data_string and headers:
             status_url = os.getenv("TAO_LOGGING_SERVER_URL", "") + ":status_update"
             if status_url:
@@ -373,19 +341,36 @@ def status_callback(data_string, retry=0):
                     "experiment_number": os.getenv("AUTOML_EXPERIMENT_NUMBER", "0"),
                     "status": data_string,
                 }
-                try:
-                    response = requests.post(status_url, json=data, headers=headers, timeout=REQUESTS_TIMEOUT)
-                    if response.ok:
-                        return
-                    logger.error("Failed to send status update. Status code: {}".format(response.status_code))  # noqa pylint: disable=C0209
-                    retry += 1
+                nvcf_helm_deployment = os.getenv("NVCF_HELM")
+                if nvcf_helm_deployment:
+                    url_parts = os.getenv("TAO_LOGGING_SERVER_URL", "").split('/')
+                    # Extract kind, handler_id, and job_id based on their positions
+                    kind = url_parts[7]
+                    handler_id = url_parts[8]
+                    job_id = url_parts[10]
+                    invoke_function(
+                        deployment_string=nvcf_helm_deployment,
+                        api_endpoint="status_update",
+                        kind=kind,
+                        handler_id=handler_id,
+                        job_id=job_id,
+                        request_body=data,
+                        ngc_key=ngc_key,
+                    )
+                else:
+                    try:
+                        response = requests.post(status_url, json=data, headers=headers, timeout=REQUESTS_TIMEOUT)
+                        if response.ok:
+                            return
+                        logger.error("Failed to send status update. Status code: {}".format(response.status_code))  # noqa pylint: disable=C0209
+                        retry += 1
 
-                except requests.RequestException as e:
-                    logger.error("Exception during status update sending: {}".format(e))  # noqa pylint: disable=C0209
-                    retry += 1
+                    except requests.RequestException as e:
+                        logger.error("Exception during status update sending: {}".format(e))  # noqa pylint: disable=C0209
+                        retry += 1
 
-                time.sleep(5)
-                status_callback(data_string, retry)
+                    time.sleep(5)
+                    status_callback(data_string, retry)
 
 
 def monitor_and_upload(local_path, cloud_storage, exit_event, seek_position=0):
