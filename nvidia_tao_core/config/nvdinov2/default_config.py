@@ -524,6 +524,13 @@ class NVDINOv2TrainExpConfig(TrainConfig):
         display_name="number of prototypes",
         popular="yes"
     )
+    precision: str = STR_FIELD(
+        value="16-mixed",
+        default_value="16-mixed",
+        description="Precision",
+        display_name="precision",
+        popular="yes"
+    )
     use_custom_attention: bool = BOOL_FIELD(
         value=True,
         default_value=True,
