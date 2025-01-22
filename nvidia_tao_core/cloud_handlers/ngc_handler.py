@@ -13,10 +13,11 @@
 # limitations under the License.
 
 """Handler functions to manage NGC related operations"""
-import io
+from ngcsdk import Client
+from ngcbpc import errors
+
 import os
 import requests
-import zipfile
 
 import logging
 logger = logging.getLogger(__name__)
@@ -82,7 +83,6 @@ def download_ngc_model(ngc_path, ptm_root, key, is_cookie_set, use_ngc_staging):
         return False
     ngc_configs = ngc_path.split('/')
     org = ngc_configs[0]
-    model, version = ngc_configs[-1].split(':')
     team = ""
     if len(ngc_configs) == 3:
         team = ngc_configs[1]
@@ -92,42 +92,19 @@ def download_ngc_model(ngc_path, ptm_root, key, is_cookie_set, use_ngc_staging):
         logging.info("Personal key/Cookie is None")
         return False
 
-    if is_cookie_set == "True":
-        headers = {'Accept': 'application/json', 'Cookie': key}
-    else:
-        headers = {'Accept': 'application/json', 'Authorization': 'Bearer ' + key}
+    # Download model with ngc sdk
+    clt = Client()
 
-    url_substring = ""
-    if team and team != "no-team":
-        url_substring = f"team/{team}"
-    base_url = "https://api.ngc.nvidia.com"
-    if use_ngc_staging == "True":
-        base_url = "https://api.stg.ngc.nvidia.com"
-    files_endpoint = f"v2/org/{org}/{url_substring}/models/{model}/versions/{version}/files".replace("//", "/")
-    files_url = f"{base_url}/{files_endpoint}"
-    logging.info("Calling NGC API to list base_experiment files {}".format(files_url))  # noqa pylint: disable=C0209
-    response = send_admin_get_request(files_url, headers=headers)
-    if not response.ok:
-        logging.info("Download API response is not ok")
+    try:
+        clt.configure(api_key=key, org_name=org, team_name=team)
+        os.makedirs(ptm_root, exist_ok=True)
+        clt.registry.model.download_version(ngc_path, destination=ptm_root)
+        logging.info("Saving base_experiment file to {}".format(ptm_root)) # noqa pylint: disable=C0209
+    except errors.ResourceNotFoundException as e:
+        logging.error("Model {} not found. Error: {}".format(ngc_path, e))  # noqa pylint: disable=C0209
         return False
-
-    file_info = response.json()
-    dest_root = f"{ptm_root}/{model}_v{version}"
-
-    for file_info in file_info['modelFiles']:
-        path = file_info['path']
-        download_endpoint = f"v2/org/{org}/{url_substring}/models/{model}/versions/{version}/files/{path}/zip/download".replace("//", "/")
-        download_url = f"{base_url}/{download_endpoint}"
-        download_response = send_admin_get_request(download_url, headers=headers)
-        if download_response.status_code == 200:
-            dest_path = os.path.join(dest_root, path)
-            file_dir = os.path.dirname(dest_path)
-            os.makedirs(file_dir, exist_ok=True)
-            with zipfile.ZipFile(io.BytesIO(download_response.content)) as z:
-                z.extractall(file_dir)
-            logging.info("Saving base_experiment file to {}".format(dest_root))  # noqa pylint: disable=C0209
-        else:
-            logging.info("Failed to download {}. Status code: {}".format(path, response.status_code))  # noqa pylint: disable=C0209
-            return False
+    except errors.NgcException as e:
+        logging.error("Failed to download {}. Error: {}".format(ngc_path, e))  # noqa pylint: disable=C0209
+        return False
 
     return True

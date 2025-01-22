@@ -57,6 +57,7 @@ setuptools.setup(
         "PyYAML==6.0.1",
         "requests==2.32.3",
         "apache-libcloud==3.8.0",
+        "ngcsdk==3.46.0",
         "omegaconf"
     ]
 )
