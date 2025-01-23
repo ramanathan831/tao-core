@@ -171,9 +171,9 @@ class DatasetConfig:
     """Segmentation Dataset Config."""
 
     root_dir: str = STR_FIELD(value=MISSING, default_value="", description="Path to root directory for dataset")
-    dataset: str = STR_FIELD(value="Dataset", default_value="Dataset", valid_options="Dataset", description="dataset class")
+    dataset: str = STR_FIELD(value="CLDataset", default_value="CLDataset", valid_options="Dataset", description="dataset class")
     num_classes: int = INT_FIELD(value=2, default_value=2, description="The number of classes in the training data", math_cond=">0", valid_min=2, valid_max="inf")
-    img_size: int = INT_FIELD(value=256, default_value=256, description="The input image size")
+    img_size: int = INT_FIELD(value=224, default_value=224, description="The input image size")
     batch_size: int = INT_FIELD(value=8, default_value=8, valid_min=1, valid_max="inf", description="Batch size", display_name="Batch Size", automl_enabled="TRUE")
     workers: int = INT_FIELD(value=8, default_value=1, valid_min=0, valid_max="inf", description="Workers", display_name="Workers", automl_enabled="TRUE")
     shuffle: bool = BOOL_FIELD(value=True, default_value=True, description="Shuffle dataloader")
@@ -234,8 +234,8 @@ class ExportExpConfig:
     onnx_file: Optional[str] = STR_FIELD(value=MISSING, default_value="", description="ONNX file", display_name="ONNX file")
     on_cpu: bool = BOOL_FIELD(value=False, default_value=False, description="Flag to export on cpu", display_name="On CPU")
     input_channel: int = INT_FIELD(value=3, default_value=3, description="Input channel", display_name="Input channel")
-    input_width: int = INT_FIELD(value=256, default_value=256, description="Input width", display_name="Input width", valid_min=128)
-    input_height: int = INT_FIELD(value=256, default_value=256, description="Input height", display_name="Input height", valid_min=128)
+    input_width: int = INT_FIELD(value=224, default_value=224, description="Input width", display_name="Input width", valid_min=128)
+    input_height: int = INT_FIELD(value=224, default_value=224, description="Input height", display_name="Input height", valid_min=128)
     opset_version: int = INT_FIELD(value=17, default_value=12, valid_min=1, display_name="opset version", description="""Operator set version of the ONNX model used to generate the TensorRT engine.""")
     batch_size: int = INT_FIELD(value=-1, default_value=-1, description="Batch size", display_name="Batch size", valid_min=0)
     verbose: bool = BOOL_FIELD(value=False, default_value=False, description="Verbose", display_name="Verbose")
