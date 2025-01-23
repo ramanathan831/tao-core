@@ -72,7 +72,7 @@ spec:
         gitlabCommitStatus(name: "build_wheel", connection: gitLabConnection('git-lab-master')) {
           withCredentials([usernamePassword(credentialsId: 'tao-artifactory-tkn', passwordVariable: 'JFROG_PASSWORD', usernameVariable: 'JFROG_USERNAME')]) {
               sh "bash release/python/install_jfrog.sh"
-              sh "jfrog rt u --url=https://urm.nvidia.com/artifactory/ --user=${JFROG_USERNAME} --apikey=${JFROG_PASSWORD} --target-props '${PROP}' ${SRC} ${TARGET}"
+              sh "jf rt u --url=https://urm.nvidia.com/artifactory/ --user=${JFROG_USERNAME} --password=${JFROG_PASSWORD} --target-props '${PROP}' ${SRC} ${TARGET}"
           }
         }
       }
