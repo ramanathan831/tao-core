@@ -83,7 +83,7 @@ def _extract_images(tar_path, dest):
     logger.info("Deleted data tar file")
 
 
-def search_for_ptm(root, network=""):
+def search_for_ptm(root, network="", parameter_name=""):
     """Return path of the PTM file under the PTM root folder"""
     models = None
     models = glob.glob(root + "/**/*.tlt", recursive=True) + glob.glob(root + "/**/*.hdf5", recursive=True) + glob.glob(root + "/**/*.pth", recursive=True) + glob.glob(root + "/**/*.pth.tar", recursive=True) + glob.glob(root + "/**/*.pt", recursive=True)
@@ -92,6 +92,11 @@ def search_for_ptm(root, network=""):
         models += glob.glob(root + "/**/*.ckpt", recursive=True)
     if network in ("classification_tf2", "efficientdet_tf2"):
         models = [os.path.join(root, os.listdir(root)[0])]
+    if network == "stylegan_xl":
+        if parameter_name == "inception_fid_path":
+            models = glob.glob(root + "/**/*Inception*.pth", recursive=True)
+        if parameter_name == "input_embeddings_path":
+            models = glob.glob(root + "/**/*tf_efficientnet*.pth", recursive=True)
     if models:
         model_path = models[0]  # pick one arbitrarily
         logger.info("Found valid PTM at {}".format(model_path)) # noqa pylint: disable=C0209
@@ -440,7 +445,7 @@ def download_files_from_cloud(cloud_data, dictionary, key, value, job_id, networ
         org, team, model_name, model_version = split_ngc_path(ngc_model)
         if not download_ngc_model(ngc_model, f"/ptm/{org}/{team}/{model_name}/{model_version}/model", ngc_key, is_cookie_set=tao_api_ui_cookie, use_ngc_staging=use_ngc_staging):
             raise ValueError("Unable to download the PTM")
-        ptm_path = search_for_ptm(f"/ptm/{org}/{team}/{model_name}/{model_version}/model", network_arch)
+        ptm_path = search_for_ptm(f"/ptm/{org}/{team}/{model_name}/{model_version}/model", network_arch, key)
         dictionary[key] = ptm_path
 
     elif "://" in value:

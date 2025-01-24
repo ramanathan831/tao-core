@@ -64,7 +64,7 @@ class StemConfig:
     cbase: int = INT_FIELD(value=32768)
     cmax: int = INT_FIELD(value=512)
     syn_layers: int = INT_FIELD(value=10)
-    resolution: int = INT_FIELD(value=16)
+    resolution: int = INT_FIELD(value=128)
 
 
 @dataclass
@@ -170,7 +170,7 @@ class CommonDatasetConfig:
     """Common Dataset Config."""
 
     cond: bool = BOOL_FIELD(value=False)
-    img_resolution: int = INT_FIELD(value=16)
+    img_resolution: int = INT_FIELD(value=128)
     img_channels: int = INT_FIELD(value=3)
     num_classes: int = INT_FIELD(value=0)
 
@@ -194,7 +194,7 @@ class DatasetConfig:
     stylegan: StyleganDatasetConfig = DATACLASS_FIELD(StyleganDatasetConfig())
     bigdatasetgan: BigdatasetganDatasetConfig = DATACLASS_FIELD(BigdatasetganDatasetConfig())
     common: CommonDatasetConfig = DATACLASS_FIELD(CommonDatasetConfig())
-    batch_size: int = INT_FIELD(value=128, valid_min=1, valid_max="inf")
+    batch_size: int = INT_FIELD(value=64, valid_min=1, valid_max="inf")
     pin_memory: bool = BOOL_FIELD(value=True)
     prefetch_factor: int = INT_FIELD(value=2, valid_min=1, valid_max="inf")
     workers: int = INT_FIELD(value=3, valid_min=1, valid_max="inf")
@@ -274,8 +274,18 @@ class ExportExpConfig:
 
     results_dir: Optional[str] = STR_FIELD(value=None, value_type="hidden")
     gpu_id: int = INT_FIELD(value=0)
-    checkpoint: str = STR_FIELD(value=MISSING, value_type="hidden")
-    onnx_file: str = STR_FIELD(value=MISSING, value_type="hidden")
+    checkpoint: str = STR_FIELD(
+        value=MISSING,
+        default_value="",
+        description="The absolute path to the checkpoint.",
+        display="checkpoint"
+    )
+    onnx_file: str = STR_FIELD(
+        value=MISSING,
+        default_value="",
+        description="The absolute path to the onnx file.",
+        display="onnx file"
+    )
     on_cpu: bool = BOOL_FIELD(value=False)
     opset_version: int = INT_FIELD(value=12)
     batch_size: int = INT_FIELD(value=-1)
@@ -314,8 +324,8 @@ class GenTrtEngineExpConfig:
     onnx_file: str = STR_FIELD(value=MISSING)
     trt_engine: Optional[str] = STR_FIELD(value=None)
     input_channel: int = INT_FIELD(value=3)
-    input_width: int = INT_FIELD(value=256)
-    input_height: int = INT_FIELD(value=256)
+    input_width: int = INT_FIELD(value=128)
+    input_height: int = INT_FIELD(value=128)
     opset_version: int = INT_FIELD(value=12)
     batch_size: int = INT_FIELD(value=-1)
     verbose: bool = BOOL_FIELD(value=False)
