@@ -202,8 +202,7 @@ class TrainExpConfig(TrainConfig):
     optim: OptimConfig = DATACLASS_FIELD(OptimConfig())
     pretrained_model_path: Optional[str] = STR_FIELD(value=None, default_value="", description="Pretrained model path", display_name="pretrained model path")
     tensorboard: Optional[TensorBoardLogger] = DATACLASS_FIELD(TensorBoardLogger())
-    ema: bool = BOOL_FIELD(value=False, default_value=False, description="Flag to enable EMA")
-    ema_type: str = STR_FIELD(value="refusion", default_value="refusion", valid_options="refusion,nemo,mm", description="EMA type")
+    enable_ema: bool = BOOL_FIELD(value=False, default_value=False, description="Flag to enable EMA")
 
 
 @dataclass
