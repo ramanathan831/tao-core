@@ -17,25 +17,137 @@
 """Job queue handling."""
 
 
-import sys
-import importlib
 import os
-import threading
-import time
-import traceback
+import re
+import sys
 import yaml
+import shlex
+import importlib
+import subprocess
+import threading
+import traceback
+from time import time, sleep
+from contextlib import contextmanager
+
 from nvidia_tao_core.api_utils import module_utils
 from nvidia_tao_core.cloud_handlers.utils import download_files_from_spec, get_results_cloud_data, monitor_and_upload
 import nvidia_tao_core.loggers.logging as status_logging
 from nvidia_tao_core.api_utils.module_utils import entrypoint_paths, entry_points
 
-module = entry_points[0].module_name.split('.')[0]
-entrypoint = importlib.import_module(entrypoint_paths[module])
+module = entry_points[0].module_name.split('.')[0] if entry_points else None
+entrypoint = importlib.import_module(entrypoint_paths[module]) if module else None
 
 # Initialize empty queue, processing jobs, and completed jobs lists
 queue = []
 processing_jobs = []
 completed_jobs = []
+
+
+def convert_dict_to_cli_args(data, parent_key=""):
+    cli_args = []
+    for key, value in data.items():
+        # Construct the current key path
+        if isinstance(value, dict):
+            # Recursively process nested dictionaries
+            cli_args.extend(convert_dict_to_cli_args(value, key))
+        else:
+            # Append the CLI argument as --key value
+            cli_args.append(f"--{key}")
+            cli_args.append(str(value))
+    
+    return cli_args
+
+
+@contextmanager
+def dual_output(log_file=None):
+    """Context manager to handle dual output redirection for subprocess.
+
+    Args:
+    - log_file (str, optional): Path to the log file. If provided, output will be
+      redirected to both sys.stdout and the specified log file. If not provided,
+      output will only go to sys.stdout.
+
+    Yields:
+    - stdout_target (file object): Target for stdout output (sys.stdout or log file).
+    - log_target (file object or None): Target for log file output, or None if log_file
+      is not provided.
+    """
+    if log_file:
+        with open(log_file, "a") as f:
+            yield sys.stdout, f
+    else:
+        yield sys.stdout, None
+
+
+def vlm_launch(neural_network_name, action, specs):
+    cli_args = convert_dict_to_cli_args(specs)
+    cli_args = " ".join(cli_args)
+    process_passed = False
+    try:
+        # Run the script.
+        log_file = ""
+        if os.getenv("JOB_ID"):
+            logs_dir = os.getenv('TAO_MICROSERVICES_TTY_LOG', '/results')
+            log_file = f"{logs_dir}/{os.getenv('JOB_ID')}/microservices_log.txt"
+
+        progress_bar_pattern = re.compile(r"Epoch \d+: \s*\d+%|\[.*\]")
+        call = f"{neural_network_name}-{action} {cli_args}"
+        start = time()
+        print("call", call)
+        with dual_output(log_file) as (stdout_target, log_target):
+            proc = subprocess.Popen(
+                shlex.split(call),
+                stdout=subprocess.PIPE,
+                stderr=subprocess.STDOUT,
+                bufsize=1,  # Line-buffered
+                universal_newlines=True  # Text mode
+            )
+            last_progress_bar_line = None
+
+            for line in proc.stdout:
+                # Check if the line contains \r or matches the progress bar pattern
+                if '\r' in line or progress_bar_pattern.search(line):
+                    last_progress_bar_line = line.strip()
+                    # Print the progress bar line to the terminal
+                    stdout_target.write('\r' + last_progress_bar_line)
+                    stdout_target.flush()
+                else:
+                    # Write the final progress bar line to the log file before a new log line
+                    if last_progress_bar_line:
+                        if log_target:
+                            log_target.write(last_progress_bar_line + '\n')
+                            log_target.flush()
+                        last_progress_bar_line = None
+                    stdout_target.write(line)
+                    stdout_target.flush()
+                    if log_target:
+                        log_target.write(line)
+                        log_target.flush()
+
+            proc.wait()  # Wait for the process to complete
+            # Write the final progress bar line after process completion
+            if last_progress_bar_line and log_target:
+                log_target.write(last_progress_bar_line + '\n')
+                log_target.flush()
+            if proc.returncode == 0:
+                process_passed = True
+
+    except (KeyboardInterrupt, SystemExit):
+        print("Command was interrupted")
+        process_passed = True
+    except subprocess.CalledProcessError as e:
+        if e.output is not None:
+            print(e.output)
+        process_passed = False
+
+    end = time()
+    time_lapsed = int(end - start)
+    if not process_passed:
+        print("Execution status: FAIL")
+        return False
+
+    print("Execution status: PASS")
+    return True
 
 
 # Function to process jobs from the queue
@@ -98,6 +210,7 @@ def process_queue():
                     yaml.dump(specs, yaml_file, default_flow_style=False)
 
                 # Starting the thread to update the results to the cloud
+                print("cloud storage", cloud_storage)
                 if cloud_storage:
                     exit_event = threading.Event()
                     upload_thread = threading.Thread(target=monitor_and_upload, args=(specs["results_dir"], cloud_storage, exit_event), daemon=True)
@@ -110,8 +223,12 @@ def process_queue():
                     "results_dir": specs["results_dir"],
                 }
 
-                _, actions = module_utils.get_neural_network_actions(job["neural_network_name"])
-                is_completed = entrypoint.launch(args, "", actions, network=job["neural_network_name"])
+                print("entrypoint", entrypoint)
+                if entrypoint:
+                    _, actions = module_utils.get_neural_network_actions(job["neural_network_name"])
+                    is_completed = entrypoint.launch(args, "", actions, network=job["neural_network_name"])
+                else:
+                    is_completed = vlm_launch(job["neural_network_name"], job["action"], specs)
 
             except Exception:
                 print("Traceback", file=sys.stderr)
@@ -149,4 +266,4 @@ def process_queue():
 
             processing_jobs.remove(job)  # Remove job from processing list
             completed_jobs.append(job)  # Add job to completed list
-        time.sleep(1)  # Check queue every second
+        sleep(1)  # Check queue every second

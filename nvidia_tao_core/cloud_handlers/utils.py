@@ -101,6 +101,10 @@ def search_for_ptm(root, network="", parameter_name=""):
         model_path = models[0]  # pick one arbitrarily
         logger.info("Found valid PTM at {}".format(model_path)) # noqa pylint: disable=C0209
         return model_path
+    if os.path.exists(root):
+        if network == "vila":
+            return os.path.join(root, "vila-1.5-40b_vvila-yi-34b-siglip-stage3_1003_video_v8")
+        return root
     logger.info("PTM can't be found")
     return None
 
@@ -266,6 +270,7 @@ def upload_files(local_path, cloud_storage, file_last_modified):
 
                 # Check if the file is new or modified
                 if file_path not in file_last_modified or current_last_modified > file_last_modified[file_path]:
+                    print("File event created/modified {}".format(file_path))
                     logger.info("File event created/modified {}".format(file_path))  # noqa pylint: disable=C0209
                     cloud_storage.upload_file(file_path, file_path)
 
@@ -389,7 +394,7 @@ def monitor_and_upload(local_path, cloud_storage, exit_event, seek_position=0):
     Returns:
         None
     """
-    print("monitor_and_upload :: Entering")
+    print("monitor_and_upload :: Entering", local_path)
     file_last_modified = {}
 
     # Initialize file_last_modified with files that are already part of results dir
@@ -400,9 +405,11 @@ def monitor_and_upload(local_path, cloud_storage, exit_event, seek_position=0):
 
     try:
         while True:
+            print("uploading", local_path, cloud_storage, file_last_modified)
             upload_files(local_path, cloud_storage, file_last_modified)
             seek_position = send_logs_to_server(seek_position)
             if exit_event.is_set():
+                print("exit set")
                 upload_files(local_path, cloud_storage, file_last_modified)
                 seek_position = send_logs_to_server(seek_position)
                 break

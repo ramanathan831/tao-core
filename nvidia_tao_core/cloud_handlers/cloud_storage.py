@@ -82,13 +82,18 @@ class CloudStorage:
         """
         try:
             # Upload the file to cloud storage
-            with open(local_file_path, 'rb') as file_stream:
-                self.driver.upload_object_via_stream(file_stream, container=self.container, object_name=cloud_file_path)
-            if self.is_file(cloud_file_path):
-                logger.info("File {} was uploaded successfully".format(cloud_file_path))  # noqa pylint: disable=C0209
-            else:
-                raise ValueError(f"File {cloud_file_path} was not uploaded successfully")
+            print("Uploading", local_file_path, os.path.exists(local_file_path))
+            if os.path.exists(local_file_path):
+                with open(local_file_path, 'rb') as file_stream:
+                    self.driver.upload_object_via_stream(file_stream, container=self.container, object_name=cloud_file_path)
+                if self.is_file(cloud_file_path):
+                    print("Uploaded", local_file_path)
+                    logger.info("File {} was uploaded successfully".format(cloud_file_path))  # noqa pylint: disable=C0209
+                else:
+                    print("Not Uploaded", local_file_path)
+                    raise ValueError(f"File {cloud_file_path} was not uploaded successfully")
         except Exception as e:
+            print("Not Uploaded exception", local_file_path)
             raise e
 
     @retry_method
