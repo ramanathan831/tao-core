@@ -49,16 +49,25 @@ class SystemConfig:
 
 
 @dataclass
+class DatasetConfig:
+    """Dataset config."""
+
+    dataset_name: Optional[str] = STR_FIELD(value="scienceqa", default_value="scienceqa", display_name="Dataset name", description="Dataset name. Default is scienceqa. Dataset name must be registered at `llava/data/registry/datasets/default.yaml`.")
+    annotations_path: Optional[str] = STR_FIELD(value=None, display_name="Annotation path", description="Path to the annotation file")
+    images_path: Optional[str] = STR_FIELD(value=None, display_name="Image directory/tar path", description="Path to the image directory or images tar file")
+
+
+@dataclass
 class ExperimentConfig:
     """Experiment config."""
 
     model_path: str = STR_FIELD(value="/models/vila", default_value="/models/vila", display_name="Pretrained model path", description="Pretrained model path")
-    results_dir: str = STR_FIELD(value="/results/lora", default_value="/results/lora", display_name="Output directory", description="Output directory. Must contain `lora` in the output name.")
-    dataset_name: Optional[str] = STR_FIELD(value="scienceqa", default_value="scienceqa", display_name="Dataset name", description="Dataset name. Default is scienceqa. Dataset name must be registered at `llava/data/registry/datasets/default.yaml`.")
+    results_dir: str = STR_FIELD(value=None, display_name="Output directory", description="Output directory. Must contain `lora` in the output name.")
 
     llm_mode: Optional[str] = STR_FIELD(value="lora", default_value="lora", valid_options="freeze,ft,lora", display_name="LLM mode", description="LLM mode: freeze, ft, or lora. Default is lora")
     vision_mode: Optional[str] = STR_FIELD(value="ft", default_value="ft", valid_options="freeze,ft,lora", display_name="Vision tower mode", description="Vision tower mode: freeze, ft, or lora. Default is ft")
     disable_wandb: Optional[str] = STR_FIELD(value="true", default_value="true", valid_options="true,false", display_name="Vision tower mode", description="Enable or disable wandb logging")
 
+    dataset: DatasetConfig = DATACLASS_FIELD(DatasetConfig(), description="Dataset config")
     trainer: TrainerConfig = DATACLASS_FIELD(TrainerConfig(), description="Trainer config")
     system: SystemConfig = DATACLASS_FIELD(SystemConfig(), description="GPU and Multinode System config")
