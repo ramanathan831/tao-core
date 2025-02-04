@@ -80,7 +80,7 @@ class BackboneConfig:
 
 @dataclass
 class ModelConfig:
-    """ Model config."""
+    """Model config."""
 
     backbone: BackboneConfig = DATACLASS_FIELD(BackboneConfig())
     head: HeadConfig = DATACLASS_FIELD(HeadConfig())
