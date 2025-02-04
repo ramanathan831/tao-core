@@ -242,7 +242,7 @@ class ExportExpConfig:
 
 
 @dataclass
-class CLTrtConfig(TrtConfig):
+class TrtExpConfig(TrtConfig):
     """Trt config."""
 
     data_type: str = STR_FIELD(value="FP32", default_value="fp16", description="Data type", display_name="Data type")
@@ -253,7 +253,7 @@ class CLTrtConfig(TrtConfig):
 class GenTrtEngineExpConfig(GenTrtEngineConfig):
     """Gen TRT Engine experiment config."""
 
-    tensorrt: CLTrtConfig = DATACLASS_FIELD(CLTrtConfig())
+    tensorrt: TrtExpConfig = DATACLASS_FIELD(TrtExpConfig())
 
 
 @dataclass
