@@ -45,7 +45,7 @@ class OptimConfig:
     optim: str = STR_FIELD(value="adamw", default_value="adamw", description="Optimizer", valid_options="adamw,adam,sgd")
     lr: float = FLOAT_FIELD(value=0.00006, default_value=0.00006, valid_min=0, valid_max="inf", automl_enabled="TRUE", description="Optimizer learning rate")
     policy: str = STR_FIELD(value="linear", default_value="linear", valid_options="linear,step", description="Optimizer policy")
-    policy_params: Dict[str, Any] = DICT_FIELD(value={"step_size": 30, "gamma": 0.1}, default_value={"step_size": 30, "gamma": 0.1}, description="Optimizer policy parameters")
+    policy_params: Dict[str, Any] = DICT_FIELD({"step_size": 30, "gamma": 0.1}, default_value={"step_size": 30, "gamma": 0.1}, description="Optimizer policy parameters")
     momentum: float = FLOAT_FIELD(value=0.9, default_value=0.9, math_cond="> 0.0", display_name="momentum - AdamW", description="The momentum for the AdamW optimizer.", automl_enabled="TRUE")
     weight_decay: float = FLOAT_FIELD(value=0.01, default_value=0.01, math_cond="> 0.0", display_name="weight decay", description="The weight decay coefficient.", automl_enabled="TRUE")
 
