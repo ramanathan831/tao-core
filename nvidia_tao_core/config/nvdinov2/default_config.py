@@ -485,24 +485,6 @@ class NVDINOv2TrainExpConfig(TrainConfig):
         default_type=None,
         description="Path to a pre-trained NVDINOv2 model to initialize the current training from."
     )
-    max_steps: int = INT_FIELD(
-        value=2500000,
-        default_value=2500000,
-        valid_min=1,
-        valid_max="inf",
-        description="Maximum number of training steps",
-        display_name="max training steps",
-        popular="yes"
-    )
-    checkpoint_step_interval: int = INT_FIELD(
-        value=1250,
-        default_value=1250,
-        valid_min=1,
-        valid_max="inf",
-        description="Interval steps to save checkpoint",
-        display_name="checkpoint step interval",
-        popular="yes"
-    )
     layerwise_decay: float = FLOAT_FIELD(
         value=1.0,
         default_value=1.0,
