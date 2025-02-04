@@ -37,6 +37,7 @@ from nvidia_tao_core.config.common.common_config import (
     CalibrationConfig
 )
 
+
 @dataclass
 class OptimConfig:
     """Optimizer config."""
@@ -49,12 +50,14 @@ class OptimConfig:
     momentum: float = FLOAT_FIELD(value=0.9, default_value=0.9, math_cond="> 0.0", display_name="momentum - AdamW", description="The momentum for the AdamW optimizer.", automl_enabled="TRUE")
     weight_decay: float = FLOAT_FIELD(value=0.01, default_value=0.01, math_cond="> 0.0", display_name="weight decay", description="The weight decay coefficient.", automl_enabled="TRUE")
 
+
 @dataclass
 class LossConfig:
     """Loss config."""
 
     type: str = STR_FIELD(value="CrossEntropyLoss", default_value="CrossEntropyLoss", description="Loss type", valid_options="CrossEntropyLoss")
     label_smooth_val: float = FLOAT_FIELD(value=0.0, default_value=0.0, valid_min=0, valid_max=1, description="Label smoothing value")
+
 
 @dataclass
 class HeadConfig:
@@ -77,6 +80,7 @@ class BackboneConfig:
     feat_downsample: bool = BOOL_FIELD(value=False, default_value=False, display_name="Feature downsample", description="Feature downsample for fan base backbone")
     pretrained_backbone_path: Optional[str] = STR_FIELD(value=None, default_value="", description="Path to the pretrained model")
     freeze_backbone: bool = BOOL_FIELD(value=False, default_value=False, description="Flag to freeze backbone", automl_enabled="TRUE")
+
 
 @dataclass
 class ModelConfig:
