@@ -65,7 +65,7 @@ class DataPathFormat:
     """Dataset Path experiment config."""
 
     images_dir: str = STR_FIELD(
-        value=MISSING,
+        value="/data",
         default_value="",
         description="Path to images directory for dataset",
         display_name="image directory"
@@ -136,6 +136,11 @@ class NVDINOv2DatasetConfig:
         DataPathFormat(),
         description="Configuration for the training dataset path",
         display_name="Training Dataset"
+    )
+    test_dataset: DataPathFormat = DATACLASS_FIELD(
+        DataPathFormat(),
+        description="Configuration for the testing dataset path",
+        display_name="Testing Dataset"
     )
     batch_size: int = INT_FIELD(
         value=4,
