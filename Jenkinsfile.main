@@ -69,7 +69,7 @@ spec:
           }
         }
         gitlabCommitStatus(name: "functional_tests", connection: gitLabConnection('git-lab-master')) {
-          sh "python setup.py develop && pytest"
+          sh "pip install . && pytest"
         }
       }
 

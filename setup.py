@@ -54,19 +54,19 @@ setuptools.setup(
     include_package_data=True,
     zip_safe=False,
     install_requires=[
-        "PyYAML==6.0.1",
+        "PyYAML==6.0.2",
         "requests==2.32.3",
         "ngcsdk==3.46.0",
         "apache-libcloud==3.8.0",
-        "google-api-core==2.2.2",
-        "googleapis-common-protos==1.52.0",
-        "protobuf==3.20",
+        "google-api-core==2.24.1",
+        "googleapis-common-protos==1.66.0",
+        "protobuf==3.20.3",
         "opentelemetry-api==1.27.0",
         "opentelemetry-sdk==1.27.0",
         "opentelemetry-exporter-otlp-proto-grpc==1.27.0",
-        "omegaconf",
-        "transformers",
-        "packaging==24.0"
+        "omegaconf==2.3.0",
+        "transformers==4.48.2",
+        "packaging==24.2"
     ]
 )
 
