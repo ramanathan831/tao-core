@@ -316,6 +316,12 @@ class GenTrtEngineConfig:
                     This only works with :code:`tao-deploy`.""",
         display_name="TensorRT engine"
     )
+    timing_cache: Optional[str] = STR_FIELD(
+        value=None,
+        description="""Path to a TensorRT timing cache that speeds up engine generation.
+                    This will be created/read/updated.""",
+        display_name="TensorRT timing cache"
+    )
     batch_size: int = INT_FIELD(
         value=-1,
         default_value=-1,
