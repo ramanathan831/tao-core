@@ -1,0 +1,47 @@
+{
+    "api_params": {
+        "actions": ["convert","convert_efficientdet_tf2", "annotation_format_convert", "augment", "analyze", "validate_images", "validate_annotations", "auto_label"],
+        "formats":["kitti","raw","coco", "coco_raw","odvg"],
+        "accepted_ds_intents": ["training", "evaluation", "testing"],
+        "image":"TAO_TF2",
+        "spec_backend":"yaml",
+        "actions_pipe":{
+            "convert":"odconvert",
+            "convert_efficientdet_tf2":"odconvert",
+            "annotation_format_convert":"data_services",
+            "augment":"data_services",
+            "analyze":"data_services",
+            "validate_images":"data_services",
+            "validate_annotations":"data_services",
+            "auto_label":"data_services"
+        }
+    },
+    "spec_params":{
+        "convert_efficientdet_tf2":{
+            "results_dir":"output_dir"
+        },
+        "annotation_format_convert": {
+            "results_dir":"output_dir"
+        },
+        "augment": {
+            "results_dir":"output_dir",
+            "gpu_ids": "from_csv",
+            "num_gpus": "from_csv"
+        },
+        "analyze": {
+            "results_dir":"output_dir"
+        },
+        "validate_images": {
+            "results_dir":"output_dir"
+        },
+        "validate_annotations": {
+            "results_dir":"output_dir"
+        },
+        "auto_label": {
+            "results_dir":"output_dir",
+            "gpu_ids": "from_csv",
+            "mal.checkpoint":"resume_model_or_ptm",
+            "grounding_dino.checkpoint":"resume_model_or_ptm"
+        }
+    }
+}

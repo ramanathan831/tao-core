@@ -23,6 +23,12 @@ PACKAGE_LIST = [
     "nvidia_tao_core"
 ]
 
+def read_requirements():
+    """Read dependencies from requirements-pip.txt."""
+    with open("requirements.txt", encoding="utf-8") as f:
+        return [line.strip() for line in f if line.strip() and not line.startswith("#")]
+
+
 version_locals = utils.get_version_details()
 setuptools_packages = []
 for package_name in PACKAGE_LIST:
@@ -53,12 +59,6 @@ setuptools.setup(
     },
     include_package_data=True,
     zip_safe=False,
-    install_requires=[
-        "PyYAML==6.0.1",
-        "requests==2.32.3",
-        "apache-libcloud==3.8.0",
-        "ngcsdk==3.46.0",
-        "omegaconf"
-    ]
+    install_requires=read_requirements()
 )
 

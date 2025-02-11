@@ -1,0 +1,11 @@
+{
+    "api_params": {
+        "actions": ["convert"],
+        "formats":["unet","coco","raw","odvg","coco_panoptic"],
+        "accepted_ds_intents": ["training", "evaluation"],
+        "image":"TAO_PYTORCH",
+        "spec_backend":"yaml",
+        "actions_pipe":{
+        }
+    }
+}

@@ -1,0 +1,354 @@
+# Copyright (c) 2024, NVIDIA CORPORATION.  All rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+"""NVCF handlers modules"""
+import os
+import sys
+import json
+import time
+import uuid
+import requests
+import traceback
+
+from nvidia_tao_core.microservices.handlers.ngc_handler import send_ngc_api_request, get_user_key
+from nvidia_tao_core.microservices.handlers.stateless_handlers import update_job_details_with_microservices_response, get_job_specs, get_log_file_path, internal_job_status_update
+from nvidia_tao_core.microservices.handlers.utilities import get_cloud_metadata
+from nvidia_tao_core.microservices.utils import retry_method
+
+
+NUM_OF_RETRY = 3
+
+
+def get_available_nvcf_instances(user_id, org_name):
+    """For the given org, format and return the NVCF cluster info"""
+    ngc_key, _ = get_user_key(user_id, org_name)
+
+    nvcf_info_endpoint = f"https://api.ngc.nvidia.com/v3/orgs/{org_name}/nvcf"
+    nvcf_info_response = send_ngc_api_request(endpoint=nvcf_info_endpoint, requests_method="GET", request_body={}, ngc_key=ngc_key)
+    available_nvcf_instances = {}
+    if nvcf_info_response.ok:
+        gpu_data = nvcf_info_response.json()
+        for cluster in gpu_data['clusters']:
+            cluster_name = cluster["cluster"]
+            gpu_type = cluster['gpuType']
+            instance_type = cluster['instanceType']
+            platform_id = str(uuid.uuid5(uuid.NAMESPACE_X500, f"{cluster_name}_{gpu_type}_{instance_type}"))
+
+            available = cluster['maxInstances'] - cluster['currentInstances']
+            available_nvcf_instances[platform_id] = {"cluster": cluster["cluster"],
+                                                     "gpu_type": gpu_type,
+                                                     "instance_type": instance_type,
+                                                     "max_limit": cluster['maxInstances'],
+                                                     "current_used": cluster['currentInstances'],
+                                                     "current_available": available,
+                                                     }
+
+    return available_nvcf_instances
+
+
+@retry_method(response=True)
+def invoke_function(deployment_string, network, action, microservice_action="", cloud_metadata={}, specs={}, ngc_key="", job_id="", tao_api_admin_key="", tao_api_base_url="", tao_api_status_callback_url="", tao_api_ui_cookie="", use_ngc_staging="", automl_experiment_number=""):
+    """Invoke a NVCF function"""
+    if not tao_api_base_url:
+        tao_api_base_url = "https://nvidia.com"
+    if not tao_api_status_callback_url:
+        tao_api_status_callback_url = "https://nvidia.com"
+
+    if action == "retrain":
+        action = "train"
+
+    request_metadata = {"api_endpoint": microservice_action,
+                        "neural_network_name": network,
+                        "action_name": action,
+                        "ngc_key": ngc_key,
+                        "storage": cloud_metadata,
+                        "specs": specs,
+                        "job_id": job_id,
+                        "tao_api_admin_key": tao_api_admin_key,
+                        "tao_api_base_url": tao_api_base_url,
+                        "tao_api_status_callback_url": tao_api_status_callback_url,
+                        "tao_api_ui_cookie": tao_api_ui_cookie,
+                        "use_ngc_staging": use_ngc_staging,
+                        "automl_experiment_number": automl_experiment_number,
+                        "hosted_service_interaction": "True"
+                        }
+    if os.getenv("HOST_PLATFORM", "local") == "NVCF":
+        request_metadata["nvcf_helm"] = os.getenv("FUNCTION_TAO_API", "")
+        if not os.getenv("FUNCTION_TAO_API", ""):
+            raise ValueError("FUNCTION_TAO_API should be present for NVCF as host platform")
+
+    function_id, version_id = deployment_string.split(":")
+
+    url = f"https://api.nvcf.nvidia.com/v2/nvcf/pexec/functions/{function_id}/versions/{version_id}"
+    headers = {
+        'accept': 'application/json',
+        'Content-Type': 'application/json',
+        "Authorization": f"Bearer {ngc_key}",
+    }
+
+    try:
+        response = requests.post(url, headers=headers, json=request_metadata, timeout=120)
+    except Exception as e:
+        print("Exception caught during invoking NVCF function", deployment_string, e, file=sys.stderr)
+        raise e
+
+    if not response.ok:
+        print("Invocation failed.", file=sys.stderr)
+        print("Response status code:", response.status_code, file=sys.stderr)
+        print("Response content:", response.text, file=sys.stderr)
+    return response
+
+
+@retry_method(response=True)
+def get_status_of_invoked_function(request_id, ngc_key):
+    """Fetch status of invoked function"""
+    url = f"https://api.nvcf.nvidia.com/v2/nvcf/pexec/status/{request_id}"
+    headers = {
+        'accept': 'application/json',
+        'Content-Type': 'application/json',
+        "Authorization": f"Bearer {ngc_key}",
+    }
+
+    response = requests.get(url, headers=headers, timeout=120)
+
+    if not response.ok:
+        print("Request failed.")
+        print("Response status code:", response.status_code)
+        print("Response content:", response.text)
+    return response
+
+
+def get_function(org_name, team_name, function_id, version_id, ngc_key):
+    """Get function metadata"""
+    team_string = f"teams/{team_name}/"
+    if team_name in "no_team":
+        team_string = ""
+    endpoint = f"https://api.ngc.nvidia.com/v2/orgs/{org_name}/{team_string}nvcf/functions/{function_id}/versions/{version_id}"
+    requests_method = "GET"
+    return send_ngc_api_request(endpoint, requests_method, request_body={}, json=False, ngc_key=ngc_key)
+
+
+def create_function(org_name, team_name, job_id, container, ngc_key):
+    """Create NVCF function"""
+    payload = {
+        "name": job_id,
+        "inferenceUrl": "/api/v1/nvcf",
+        "containerImage": container,
+        "apiBodyFormat": "CUSTOM",
+        "containerArgs": "flask run --host 0.0.0.0 --port 8000",
+        "healthUri": "/api/v1/health/readiness",
+    }
+
+    team_string = f"teams/{team_name}/"
+    if team_name in "no_team":
+        team_string = ""
+    endpoint = f"https://api.ngc.nvidia.com/v2/orgs/{org_name}/{team_string}nvcf/functions"
+    requests_method = "POST"
+    print("create endpoint", endpoint, payload, file=sys.stderr)
+    return send_ngc_api_request(endpoint, requests_method, request_body=json.dumps(payload), json=True, ngc_key=ngc_key)
+
+
+def deploy_function(org_name, team_name, function_details, nvcf_backend_details, ngc_key):
+    """Deploy NVCF function"""
+    function_id = function_details["function"]["id"]
+    version_id = function_details["function"]["versionId"]
+    payload = {
+        "deploymentSpecifications": [
+            {
+                "gpu": nvcf_backend_details["gpu_type"],
+                "backend": nvcf_backend_details["cluster"],
+                "maxInstances": 1,
+                "minInstances": 1,
+                "instanceType": nvcf_backend_details["instance_type"]
+            }
+        ]
+    }
+
+    team_string = f"teams/{team_name}/"
+    if team_name in "no_team":
+        team_string = ""
+    endpoint = f"https://api.ngc.nvidia.com/v2/orgs/{org_name}/{team_string}nvcf/deployments/functions/{function_id}/versions/{version_id}"
+    requests_method = "POST"
+    print("deploy endpoint", endpoint, payload, file=sys.stderr)
+    return send_ngc_api_request(endpoint, requests_method, request_body=json.dumps(payload), json=True, ngc_key=ngc_key)
+
+
+def delete_function_version(org_name, team_name, function_id, version_id, ngc_key):
+    """Un-deploy NVCF function"""
+    team_string = f"teams/{team_name}/"
+    if team_name in "no_team":
+        team_string = ""
+    endpoint = f"https://api.ngc.nvidia.com/v2/orgs/{org_name}/{team_string}nvcf/deployments/functions/{function_id}/versions/{version_id}"
+    requests_method = "DELETE"
+    return send_ngc_api_request(endpoint, requests_method, request_body={}, json=False, ngc_key=ngc_key)
+
+
+def create_microservice_job_on_nvcf(job_metadata):
+    """Create TAO microservice job on nvcf function"""
+    nvcf_metadata = job_metadata.get("backend_details", {}).get("nvcf_metadata", {})
+    network = job_metadata.get("network")
+    action = job_metadata.get("action")
+    tao_api_job_id = job_metadata.get("id")
+    deployment_string = nvcf_metadata.get("deployment_string")
+    ngc_key = nvcf_metadata.get("TAO_USER_KEY")
+    tao_api_admin_key = nvcf_metadata.get("TAO_ADMIN_KEY")
+    tao_api_base_url = nvcf_metadata.get("TAO_API_SERVER")
+    tao_api_status_callback_url = nvcf_metadata.get("TAO_LOGGING_SERVER_URL")
+    tao_api_ui_cookie = nvcf_metadata.get("TAO_COOKIE_SET")
+    use_ngc_staging = nvcf_metadata.get("USE_NGC_STAGING")
+    automl_experiment_number = nvcf_metadata.get("AUTOML_EXPERIMENT_NUMBER", "0")
+
+    job_message_job_id = tao_api_status_callback_url.split("/")[-1]
+
+    cloud_metadata = {}
+    get_cloud_metadata(nvcf_metadata.get("workspace_ids"), cloud_metadata)
+
+    if job_message_job_id != tao_api_job_id:
+        specs = get_job_specs(job_message_job_id, automl=True, automl_experiment_id=automl_experiment_number)
+    else:
+        specs = get_job_specs(tao_api_job_id)
+
+    job_create_response = invoke_function(deployment_string,
+                                          network,
+                                          action,
+                                          microservice_action="post_action",
+                                          cloud_metadata=cloud_metadata,
+                                          specs=specs,
+                                          ngc_key=ngc_key,
+                                          job_id=tao_api_job_id,
+                                          tao_api_admin_key=tao_api_admin_key,
+                                          tao_api_base_url=tao_api_base_url,
+                                          tao_api_status_callback_url=tao_api_status_callback_url,
+                                          tao_api_ui_cookie=tao_api_ui_cookie,
+                                          use_ngc_staging=use_ngc_staging,
+                                          automl_experiment_number=automl_experiment_number)
+
+    if job_create_response.status_code not in [200, 202]:
+        job_create_response_json = job_create_response.json()
+        print("Invocation error response code", job_create_response.status_code, file=sys.stderr)
+        print("Invocation error response json", job_create_response_json, file=sys.stderr)
+        update_job_details_with_microservices_response(job_create_response_json.get('detail', ""), job_message_job_id, automl_expt_job_id=tao_api_job_id)
+        print(f"Setting status of job {tao_api_job_id} to Error as microservices job couldn't be created", file=sys.stderr)
+        return "Error", "Microservice job couldn't be created"
+
+    job_create_response_json = job_create_response.json()
+    print(f"Microservice job successfully created for {tao_api_job_id}", job_create_response_json, file=sys.stderr)
+    job_id = job_create_response_json.get("job_id")
+
+    if job_create_response.status_code == 202:
+        req_id = job_create_response_json.get("reqId", "")
+        while True:
+            polling_response = get_status_of_invoked_function(req_id, ngc_key)
+            if polling_response.status_code == 404:
+                if polling_response.json().get("title") != "Not Found":
+                    print("Polling(job_create) response failed", polling_response.status_code, file=sys.stderr)
+                    print(f"Setting status of job {job_id} to Error as job create polling failed", file=sys.stderr)
+                    return "Error", "NVCF Polling failed with not found in error title"
+            if polling_response.status_code != 202:
+                break
+            time.sleep(10)
+
+        if polling_response.status_code != 200:
+            print("Polling(job_create) response status code is not 200", polling_response.status_code, file=sys.stderr)
+            print(f"Setting status of job {job_id} to Error as job create polling failed with a non 200 response", file=sys.stderr)
+            return "Error", "NVCF Polling failed"
+        job_id = polling_response.json().get("job_id")
+
+    if not job_id:
+        print("Job ID couldn't be fetched", file=sys.stderr)
+        print(f"Setting status of job {job_id} to Error as job id can't be fetched from microservices", file=sys.stderr)
+        return "Error", "Job_id from microservices job created couldn't be fetched"
+
+    return "Running", "Job submitted to NVCF"
+
+
+def get_nvcf_microservices_job_status(job_metadata, status=""):
+    """Get and update NVCF custom resource status"""
+    nvcf_metadata = job_metadata.get("backend_details", {}).get("nvcf_metadata", {})
+    if not status:
+        user_id = job_metadata.get("user_id")
+        org_name = job_metadata.get("org_name")
+        action = job_metadata.get("action")
+        network = job_metadata.get("network")
+        job_id = job_metadata.get("id")
+        job_handler_id = job_metadata.get("handler_id")
+        job_status = job_metadata.get("status")
+        ngc_key = nvcf_metadata.get("TAO_USER_KEY")
+        automl_experiment_number = nvcf_metadata.get("AUTOML_EXPERIMENT_NUMBER", "0")
+        tao_api_status_callback_url = nvcf_metadata.get("TAO_LOGGING_SERVER_URL", "")
+
+        job_message_job_id = tao_api_status_callback_url.split("/")[-1]
+
+        deployment_string = nvcf_metadata.get("deployment_string")
+        if deployment_string.find(":") == -1:
+            if job_status == "Error":
+                return "Error"
+            print(f"Deployment not active yet for job {job_id} {deployment_string} (in get status function)", file=sys.stderr)
+            status = "Pending"
+            return status
+
+        if job_status in ("Done", "Error"):
+            return job_status
+
+        print("update status", deployment_string, file=sys.stderr)
+        job_monitor_response = invoke_function(deployment_string, network, action, microservice_action="get_job_status", ngc_key=ngc_key, job_id=job_id)
+        if job_monitor_response.status_code == 404:
+            status = "Error"
+            if job_monitor_response.json().get("title") == "Not Found":
+                print("NVCF function was deleted, setting status as done", file=sys.stderr)
+                status = "Done"
+
+        if job_monitor_response.status_code == 202:
+            req_id = job_monitor_response.json().get("reqId", "")
+            while True:
+                job_monitor_response = get_status_of_invoked_function(req_id, ngc_key)
+                if job_monitor_response.status_code == 404:
+                    if job_monitor_response.json().get("title") != "Not Found":
+                        print("Polling(job_monitor) response failed", job_monitor_response.status_code, file=sys.stderr)
+                        status = "Error"
+                if job_monitor_response.status_code != 202:
+                    break
+                time.sleep(10)
+
+            if job_monitor_response.status_code != 200:
+                print("Polling(job_monitor) response status code is not 200", job_monitor_response.status_code, file=sys.stderr)
+                status = "Error"
+
+        if not status:
+            try:
+                job_monitor_response_json = job_monitor_response.json()
+                error_message = job_monitor_response_json.get("detail")
+                status = job_monitor_response_json.get("status")
+                if status:
+                    if status == "Processing":
+                        status = "Running"
+                    elif status not in ("Pending", "Done"):
+                        logfile = get_log_file_path(user_id, org_name, job_handler_id, job_message_job_id, job_id, automl_experiment_number)
+                        internal_job_status_update(job_message_job_id, automl=False, automl_experiment_number=automl_experiment_number, message="Container microservices reported an error, more logs to be found on NVCF UI", logfile=logfile)
+                        status = "Error"
+                else:
+                    status = "Pending"
+                    if "Job ID Not Present" in error_message:
+                        print(f"Job ID Not Present in {deployment_string} for job {job_id}", file=sys.stderr)
+                        status = "Error"
+            except Exception as e:
+                print(f"Exception thrown in get_nvcf_microservices_job_status is {str(e)}", file=sys.stderr)
+                print(traceback.format_exc(), file=sys.stderr)
+                print(f"Exception while calling job fetch microservices in {deployment_string} for job {job_id}, {job_monitor_response.text}", file=sys.stderr)
+                status = "Error"
+
+    if not status:
+        print("Status couldn't be inferred", file=sys.stderr)
+        status = "Pending"
+    return status

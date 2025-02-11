@@ -1,0 +1,33 @@
+{
+    "api_params": {
+        "dataset_type":"segmentation",
+        "actions": ["train","evaluate","inference"],
+        "formats":["default"],
+        "accepted_ds_intents": ["training", "evaluation"],
+        "image":"TAO_PYTORCH",
+        "spec_backend":"yaml",
+        "actions_pipe":{
+            "train":"train",
+            "evaluate":"evaluate",
+            "inference":"inference"
+        }
+    },
+    
+    "spec_params":{
+        "train":{
+            "results_dir":"output_dir",
+            "gpu_ids":"from_csv"
+        },
+        "evaluate":{
+            "results_dir":"output_dir",
+            "gpu_ids":"from_csv",
+            "evaluate.checkpoint":"parent_model"
+        },
+        "inference":{
+            "results_dir":"output_dir",
+            "gpu_ids":"from_csv",
+            "inference.label_dump_path":"create_inference_result_file_mal",
+            "inference.checkpoint":"parent_model"
+        }
+    }
+}

@@ -1,0 +1,168 @@
+# Copyright (c) 2024, NVIDIA CORPORATION.  All rights reserved.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+"""Authentication utils credential modules"""
+import datetime
+import os
+import requests
+import uuid
+import sys
+import traceback
+import jwt
+
+from nvidia_tao_core.microservices.auth_utils.session import __SESSION_EXPIRY_SECONDS__, _SESSION_REFRESH_SECONDS__
+from nvidia_tao_core.microservices.handlers.ngc_handler import get_user_key
+from nvidia_tao_core.microservices.handlers.encrypt import NVVaultEncryption
+from nvidia_tao_core.microservices.handlers.mongo_handler import MongoHandler
+
+BACKEND = os.getenv("BACKEND", "local-k8s")
+DEPLOYMENT_MODE = os.getenv("DEPLOYMENT_MODE", "PROD")
+
+
+def get_from_ngc(key, org_name):
+    """Get signing key from token"""
+    stg_prefix = "stg."
+    if DEPLOYMENT_MODE == "PROD":
+        stg_prefix = ""
+
+    err = None
+    creds = None
+    try:
+        # Get token
+        if not org_name:
+            err = f'Org Name {org_name} not valid'
+            return creds, err
+        if key.startswith("nvapi"):
+            print("Scoped key passed", file=sys.stderr)
+            token = key
+            url = f'https://api.{stg_prefix}ngc.nvidia.com/v3/keys/get-caller-info'
+            try:
+                r = requests.post(url, headers={'Content-Type': 'application/x-www-form-urlencoded'}, data={'credentials': key}, timeout=5)
+            except Exception as e:
+                print("Exception caught during getting user info with personal key", e, file=sys.stderr)
+                raise e
+        else:
+            err = 'Credentials error: Invalid NGC_PERSONAL_KEY, NGC_API_KEYs are no longer valid, generate a personal key with Cloud Functions, NGC Catalog and Private registry services https://org.ngc.nvidia.com/setup/personal-keys'
+            return creds, err
+        if r.status_code != 200:
+            err = 'Credentials error: Invalid NGC_PERSONAL_KEY'
+            return creds, err
+        ngc_user_id = r.json().get('user', {}).get('id')
+        ngc_user_name = r.json().get('user', {}).get('name')
+        ngc_user_email = r.json().get('user', {}).get('email')
+        if not ngc_user_id:
+            err = 'Credentials error: Unknown NGC user ID'
+            return creds, err
+        user_id = str(uuid.uuid5(uuid.UUID(int=0), str(ngc_user_id)))
+        creds = {'user_id': user_id, 'user_name': ngc_user_name, 'user_email': ngc_user_email, 'token': token}
+        mongo = MongoHandler("tao", "users")
+        encrypted_key = key
+        config_path = os.getenv("VAULT_SECRET_PATH", None)
+        if config_path:
+            encryption = NVVaultEncryption(config_path)
+            if encryption.check_config()[0]:
+                encrypted_key = encryption.encrypt(key)
+            elif not os.getenv("DEV_MODE", "False").lower() in ("true", "1"):
+                err = "Vault service does not work, can't store API key"
+                return creds, err
+
+        user_query = {'id': user_id}
+        user = mongo.find_one(user_query)
+        user_metadata = {'id': user_id}
+        if 'key' not in user or encrypted_key != user['key'].get(org_name, ""):
+            user_metadata['key'] = {org_name: encrypted_key}
+        if 'jwt_token' not in user or not is_token_valid(user['jwt_token']):
+            print("Creating new JWT Token", file=sys.stderr)
+            token = create_jwt_token(user_id, org_name, key)
+            user_metadata['jwt_token'] = token
+            creds['token'] = token
+        else:
+            print("Using old JWT Token", file=sys.stderr)
+            creds['token'] = user['jwt_token']
+        mongo.upsert(user_query, user_metadata)
+
+    except Exception as e:
+        print(traceback.format_exc(), file=sys.stderr)
+        err = 'Credentials error: ' + str(e)
+    return creds, err
+
+
+def create_jwt_token(user_id, org_name, user_key):
+    """Create new JWT Token for userId"""
+    payload = {
+        "user_id": user_id,
+        "org_name": org_name,
+        "exp": datetime.datetime.now(tz=datetime.timezone.utc) + datetime.timedelta(seconds=__SESSION_EXPIRY_SECONDS__)
+    }
+    token = jwt.encode(payload, user_key)
+    return token
+
+
+def decode_jwt_token(token):
+    """Decode JWT Token"""
+    payload, err = {}, None
+    try:
+        raw_payload = jwt.decode(token, options={'verify_signature': False}, algorithms=["HS256"])
+        user_id, org_name = raw_payload.get('user_id'), raw_payload.get('org_name')
+        user_key, _ = get_user_key(user_id, org_name)
+        if not user_key:
+            err = 'Unable to retrieve user key for token'
+            return {}, err
+        payload = jwt.decode(token, user_key, algorithms=["HS256"])
+        payload['user_key'] = user_key
+    except jwt.exceptions.InvalidTokenError as e:
+        err = e
+    return payload, err
+
+
+def is_token_valid(token):
+    """Returns true if token is not yet expired, else false"""
+    try:
+        payload, err = decode_jwt_token(token)
+        if err:
+            return False
+        if "exp" in payload:
+            exp_time = datetime.datetime.fromtimestamp(payload["exp"], tz=datetime.timezone.utc)
+            refresh_time = exp_time - datetime.timedelta(seconds=_SESSION_REFRESH_SECONDS__)
+            if datetime.datetime.now(tz=datetime.timezone.utc) >= refresh_time:
+                return False
+            return True
+        return False
+    except Exception as e:
+        print(f"Exception thrown in is_token_valid is {str(e)}", file=sys.stderr)
+        return False
+
+
+def save_cookie(user_id, sid_cookie, ssid_cookie):
+    """Save the cookie info to User cache"""
+    encrypted_sid_cookie = sid_cookie
+    encrypted_ssid_cookie = ssid_cookie
+    config_path = os.getenv("VAULT_SECRET_PATH", None)
+    if config_path:
+        encryption = NVVaultEncryption(config_path)
+        if encryption.check_config()[0]:
+            if sid_cookie:
+                encrypted_sid_cookie = encryption.encrypt(sid_cookie)
+            if ssid_cookie:
+                encrypted_ssid_cookie = encryption.encrypt(ssid_cookie)
+
+    mongo = MongoHandler("tao", "users")
+    user_query = {'id': user_id}
+    user = mongo.find_one(user_query)
+    if sid_cookie:
+        if 'sid_cookie' not in user or encrypted_sid_cookie != user['sid_cookie']:
+            mongo.upsert(user_query, {'id': user_id, 'sid_cookie': encrypted_sid_cookie})
+    if ssid_cookie:
+        if 'ssid_cookie' not in user or encrypted_ssid_cookie != user['ssid_cookie']:
+            mongo.upsert(user_query, {'id': user_id, 'ssid_cookie': encrypted_ssid_cookie})
