@@ -16,6 +16,17 @@
 from datetime import datetime
 
 
+def parse_datetime(d):
+    """Parse the created_on field to a datetime object"""
+    created_on = d.get('created_on')
+    if isinstance(created_on, datetime):
+        return created_on
+    try:
+        return datetime.fromisoformat(created_on.replace('Z', '+00:00'))
+    except ValueError:
+        return datetime.fromisoformat(created_on)
+
+
 def apply(args, data):
     """Filter results based on the arguments provided"""
     filter_sort = args.get('sort')
@@ -97,8 +108,7 @@ def apply(args, data):
     elif filter_sort == 'status-descending':
         data = sorted(data, key=lambda d: '' + d.get('status'), reverse=True)
     elif filter_sort == 'date-ascending':
-        data = sorted(data, key=lambda d: d.get('created_on') if isinstance(d.get('created_on'), datetime) else datetime.fromisoformat(d.get('created_on')), reverse=False)
+        data = sorted(data, key=parse_datetime, reverse=False)
     else:  # elif filter_sort == 'date-descending':
-        data = sorted(data, key=lambda d: d.get('created_on') if isinstance(d.get('created_on'), datetime) else datetime.fromisoformat(d.get('created_on')), reverse=True)
-
+        data = sorted(data, key=parse_datetime, reverse=True)
     return data

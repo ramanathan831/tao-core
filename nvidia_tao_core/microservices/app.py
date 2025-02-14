@@ -17,6 +17,7 @@
 """API modules defining schemas and endpoints"""
 import ast
 import sys
+import uuid
 import math
 import json
 import shutil
@@ -35,13 +36,13 @@ from requests_toolbelt.multipart.encoder import MultipartEncoder
 from marshmallow import Schema, fields, exceptions, validate, validates_schema, ValidationError, EXCLUDE
 from marshmallow_enum import EnumField, Enum
 
-from nvidia_tao_core.api_utils.entrypoint_wrapper import entrypoint_wrapper
 from nvidia_tao_core.microservices.filter_utils import filtering, pagination
 from nvidia_tao_core.microservices.auth_utils import credentials, authentication, access_control, metrics
 from nvidia_tao_core.microservices.health_utils import health_check
 
 from nvidia_tao_core.microservices.enum_constants import DatasetFormat, DatasetType, ExperimentNetworkArch, Metrics, BaseExperimentTask, BaseExperimentDomain, BaseExperimentBackboneType, BaseExperimentBackboneClass, BaseExperimentLicense
 from nvidia_tao_core.microservices.handlers.app_handler import AppHandler as app_handler
+from nvidia_tao_core.microservices.handlers.container_handler import ContainerJobHandler as container_handler
 from nvidia_tao_core.microservices.handlers.stateless_handlers import resolve_metadata, get_root, get_metrics, set_metrics
 from nvidia_tao_core.microservices.handlers.utilities import validate_uuid
 from nvidia_tao_core.microservices.utils import is_pvc_space_free, safe_load_file, log_monitor, log_api_error, is_cookie_request, DataMonitorLogTypeEnum
@@ -836,19 +837,25 @@ def login():
     post:
       tags:
       - AUTHENTICATION
-      summary: User Login
-      description: Returns the user credentials
+      summary: Authenticate user with NGC credentials
+      description: |
+        Authenticates a user using their NGC API key and organization name.
+        Returns JWT token and user credentials upon successful authentication.
+        The token can be used for subsequent API requests.
       security:
         - api-key: []
       requestBody:
         content:
           application/json:
             schema: LoginReqSchema
-        description: Login request with ngc_key
+        description: |
+          Login credentials including:
+          - ngc_key: NGC API key for authentication
+          - ngc_org_name: Organization name in NGC
         required: true
       responses:
         200:
-          description: Retuned the new Dataset
+          description: Successfully authenticated. Returns user credentials and JWT token.
           content:
             application/json:
               schema: LoginRspSchema
@@ -858,7 +865,7 @@ def login():
             X-RateLimit-Limit:
               $ref: '#/components/headers/X-RateLimit-Limit'
         401:
-          description: Unauthorized
+          description: Authentication failed due to invalid credentials or permissions
           content:
             application/json:
               schema: ErrorRspSchema
@@ -984,6 +991,8 @@ class ContainerJobSchema(Schema):
         """Class enabling sorting field values by the order in which they are declared"""
 
         ordered = True
+    neural_network_name = EnumField(ExperimentNetworkArch)
+    action_name = EnumField(ActionEnum)
     specs = fields.Raw()
     cloud_metadata = fields.Raw()
     ngc_key = fields.Str(format="regex", regex=r'.*', validate=fields.validate.Length(max=1000), allow_none=True)
@@ -1006,49 +1015,60 @@ def container_job_run():
     ---
     post:
       tags:
-      - INTERNAL
-      summary: Run Container Jobs
-      description: Synchronous starting of a Job
-      parameters:
-      - name: org_name
-        in: path
-        description: Org Name
-        required: true
-        schema:
-          type: string
-          maxLength: 255
-          pattern: '^[a-zA-Z0-9_-]+$'
-      - name: dataset_id
-        in: path
-        description: ID for Dataset
-        required: true
-        schema:
-          type: string
-          format: uuid
-          maxLength: 36
+        - INTERNAL
+      summary: Run Container Job
+      description:
+        Starts a job within a container asynchronously and returns immediately with job ID.
       requestBody:
+        required: true
         content:
           application/json:
-            schema: DatasetActions
+            schema:
+              $ref: '#/components/schemas/ContainerJobSchema'
       responses:
         200:
-          description: Returned the Job ID corresponding to requested Dataset Action
+          description: The container job was successfully launched.
           content:
             application/json:
               schema:
-                type: string
-                format: uuid
-                maxLength: 36
+                type: object
+                properties:
+                  job_id:
+                    type: string
+                    description: The ID of the launched job
+          headers:
+            Access-Control-Allow-Origin:
+              $ref: '#/components/headers/Access-Control-Allow-Origin'
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/X-RateLimit-Limit'
+        400:
+          description: Invalid request payload or job execution failed.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorRspSchema'
           headers:
             Access-Control-Allow-Origin:
               $ref: '#/components/headers/Access-Control-Allow-Origin'
             X-RateLimit-Limit:
               $ref: '#/components/headers/X-RateLimit-Limit'
         404:
-          description: User or Dataset not found
+          description: User or dataset not found.
           content:
             application/json:
-              schema: ErrorRspSchema
+              schema:
+                $ref: '#/components/schemas/ErrorRspSchema'
+          headers:
+            Access-Control-Allow-Origin:
+              $ref: '#/components/headers/Access-Control-Allow-Origin'
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/X-RateLimit-Limit'
+        500:
+          description: Internal server error encountered while processing the job.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorRspSchema'
           headers:
             Access-Control-Allow-Origin:
               $ref: '#/components/headers/Access-Control-Allow-Origin'
@@ -1058,16 +1078,111 @@ def container_job_run():
     input_schema = ContainerJobSchema()
     job_dict = input_schema.dump(input_schema.load(request.get_json(force=True)))
     try:
+        if "job_id" not in job_dict:
+            job_dict["job_id"] = str(uuid.uuid4())
+
+        job_id = container_handler.entrypoint_wrapper(job_dict)
+        if job_id:
+            return make_response(jsonify({'job_id': job_id}), 200)
+        metadata = {"error": "Failed to launch job", "error_code": 1}
+        schema = ErrorRspSchema()
+        return make_response(jsonify(schema.dump(schema.load(metadata))), 400)
+    except Exception as err:
+        print(traceback.format_exc())
+        metadata = {"error": str(err), "error_code": 1}
+        schema = ErrorRspSchema()
+        return make_response(jsonify(schema.dump(schema.load(metadata))), 400)
+
+
+class ContainerJobStatusSchema(Schema):
+    """Class defining Get Job Status Response schema"""
+
+    class Meta:
+        """Class enabling sorting field values by the order in which they are declared"""
+
+        ordered = True
+    status = EnumField(JobStatusEnum)
+
+
+@app.route('/api/v1/internal/container_job:status', methods=['POST'])
+@disk_space_check
+def container_job_status():
+    """Get status of job running inside container.
+
+    ---
+    post:
+      tags:
+        - INTERNAL
+      summary: Get Status of Container Job
+      description:
+        Retrieves the current status of a job running inside a container. The response
+        includes whether the job is pending, in progress, completed, or failed.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                specs:
+                  type: object
+                  description: Specification details required to check job status.
+      responses:
+        200:
+          description: Job status retrieved successfully.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MessageOnlySchema'
+          headers:
+            Access-Control-Allow-Origin:
+              $ref: '#/components/headers/Access-Control-Allow-Origin'
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/X-RateLimit-Limit'
+        400:
+          description: Invalid request payload or unable to determine job status.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorRspSchema'
+          headers:
+            Access-Control-Allow-Origin:
+              $ref: '#/components/headers/Access-Control-Allow-Origin'
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/X-RateLimit-Limit'
+        404:
+          description: User or dataset not found.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorRspSchema'
+          headers:
+            Access-Control-Allow-Origin:
+              $ref: '#/components/headers/Access-Control-Allow-Origin'
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/X-RateLimit-Limit'
+        500:
+          description: Internal server error encountered while retrieving job status.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorRspSchema'
+          headers:
+            Access-Control-Allow-Origin:
+              $ref: '#/components/headers/Access-Control-Allow-Origin'
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/X-RateLimit-Limit'
+    """
+    specs = request.get_json(force=True).get("specs")
+    try:
         response_code = 400
-        message = "Container job failed"
-        if entrypoint_wrapper(job_dict):
+        status = container_handler.get_current_job_status(specs)
+        if status:
             response_code = 200
-            message = "Container job completed"
-        schema = MessageOnlySchema()
-        schema_dict = schema.dump({"message": message})
+        schema = ContainerJobStatusSchema()
+        schema_dict = schema.dump(schema.load({"status": status}))
         return make_response(jsonify(schema_dict), response_code)
     except Exception as err:
-        import traceback
         print(traceback.format_exc())
         metadata = {"error": str(err), "error_code": 1}
         schema = ErrorRspSchema()
@@ -2281,12 +2396,18 @@ def dataset_list(org_name):
     get:
       tags:
       - DATASET
-      summary: List Datasets
-      description: Returns the list of Datasets
+      summary: List all accessible datasets
+      description: |
+        Returns a list of datasets that the authenticated user can access.
+        Results can be filtered and paginated using query parameters.
+        This includes:
+        - Datasets owned by the user
+        - Datasets shared with the user
+        - Public datasets
       parameters:
       - name: org_name
         in: path
-        description: Org Name
+        description: Organization name to list datasets from
         required: true
         schema:
           type: string
@@ -2294,7 +2415,7 @@ def dataset_list(org_name):
           pattern: '^[a-zA-Z0-9_-]+$'
       - name: skip
         in: query
-        description: Optional skip for pagination
+        description: Number of records to skip for pagination
         required: false
         schema:
           type: integer
@@ -2303,7 +2424,7 @@ def dataset_list(org_name):
           maximum: 2147483647
       - name: size
         in: query
-        description: Optional size for pagination
+        description: Maximum number of records to return per page
         required: false
         schema:
           type: integer
@@ -2312,14 +2433,14 @@ def dataset_list(org_name):
           maximum: 2147483647
       - name: sort
         in: query
-        description: Optional sort
+        description: Sort order for the results
         required: false
         schema:
           type: string
           enum: ["date-descending", "date-ascending", "name-descending", "name-ascending" ]
       - name: name
         in: query
-        description: Optional name filter
+        description: Filter datasets by name (case-sensitive partial match)
         required: false
         schema:
           type: string
@@ -2327,21 +2448,21 @@ def dataset_list(org_name):
           pattern: '.*'
       - name: format
         in: query
-        description: Optional format filter
+        description: Filter datasets by their format type
         required: false
         schema:
           type: string
           enum: ["kitti", "pascal_voc", "raw", "coco_raw", "unet", "coco", "lprnet", "train", "test", "default", "custom", "classification_pyt", "classification_tf2", "visual_changenet_segment", "visual_changenet_classify"]
       - name: type
         in: query
-        description: Optional type filter
+        description: Filter datasets by their primary type
         required: false
         schema:
           type: string
           enum: [ "object_detection", "segmentation", "image_classification", "character_recognition", "action_recognition", "pointpillars", "pose_classification", "ml_recog", "ocdnet", "ocrnet", "optical_inspection", "re_identification", "visual_changenet", "centerpose" ]
       responses:
         200:
-          description: Returned list of Datasets
+          description: Successfully retrieved list of accessible datasets
           content:
             application/json:
               schema: DatasetListRspSchema
@@ -2382,12 +2503,18 @@ def dataset_retrieve(org_name, dataset_id):
     get:
       tags:
       - DATASET
-      summary: Retrieve Dataset
-      description: Returns the Dataset
+      summary: Retrieve details of a specific dataset
+      description: |
+        Returns detailed information about a specific dataset including:
+        - Basic metadata (name, description, creation date)
+        - Dataset format and type
+        - Access permissions
+        - Associated jobs and their status
+        - Available actions
       parameters:
       - name: org_name
         in: path
-        description: Org Name
+        description: Organization name owning the dataset
         required: true
         schema:
           type: string
@@ -2395,7 +2522,7 @@ def dataset_retrieve(org_name, dataset_id):
           pattern: '^[a-zA-Z0-9_-]+$'
       - name: dataset_id
         in: path
-        description: ID of Dataset to return
+        description: Unique identifier of the dataset to retrieve
         required: true
         schema:
           type: string
@@ -2403,7 +2530,7 @@ def dataset_retrieve(org_name, dataset_id):
           maxLength: 36
       responses:
         200:
-          description: Returned Dataset
+          description: Successfully retrieved dataset details
           content:
             application/json:
               schema: DatasetRspSchema
@@ -2413,7 +2540,7 @@ def dataset_retrieve(org_name, dataset_id):
             X-RateLimit-Limit:
               $ref: '#/components/headers/X-RateLimit-Limit'
         404:
-          description: User or Dataset not found
+          description: Dataset not found or user lacks access permissions
           content:
             application/json:
               schema: ErrorRspSchema
@@ -2451,12 +2578,22 @@ def dataset_delete(org_name, dataset_id):
     delete:
       tags:
       - DATASET
-      summary: Delete Dataset
-      description: Cancels all related running jobs and returns the deleted Dataset
+      summary: Delete a specific dataset
+      description: |
+        Deletes a dataset and its associated resources. The operation will:
+        - Remove dataset files and metadata
+        - Update user permissions
+
+        Deletion is only allowed if:
+        - User has write permissions
+        - Dataset is not public
+        - Dataset is not read-only
+        - Dataset is not in use by any experiments
+        - No running jobs are using the dataset
       parameters:
       - name: org_name
         in: path
-        description: Org Name
+        description: Organization name owning the dataset
         required: true
         schema:
           type: string
@@ -2464,7 +2601,7 @@ def dataset_delete(org_name, dataset_id):
           pattern: '^[a-zA-Z0-9_-]+$'
       - name: dataset_id
         in: path
-        description: ID of Dataset to delete
+        description: Unique identifier of the dataset to delete
         required: true
         schema:
           type: string
@@ -2472,7 +2609,7 @@ def dataset_delete(org_name, dataset_id):
           maxLength: 36
       responses:
         200:
-          description: Deleted Dataset
+          description: Dataset successfully deleted
           content:
             application/json:
               schema: DatasetRspSchema
@@ -2482,7 +2619,7 @@ def dataset_delete(org_name, dataset_id):
             X-RateLimit-Limit:
               $ref: '#/components/headers/X-RateLimit-Limit'
         400:
-          description: Bad request, see reply body for details
+          description: Dataset cannot be deleted due to active usage or permissions
           content:
             application/json:
               schema: ErrorRspSchema
@@ -2492,7 +2629,7 @@ def dataset_delete(org_name, dataset_id):
             X-RateLimit-Limit:
               $ref: '#/components/headers/X-RateLimit-Limit'
         404:
-          description: User or Dataset not found
+          description: Dataset not found or user lacks delete permissions
           content:
             application/json:
               schema: ErrorRspSchema
@@ -2853,7 +2990,14 @@ def dataset_job_run(org_name, dataset_id):
       tags:
       - DATASET
       summary: Run Dataset Jobs
-      description: Asynchronously starts a dataset action and returns corresponding Job ID
+      description: |
+        Asynchronously starts a dataset action and returns corresponding Job ID. This endpoint:
+        - Validates the dataset exists and user has access
+        - Validates the requested action is supported
+        - Validates the provided specs match the action schema
+        - Creates a new job with the provided parameters
+        - Queues the job for execution
+        - Returns the Job ID for tracking and retrieval
       parameters:
       - name: org_name
         in: path
@@ -2884,6 +3028,16 @@ def dataset_job_run(org_name, dataset_id):
                 type: string
                 format: uuid
                 maxLength: 36
+          headers:
+            Access-Control-Allow-Origin:
+              $ref: '#/components/headers/Access-Control-Allow-Origin'
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/X-RateLimit-Limit'
+        400:
+          description: Invalid request (e.g. invalid dataset ID, missing required fields)
+          content:
+            application/json:
+              schema: ErrorRspSchema
           headers:
             Access-Control-Allow-Origin:
               $ref: '#/components/headers/Access-Control-Allow-Origin'
@@ -2950,7 +3104,13 @@ def dataset_job_retry(org_name, dataset_id, job_id):
       tags:
       - DATASET
       summary: Retry Dataset Jobs
-      description: Asynchronously retries a dataset action and returns corresponding Job ID
+      description: |
+        Asynchronously retries a dataset action and returns corresponding Job ID. This endpoint:
+        - Validates the dataset exists and user has access
+        - Validates the job exists and is retryable
+        - Creates a new job with the same parameters as the original job
+        - Queues the job for execution
+        - Returns the new Job ID for tracking and retrieval
       parameters:
       - name: org_name
         in: path
@@ -2985,6 +3145,16 @@ def dataset_job_retry(org_name, dataset_id, job_id):
                 type: string
                 format: uuid
                 maxLength: 36
+          headers:
+            Access-Control-Allow-Origin:
+              $ref: '#/components/headers/Access-Control-Allow-Origin'
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/X-RateLimit-Limit'
+        400:
+          description: Invalid request (e.g. invalid dataset ID, job ID)
+          content:
+            application/json:
+              schema: ErrorRspSchema
           headers:
             Access-Control-Allow-Origin:
               $ref: '#/components/headers/Access-Control-Allow-Origin'
@@ -3039,7 +3209,12 @@ def dataset_job_list(org_name, dataset_id):
       tags:
       - DATASET
       summary: List Jobs for Dataset
-      description: Returns the list of Jobs
+      description: |
+        Returns the list of Jobs for a given dataset. This endpoint:
+        - Validates the dataset exists and user has access
+        - Retrieves the list of jobs from storage
+        - Applies pagination and filtering based on query parameters
+        - Returns the filtered and paginated list of jobs
       parameters:
       - name: org_name
         in: path
@@ -3088,6 +3263,16 @@ def dataset_job_list(org_name, dataset_id):
           content:
             application/json:
               schema: DatasetJobListSchema
+          headers:
+            Access-Control-Allow-Origin:
+              $ref: '#/components/headers/Access-Control-Allow-Origin'
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/X-RateLimit-Limit'
+        400:
+          description: Invalid request (e.g. invalid dataset ID)
+          content:
+            application/json:
+              schema: ErrorRspSchema
           headers:
             Access-Control-Allow-Origin:
               $ref: '#/components/headers/Access-Control-Allow-Origin'
@@ -3150,7 +3335,12 @@ def dataset_job_schema(org_name, dataset_id, job_id):
       tags:
       - DATASET
       summary: Retrieve Schema for a job
-      description: Returns the Specs schema for a given job
+      description: |
+        Returns the Specs schema for a given job. This endpoint:
+        - Validates the dataset exists and user has access
+        - Validates the job exists
+        - Retrieves the schema for the job's action
+        - Returns the schema
       parameters:
       - name: org_name
         in: path
@@ -3183,6 +3373,16 @@ def dataset_job_schema(org_name, dataset_id, job_id):
             application/json:
               schema:
                 type: object
+          headers:
+            Access-Control-Allow-Origin:
+              $ref: '#/components/headers/Access-Control-Allow-Origin'
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/X-RateLimit-Limit'
+        400:
+          description: Invalid request (e.g. invalid dataset ID, job ID)
+          content:
+            application/json:
+              schema: ErrorRspSchema
           headers:
             Access-Control-Allow-Origin:
               $ref: '#/components/headers/Access-Control-Allow-Origin'
@@ -3228,7 +3428,12 @@ def dataset_job_retrieve(org_name, dataset_id, job_id):
       tags:
       - DATASET
       summary: Retrieve Job for Dataset
-      description: Returns the Job
+      description: |
+        Returns the Job for a given dataset and job ID. This endpoint:
+        - Validates the dataset exists and user has access
+        - Validates the job exists
+        - Retrieves the job from storage
+        - Returns the job
       parameters:
       - name: org_name
         in: path
@@ -3260,6 +3465,16 @@ def dataset_job_retrieve(org_name, dataset_id, job_id):
           content:
             application/json:
               schema: DatasetJobSchema
+          headers:
+            Access-Control-Allow-Origin:
+              $ref: '#/components/headers/Access-Control-Allow-Origin'
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/X-RateLimit-Limit'
+        400:
+          description: Invalid request (e.g. invalid dataset ID, job ID)
+          content:
+            application/json:
+              schema: ErrorRspSchema
           headers:
             Access-Control-Allow-Origin:
               $ref: '#/components/headers/Access-Control-Allow-Origin'
@@ -3302,11 +3517,17 @@ def dataset_job_status_update(org_name, dataset_id, job_id):
     """Update Job status for Dataset.
 
     ---
-    get:
+    post:
       tags:
       - DATASET
-      summary: Posts status for the job
-      description: Saves recieved content to status file
+      summary: Update status of a dataset job
+      description: |
+        Updates the status of a specific job within a dataset. This endpoint:
+        - Validates the dataset exists and user has access
+        - Validates the job exists
+        - Updates the job status based on provided data
+        - Persists status changes to storage
+        - Triggers any necessary status-based workflows
       parameters:
       - name: org_name
         in: path
@@ -3332,12 +3553,29 @@ def dataset_job_status_update(org_name, dataset_id, job_id):
           type: string
           format: uuid
           maxLength: 36
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              description: Status update data including new status and any additional metadata
       responses:
         200:
-          description: Returned Job
+          description: Job status successfully updated
           content:
             application/json:
               schema: DatasetJobSchema
+          headers:
+            Access-Control-Allow-Origin:
+              $ref: '#/components/headers/Access-Control-Allow-Origin'
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/X-RateLimit-Limit'
+        400:
+          description: Invalid status update request (e.g. invalid status value, missing required fields)
+          content:
+            application/json:
+              schema: ErrorRspSchema
           headers:
             Access-Control-Allow-Origin:
               $ref: '#/components/headers/Access-Control-Allow-Origin'
@@ -3378,11 +3616,16 @@ def dataset_job_log_update(org_name, dataset_id, job_id):
     """Update Job log for Dataset.
 
     ---
-    get:
+    post:
       tags:
-      - Dataset
-      summary: Posts log for the job
-      description: Saves recieved content to log file
+      - DATASET
+      summary: Update log of a dataset job
+      description: |
+        Updates the log of a specific job within a dataset. This endpoint:
+        - Validates the dataset exists and user has access
+        - Validates the job exists
+        - Appends the provided log data to the job's log
+        - Persists log changes to storage
       parameters:
       - name: org_name
         in: path
@@ -3408,12 +3651,29 @@ def dataset_job_log_update(org_name, dataset_id, job_id):
           type: string
           format: uuid
           maxLength: 36
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              description: Log update data including new log entries
       responses:
         200:
-          description: Returned Job
+          description: Job log successfully updated
           content:
             application/json:
               schema: DatasetJobSchema
+          headers:
+            Access-Control-Allow-Origin:
+              $ref: '#/components/headers/Access-Control-Allow-Origin'
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/X-RateLimit-Limit'
+        400:
+          description: Invalid log update request (e.g. missing required fields)
+          content:
+            application/json:
+              schema: ErrorRspSchema
           headers:
             Access-Control-Allow-Origin:
               $ref: '#/components/headers/Access-Control-Allow-Origin'
@@ -3457,7 +3717,12 @@ def dataset_job_logs(org_name, dataset_id, job_id):
       tags:
       - DATASET
       summary: Get Job logs for Dataset
-      description: Returns the job logs
+      description: |
+        Returns the job logs for a given dataset and job ID. This endpoint:
+        - Validates the dataset exists and user has access
+        - Validates the job exists
+        - Retrieves the job logs from storage
+        - Returns the job logs
       parameters:
       - name: org_name
         in: path
@@ -3494,6 +3759,16 @@ def dataset_job_logs(org_name, dataset_id, job_id):
                $ref: '#/components/headers/Access-Control-Allow-Origin'
             X-RateLimit-Limit:
                $ref: '#/components/headers/X-RateLimit-Limit'
+        400:
+          description: Invalid request (e.g. invalid dataset ID, job ID)
+          content:
+            application/json:
+              schema: ErrorRspSchema
+          headers:
+            Access-Control-Allow-Origin:
+              $ref: '#/components/headers/Access-Control-Allow-Origin'
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/X-RateLimit-Limit'
         404:
           description: Job not exist or logs not found.
           content:
@@ -3533,7 +3808,13 @@ def dataset_job_cancel(org_name, dataset_id, job_id):
       tags:
       - DATASET
       summary: Cancel Dataset Job
-      description: Cancel Dataset Job
+      description: |
+        Cancels a specific job within a dataset. This endpoint:
+        - Validates the dataset exists and user has access
+        - Validates the job exists and is cancellable
+        - Updates the job status to 'cancelled'
+        - Persists status changes to storage
+        - Triggers any necessary cancellation workflows
       parameters:
       - name: org_name
         in: path
@@ -3562,6 +3843,16 @@ def dataset_job_cancel(org_name, dataset_id, job_id):
       responses:
         200:
           description: Successfully requested cancelation of specified Job ID (asynchronous)
+          headers:
+            Access-Control-Allow-Origin:
+              $ref: '#/components/headers/Access-Control-Allow-Origin'
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/X-RateLimit-Limit'
+        400:
+          description: Invalid request (e.g. invalid dataset ID, job ID)
+          content:
+            application/json:
+              schema: ErrorRspSchema
           headers:
             Access-Control-Allow-Origin:
               $ref: '#/components/headers/Access-Control-Allow-Origin'
@@ -3606,7 +3897,16 @@ def bulk_dataset_delete(org_name):
       tags:
       - DATASET
       summary: Delete multiple Datasets
-      description: Cancels all related running jobs and returns the status of deleted Datasets
+      description: |
+        Deletes multiple datasets and their associated resources. This endpoint:
+        - Validates the datasets exist and user has access
+        - Validates the datasets are not public
+        - Validates the datasets are not read-only
+        - Validates the datasets are not in use by any experiments
+        - Validates no running jobs are using the datasets
+        - Deletes the dataset files and metadata
+        - Updates user permissions
+        - Returns the status for each dataset
       parameters:
       - name: org_name
         in: path
@@ -3641,7 +3941,7 @@ def bulk_dataset_delete(org_name):
             X-RateLimit-Limit:
               $ref: '#/components/headers/X-RateLimit-Limit'
         400:
-          description: Bad request, see reply body for details
+          description: Invalid request (e.g. invalid dataset IDs)
           content:
             application/json:
               schema: ErrorRspSchema
@@ -3701,7 +4001,13 @@ def bulk_dataset_job_delete(org_name, dataset_id):
       tags:
       - DATASET
       summary: Delete multiple Dataset Jobs
-      description: delete multiple Dataset Jobs
+      description: |
+        Deletes multiple jobs within a dataset. This endpoint:
+        - Validates the dataset exists and user has access
+        - Validates the jobs exist and are deletable
+        - Deletes the job files and metadata
+        - Updates job status to 'deleted'
+        - Returns the status for each job
       parameters:
       - name: org_name
         in: path
@@ -3741,7 +4047,7 @@ def bulk_dataset_job_delete(org_name, dataset_id):
             X-RateLimit-Limit:
               $ref: '#/components/headers/X-RateLimit-Limit'
         400:
-          description: Bad request, see reply body for details
+          description: Invalid request (e.g. invalid dataset ID, job IDs)
           content:
             application/json:
               schema: ErrorRspSchema
@@ -3801,7 +4107,13 @@ def dataset_job_delete(org_name, dataset_id, job_id):
       tags:
       - DATASET
       summary: Delete Dataset Job
-      description: delete Dataset Job
+      description: |
+        Deletes a specific job within a dataset. This endpoint:
+        - Validates the dataset exists and user has access
+        - Validates the job exists and is deletable
+        - Deletes the job files and metadata
+        - Updates job status to 'deleted'
+        - Returns the deletion status
       parameters:
       - name: org_name
         in: path
@@ -3836,7 +4148,7 @@ def dataset_job_delete(org_name, dataset_id, job_id):
             X-RateLimit-Limit:
               $ref: '#/components/headers/X-RateLimit-Limit'
         400:
-          description: Bad request, see reply body for details
+          description: Invalid request (e.g. invalid dataset ID, job ID)
           content:
             application/json:
               schema: ErrorRspSchema
@@ -3884,7 +4196,12 @@ def dataset_job_files_list(org_name, dataset_id, job_id):
       tags:
       - DATASET
       summary: List Job Files
-      description: List the Files produced by a given job
+          description: |
+        Lists the files produced by a given job within a dataset. This endpoint:
+        - Validates the dataset exists and user has access
+        - Validates the job exists
+        - Retrieves the list of files from storage
+        - Returns the list of files
       parameters:
       - name: org_name
         in: path
@@ -3921,6 +4238,16 @@ def dataset_job_files_list(org_name, dataset_id, job_id):
                   type: string
                   maxLength: 1000
                   maxLength: 1000
+          headers:
+            Access-Control-Allow-Origin:
+              $ref: '#/components/headers/Access-Control-Allow-Origin'
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/X-RateLimit-Limit'
+        400:
+          description: Invalid request (e.g. invalid dataset ID, job ID)
+          content:
+            application/json:
+              schema: ErrorRspSchema
           headers:
             Access-Control-Allow-Origin:
               $ref: '#/components/headers/Access-Control-Allow-Origin'
@@ -3970,7 +4297,13 @@ def dataset_job_download_selective_files(org_name, dataset_id, job_id):
       tags:
       - DATASET
       summary: Download selective Job Artifacts
-      description: Download selective Artifacts produced by a given job
+      description: |
+        Downloads selective artifacts produced by a given job within a dataset. This endpoint:
+        - Validates the dataset exists and user has access
+        - Validates the job exists
+        - Validates the requested files exist
+        - Downloads the requested files
+        - Returns the downloaded files as a tarball
       parameters:
       - name: org_name
         in: path
@@ -4006,6 +4339,16 @@ def dataset_job_download_selective_files(org_name, dataset_id, job_id):
                 format: binary
                 maxLength: 5000
                 maxLength: 5000
+          headers:
+            Access-Control-Allow-Origin:
+              $ref: '#/components/headers/Access-Control-Allow-Origin'
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/X-RateLimit-Limit'
+        400:
+          description: Invalid request (e.g. invalid dataset ID, job ID, file list)
+          content:
+            application/json:
+              schema: ErrorRspSchema
           headers:
             Access-Control-Allow-Origin:
               $ref: '#/components/headers/Access-Control-Allow-Origin'
@@ -4057,7 +4400,12 @@ def dataset_job_download(org_name, dataset_id, job_id):
       tags:
       - DATASET
       summary: Download Job Artifacts
-      description: Download the Artifacts produced by a given job
+      description: |
+        Downloads all artifacts produced by a given job within a dataset. This endpoint:
+        - Validates the dataset exists and user has access
+        - Validates the job exists
+        - Downloads all job files
+        - Returns the downloaded files as a tarball
       parameters:
       - name: org_name
         in: path
@@ -4092,7 +4440,16 @@ def dataset_job_download(org_name, dataset_id, job_id):
                 type: string
                 format: binary
                 maxLength: 1000
-                maxLength: 1000
+          headers:
+            Access-Control-Allow-Origin:
+              $ref: '#/components/headers/Access-Control-Allow-Origin'
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/X-RateLimit-Limit'
+        400:
+          description: Invalid request (e.g. invalid dataset ID, job ID)
+          content:
+            application/json:
+              schema: ErrorRspSchema
           headers:
             Access-Control-Allow-Origin:
               $ref: '#/components/headers/Access-Control-Allow-Origin'
@@ -4140,7 +4497,14 @@ def bulk_dataset_jobs_cancel(org_name):
       tags:
       - DATASET
       summary: Cancel all Jobs under multiple datasets
-      description: Cancel all Jobs under multiple datasets
+      description: |
+        Cancels all jobs within multiple datasets. This endpoint:
+        - Validates the datasets exist and user has access
+        - Validates the jobs exist and are cancellable
+        - Updates the job status to 'cancelled'
+        - Persists status changes to storage
+        - Triggers any necessary cancellation workflows
+        - Returns the cancellation status for each dataset
       parameters:
       - name: org_name
         in: path
@@ -4166,6 +4530,16 @@ def bulk_dataset_jobs_cancel(org_name):
       responses:
         200:
           description: Successfully canceled all jobs under the specified datasets
+          headers:
+            Access-Control-Allow-Origin:
+              $ref: '#/components/headers/Access-Control-Allow-Origin'
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/X-RateLimit-Limit'
+        400:
+          description: Invalid request (e.g. invalid dataset IDs)
+          content:
+            application/json:
+              schema: ErrorRspSchema
           headers:
             Access-Control-Allow-Origin:
               $ref: '#/components/headers/Access-Control-Allow-Origin'
@@ -4223,7 +4597,14 @@ def dataset_jobs_cancel(org_name, dataset_id):
       tags:
       - DATASET
       summary: Cancel all Jobs under dataset
-      description: Cancel all Jobs under dataset
+      description: |
+        Cancels all jobs within a dataset. This endpoint:
+        - Validates the dataset exists and user has access
+        - Validates the jobs exist and are cancellable
+        - Updates the job status to 'cancelled'
+        - Persists status changes to storage
+        - Triggers any necessary cancellation workflows
+        - Returns the cancellation status
       parameters:
       - name: org_name
         in: path
@@ -4244,6 +4625,16 @@ def dataset_jobs_cancel(org_name, dataset_id):
       responses:
         200:
           description: Successfully canceled all jobs under datasets
+          headers:
+            Access-Control-Allow-Origin:
+              $ref: '#/components/headers/Access-Control-Allow-Origin'
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/X-RateLimit-Limit'
+        400:
+          description: Invalid request (e.g. invalid dataset ID)
+          content:
+            application/json:
+              schema: ErrorRspSchema
           headers:
             Access-Control-Allow-Origin:
               $ref: '#/components/headers/Access-Control-Allow-Origin'
@@ -5145,7 +5536,12 @@ def experiment_update(org_name, experiment_id):
       tags:
       - EXPERIMENT
       summary: Update Experiment
-      description: Returns the updated Experiment
+      description: |
+        Updates an existing experiment with new metadata. This endpoint:
+        - Validates the experiment exists and user has access
+        - Validates the provided metadata matches the schema
+        - Updates the experiment metadata in storage
+        - Returns the updated experiment metadata
       parameters:
       - name: org_name
         in: path
@@ -5181,7 +5577,7 @@ def experiment_update(org_name, experiment_id):
             X-RateLimit-Limit:
               $ref: '#/components/headers/X-RateLimit-Limit'
         400:
-          description: Bad request, see reply body for details
+          description: Invalid request (e.g. invalid experiment ID, missing required fields)
           content:
             application/json:
               schema: ErrorRspSchema
@@ -5232,7 +5628,12 @@ def experiment_partial_update(org_name, experiment_id):
       tags:
       - EXPERIMENT
       summary: Partial update Experiment
-      description: Returns the updated Experiment
+      description: |
+        Partially updates an existing experiment with new metadata. This endpoint:
+        - Validates the experiment exists and user has access
+        - Validates the provided metadata matches the schema
+        - Updates the experiment metadata in storage
+        - Returns the updated experiment metadata
       parameters:
       - name: org_name
         in: path
@@ -5268,7 +5669,7 @@ def experiment_partial_update(org_name, experiment_id):
             X-RateLimit-Limit:
               $ref: '#/components/headers/X-RateLimit-Limit'
         400:
-          description: Bad request, see reply body for details
+          description: Invalid request (e.g. invalid experiment ID, missing required fields)
           content:
             application/json:
               schema: ErrorRspSchema
@@ -5317,7 +5718,11 @@ def specs_schema_without_handler_id(org_name, action):
     ---
     get:
       summary: Retrieve Specs schema without experiment or dataset id
-      description: Returns the Specs schema for a given action
+      description: |
+        Returns the Specs schema for a given action. This endpoint:
+        - Validates the action is supported
+        - Retrieves the schema for the action
+        - Returns the schema
       parameters:
       - name: org_name
         in: path
@@ -5383,7 +5788,12 @@ def experiment_specs_schema(org_name, experiment_id, action):
       tags:
       - EXPERIMENT
       summary: Retrieve Specs schema
-      description: Returns the Specs schema for a given action
+      description: |
+        Returns the Specs schema for a given action and experiment. This endpoint:
+        - Validates the experiment exists and user has access
+        - Validates the action is supported
+        - Retrieves the schema for the action
+        - Returns the schema
       parameters:
       - name: org_name
         in: path
@@ -5460,7 +5870,12 @@ def base_experiment_specs_schema(org_name, experiment_id, action):
       tags:
       - EXPERIMENT
       summary: Retrieve Base Experiment Specs schema
-      description: Returns the Specs schema for a given action of the base experiment
+      description: |
+        Returns the Specs schema for a given action of the base experiment. This endpoint:
+        - Validates the base experiment exists and user has access
+        - Validates the action is supported
+        - Retrieves the schema for the action
+        - Returns the schema
       parameters:
       - name: org_name
         in: path
@@ -5536,7 +5951,14 @@ def experiment_job_run(org_name, experiment_id):
       tags:
       - EXPERIMENT
       summary: Run Experiment Jobs
-      description: Asynchronously starts a Experiment Action and returns corresponding Job ID
+      description: |
+        Asynchronously starts a Experiment Action and returns corresponding Job ID. This endpoint:
+        - Validates the experiment exists and user has access
+        - Validates the requested action is supported
+        - Validates the provided specs match the action schema
+        - Creates a new job with the provided parameters
+        - Queues the job for execution
+        - Returns the Job ID for tracking and retrieval
       parameters:
       - name: org_name
         in: path
@@ -5567,6 +5989,16 @@ def experiment_job_run(org_name, experiment_id):
                 type: string
                 format: uuid
                 maxLength: 36
+          headers:
+            Access-Control-Allow-Origin:
+              $ref: '#/components/headers/Access-Control-Allow-Origin'
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/X-RateLimit-Limit'
+        400:
+          description: Invalid request (e.g. invalid experiment ID, missing required fields)
+          content:
+            application/json:
+              schema: ErrorRspSchema
           headers:
             Access-Control-Allow-Origin:
               $ref: '#/components/headers/Access-Control-Allow-Origin'
@@ -5677,7 +6109,13 @@ def experiment_job_retry(org_name, experiment_id, job_id):
       tags:
       - EXPERIMENT
       summary: Retry Experiment Jobs
-      description: Asynchronously retries a Experiment Action and returns corresponding Job ID
+      description: |
+        Asynchronously retries a Experiment Action and returns corresponding Job ID. This endpoint:
+        - Validates the experiment exists and user has access
+        - Validates the job exists and is retryable
+        - Creates a new job with the same parameters as the original job
+        - Queues the job for execution
+        - Returns the new Job ID for tracking and retrieval
       parameters:
       - name: org_name
         in: path
@@ -5712,6 +6150,16 @@ def experiment_job_retry(org_name, experiment_id, job_id):
                 type: string
                 format: uuid
                 maxLength: 36
+          headers:
+            Access-Control-Allow-Origin:
+              $ref: '#/components/headers/Access-Control-Allow-Origin'
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/X-RateLimit-Limit'
+        400:
+          description: Invalid request (e.g. invalid experiment ID, job ID)
+          content:
+            application/json:
+              schema: ErrorRspSchema
           headers:
             Access-Control-Allow-Origin:
               $ref: '#/components/headers/Access-Control-Allow-Origin'
@@ -5775,7 +6223,13 @@ def experiment_model_publish(org_name, experiment_id, job_id):
       tags:
       - EXPERIMENT
       summary: Publish models to NGC
-      description: Publish models to NGC private registry
+      description: |
+        Publishes models to NGC private registry. This endpoint:
+        - Validates the experiment exists and user has access
+        - Validates the job exists and is publishable
+        - Validates the provided metadata matches the schema
+        - Publishes the model to NGC with the provided metadata
+        - Returns a success message
       parameters:
       - name: org_name
         in: path
@@ -5814,6 +6268,16 @@ def experiment_model_publish(org_name, experiment_id, job_id):
                 type: string
                 format: uuid
                 maxLength: 36
+          headers:
+            Access-Control-Allow-Origin:
+              $ref: '#/components/headers/Access-Control-Allow-Origin'
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/X-RateLimit-Limit'
+        400:
+          description: Invalid request (e.g. invalid experiment ID, job ID, missing required fields)
+          content:
+            application/json:
+              schema: ErrorRspSchema
           headers:
             Access-Control-Allow-Origin:
               $ref: '#/components/headers/Access-Control-Allow-Origin'
@@ -5864,15 +6328,20 @@ def experiment_job_get_epoch_numbers(org_name, experiment_id, job_id):
     """Get the epoch numbers for the checkpoints present for this job.
 
     ---
-    post:
+    get:
       tags:
       - EXPERIMENT
       summary: Get epoch numbers present for this job
-      description: Get epoch numbers for the checkpoints present for this job
+      description: |
+        Retrieves the epoch numbers for the checkpoints present for this job. This endpoint:
+        - Validates the experiment exists and user has access
+        - Validates the job exists
+        - Retrieves the list of epoch numbers from storage
+        - Returns the list of epoch numbers
       parameters:
       - name: org_name
         in: path
-        description: Org Name
+        description: Organization name
         required: true
         schema:
           type: string
@@ -5899,17 +6368,24 @@ def experiment_job_get_epoch_numbers(org_name, experiment_id, job_id):
           description: List of epoch numbers
           content:
             application/json:
-              schema:
-                type: string
-                format: uuid
-                maxLength: 36
+              schema: LstIntSchema
+          headers:
+            Access-Control-Allow-Origin:
+              $ref: '#/components/headers/Access-Control-Allow-Origin'
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/X-RateLimit-Limit'
+        400:
+          description: Invalid request (e.g. invalid experiment ID, job ID)
+          content:
+            application/json:
+              schema: ErrorRspSchema
           headers:
             Access-Control-Allow-Origin:
               $ref: '#/components/headers/Access-Control-Allow-Origin'
             X-RateLimit-Limit:
               $ref: '#/components/headers/X-RateLimit-Limit'
         404:
-          description: Bad request, see reply body for details
+          description: Experiment or Job not found
           content:
             application/json:
               schema: ErrorRspSchema
@@ -5945,11 +6421,17 @@ def experiment_remove_published_model(org_name, experiment_id, job_id):
     """Remove published models from NGC.
 
     ---
-    post:
+    delete:
       tags:
       - EXPERIMENT
       summary: Remove publish models from NGC
-      description: Remove models from NGC private registry
+      description: |
+        Removes models from NGC private registry. This endpoint:
+        - Validates the experiment exists and user has access
+        - Validates the job exists and is publishable
+        - Validates the provided metadata matches the schema
+        - Removes the model from NGC
+        - Returns a success message
       parameters:
       - name: org_name
         in: path
@@ -5988,6 +6470,16 @@ def experiment_remove_published_model(org_name, experiment_id, job_id):
                 type: string
                 format: uuid
                 maxLength: 36
+          headers:
+            Access-Control-Allow-Origin:
+              $ref: '#/components/headers/Access-Control-Allow-Origin'
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/X-RateLimit-Limit'
+        400:
+          description: Invalid request (e.g. invalid experiment ID, job ID, missing required fields)
+          content:
+            application/json:
+              schema: ErrorRspSchema
           headers:
             Access-Control-Allow-Origin:
               $ref: '#/components/headers/Access-Control-Allow-Origin'
@@ -6040,7 +6532,12 @@ def experiment_job_schema(org_name, experiment_id, job_id):
       tags:
       - EXPERIMENT
       summary: Retrieve Schema for a job
-      description: Returns the Specs schema for a given job
+      description: |
+        Returns the Specs schema for a given job. This endpoint:
+        - Validates the experiment exists and user has access
+        - Validates the job exists
+        - Retrieves the schema for the job's action
+        - Returns the schema
       parameters:
       - name: org_name
         in: path
@@ -6073,6 +6570,16 @@ def experiment_job_schema(org_name, experiment_id, job_id):
             application/json:
               schema:
                 type: object
+          headers:
+            Access-Control-Allow-Origin:
+              $ref: '#/components/headers/Access-Control-Allow-Origin'
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/X-RateLimit-Limit'
+        400:
+          description: Invalid request (e.g. invalid experiment ID, job ID)
+          content:
+            application/json:
+              schema: ErrorRspSchema
           headers:
             Access-Control-Allow-Origin:
               $ref: '#/components/headers/Access-Control-Allow-Origin'
@@ -6118,7 +6625,12 @@ def experiment_job_list(org_name, experiment_id):
       tags:
       - EXPERIMENT
       summary: List Jobs for Experiment
-      description: Returns the list of Jobs
+      description: |
+        Returns the list of Jobs for a given experiment. This endpoint:
+        - Validates the experiment exists and user has access
+        - Retrieves the list of jobs from storage
+        - Applies pagination and filtering based on query parameters
+        - Returns the filtered and paginated list of jobs
       parameters:
       - name: org_name
         in: path
@@ -6167,6 +6679,16 @@ def experiment_job_list(org_name, experiment_id):
           content:
             application/json:
               schema: ExperimentJobListSchema
+          headers:
+            Access-Control-Allow-Origin:
+              $ref: '#/components/headers/Access-Control-Allow-Origin'
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/X-RateLimit-Limit'
+        400:
+          description: Invalid request (e.g. invalid experiment ID)
+          content:
+            application/json:
+              schema: ErrorRspSchema
           headers:
             Access-Control-Allow-Origin:
               $ref: '#/components/headers/Access-Control-Allow-Origin'
@@ -6230,7 +6752,12 @@ def experiment_job_retrieve(org_name, experiment_id, job_id):
       tags:
       - EXPERIMENT
       summary: Retrieve Job for Experiment
-      description: Returns the Job
+      description: |
+        Returns the Job for a given experiment and job ID. This endpoint:
+        - Validates the experiment exists and user has access
+        - Validates the job exists
+        - Retrieves the job from storage
+        - Returns the job
       parameters:
       - name: org_name
         in: path
@@ -6262,6 +6789,16 @@ def experiment_job_retrieve(org_name, experiment_id, job_id):
           content:
             application/json:
               schema: ExperimentJobSchema
+          headers:
+            Access-Control-Allow-Origin:
+              $ref: '#/components/headers/Access-Control-Allow-Origin'
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/X-RateLimit-Limit'
+        400:
+          description: Invalid request (e.g. invalid experiment ID, job ID)
+          content:
+            application/json:
+              schema: ErrorRspSchema
           headers:
             Access-Control-Allow-Origin:
               $ref: '#/components/headers/Access-Control-Allow-Origin'
@@ -6307,7 +6844,12 @@ def experiment_job_logs(org_name, experiment_id, job_id):
       tags:
       - EXPERIMENT
       summary: Get Job logs for Experiment
-      description: Returns the job logs
+      description: |
+        Returns the job logs for a given experiment and job ID. This endpoint:
+        - Validates the experiment exists and user has access
+        - Validates the job exists
+        - Retrieves the job logs from storage
+        - Returns the job logs
       parameters:
       - name: org_name
         in: path
@@ -6353,6 +6895,16 @@ def experiment_job_logs(org_name, experiment_id, job_id):
               $ref: '#/components/headers/Access-Control-Allow-Origin'
             X-RateLimit-Limit:
               $ref: '#/components/headers/X-RateLimit-Limit'
+        400:
+          description: Invalid request (e.g. invalid experiment ID, job ID)
+          content:
+            application/json:
+              schema: ErrorRspSchema
+          headers:
+            Access-Control-Allow-Origin:
+              $ref: '#/components/headers/Access-Control-Allow-Origin'
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/X-RateLimit-Limit'
         404:
           description: Job not exist or logs not found.
           content:
@@ -6392,7 +6944,12 @@ def experiment_job_automl_details(org_name, experiment_id, job_id):
       tags:
       - EXPERIMENT
       summary: Retrieve usable AutoML details
-      description: Retrieve usable AutoML details
+      description: |
+        Retrieves usable AutoML details for a given experiment and job ID. This endpoint:
+        - Validates the experiment exists and user has access
+        - Validates the job exists
+        - Retrieves the AutoML details from storage
+        - Returns the AutoML details
       parameters:
       - name: org_name
         in: path
@@ -6428,6 +6985,16 @@ def experiment_job_automl_details(org_name, experiment_id, job_id):
                 format: binary
                 maxLength: 1000
                 maxLength: 1000
+          headers:
+            Access-Control-Allow-Origin:
+              $ref: '#/components/headers/Access-Control-Allow-Origin'
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/X-RateLimit-Limit'
+        400:
+          description: Invalid request (e.g. invalid experiment ID, job ID)
+          content:
+            application/json:
+              schema: ErrorRspSchema
           headers:
             Access-Control-Allow-Origin:
               $ref: '#/components/headers/Access-Control-Allow-Origin'
@@ -6473,15 +7040,21 @@ def experiment_job_status_update(org_name, experiment_id, job_id):
     """Update Job status for Experiment.
 
     ---
-    get:
+    post:
       tags:
       - EXPERIMENT
-      summary: Posts status for the job
-      description: Saves recieved content to status file
+      summary: Update status of an experiment job
+      description: |
+        Updates the status of a specific job within an experiment. This endpoint:
+        - Validates the experiment exists and user has access
+        - Validates the job exists
+        - Updates the job status based on provided data
+        - Persists status changes to storage
+        - Triggers any necessary status-based workflows
       parameters:
       - name: org_name
         in: path
-        description: Org Name
+        description: Organization name owning the experiment
         required: true
         schema:
           type: string
@@ -6489,7 +7062,7 @@ def experiment_job_status_update(org_name, experiment_id, job_id):
           pattern: '^[a-zA-Z0-9_-]+$'
       - name: experiment_id
         in: path
-        description: ID of Experiment
+        description: Unique identifier of the experiment containing the job
         required: true
         schema:
           type: string
@@ -6497,15 +7070,22 @@ def experiment_job_status_update(org_name, experiment_id, job_id):
           maxLength: 36
       - name: job_id
         in: path
-        description: Job ID
+        description: Unique identifier of the job to update
         required: true
         schema:
           type: string
           format: uuid
           maxLength: 36
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              description: Status update data including new status and any additional metadata
       responses:
         200:
-          description: Returned Job
+          description: Job status successfully updated
           content:
             application/json:
               schema: ExperimentJobSchema
@@ -6514,8 +7094,18 @@ def experiment_job_status_update(org_name, experiment_id, job_id):
               $ref: '#/components/headers/Access-Control-Allow-Origin'
             X-RateLimit-Limit:
               $ref: '#/components/headers/X-RateLimit-Limit'
+        400:
+          description: Invalid status update request (e.g. invalid status value, missing required fields)
+          content:
+            application/json:
+              schema: ErrorRspSchema
+          headers:
+            Access-Control-Allow-Origin:
+              $ref: '#/components/headers/Access-Control-Allow-Origin'
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/X-RateLimit-Limit'
         404:
-          description: User, Experiment or Job not found
+          description: Experiment or job not found, or user lacks permission to update
           content:
             application/json:
               schema: ErrorRspSchema
@@ -6549,15 +7139,19 @@ def experiment_job_log_update(org_name, experiment_id, job_id):
     """Update Job log for Experiment.
 
     ---
-    get:
+    post:
       tags:
       - EXPERIMENT
-      summary: Posts log for the job
-      description: Saves recieved content to log file
+      summary: Update log of an experiment job
+      description: |
+        Updates the log of a specific job within an experiment. This endpoint:
+        - Validates the experiment exists and user has access
+        - Validates the job exists
+        - Updates the job log based on provided data
       parameters:
       - name: org_name
         in: path
-        description: Org Name
+        description: Organization name owning the experiment
         required: true
         schema:
           type: string
@@ -6565,7 +7159,7 @@ def experiment_job_log_update(org_name, experiment_id, job_id):
           pattern: '^[a-zA-Z0-9_-]+$'
       - name: experiment_id
         in: path
-        description: ID of Experiment
+        description: Unique identifier of the experiment containing the job
         required: true
         schema:
           type: string
@@ -6573,15 +7167,22 @@ def experiment_job_log_update(org_name, experiment_id, job_id):
           maxLength: 36
       - name: job_id
         in: path
-        description: Job ID
+        description: Unique identifier of the job to update
         required: true
         schema:
           type: string
           format: uuid
           maxLength: 36
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              description: Log update data including
       responses:
         200:
-          description: Returned Job
+          description: Job logs successfully updated
           content:
             application/json:
               schema: ExperimentJobSchema
@@ -6590,8 +7191,18 @@ def experiment_job_log_update(org_name, experiment_id, job_id):
               $ref: '#/components/headers/Access-Control-Allow-Origin'
             X-RateLimit-Limit:
               $ref: '#/components/headers/X-RateLimit-Limit'
+        400:
+          description: Invalid log update request (e.g. invalid log value, missing required fields)
+          content:
+            application/json:
+              schema: ErrorRspSchema
+          headers:
+            Access-Control-Allow-Origin:
+              $ref: '#/components/headers/Access-Control-Allow-Origin'
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/X-RateLimit-Limit'
         404:
-          description: User, Experiment or Job not found
+          description: Experiment or job not found, or user lacks permission to update
           content:
             application/json:
               schema: ErrorRspSchema
@@ -6629,7 +7240,14 @@ def bulk_experiment_jobs_cancel(org_name):
       tags:
       - EXPERIMENT
       summary: Cancel all Jobs under multiple experiments
-      description: Cancel all Jobs under multiple experiments
+      description: |
+        Cancels all jobs within multiple experiments. This endpoint:
+        - Validates the experiments exist and user has access
+        - Validates the jobs exist and are cancellable
+        - Updates the job status to 'cancelled'
+        - Persists status changes to storage
+        - Triggers any necessary cancellation workflows
+        - Returns the cancellation status for each experiment
       parameters:
       - name: org_name
         in: path
@@ -6655,6 +7273,16 @@ def bulk_experiment_jobs_cancel(org_name):
       responses:
         200:
           description: Successfully canceled all jobs under the specified experiments
+          headers:
+            Access-Control-Allow-Origin:
+              $ref: '#/components/headers/Access-Control-Allow-Origin'
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/X-RateLimit-Limit'
+        400:
+          description: Invalid request (e.g. invalid experiment IDs)
+          content:
+            application/json:
+              schema: ErrorRspSchema
           headers:
             Access-Control-Allow-Origin:
               $ref: '#/components/headers/Access-Control-Allow-Origin'
@@ -6712,7 +7340,14 @@ def experiment_jobs_cancel(org_name, experiment_id):
       tags:
       - EXPERIMENT
       summary: Cancel all Jobs under experiment
-      description: Cancel all Jobs under experiment
+      description: |
+        Cancels all jobs within an experiment. This endpoint:
+        - Validates the experiment exists and user has access
+        - Validates the jobs exist and are cancellable
+        - Updates the job status to 'cancelled'
+        - Persists status changes to storage
+        - Triggers any necessary cancellation workflows
+        - Returns the cancellation status
       parameters:
       - name: org_name
         in: path
@@ -6733,6 +7368,16 @@ def experiment_jobs_cancel(org_name, experiment_id):
       responses:
         200:
           description: Successfully canceled all jobs under experiments
+          headers:
+            Access-Control-Allow-Origin:
+              $ref: '#/components/headers/Access-Control-Allow-Origin'
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/X-RateLimit-Limit'
+        400:
+          description: Invalid request (e.g. invalid experiment ID)
+          content:
+            application/json:
+              schema: ErrorRspSchema
           headers:
             Access-Control-Allow-Origin:
               $ref: '#/components/headers/Access-Control-Allow-Origin'
@@ -6778,7 +7423,14 @@ def experiment_job_pause(org_name, experiment_id, job_id):
       tags:
       - EXPERIMENT
       summary: Pause Experiment Job - only for training
-      description: Pause Experiment Job - only for training
+      description: |
+        Pauses a specific job within an experiment. This endpoint:
+        - Validates the experiment exists and user has access
+        - Validates the job exists and is pausable
+        - Updates the job status to 'paused'
+        - Persists status changes to storage
+        - Triggers any necessary pause workflows
+        - Returns the pause status
       parameters:
       - name: org_name
         in: path
@@ -6807,6 +7459,16 @@ def experiment_job_pause(org_name, experiment_id, job_id):
       responses:
         200:
           description: Successfully requested training pause of specified Job ID (asynchronous)
+          headers:
+            Access-Control-Allow-Origin:
+              $ref: '#/components/headers/Access-Control-Allow-Origin'
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/X-RateLimit-Limit'
+        400:
+          description: Invalid request (e.g. invalid experiment ID, job ID)
+          content:
+            application/json:
+              schema: ErrorRspSchema
           headers:
             Access-Control-Allow-Origin:
               $ref: '#/components/headers/Access-Control-Allow-Origin'
@@ -6851,7 +7513,14 @@ def experiment_job_cancel(org_name, experiment_id, job_id):
       tags:
       - EXPERIMENT
       summary: Cancel Experiment Job or pause training
-      description: Cancel Experiment Job or pause training
+      description: |
+        Cancels a specific job within an experiment. This endpoint:
+        - Validates the experiment exists and user has access
+        - Validates the job exists and is cancellable
+        - Updates the job status to 'cancelled'
+        - Persists status changes to storage
+        - Triggers any necessary cancellation workflows
+        - Returns the cancellation status
       parameters:
       - name: org_name
         in: path
@@ -6880,6 +7549,16 @@ def experiment_job_cancel(org_name, experiment_id, job_id):
       responses:
         200:
           description: Successfully requested cancelation or training pause of specified Job ID
+          headers:
+            Access-Control-Allow-Origin:
+              $ref: '#/components/headers/Access-Control-Allow-Origin'
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/X-RateLimit-Limit'
+        400:
+          description: Invalid request (e.g. invalid experiment ID, job ID)
+          content:
+            application/json:
+              schema: ErrorRspSchema
           headers:
             Access-Control-Allow-Origin:
               $ref: '#/components/headers/Access-Control-Allow-Origin'
@@ -6924,7 +7603,13 @@ def bulk_experiment_job_delete(org_name, experiment_id):
       tags:
       - EXPERIMENT
       summary: Delete multiple Experiment Jobs
-      description: Delete multiple Experiment Jobs
+      description: |
+        Deletes multiple jobs within an experiment. This endpoint:
+        - Validates the experiment exists and user has access
+        - Validates the jobs exist and are deletable
+        - Deletes the job files and metadata
+        - Updates job status to 'deleted'
+        - Returns the deletion status for each job
       parameters:
       - name: org_name
         in: path
@@ -6964,7 +7649,7 @@ def bulk_experiment_job_delete(org_name, experiment_id):
             X-RateLimit-Limit:
               $ref: '#/components/headers/X-RateLimit-Limit'
         400:
-          description: Bad request, see reply body for details
+          description: Invalid request (e.g. invalid experiment ID, job IDs)
           content:
             application/json:
               schema: ErrorRspSchema
@@ -7024,7 +7709,13 @@ def experiment_job_delete(org_name, experiment_id, job_id):
       tags:
       - EXPERIMENT
       summary: Delete Experiment Job
-      description: Delete Experiment Job
+      description: |
+        Deletes a specific job within an experiment. This endpoint:
+        - Validates the experiment exists and user has access
+        - Validates the job exists and is deletable
+        - Deletes the job files and metadata
+        - Updates job status to 'deleted'
+        - Returns the deletion status
       parameters:
       - name: org_name
         in: path
@@ -7053,6 +7744,16 @@ def experiment_job_delete(org_name, experiment_id, job_id):
       responses:
         200:
           description: Successfully requested deletion of specified Job ID
+          headers:
+            Access-Control-Allow-Origin:
+              $ref: '#/components/headers/Access-Control-Allow-Origin'
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/X-RateLimit-Limit'
+        400:
+          description: Invalid request (e.g. invalid experiment ID, job ID)
+          content:
+            application/json:
+              schema: ErrorRspSchema
           headers:
             Access-Control-Allow-Origin:
               $ref: '#/components/headers/Access-Control-Allow-Origin'
@@ -7097,7 +7798,14 @@ def experiment_job_resume(org_name, experiment_id, job_id):
       tags:
       - EXPERIMENT
       summary: Resume Experiment Job
-      description: Resume Experiment Job - train/retrain only
+      description: |
+        Resumes a specific job within an experiment. This endpoint:
+        - Validates the experiment exists and user has access
+        - Validates the job exists and is resumable
+        - Validates the provided metadata matches the schema
+        - Updates the job metadata
+        - Queues the job for execution
+        - Returns the new Job ID for tracking and retrieval
       parameters:
       - name: org_name
         in: path
@@ -7132,6 +7840,16 @@ def experiment_job_resume(org_name, experiment_id, job_id):
       responses:
         200:
           description: Successfully requested resume of specified Job ID (asynchronous)
+          headers:
+            Access-Control-Allow-Origin:
+              $ref: '#/components/headers/Access-Control-Allow-Origin'
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/X-RateLimit-Limit'
+        400:
+          description: Invalid request (e.g. invalid experiment ID, job ID, missing required fields)
+          content:
+            application/json:
+              schema: ErrorRspSchema
           headers:
             Access-Control-Allow-Origin:
               $ref: '#/components/headers/Access-Control-Allow-Origin'
@@ -7187,7 +7905,13 @@ def experiment_job_download(org_name, experiment_id, job_id):
       tags:
       - EXPERIMENT
       summary: Download Job Artifacts
-      description: Download the Artifacts produced by a given job
+      description: |
+        Downloads the artifacts produced by a given job within an experiment. This endpoint:
+        - Validates the experiment exists and user has access
+        - Validates the job exists
+        - Validates the requested export type is supported
+        - Downloads the job artifacts
+        - Returns the downloaded artifacts as a tarball
       parameters:
       - name: org_name
         in: path
@@ -7223,6 +7947,16 @@ def experiment_job_download(org_name, experiment_id, job_id):
                 format: binary
                 maxLength: 1000
                 maxLength: 1000
+          headers:
+            Access-Control-Allow-Origin:
+              $ref: '#/components/headers/Access-Control-Allow-Origin'
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/X-RateLimit-Limit'
+        400:
+          description: Invalid request (e.g. invalid experiment ID, job ID)
+          content:
+            application/json:
+              schema: ErrorRspSchema
           headers:
             Access-Control-Allow-Origin:
               $ref: '#/components/headers/Access-Control-Allow-Origin'
@@ -7280,7 +8014,12 @@ def experiment_job_files_list(org_name, experiment_id, job_id):
       tags:
       - EXPERIMENT
       summary: List Job Files
-      description: List the Files produced by a given job
+          description: |
+        Lists the files produced by a given job within an experiment. This endpoint:
+        - Validates the experiment exists and user has access
+        - Validates the job exists
+        - Retrieves the list of files from storage
+        - Returns the list of files
       parameters:
       - name: org_name
         in: path
@@ -7317,6 +8056,16 @@ def experiment_job_files_list(org_name, experiment_id, job_id):
                   type: string
                   maxLength: 1000
                   maxLength: 1000
+          headers:
+            Access-Control-Allow-Origin:
+              $ref: '#/components/headers/Access-Control-Allow-Origin'
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/X-RateLimit-Limit'
+        400:
+          description: Invalid request (e.g. invalid experiment ID, job ID)
+          content:
+            application/json:
+              schema: ErrorRspSchema
           headers:
             Access-Control-Allow-Origin:
               $ref: '#/components/headers/Access-Control-Allow-Origin'
@@ -7366,7 +8115,13 @@ def experiment_job_download_selective_files(org_name, experiment_id, job_id):
       tags:
       - EXPERIMENT
       summary: Download selective Job Artifacts
-      description: Download selective Artifacts produced by a given job
+      description: |
+        Downloads selective artifacts produced by a given job within an experiment. This endpoint:
+        - Validates the experiment exists and user has access
+        - Validates the job exists
+        - Validates the requested files exist
+        - Downloads the requested files
+        - Returns the downloaded files as a tarball
       parameters:
       - name: org_name
         in: path
@@ -7401,6 +8156,16 @@ def experiment_job_download_selective_files(org_name, experiment_id, job_id):
                 type: string
                 format: binary
                 maxLength: 1000
+          headers:
+            Access-Control-Allow-Origin:
+              $ref: '#/components/headers/Access-Control-Allow-Origin'
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/X-RateLimit-Limit'
+        400:
+          description: Invalid request (e.g. invalid experiment ID, job ID, file list)
+          content:
+            application/json:
+              schema: ErrorRspSchema
           headers:
             Access-Control-Allow-Origin:
               $ref: '#/components/headers/Access-Control-Allow-Origin'

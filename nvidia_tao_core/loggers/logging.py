@@ -14,10 +14,9 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Logger class for TLT IVA models."""
+"""Logger class"""
 
 from abc import abstractmethod
-import atexit
 from datetime import datetime
 import json
 import logging
@@ -185,22 +184,23 @@ class StatusLogger(BaseLogger):
         """Logger to write out the status."""
         super().__init__(is_master=is_master, verbosity=verbosity)
         self.log_path = os.path.realpath(filename)
+        self.append = append
+        self.is_master = is_master
         if os.path.exists(self.log_path):
             logger.info(f"Log file already exists at {self.log_path}".format)
-        if is_master:
-            with open(self.log_path, "a" if append else "w", encoding="utf-8") as file:
-                self.l_file = file
-            atexit.register(self.l_file.close)
 
     def log(self, level, string):
         """Log the data string."""
         if level >= self.verbosity:
-            self.l_file.write(string + "\n")
+            if self.is_master:
+                with open(self.log_path, "a" if self.append else "w", encoding="utf-8") as file:
+                    file.write(string + "\n")
 
     def flush(self):
         """Flush contents of the log file."""
         if self.is_master:
-            self.l_file.flush()
+            with open(self.log_path, "a" if self.append else "w", encoding="utf-8") as file:
+                file.flush()
 
     @staticmethod
     def format_data(data):

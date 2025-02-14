@@ -24,7 +24,7 @@ from pymongo.errors import WriteError, AutoReconnect
 
 # MongoDB connection setup
 
-if os.getenv("SERVICE_MODE"):
+if os.getenv("BACKEND"):
     mongo_secret = os.getenv("MONGOSECRET")
     mongo_namespace = os.getenv("NAMESPACE", "default")
     mongo_operator_enabled = os.getenv('MONGO_OPERATOR_ENABLED', 'true') == 'true'
@@ -69,7 +69,7 @@ class MongoHandler:
             collection_name (str): Name of the collection within the database.
         """
         global mongo_client  # pylint: disable=global-statement
-        self.mongo_client = mongo_client
+        self.mongo_client = mongo_client  # pylint: disable=E0606
         self.db = self.mongo_client[db_name]
         self.collection = self.db[collection_name]
         try:

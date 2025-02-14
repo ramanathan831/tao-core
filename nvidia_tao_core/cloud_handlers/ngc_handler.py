@@ -13,7 +13,6 @@
 # limitations under the License.
 
 """Handler functions to manage NGC related operations"""
-from ngcsdk import Client
 from ngcbpc import errors
 
 import os
@@ -93,6 +92,7 @@ def download_ngc_model(ngc_path, ptm_root, key, is_cookie_set, use_ngc_staging):
         return False
 
     # Download model with ngc sdk
+    from ngcsdk import Client  # pylint: disable=C0415
     clt = Client()
 
     try:

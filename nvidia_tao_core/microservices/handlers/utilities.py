@@ -761,7 +761,7 @@ def get_num_gpus_from_spec(spec, action, default=0):
     return 1
 
 
-def validate_num_gpu(num_gpu: int | None, action: str):
+def validate_num_gpu(num_gpu=None, action: str = ""):
     """Validate the requested number of GPUs and return the validated number of GPUs.
 
     Args:
@@ -909,7 +909,8 @@ def send_microservice_request(api_endpoint, network, action, ngc_key="", cloud_m
     base_url = f"http://flask-service-{job_id}.default.svc.cluster.local:8000"
     data = json.dumps(request_metadata)
     endpoint = f"{base_url}/api/v1/internal/container_job"
-    print("request_metadata = ", request_metadata, file=sys.stderr)
+    if api_endpoint == "get_job_status":
+        endpoint = f"{base_url}/api/v1/internal/container_job:status"
     try:
         response = requests.post(endpoint, data=data, timeout=120)
     except Exception as e:

@@ -121,7 +121,7 @@ class MonaiDatasetHandler:
         """Notify the dataset handler with the label info"""
         controller_path = os.path.join(resolve_root(org_name, "dataset", handler_id), "notify_record.json")
         controller_lock = get_default_lock_file_path(controller_path)
-        with FileLock(controller_lock, mode=0o666):
+        with FileLock(controller_lock):
             image_recorder = ImageLabelRecord(controller_path)
             status, msg = image_recorder.process_data(spec)
             if not status:

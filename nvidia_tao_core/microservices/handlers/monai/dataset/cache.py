@@ -20,7 +20,7 @@ import sys
 import shutil
 import tempfile
 import time
-from typing import Dict, List
+from typing import Dict
 from filelock import FileLock
 
 logger = logging.getLogger(__name__)
@@ -29,7 +29,7 @@ logger = logging.getLogger(__name__)
 class CacheInfo:
     """CacheInfo class"""
 
-    def __init__(self, c: dict | None = None):
+    def __init__(self, c=None):
         """Initialize CacheInfo class"""
         if c is None:
             c = {}
@@ -108,7 +108,7 @@ class LocalCache(dict):
         if cache_info is None:
             meta_file = os.path.join(self.store_path, cache_id, "meta.info")
             if os.path.exists(meta_file):
-                with FileLock(self._lock_file, mode=0o666):
+                with FileLock(self._lock_file):
                     try:
                         with open(meta_file, encoding="utf-8") as meta:
                             content = meta.readline()
@@ -142,7 +142,7 @@ class LocalCache(dict):
         path = os.path.join(self.store_path, cache_id)
         shutil.rmtree(path, ignore_errors=True)
 
-    def add_cache(self, cache_id, data_file: str | List, expiry: int = 0, uncompress: bool = False):
+    def add_cache(self, cache_id, data_file, expiry: int = 0, uncompress: bool = False):
         """Add cached item"""
         start = time.time()
         logger.debug(f"Load Data from: {data_file}")
@@ -195,7 +195,7 @@ class LocalCache(dict):
         return cache_id, cache_info
 
     def _write_meta_info(self, cache_id, cache_info):
-        with FileLock(self._lock_file, mode=0o666):
+        with FileLock(self._lock_file):
             path = os.path.join(self.store_path, cache_id)
             meta_file = os.path.join(path, "meta.info")
             with open(meta_file, "w", encoding="utf-8") as meta:

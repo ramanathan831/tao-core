@@ -23,11 +23,11 @@ from kubernetes import client, config
 from kubernetes.client.rest import ApiException
 
 from nvidia_tao_core.microservices.constants import MONAI_NETWORKS, NETWORK_CONTAINER_MAPPING
-from nvidia_tao_core.microservices.handlers.stateless_handlers import BACKEND, get_handler_job_metadata, get_toolkit_status, internal_job_status_update, write_job_metadata, update_job_message
+from nvidia_tao_core.microservices.handlers.stateless_handlers import BACKEND, get_handler_job_metadata, get_toolkit_status, internal_job_status_update, write_job_metadata, update_job_message, get_job_specs
 from nvidia_tao_core.microservices.handlers.utilities import send_microservice_request
 from nvidia_tao_core.microservices.handlers.nvcf_handler import create_function, deploy_function, get_function, create_microservice_job_on_nvcf, get_nvcf_microservices_job_status, delete_function_version
 
-if os.getenv("SERVICE_MODE"):
+if os.getenv("BACKEND"):  # To see if the container is going to be used for Service pods or network jobs
     from nvidia_tao_core.microservices.handlers.mongo_handler import mongo_secret
 release_name = os.getenv("RELEASE_NAME", 'tao-api')
 
@@ -166,7 +166,7 @@ def create(org_name, job_name, image, command, num_gpu=-1, accelerator=None, doc
         value=str(num_gpu) if not cl_medical else os.getenv('NUM_GPU_PER_NODE', default='1'))
     mongo_secret_env = client.V1EnvVar(
         name="MONGOSECRET",
-        value=mongo_secret
+        value=mongo_secret  # pylint: disable=E0606
     )
     dynamic_docker_envs = []
     if docker_env_vars:
@@ -741,13 +741,13 @@ def status(org_name, handler_id, job_name, handler_kind, use_ngc=True, network="
     if network not in MONAI_NETWORKS:
         service_status = wait_for_service(org_name, handler_id, job_name, handler_kind)
         if service_status == "Running":
-            response = send_microservice_request(api_endpoint="get_job_status", network=network, action=action, job_id=job_name)
-            if response and response.ok:
-                job_status = response.json()
-                status = job_status.get("status")
-                if status == "Processing":
-                    status = "Running"
-                return status
+            specs = get_job_specs(job_name)
+            if specs:
+                response = send_microservice_request(api_endpoint="get_job_status", network=network, action=action, job_id=job_name, specs=specs)
+                if response and response.ok:
+                    job_status = response.json()
+                    status = job_status.get("status")
+                    return status
         elif service_status in ("Canceled", "Canceling", "Paused", "Pausing"):
             return service_status
         return "Error"
@@ -935,7 +935,7 @@ def create_tensorboard_deployment(deployment_name, image, command, logs_image, l
         value="none")
     mongo_secret_env = client.V1EnvVar(
         name="MONGOSECRET",
-        value=mongo_secret
+        value=mongo_secret  # pylint: disable=E0606
     )
     image_pull_secret = os.getenv('IMAGEPULLSECRET', default='imagepullsecret')
     tb_container = client.V1Container(

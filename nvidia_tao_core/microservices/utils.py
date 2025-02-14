@@ -450,7 +450,7 @@ def create_lock(filepath, existing_lock=None):
     if not os.path.exists(lock_file):
         with open(lock_file, "w", encoding="utf-8") as _:
             pass
-    return FileLock(lock_file, mode=0o666)
+    return FileLock(lock_file)
 
 
 def safe_get_file_modified_time(filepath):
@@ -461,7 +461,7 @@ def safe_get_file_modified_time(filepath):
         with open(lock_file, "w", encoding="utf-8") as _:
             pass
 
-    with FileLock(lock_file, mode=0o666):
+    with FileLock(lock_file):
         return os.path.getmtime(filepath)
 
 

@@ -38,7 +38,7 @@ from nvidia_tao_core.microservices.handlers.monai.helpers import CUSTOMIZED_BUND
 # TODO: force max length of characters in a line to be 120
 from nvidia_tao_core.microservices.handlers.stateless_handlers import (BACKEND, base_exp_uuid, get_base_experiment_metadata, get_handler_job_metadata,
                                                                        get_handler_log_root, get_handler_metadata, get_jobs_root, get_handler_root,
-                                                                       get_toolkit_status, printc, resolve_metadata, get_automl_best_rec_number, get_job_specs, save_job_specs,
+                                                                       get_toolkit_status, printc, resolve_metadata, get_job_specs, save_job_specs,
                                                                        get_automl_brain_info, get_automl_controller_info, save_automl_controller_info, get_dnn_status,
                                                                        update_job_metadata, update_job_status, write_handler_metadata, update_job_details_with_microservices_response)
 from nvidia_tao_core.microservices.handlers.utilities import (StatusParser, build_cli_command, generate_cl_script, get_total_epochs,
@@ -354,6 +354,9 @@ class ActionPipeline:
         # Monitor job status
         while k8s_status in ["Done", "Error", "Running", "Pending"]:
             # If Done, try running self.post_run()
+            # Poll every 30 seconds
+            time.sleep(30)
+
             metadata_status = get_handler_job_metadata(self.job_name).get("status", "Error")
             if metadata_status in ("Canceled", "Paused") and k8s_status == "Running":
                 self.detailed_print(f"Terminating job {self.job_name}", file=sys.stderr)
@@ -400,9 +403,6 @@ class ActionPipeline:
                 update_job_metadata(self.handler_id, self.job_name, metadata_key="job_details", data=new_results, kind=self.handler_kind)
                 update_job_status(self.handler_id, self.job_name, status="Error", kind=self.handler_kind)
                 break
-            # Poll every 30 seconds
-            time.sleep(30)
-
             k8s_status = jobDriver.status(self.job_context.org_name, self.handler_id, self.job_name, self.handler_kind, use_ngc=self.ngc_runner, network=self.network, action=self.action, automl_exp_job=False)
 
         metadata_status = get_handler_job_metadata(self.job_name).get("status", "Error")

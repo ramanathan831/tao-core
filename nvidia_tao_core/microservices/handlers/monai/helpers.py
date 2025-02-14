@@ -224,7 +224,7 @@ class CapGpuUsage:
             with open(lock_file, "w", encoding="utf-8"):
                 pass
 
-        with FileLock(lock_file, mode=0o666):
+        with FileLock(lock_file):
             if os.path.exists(user_config_file):
                 with open(user_config_file, "r", encoding="utf-8") as f:
                     user_config = json.load(f)
@@ -271,7 +271,7 @@ class CapGpuUsage:
             print(f"Lock file does not exist when release_used is call for {org_name}", file=sys.stderr)
             return False, "Internal Error"
 
-        with FileLock(lock_file, mode=0o666):
+        with FileLock(lock_file):
             with open(user_config_file, "r", encoding="utf-8") as f:
                 user_config = json.load(f)
             print(f"Organization User {org_name} config (pre-released) is {user_config}", file=sys.stderr)

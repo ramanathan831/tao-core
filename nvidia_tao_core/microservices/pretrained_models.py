@@ -51,7 +51,7 @@ class BaseExperimentMetadata:
         self,
         shared_folder_path: str,
         org_teams: str,
-        ngc_key: str | None = None,
+        ngc_key: str = None,
         override: bool = False,
         dry_run: bool = False,
     ):
@@ -90,7 +90,7 @@ class BaseExperimentMetadata:
         self.supported_network_archs = self.get_supported_netowrk_archs()
 
         # set tao version and comparison operators
-        self.tao_version: version.Version | None = None
+        self.tao_version = None  # type: version.Version
         self.comparison_operators = {
             "<=": operator.le,
             "<": operator.lt,
