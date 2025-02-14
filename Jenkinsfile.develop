@@ -62,6 +62,13 @@ spec:
         }
       }
 
+      stage ("functional_tests") {
+        gitlabCommitStatus(name: "functional_tests", connection: gitLabConnection('git-lab-master')) {
+          sh "python setup.py develop && pip install pytest"
+          sh "pytest"
+        }
+      }
+
       stage ('build_pyt_wheel') {
         gitlabCommitStatus(name: "build_wheel", connection: gitLabConnection('git-lab-master')) {
           sh "echo '${BUILD_NUMBER}-${BUILD_TYPE}' > build.info"

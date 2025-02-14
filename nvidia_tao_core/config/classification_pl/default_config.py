@@ -37,6 +37,7 @@ from nvidia_tao_core.config.common.common_config import (
     CalibrationConfig
 )
 
+
 @dataclass
 class OptimConfig:
     """Optimizer config."""
@@ -45,8 +46,10 @@ class OptimConfig:
     optim: str = STR_FIELD(value="adamw", default_value="adamw", description="Optimizer", valid_options="adamw,adam,sgd")
     lr: float = FLOAT_FIELD(value=0.00006, default_value=0.00006, valid_min=0, valid_max="inf", automl_enabled="TRUE", description="Optimizer learning rate")
     policy: str = STR_FIELD(value="linear", default_value="linear", valid_options="linear,step", description="Optimizer policy")
+    policy_params: Dict[str, Any] = DICT_FIELD({"step_size": 30, "gamma": 0.1}, default_value={"step_size": 30, "gamma": 0.1}, description="Optimizer policy parameters")
     momentum: float = FLOAT_FIELD(value=0.9, default_value=0.9, math_cond="> 0.0", display_name="momentum - AdamW", description="The momentum for the AdamW optimizer.", automl_enabled="TRUE")
     weight_decay: float = FLOAT_FIELD(value=0.01, default_value=0.01, math_cond="> 0.0", display_name="weight decay", description="The weight decay coefficient.", automl_enabled="TRUE")
+
 
 @dataclass
 class LossConfig:
@@ -54,6 +57,7 @@ class LossConfig:
 
     type: str = STR_FIELD(value="CrossEntropyLoss", default_value="CrossEntropyLoss", description="Loss type", valid_options="CrossEntropyLoss")
     label_smooth_val: float = FLOAT_FIELD(value=0.0, default_value=0.0, valid_min=0, valid_max=1, description="Label smoothing value")
+
 
 @dataclass
 class HeadConfig:
@@ -77,9 +81,10 @@ class BackboneConfig:
     pretrained_backbone_path: Optional[str] = STR_FIELD(value=None, default_value="", description="Path to the pretrained model")
     freeze_backbone: bool = BOOL_FIELD(value=False, default_value=False, description="Flag to freeze backbone", automl_enabled="TRUE")
 
+
 @dataclass
 class ModelConfig:
-    """ Model config."""
+    """Model config."""
 
     backbone: BackboneConfig = DATACLASS_FIELD(BackboneConfig())
     head: HeadConfig = DATACLASS_FIELD(HeadConfig())
@@ -177,6 +182,10 @@ class DatasetConfig:
     batch_size: int = INT_FIELD(value=8, default_value=8, valid_min=1, valid_max="inf", description="Batch size", display_name="Batch Size", automl_enabled="TRUE")
     workers: int = INT_FIELD(value=8, default_value=1, valid_min=0, valid_max="inf", description="Workers", display_name="Workers", automl_enabled="TRUE")
     shuffle: bool = BOOL_FIELD(value=True, default_value=True, description="Shuffle dataloader")
+    train_split: str = STR_FIELD(value="train", default_value="train", description="Train split folder name")
+    validation_split: str = STR_FIELD(value="val", default_value="val", description="Validation split folder name")
+    test_split: str = STR_FIELD(value="val", default_value="val", description="Test split folder name")
+    predict_split: str = STR_FIELD(value="test", default_value="test", description="Predict split folder name")
     augmentation: AugmentationConfig = DATACLASS_FIELD(AugmentationConfig())
     train: TrainData = DATACLASS_FIELD(TrainData())
     val: ValData = DATACLASS_FIELD(ValData())
@@ -237,7 +246,7 @@ class ExportExpConfig:
 
 
 @dataclass
-class TrtConfig(TrtConfig):
+class TrtExpConfig(TrtConfig):
     """Trt config."""
 
     data_type: str = STR_FIELD(value="FP32", default_value="fp16", description="Data type", display_name="Data type")
@@ -248,7 +257,7 @@ class TrtConfig(TrtConfig):
 class GenTrtEngineExpConfig(GenTrtEngineConfig):
     """Gen TRT Engine experiment config."""
 
-    tensorrt: TrtConfig = DATACLASS_FIELD(TrtConfig())
+    tensorrt: TrtExpConfig = DATACLASS_FIELD(TrtExpConfig())
 
 
 @dataclass

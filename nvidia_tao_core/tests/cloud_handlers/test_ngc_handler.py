@@ -1,0 +1,41 @@
+import os
+import shutil
+import pytest
+
+from nvidia_tao_core.cloud_handlers.ngc_handler import split_ngc_path, download_ngc_model
+
+# import logging
+# logging.basicConfig()
+# logging.getLogger().setLevel(logging.DEBUG)
+
+
+@pytest.mark.ngc_handler
+def client():
+    from ngcsdk import Client
+    clt = Client()
+    return clt
+
+
+@pytest.mark.ngc_handler
+def test_split_ngc_path(ngc_path):
+    ngc_path = "org/team/model:version"
+    org, team, model_name, model_version = split_ngc_path(ngc_path)
+    assert org == "org"
+    assert team == "team"
+    assert model_name == "model"
+    assert model_version == "version"
+
+
+@pytest.mark.ngc_handler
+def test_download_ngc_model_success(ngc_key, ngc_path, tmpdir):
+    ptm_root = f'.{tmpdir.strpath}'
+    os.makedirs(ptm_root, exist_ok=True)
+    assert download_ngc_model(ngc_path, ptm_root, ngc_key, False, False)
+    shutil.rmtree('tmp')
+
+
+@pytest.mark.ngc_handler
+def test_download_ngc_model_invalid_key(ngc_path, tmpdir):
+    ptm_root = tmpdir.strpath
+    key = "test-key"
+    assert not download_ngc_model(ngc_path, ptm_root, key, False, False)

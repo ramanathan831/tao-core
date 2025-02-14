@@ -57,6 +57,12 @@ setuptools.setup(
         "PyYAML==6.0.1",
         "requests==2.32.3",
         "apache-libcloud==3.8.0",
+        "google-api-core==2.2.2",
+        "googleapis-common-protos==1.52.0",
+        "opentelemetry-api==1.27.0",
+        "opentelemetry-sdk==1.27.0",
+        "opentelemetry-exporter-otlp-proto-grpc==1.27.0",
+        "ngcsdk==3.46.0",
         "omegaconf"
     ]
 )

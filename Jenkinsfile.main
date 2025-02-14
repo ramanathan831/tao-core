@@ -61,6 +61,18 @@ spec:
         }
       }
 
+      stage ("functional_tests") {
+        withCredentials([string(credentialsId: 'NGC_CLI_API_KEY_SVC_TLT_CI', variable: 'NGC_CLI_API_KEY')]) {
+          script{
+            env.NGC_KEY=NGC_CLI_API_KEY
+            env.NGC_PATH='ea-tlt/tao_ea/pretrained_dino_imagenet:fan_hybrid_tiny'
+          }
+        }
+        gitlabCommitStatus(name: "functional_tests", connection: gitLabConnection('git-lab-master')) {
+          sh "python setup.py develop && pytest"
+        }
+      }
+
       stage ('build_pyt_wheel') {
         gitlabCommitStatus(name: "build_wheel", connection: gitLabConnection('git-lab-master')) {
           sh "echo '${BUILD_NUMBER}-${BUILD_TYPE}' > build.info"
@@ -72,7 +84,7 @@ spec:
         gitlabCommitStatus(name: "build_wheel", connection: gitLabConnection('git-lab-master')) {
           withCredentials([usernamePassword(credentialsId: 'tao-artifactory-tkn', passwordVariable: 'JFROG_PASSWORD', usernameVariable: 'JFROG_USERNAME')]) {
               sh "bash release/python/install_jfrog.sh"
-              sh "jfrog rt u --url=https://urm.nvidia.com/artifactory/ --user=${JFROG_USERNAME} --apikey=${JFROG_PASSWORD} --target-props '${PROP}' ${SRC} ${TARGET}"
+              sh "jf rt u --url=https://urm.nvidia.com/artifactory/ --user=${JFROG_USERNAME} --password=${JFROG_PASSWORD} --target-props '${PROP}' ${SRC} ${TARGET}"
           }
         }
       }

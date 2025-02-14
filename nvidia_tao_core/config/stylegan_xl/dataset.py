@@ -46,7 +46,7 @@ class DataConvertExpConfig:
         description="Destination zipped file name generated from source dataset",
     )
     resolution: List[int] = LIST_FIELD(
-        arrList=[224, 224],
+        arrList=[128, 128],
         display_name="Resized resolution",
         description="The moving average parameter for adaptive learning rate."
     )
