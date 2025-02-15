@@ -131,7 +131,6 @@ class MALTrainExpConfig(TrainConfig):
 class ExperimentConfig(CommonExperimentConfig):
     """Experiment configuration template."""
 
-    strategy: str = STR_FIELD(value='ddp')
     dataset: MALDatasetConfig = DATACLASS_FIELD(MALDatasetConfig())
     train: MALTrainExpConfig = DATACLASS_FIELD(MALTrainExpConfig())
     model: MALModelConfig = DATACLASS_FIELD(MALModelConfig())
