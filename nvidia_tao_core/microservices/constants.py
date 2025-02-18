@@ -18,6 +18,8 @@ TAO_NETWORKS = set(["classification_tf2", "efficientdet_tf2",
                     "action_recognition", "bevfusion", "classification_pyt", "grounding_dino", "mal", "mask2former", "mask_grounding_dino", "ml_recog", "ocdnet", "ocrnet", "optical_inspection", "pointpillars", "pose_classification", "re_identification", "centerpose", "visual_changenet", "deformable_detr", "dino", "rtdetr", "segformer",  # PYT CV MODELS
                     "annotations", "analytics", "augmentation", "auto_label", "image"])  # Data_Service tasks.
 MAXINE_NETWORKS = set(["maxine_eye_contact"])  # Maxine networks
+VLM_NETWORKS = set(["vlm"])  # VLM networks
+
 _OD_NETWORKS = set(["detectnet_v2", "efficientdet_tf2", "deformable_detr", "dino", "grounding_dino", "rtdetr"])
 _PURPOSE_BUILT_MODELS = set(["action_recognition", "bevfusion", "ml_recog", "ocdnet", "ocrnet", "optical_inspection", "pose_classification", "re_identification", "centerpose", "visual_changenet"])
 
@@ -32,7 +34,6 @@ MEDICAL_CUSTOM_ARCHITECT = ["monai_custom", "monai_classification", "monai_detec
 MEDICAL_NETWORK_ARCHITECT = ["monai_vista3d", "monai_vista2d", "monai_annotation", "monai_genai", "monai_maisi"] + MEDICAL_CUSTOM_ARCHITECT
 MEDICAL_AUTOML_ARCHITECT = ["monai_automl", "monai_automl_generated"]
 MONAI_NETWORKS = set(MEDICAL_NETWORK_ARCHITECT + MEDICAL_AUTOML_ARCHITECT)  # Data_Service tasks.
-VALID_NETWORKS = TAO_NETWORKS | MONAI_NETWORKS | MAXINE_NETWORKS
 NO_SPEC_ACTIONS_MODEL = ("evaluate", "retrain", "inference", "inference_seq", "inference_trt")  # Actions with **optional** specs
 NO_PTM_MODELS = set([])  # These networks don't have a pretrained model that can be downloaded from ngc model registry
 _ITER_MODELS = set(["segformer"])  # These networks operate on iterations instead of epochs
@@ -87,7 +88,8 @@ NETWORK_METRIC_MAPPING = {"action_recognition": "val_acc",
                           "rtdetr": "val_mAP50",
                           "segformer": "Mean IOU",
                           "unet": "loss",
-                          "visual_changenet": "val_acc"}
+                          "visual_changenet": "val_acc",
+                          "vila": "val_acc"}
 
 NETWORK_CONTAINER_MAPPING = {"action_recognition": "TAO_PYTORCH",
                              "annotations": "TAO_DS",
@@ -118,7 +120,8 @@ NETWORK_CONTAINER_MAPPING = {"action_recognition": "TAO_PYTORCH",
                              "segformer": "TAO_PYTORCH",
                              "unet": "TAO_TF2",
                              "visual_changenet": "TAO_PYTORCH",
-                             "maxine_eye_contact": "MAXINE_DLDK"}
+                             "maxine_eye_contact": "MAXINE_DLDK",
+                             "vila": "VILA"}
 
 CV_ACTION_RULES = {
     'train': [],

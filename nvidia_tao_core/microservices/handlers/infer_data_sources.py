@@ -1059,6 +1059,18 @@ def prepare_job_datalist(config, job_context, handler_metadata):
     return config
 
 
+def vila(config, job_context, handler_metadata):
+    """Function to create data sources for vila module"""
+    workspace_cache = {}
+    workspace_identifier = get_workspace_string_identifier(handler_metadata.get('workspace'), workspace_cache)
+    train_ds = handler_metadata.get("train_datasets", [])[0]
+    train_ds_metadata = get_handler_metadata(train_ds, kind="datasets")
+    train_root = f"{workspace_identifier}{train_ds_metadata.get('cloud_file_path')}"
+    config["dataset"]["image_dir_path"] = f"{train_root}/images.tar.gz"
+    config["dataset"]["annotation_path"] = f"{train_root}/annotations.json"
+    return config
+
+
 DS_CONFIG_TO_FUNCTIONS = {"bevfusion": bevfusion,
                           "segformer": segformer,
                           "efficientdet_tf2": efficientdet_tf2,
@@ -1098,4 +1110,5 @@ DS_CONFIG_TO_FUNCTIONS = {"bevfusion": bevfusion,
                           "image": data_services_image,
                           "auto_label": auto_label,
                           "visual_changenet": visual_changenet,
-                          "maxine_eye_contact": maxine_eye_contact}
+                          "maxine_eye_contact": maxine_eye_contact,
+                          "vila": vila}
