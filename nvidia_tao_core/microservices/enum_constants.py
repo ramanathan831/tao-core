@@ -14,100 +14,102 @@
 
 """Defining enums for dataset and model formats and types"""
 import enum
+import json
+import pathlib
+from typing import Set
 
 
-class DatasetType(str, enum.Enum):
-    """Class defining dataset types in enum"""
+def _scan_config_files() -> tuple[Set[str], Set[str]]:
+    """Scan all .config.json files to collect dataset types and formats.
 
-    maxine_eye_contact = 'maxine_eye_contact'
-    object_detection = 'object_detection'
-    segmentation = 'segmentation'
-    image_classification = 'image_classification'
-    character_recognition = 'character_recognition'
-    action_recognition = 'action_recognition'
-    bevfusion = 'bevfusion'
-    pointpillars = 'pointpillars'
-    pose_classification = 'pose_classification'
-    ml_recog = 'ml_recog'
-    ocdnet = 'ocdnet'
-    ocrnet = 'ocrnet'
-    optical_inspection = 'optical_inspection'
-    re_identification = 're_identification'
-    visual_changenet = 'visual_changenet'
-    centerpose = 'centerpose'
-    not_restricted = 'not_restricted'
-    user_custom = 'user_custom'
+    Returns:
+        tuple[Set[str], Set[str]]: Set of dataset types and formats
+    """
+    config_dir = pathlib.Path(__file__).parent / "handlers" / "network_configs"
+    dataset_types = set()
+    dataset_formats = set()
 
+    if config_dir.exists():
+        for config_file in config_dir.glob("*.config.json"):
+            try:
+                with open(config_file, 'r', encoding='utf-8') as f:
+                    config = json.load(f)
+                    api_params = config.get("api_params", {})
 
-class DatasetFormat(str, enum.Enum):
-    """Class defining dataset formats in enum"""
+                    # Get dataset type
+                    if "dataset_type" in api_params:
+                        dataset_types.add(api_params["dataset_type"])
 
-    kitti = 'kitti'
-    pascal_voc = 'pascal_voc'
-    raw = 'raw'
-    coco_raw = 'coco_raw'
-    coco_panoptic = 'coco_panoptic'
-    unet = 'unet'
-    coco = 'coco'
-    odvg = 'odvg'
-    lprnet = 'lprnet'
-    train = 'train'
-    test = 'test'
-    default = 'default'
-    custom = 'custom'
-    classification_pyt = 'classification_pyt'
-    classification_tf2 = 'classification_tf2'
-    visual_changenet_segment = 'visual_changenet_segment'
-    visual_changenet_classify = 'visual_changenet_classify'
-    monai = 'monai'
+                    # Get formats
+                    if "formats" in api_params:
+                        dataset_formats.update(api_params["formats"])
+            except (json.JSONDecodeError, IOError):
+                continue
+
+    return dataset_types, dataset_formats
 
 
-class ExperimentNetworkArch(str, enum.Enum):
-    """Class defining network types in enum"""
+def _get_all_dataset_types():
+    """Get all valid dataset types including defaults."""
+    dataset_types, _ = _scan_config_files()
+    # Add not_restricted and user_custom as they might be special cases
+    dataset_types.update({"not_restricted", "user_custom"})
+    result = {dtype.upper(): dtype for dtype in dataset_types}
+    print("Debug - Found dataset types:", result)  # Debug print
+    return result
 
-    # Tf networks
-    detectnet_v2 = 'detectnet_v2'
-    unet = 'unet'
-    classification_tf2 = 'classification_tf2'
-    efficientdet_tf2 = 'efficientdet_tf2'
-    # PyT CV networks
-    action_recognition = 'action_recognition'
-    bevfusion = 'bevfusion'
-    classification_pyt = 'classification_pyt'
-    grounding_dino = 'grounding_dino'
-    mask_grounding_dino = 'mask_grounding_dino'
-    mal = 'mal'
-    mask2former = 'mask2former'
-    ml_recog = 'ml_recog'
-    ocdnet = 'ocdnet'
-    ocrnet = 'ocrnet'
-    optical_inspection = 'optical_inspection'
-    pointpillars = 'pointpillars'
-    pose_classification = 'pose_classification'
-    re_identification = 're_identification'
-    deformable_detr = 'deformable_detr'
-    dino = 'dino'
-    segformer = 'segformer'
-    visual_changenet = 'visual_changenet'
-    centerpose = 'centerpose'
-    rtdetr = 'rtdetr'
-    # Data analytics networks
-    auto_label = "auto_label"
-    image = "image"
-    # Monai Networks
-    monai_vista3d = "monai_vista3d"
-    monai_vista2d = "monai_vista2d"
-    monai_segmentation = "monai_segmentation"
-    monai_annotation = "monai_annotation"
-    monai_classification = "monai_classification"
-    monai_detection = "monai_detection"
-    monai_automl = "monai_automl"
-    monai_custom = "monai_custom"
-    monai_genai = "monai_genai"
-    monai_maisi = "monai_maisi"
-    monai_automl_generated = "monai_automl_generated"
-    # Maxine Networks
-    maxine_eye_contact = "maxine_eye_contact"
+
+def _get_valid_actions():
+    """Get all valid actions from config files."""
+    config_dir = pathlib.Path(__file__).parent / "handlers" / "network_configs"
+    actions = set()
+
+    if config_dir.exists():
+        for config_file in config_dir.glob("*.config.json"):
+            try:
+                with open(config_file, 'r', encoding='utf-8') as f:
+                    config = json.load(f)
+                    if "actions" in config.get("api_params", {}):
+                        actions.update(config["api_params"]["actions"])
+            except (json.JSONDecodeError, IOError):
+                continue
+
+    # Add default actions if needed
+    actions.update({"train", "evaluate", "export", "inference"})
+    return actions
+
+
+def _get_network_architectures() -> list[str]:
+    """Scan config directory for .config.json files to determine valid network architectures.
+
+    Returns:
+        list[str]: List of valid network architecture names
+    """
+    config_dir = pathlib.Path(__file__).parent / "handlers" / "network_configs"
+
+    architectures = set()
+    if config_dir.exists():
+        for file in config_dir.glob("*.config.json"):
+            arch_name = file.stem.replace(".config", "")
+            if arch_name in dataset_types:
+                continue
+            architectures.add(arch_name)
+
+    return architectures
+
+
+# Create Enums
+dataset_types, _ = _scan_config_files()
+DatasetType = enum.Enum('DatasetType', {name: name for name in dataset_types}, type=str)
+
+_, dataset_formats = _scan_config_files()
+DatasetFormat = enum.Enum('DatasetFormat', {name: name for name in dataset_formats}, type=str)
+
+actions = _get_valid_actions()
+ActionEnum = enum.Enum('ActionEnum', {name: name for name in actions}, type=str)
+
+network_architectures = _get_network_architectures()
+ExperimentNetworkArch = enum.Enum('ExperimentNetworkArch', {name: name for name in network_architectures}, type=str)
 
 
 class Metrics(str, enum.Enum):

@@ -40,7 +40,7 @@ from nvidia_tao_core.microservices.filter_utils import filtering, pagination
 from nvidia_tao_core.microservices.auth_utils import credentials, authentication, access_control, metrics
 from nvidia_tao_core.microservices.health_utils import health_check
 
-from nvidia_tao_core.microservices.enum_constants import DatasetFormat, DatasetType, ExperimentNetworkArch, Metrics, BaseExperimentTask, BaseExperimentDomain, BaseExperimentBackboneType, BaseExperimentBackboneClass, BaseExperimentLicense
+from nvidia_tao_core.microservices.enum_constants import ActionEnum, DatasetFormat, DatasetType, ExperimentNetworkArch, Metrics, BaseExperimentTask, BaseExperimentDomain, BaseExperimentBackboneType, BaseExperimentBackboneClass, BaseExperimentLicense
 from nvidia_tao_core.microservices.handlers.app_handler import AppHandler as app_handler
 from nvidia_tao_core.microservices.handlers.container_handler import ContainerJobHandler as container_handler
 from nvidia_tao_core.microservices.handlers.stateless_handlers import resolve_metadata, get_root, get_metrics, set_metrics
@@ -276,39 +276,6 @@ def handle_validation_exception(e):
 
 
 # Define enum and schema common to Dataset and Experiment Api
-
-class ActionEnum(Enum):
-    """Class defining action type enum"""
-
-    dataset_convert = 'dataset_convert'
-    convert = 'convert'
-    convert_efficientdet_tf2 = 'convert_efficientdet_tf2'
-
-    train = 'train'
-    evaluate = 'evaluate'
-    prune = 'prune'
-    retrain = 'retrain'
-    export = 'export'
-    gen_trt_engine = 'gen_trt_engine'
-    trtexec = 'trtexec'
-    inference = 'inference'
-    batchinfer = 'batchinfer'
-
-    augment = 'augment'
-    annotation_format_convert = 'annotation_format_convert'
-    analyze = 'analyze'
-    validate_images = 'validate_images'
-    validate_annotations = 'validate_annotations'
-    auto_label = 'auto_label'
-
-    calibration_tensorfile = 'calibration_tensorfile'
-
-    annotation = 'annotation'
-    nextimage = 'nextimage'
-    cacheimage = 'cacheimage'
-    notify = 'notify'
-    auto3dseg = 'auto3dseg'
-
 
 class BulkOpsStatus(Enum):
     """Class defining bulk operation status enum"""

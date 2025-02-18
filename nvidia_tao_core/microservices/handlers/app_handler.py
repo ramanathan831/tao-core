@@ -26,8 +26,8 @@ import time
 import traceback
 import uuid
 
-from nvidia_tao_core.microservices.constants import (AUTOML_DISABLED_NETWORKS, TENSORBOARD_DISABLED_NETWORKS, TENSORBOARD_EXPERIMENT_LIMIT, VALID_MODEL_DOWNLOAD_TYPE, VALID_NETWORKS, TAO_NETWORKS, MEDICAL_CUSTOM_ARCHITECT, MAXINE_NETWORKS)
-from nvidia_tao_core.microservices.enum_constants import DatasetType
+from nvidia_tao_core.microservices.constants import (AUTOML_DISABLED_NETWORKS, TENSORBOARD_DISABLED_NETWORKS, TENSORBOARD_EXPERIMENT_LIMIT, VALID_MODEL_DOWNLOAD_TYPE, TAO_NETWORKS, MEDICAL_CUSTOM_ARCHITECT, MAXINE_NETWORKS)
+from nvidia_tao_core.microservices.enum_constants import DatasetType, ExperimentNetworkArch
 from nvidia_tao_core.microservices.handlers import ngc_handler, stateless_handlers
 from nvidia_tao_core.microservices.handlers.nvcf_handler import get_available_nvcf_instances
 from nvidia_tao_core.microservices.handlers.automl_handler import AutoMLHandler
@@ -2351,7 +2351,7 @@ class AppHandler:
         # Gather type,format fields from request
         mdl_nw = request_dict.get("network_arch", None)
         # Perform basic checks - valid type and format?
-        if mdl_nw not in VALID_NETWORKS:
+        if mdl_nw not in ExperimentNetworkArch.__members__:
             msg = "Invalid network arch"
             return Code(400, {}, msg)
 
