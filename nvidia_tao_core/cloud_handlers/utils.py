@@ -101,6 +101,10 @@ def search_for_ptm(root, network="", parameter_name=""):
         model_path = models[0]  # pick one arbitrarily
         logger.info("Found valid PTM at {}".format(model_path)) # noqa pylint: disable=C0209
         return model_path
+    if os.path.exists(root):
+        if network == "vila":
+            return os.path.join(root, "vila-1.5-40b_vvila-yi-34b-siglip-stage3_1003_video_v8")
+        return root
     logger.info("PTM can't be found")
     return None
 

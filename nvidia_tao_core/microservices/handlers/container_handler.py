@@ -25,13 +25,15 @@ import os
 import threading
 import traceback
 import yaml
+
 from nvidia_tao_core.api_utils import module_utils
+from nvidia_tao_core.api_utils.entrypoint_mimicker import vlm_entrypoint
 from nvidia_tao_core.cloud_handlers.utils import download_files_from_spec, get_results_cloud_data, monitor_and_upload
 import nvidia_tao_core.loggers.logging as status_logging
 from nvidia_tao_core.api_utils.module_utils import entrypoint_paths, entry_points
 
-module = entry_points[0].module_name.split('.')[0]
-entrypoint = importlib.import_module(entrypoint_paths[module])
+module = entry_points[0].module_name.split('.')[0] if entry_points else None
+entrypoint = importlib.import_module(entrypoint_paths[module]) if module else None
 
 
 class ContainerJobHandler:
@@ -130,7 +132,12 @@ class ContainerJobHandler:
 
                     # Launch entrypoint
                     _, actions = module_utils.get_neural_network_actions(job["neural_network_name"])
-                    is_completed = entrypoint.launch(args, "", actions, network=job["neural_network_name"])
+
+                    if entrypoint:
+                        _, actions = module_utils.get_neural_network_actions(job["neural_network_name"])
+                        is_completed = entrypoint.launch(args, "", actions, network=job["neural_network_name"])
+                    else:
+                        is_completed = vlm_entrypoint.vlm_launch(job["neural_network_name"], job["action_name"], specs)
 
                 except Exception:
                     print("Traceback", file=sys.stderr)

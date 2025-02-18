@@ -97,9 +97,18 @@ def download_ngc_model(ngc_path, ptm_root, key, is_cookie_set, use_ngc_staging):
 
     try:
         clt.configure(api_key=key, org_name=org, team_name=team)
-        os.makedirs(ptm_root, exist_ok=True)
-        clt.registry.model.download_version(ngc_path, destination=ptm_root)
-        logging.info("Saving base_experiment file to {}".format(ptm_root)) # noqa pylint: disable=C0209
+    except Exception as e:
+        if not("Invalid org" in str(e) or "Invalid team" in str(e)):
+            logging.error("Can't configure the passed NGC KEY for Org {}, team {}".format(org, team)) # noqa pylint: disable=C0209
+            return False
+        logging.info("Can't validate the passed NGC KEY for Org {}, team {}, going to try download without configuring credentials".format(org, team)) # noqa pylint: disable=C0209
+    try:
+        if not os.path.exists(ptm_root):
+            os.makedirs(ptm_root, exist_ok=True)
+            clt.registry.model.download_version(ngc_path, destination=ptm_root)
+            logging.info("Saving base_experiment file to {}".format(ptm_root)) # noqa pylint: disable=C0209
+        else:
+            logging.info("Base_experiment already present in {}".format(ptm_root)) # noqa pylint: disable=C0209
     except errors.ResourceNotFoundException as e:
         logging.error("Model {} not found. Error: {}".format(ngc_path, e))  # noqa pylint: disable=C0209
         return False
