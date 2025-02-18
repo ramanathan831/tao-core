@@ -7,11 +7,12 @@ pyarmor -d reg release/python/pyarmor-regfile-1219.zip || exit $?
 
 echo "Clearing build and dists"
 python setup.py clean --all
-rm -rf dist
 echo "Clearing pycache and pycs"
 find . | grep -E "(__pycache__|\.pyc|\.pyo$)" | xargs rm -rf
 
 echo "Obfuscating the code using pyarmor"
+# This makes sure the non-py files are retained.
+pyarmor cfg data_files=*
 pyarmor -d gen --recursive --output obf_src/ nvidia_tao_core/ || exit $?
 
 echo "Migrating codebase"
