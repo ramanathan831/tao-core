@@ -29,8 +29,8 @@ from nvidia_tao_core.config.utils.types import (
 )
 from nvidia_tao_core.config.common.common_config import (
     CommonExperimentConfig,
-    CommonExportExpConfig,
     EvaluateConfig,
+    ExportConfig,
     InferenceConfig
 )
 from nvidia_tao_core.config.common.distillation_config import (
@@ -153,7 +153,7 @@ class DINOEvalExpConfig(EvaluateConfig):
 
 
 @dataclass
-class DINOExportExpConfig(CommonExportExpConfig):
+class DINOExportExpConfig(ExportConfig):
     """Structured configuration schema for Deformable DETR export."""
 
     serialize_nvdsinfer: bool = BOOL_FIELD(

@@ -201,7 +201,7 @@ class InferenceConfig:
 
 
 @dataclass
-class CommonExportExpConfig:
+class ExportConfig:
     """Export experiment config."""
 
     results_dir: Optional[str] = STR_FIELD(

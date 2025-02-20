@@ -29,7 +29,7 @@ from nvidia_tao_core.config.utils.types import (
 )
 from nvidia_tao_core.config.common.common_config import (
     CommonExperimentConfig,
-    CommonExportExpConfig,
+    ExportConfig,
     TrainConfig,
     EvaluateConfig,
     InferenceConfig,
@@ -310,8 +310,8 @@ class ExperimentConfig(CommonExperimentConfig):
     train: CNTrainExpConfig = DATACLASS_FIELD(CNTrainExpConfig())
     evaluate: CNEvalExpConfig = DATACLASS_FIELD(CNEvalExpConfig())
     inference: CNInferenceExpConfig = DATACLASS_FIELD(CNInferenceExpConfig())
-    export: CommonExportExpConfig = DATACLASS_FIELD(
-        CommonExportExpConfig(
+    export: ExportConfig = DATACLASS_FIELD(
+        ExportConfig(
             input_channel=3,
             input_height=224,
             input_width=224,

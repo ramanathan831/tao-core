@@ -29,8 +29,8 @@ from nvidia_tao_core.config.utils.types import (
 )
 from nvidia_tao_core.config.common.common_config import (
     CommonExperimentConfig,
-    CommonExportExpConfig,
     EvaluateConfig,
+    ExportConfig,
     InferenceConfig
 )
 from nvidia_tao_core.config.common.distillation_config import (
@@ -146,7 +146,7 @@ class RTEvalExpConfig(EvaluateConfig):
 
 
 @dataclass
-class RTExportExpConfig(CommonExportExpConfig):
+class RTExportExpConfig(ExportConfig):
     """Export configration schema for RT-DETR."""
 
     serialize_nvdsinfer: bool = BOOL_FIELD(

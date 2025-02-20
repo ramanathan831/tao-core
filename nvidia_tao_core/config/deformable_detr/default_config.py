@@ -26,8 +26,8 @@ from nvidia_tao_core.config.utils.types import (
 )
 from nvidia_tao_core.config.common.common_config import (
     CommonExperimentConfig,
-    CommonExportExpConfig,
     EvaluateConfig,
+    ExportConfig,
     InferenceConfig
 )
 from nvidia_tao_core.config.deformable_detr.dataset import (
@@ -109,7 +109,7 @@ class DDEvalExpConfig(EvaluateConfig):
 
 
 @dataclass
-class DDExportExpConfig(CommonExportExpConfig):
+class DDExportExpConfig(ExportConfig):
     """Structured configuration schema for Deformable DETR export."""
 
     serialize_nvdsinfer: bool = BOOL_FIELD(
