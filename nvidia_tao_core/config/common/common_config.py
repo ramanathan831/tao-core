@@ -243,7 +243,8 @@ class ExportConfig:
         default_value=3,
         description="Number of channels in the input Tensor.",
         display_name="input channel",
-        valid_min=3,
+        valid_min=1,
+        valid_options=[1, 3],
     )
     input_width: int = INT_FIELD(
         value=960,
