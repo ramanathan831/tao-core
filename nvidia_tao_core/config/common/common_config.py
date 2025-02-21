@@ -235,7 +235,7 @@ class ExportConfig:
     on_cpu: bool = BOOL_FIELD(
         value=False,
         default_value=False,
-        display_name="verbose",
+        display_name="on cpu",
         description="""Flag to export CPU compatible model."""
     )
     input_channel: int = INT_FIELD(
