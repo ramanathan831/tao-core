@@ -144,6 +144,12 @@ class DDExportExpConfig:
         display_name="verbose",
         description="""Flag to export CPU compatible model."""
     )
+    format: str = STR_FIELD(
+        value="onnx",
+        display_name="export format",
+        description="""File format to export to.""",
+        valid_options="onnx,xdl",
+    )
     input_channel: int = INT_FIELD(
         value=3,
         default_value=3,
