@@ -19,6 +19,7 @@ from typing import List, Optional
 
 from nvidia_tao_core.config.utils.types import (
     BOOL_FIELD,
+    DATACLASS_FIELD,
     FLOAT_FIELD,
     INT_FIELD,
     LIST_FIELD,
@@ -74,6 +75,30 @@ SUPPORTED_BACKBONES = [
     *fan_model_list,
     *efficientvit_model_list
 ]
+
+
+@dataclass
+class FrozenFMConfig:
+    """RT-DETR Frozen FM config."""
+
+    enabled: bool = BOOL_FIELD(
+        value=False,
+        default_value=False,
+        display_name="Enable frozen FM",
+        description="""Flag to enable frozen foundation model to be added to RT-DETR.""",
+    )
+    backbone: str = STR_FIELD(
+        value="radio",
+        default_value="radio",
+        display_name="Arch of the frozen foundation model",
+        description="Arch of the frozen foundation model.",
+    )
+    checkpoint: Optional[str] = STR_FIELD(
+        value=None,
+        default_value="",
+        display_name="Pretrained foundation model path or name",
+        description="[Optional] Path to a pretrained foundation model.",
+    )
 
 
 @dataclass
@@ -349,4 +374,8 @@ class RTModelConfig:
         display_name="distillation loss coefficient",
         description="The coefficient for the distillation loss during distill.",
         valid_min=0.0,
+    )
+    frozen_fm: FrozenFMConfig = DATACLASS_FIELD(
+        FrozenFMConfig,
+        description="Configurable parameters to construct the frozen foundation model.",
     )

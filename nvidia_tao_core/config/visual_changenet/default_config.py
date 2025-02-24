@@ -188,6 +188,7 @@ class CNDatasetClassifyConfig:
     image_height: int = INT_FIELD(value=224, default_value=224, description="Height of the input image tensor.")
     augmentation_config: CNAugmentationClassifyConfig = DATACLASS_FIELD(CNAugmentationClassifyConfig())
     num_classes: int = INT_FIELD(value=2, default_value=2, description="The number of classes in the training data", math_cond=">0", valid_min=1, valid_max=2)
+    num_golden: int = INT_FIELD(value=1, default_value=1, valid_min=1, valid_max="inf", description="Number of golden samples for each input")
 
 
 @dataclass
@@ -259,6 +260,9 @@ class CNTrainExpConfig(TrainConfig):
     classify: CNTrainClassifyConfig = DATACLASS_FIELD(CNTrainClassifyConfig())
     segment: CNTrainSegmentConfig = DATACLASS_FIELD(CNTrainSegmentConfig())
     tensorboard: Optional[TensorBoardLogger] = DATACLASS_FIELD(TensorBoardLogger())
+    precision: str = STR_FIELD(value='32-true', default_value='32-true', description="Precision", display_name="precision")
+    sync_batchnorm: bool = BOOL_FIELD(value=True, default_value=True, description="Synchronize batch normalization across devices")
+    use_distributed_sampler: bool = BOOL_FIELD(value=True, default_value=True, description="Use distributed sampler for multi-GPU training")
 
 
 @dataclass

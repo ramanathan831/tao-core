@@ -190,19 +190,15 @@ class StatusLogger(BaseLogger):
         self.is_master = is_master
         if os.path.exists(self.log_path):
             logger.info(f"Log file already exists at {self.log_path}".format)
+        if is_master:
+            with open(self.log_path, "a" if append else "w", encoding="utf-8") as _:
+                pass
 
     def log(self, level, string):
         """Log the data string."""
         if level >= self.verbosity:
-            if self.is_master:
-                with open(self.log_path, "a" if self.append else "w", encoding="utf-8") as file:
-                    file.write(string + "\n")
-
-    def flush(self):
-        """Flush contents of the log file."""
-        if self.is_master:
-            with open(self.log_path, "a" if self.append else "w", encoding="utf-8") as file:
-                file.flush()
+            with open(self.log_path, "a", encoding="utf-8") as file:
+                file.write(string + "\n")
 
     @staticmethod
     def format_data(data):
