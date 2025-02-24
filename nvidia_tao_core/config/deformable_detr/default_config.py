@@ -22,7 +22,8 @@ from nvidia_tao_core.config.utils.types import (
     DATACLASS_FIELD,
     DICT_FIELD,
     FLOAT_FIELD,
-    INT_FIELD
+    INT_FIELD,
+    STR_FIELD
 )
 from nvidia_tao_core.config.common.common_config import (
     CommonExperimentConfig,

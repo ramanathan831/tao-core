@@ -282,6 +282,12 @@ class ExportConfig:
         display_name="verbose",
         description="""Flag to enable verbose TensorRT logging."""
     )
+    format: str = STR_FIELD(
+        value="onnx",
+        display_name="export format",
+        description="""File format to export to.""",
+        valid_options="onnx,xdl",
+    )
 
 # TAO Deploy configs
 
