@@ -59,8 +59,8 @@ class DatasetConfig:
     dataset_name: Optional[str] = STR_FIELD(value="scienceqa", default_value="scienceqa", display_name="Dataset name", description="Dataset name. Default is scienceqa. Dataset name must be registered at `llava/data/registry/datasets/default.yaml`.")
     dataset_path: Optional[str] = STR_FIELD(value=None, display_name="Dataset path", description="Path to the dataset file")
     mixture_path: Optional[str] = STR_FIELD(value=None, display_name="Mixture path", description="Path to the mixture file")
-    image_dir_path: Optional[str] = STR_FIELD(value=None, display_name="Image directory path", description="Path to the image directory")
-    annotation_path: Optional[str] = STR_FIELD(value=None, display_name="Annotation path", description="Path to the annotation file")
+    media_dir: Optional[str] = STR_FIELD(value=None, display_name="Media directory path", description="Path to the media directory")
+    data_path: Optional[str] = STR_FIELD(value=None, display_name="Annotation path", description="Path to the annotation file")
 
 
 @dataclass

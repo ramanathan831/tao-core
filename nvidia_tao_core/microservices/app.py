@@ -539,6 +539,8 @@ class NVCFEndpoint(Enum):
     remove_published_model = 'remove_published_model'
     status_update = 'status_update'
     log_update = 'log_update'
+    container_job_run = 'container_job_run'
+    container_job_status = 'container_job_status'
 
 
 class NVCFReqSchema(Schema):
@@ -690,6 +692,15 @@ def super_endpoint(org_name):
         elif api_endpoint == "job_run":
             endpoint = f"{url}/orgs/{org_name}/{kind}/{handler_id}/jobs"
             request_type = "POST"
+
+        elif api_endpoint == "container_job_run":
+            endpoint = f"{url}/internal/container_job"
+            request_type = "POST"
+
+        elif api_endpoint == "container_job_status":
+            endpoint = f"{url}/internal/container_job:status"
+            request_body = {"results_dir": request_body.get("specs", {}).get("results_dir")}
+            request_type = "GET"
 
         elif api_endpoint == "job_retry":
             endpoint = f"{url}/orgs/{org_name}/{kind}/{handler_id}/jobs/{job_id}:retry"
@@ -972,6 +983,7 @@ class ContainerJobSchema(Schema):
     tao_api_status_callback_url = fields.URL(validate=fields.validate.Length(max=2048))
     automl_experiment_number = fields.Str(format="regex", regex=r'.*', validate=fields.validate.Length(max=1000), allow_none=True)
     hosted_service_interaction = fields.Str(format="regex", regex=r'.*', validate=fields.validate.Length(max=1000), allow_none=True)
+    nvcf_helm = fields.Str(format="regex", regex=r'.*', validate=fields.validate.Length(max=1000), allow_none=True)
 
 
 @app.route('/api/v1/internal/container_job', methods=['POST'])
@@ -1071,13 +1083,13 @@ class ContainerJobStatusSchema(Schema):
     status = EnumField(JobStatusEnum)
 
 
-@app.route('/api/v1/internal/container_job:status', methods=['POST'])
+@app.route('/api/v1/internal/container_job:status', methods=['GET'])
 @disk_space_check
 def container_job_status():
     """Get status of job running inside container.
 
     ---
-    post:
+    get:
       tags:
         - INTERNAL
       summary: Get Status of Container Job
@@ -1140,10 +1152,11 @@ def container_job_status():
             X-RateLimit-Limit:
               $ref: '#/components/headers/X-RateLimit-Limit'
     """
-    specs = request.get_json(force=True).get("specs")
     try:
         response_code = 400
-        status = container_handler.get_current_job_status(specs)
+        # For GET requests, data should be in query parameters
+        results_dir = request.args.get("results_dir")
+        status = container_handler.get_current_job_status(results_dir)
         if status:
             response_code = 200
         schema = ContainerJobStatusSchema()
@@ -1161,7 +1174,11 @@ def authenticate_without_ingress():
     """Authentication endpoint if ingress-nginx is not enabled"""
     if ingress_enabled or '/super_endpoint' not in request.path:
         return None
-    print("authenticate without ingress, auth being called now", file=sys.stderr)
+    if "super_endpoint" in request.path:
+        request_body = request.get_json(force=True)
+        if "container_job" in request_body.get("api_endpoint"):
+            return None
+    print(f"authenticate without ingress, auth being called now for {request.path}", file=sys.stderr)
     auth_response = auth()
     if auth_response.status_code == 200:
         return None
@@ -8192,7 +8209,7 @@ def liveness():
     try:
         live_state = health_check.check_logging()
         if live_state:
-            return make_response(jsonify("OK"), 201)
+            return make_response(jsonify("OK"), 200)
     except Exception as e:
         print(f"Exception thrown in liveness is {str(e)}", file=sys.stderr)
         print("liveness error", traceback.format_exc(), file=sys.stderr)
@@ -8204,9 +8221,13 @@ def liveness():
 def readiness():
     """api readiness endpoint"""
     try:
-        ready_state = health_check.check_logging() and health_check.check_k8s() and Workflow.healthy()
-        if ready_state:
-            return make_response(jsonify("OK"), 201)
+        if health_check.check_logging():
+            ready_state = True
+            if os.getenv("BACKEND"):
+                if not (health_check.check_k8s() and Workflow.healthy()):
+                    ready_state = False
+            if ready_state:
+                return make_response(jsonify("OK"), 200)
     except Exception as e:
         print(f"Exception thrown in readiness is {str(e)}", file=sys.stderr)
         print("readiness error", traceback.format_exc(), file=sys.stderr)
@@ -8378,8 +8399,13 @@ with app.test_request_context():
     spec.path(view=experiment_job_download)
 
 
-if __name__ == '__main__':
+def main():
+    """Main function"""
     if os.getenv("DEV_MODE", "False").lower() in ("true", "1"):
         app.run(host="0.0.0.0", port=8008)
     else:
         app.run()
+
+
+if __name__ == '__main__':
+    main()

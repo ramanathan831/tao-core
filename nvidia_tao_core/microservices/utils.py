@@ -614,3 +614,8 @@ def is_cookie_request(request):
         return not (sid_cookie is None and ssid_cookie is None)
     except Exception:
         return False
+
+
+def print_start_script_path():
+    """Print the path to the start script."""
+    print(os.path.join(os.path.dirname(__file__), 'app_start.sh'))

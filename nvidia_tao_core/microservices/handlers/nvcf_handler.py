@@ -68,23 +68,27 @@ def invoke_function(deployment_string, network, action, microservice_action="", 
     if action == "retrain":
         action = "train"
 
-    request_metadata = {"api_endpoint": microservice_action,
-                        "neural_network_name": network,
-                        "action_name": action,
-                        "ngc_key": ngc_key,
-                        "storage": cloud_metadata,
-                        "specs": specs,
-                        "job_id": job_id,
-                        "tao_api_admin_key": tao_api_admin_key,
-                        "tao_api_base_url": tao_api_base_url,
-                        "tao_api_status_callback_url": tao_api_status_callback_url,
-                        "tao_api_ui_cookie": tao_api_ui_cookie,
-                        "use_ngc_staging": use_ngc_staging,
-                        "automl_experiment_number": automl_experiment_number,
-                        "hosted_service_interaction": "True"
-                        }
+    request_metadata = {
+        "api_endpoint": microservice_action,
+        "request_body": {
+            "neural_network_name": network,
+            "action_name": action,
+            "specs": specs,
+            "cloud_metadata": cloud_metadata,
+            "ngc_key": ngc_key,
+            "job_id": job_id,
+            "use_ngc_staging": use_ngc_staging,
+            "tao_api_admin_key": tao_api_admin_key,
+            "tao_api_base_url": tao_api_base_url,
+            "tao_api_status_callback_url": tao_api_status_callback_url,
+            "tao_api_ui_cookie": tao_api_ui_cookie,
+            "automl_experiment_number": automl_experiment_number,
+            "hosted_service_interaction": "True"
+        },
+        "is_json_request": True
+    }
     if os.getenv("HOST_PLATFORM", "local") == "NVCF":
-        request_metadata["nvcf_helm"] = os.getenv("FUNCTION_TAO_API", "")
+        request_metadata["request_body"]["nvcf_helm"] = os.getenv("FUNCTION_TAO_API", "")
         if not os.getenv("FUNCTION_TAO_API", ""):
             raise ValueError("FUNCTION_TAO_API should be present for NVCF as host platform")
 
@@ -143,11 +147,18 @@ def create_function(org_name, team_name, job_id, container, ngc_key):
     """Create NVCF function"""
     payload = {
         "name": job_id,
-        "inferenceUrl": "/api/v1/nvcf",
+        "inferenceUrl": "/api/v1/orgs/ea-tlt/super_endpoint",
+        "inferencePort": 8000,
         "containerImage": container,
         "apiBodyFormat": "CUSTOM",
         "containerArgs": "flask run --host 0.0.0.0 --port 8000",
-        "healthUri": "/api/v1/health/readiness",
+        "health": {
+            "protocol": "HTTP",
+            "uri": "/api/v1/health/readiness",
+            "port": 8000,
+            "timeout": "PT10S",
+            "expectedStatusCode": 200
+        },
     }
 
     team_string = f"teams/{team_name}/"
@@ -222,7 +233,7 @@ def create_microservice_job_on_nvcf(job_metadata):
     job_create_response = invoke_function(deployment_string,
                                           network,
                                           action,
-                                          microservice_action="post_action",
+                                          microservice_action="container_job_run",
                                           cloud_metadata=cloud_metadata,
                                           specs=specs,
                                           ngc_key=ngc_key,
@@ -280,6 +291,7 @@ def get_nvcf_microservices_job_status(job_metadata, status=""):
         user_id = job_metadata.get("user_id")
         org_name = job_metadata.get("org_name")
         action = job_metadata.get("action")
+        specs = job_metadata.get("specs", {})
         network = job_metadata.get("network")
         job_id = job_metadata.get("id")
         job_handler_id = job_metadata.get("handler_id")
@@ -302,7 +314,8 @@ def get_nvcf_microservices_job_status(job_metadata, status=""):
             return job_status
 
         print("update status", deployment_string, file=sys.stderr)
-        job_monitor_response = invoke_function(deployment_string, network, action, microservice_action="get_job_status", ngc_key=ngc_key, job_id=job_id)
+        print("specs", specs, file=sys.stderr)
+        job_monitor_response = invoke_function(deployment_string, network, action, microservice_action="container_job_status", specs=specs, ngc_key=ngc_key, job_id=job_id)
         if job_monitor_response.status_code == 404:
             status = "Error"
             if job_monitor_response.json().get("title") == "Not Found":

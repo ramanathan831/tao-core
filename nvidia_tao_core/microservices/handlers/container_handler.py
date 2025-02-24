@@ -49,13 +49,8 @@ class ContainerJobHandler:
         Returns:
             str: Job ID if launch successful, None otherwise
         """
-        cloud_storage = None
-        exit_event = None
-        upload_thread = None
-        status_logger = None
-
         try:
-            # Extract job configuration
+            # Extract job configuration and update environment variables first
             env_vars = {
                 "CLOUD_BASED": job.get('hosted_service_interaction', ""),
                 "NVCF_HELM": job.get('nvcf_helm', ""),
@@ -67,107 +62,120 @@ class ContainerJobHandler:
                 "AUTOML_EXPERIMENT_NUMBER": job.get('automl_experiment_number', ""),
                 "JOB_ID": job["job_id"]
             }
-
-            # Update environment variables
             os.environ.update(env_vars)
             docker_env_vars = job.get('docker_env_vars')
             if docker_env_vars:
                 os.environ.update(docker_env_vars)
 
-            # Setup cloud storage and specs
-            cloud_storage, specs = get_results_cloud_data(
-                job.get("cloud_metadata"),
-                job["specs"],
-                f'/results/{job["job_id"]}'
-            )
-
-            # Create results directory and download files
-            os.makedirs(specs["results_dir"], exist_ok=True)
-            download_files_from_spec(
-                cloud_data=job.get("cloud_metadata"),
-                data=specs,
-                job_id=job["job_id"],
-                network_arch=job["neural_network_name"],
-                ngc_key=job.get("ngc_key"),
-                tao_api_ui_cookie=job.get('tao_api_ui_cookie', ""),
-                use_ngc_staging=job.get('use_ngc_staging', "False")
-            )
-
-            # Save spec file
-            spec_path = os.path.join(specs["results_dir"], "spec.yaml")
-            with open(spec_path, 'w+', encoding='utf-8') as yaml_file:
-                yaml.dump(specs, yaml_file, default_flow_style=False)
-
-            # Start cloud upload monitoring if needed
-            if cloud_storage:
-                exit_event = threading.Event()
-                upload_thread = threading.Thread(
-                    target=monitor_and_upload,
-                    args=(specs["results_dir"], cloud_storage, exit_event),
-                    daemon=True
-                )
-                upload_thread.start()
-
-            # Prepare entrypoint arguments
-            args = {
-                "subtask": job["action_name"],
-                "experiment_spec_file": spec_path,
-                "results_dir": specs["results_dir"]
-            }
-
-            def run_entrypoint():
-                nonlocal status_logger
-                is_completed = False
-                status_file = ContainerJobHandler.get_status_file(specs["results_dir"], job["action_name"])
+            def async_setup_and_run():
+                cloud_storage = None
+                exit_event = None
+                upload_thread = None
+                status_logger = None
 
                 try:
-                    # Initialize status logger
-                    status_logger = status_logging.StatusLogger(
-                        filename=status_file,
-                        is_master=True,
-                        verbosity=1,
-                        append=True
+                    # Setup cloud storage and specs
+                    cloud_storage, specs = get_results_cloud_data(
+                        job.get("cloud_metadata"),
+                        job["specs"],
+                        f'/results/{job["job_id"]}'
                     )
-                    status_logging.set_status_logger(status_logger)
 
-                    # Launch entrypoint
-                    _, actions = module_utils.get_neural_network_actions(job["neural_network_name"])
+                    # Create results directory and download files
+                    os.makedirs(specs["results_dir"], exist_ok=True)
+                    download_files_from_spec(
+                        cloud_data=job.get("cloud_metadata"),
+                        data=specs,
+                        job_id=job["job_id"],
+                        network_arch=job["neural_network_name"],
+                        ngc_key=job.get("ngc_key"),
+                        tao_api_ui_cookie=job.get('tao_api_ui_cookie', ""),
+                        use_ngc_staging=job.get('use_ngc_staging', "False")
+                    )
 
-                    if entrypoint:
-                        _, actions = module_utils.get_neural_network_actions(job["neural_network_name"])
-                        is_completed = entrypoint.launch(args, "", actions, network=job["neural_network_name"])
-                    else:
-                        is_completed = vlm_entrypoint.vlm_launch(job["neural_network_name"], job["action_name"], specs)
+                    # Save spec file
+                    spec_path = os.path.join(specs["results_dir"], "spec.yaml")
+                    with open(spec_path, 'w+', encoding='utf-8') as yaml_file:
+                        yaml.dump(specs, yaml_file, default_flow_style=False)
+
+                    # Start cloud upload monitoring if needed
+                    if cloud_storage:
+                        exit_event = threading.Event()
+                        upload_thread = threading.Thread(
+                            target=monitor_and_upload,
+                            args=(specs["results_dir"], cloud_storage, exit_event),
+                            daemon=True
+                        )
+                        upload_thread.start()
+
+                    # Prepare entrypoint arguments
+                    args = {
+                        "subtask": job["action_name"],
+                        "experiment_spec_file": spec_path,
+                        "results_dir": specs["results_dir"]
+                    }
+
+                    def run_entrypoint():
+                        nonlocal status_logger
+                        is_completed = False
+                        status_file = ContainerJobHandler.get_status_file(specs["results_dir"], job["action_name"])
+
+                        try:
+                            # Initialize status logger
+                            status_logger = status_logging.StatusLogger(
+                                filename=status_file,
+                                is_master=True,
+                                verbosity=1,
+                                append=True
+                            )
+                            status_logging.set_status_logger(status_logger)
+
+                            # Launch entrypoint
+                            _, actions = module_utils.get_neural_network_actions(job["neural_network_name"])
+
+                            if entrypoint:
+                                _, actions = module_utils.get_neural_network_actions(job["neural_network_name"])
+                                is_completed = entrypoint.launch(args, "", actions, network=job["neural_network_name"])
+                            else:
+                                is_completed = vlm_entrypoint.vlm_launch(job["neural_network_name"], job["action_name"], specs)
+
+                        except Exception:
+                            print("Traceback", file=sys.stderr)
+                            print(traceback.format_exc(), file=sys.stderr)
+                            ContainerJobHandler._handle_failure(job, status_logger, status_file)
+                        finally:
+                            ContainerJobHandler._cleanup(
+                                exit_event,
+                                upload_thread,
+                                job,
+                                is_completed,
+                                status_logger,
+                                status_file
+                            )
+
+                    # Launch job asynchronously
+                    entrypoint_thread = threading.Thread(target=run_entrypoint, daemon=True)
+                    entrypoint_thread.start()
 
                 except Exception:
                     print("Traceback", file=sys.stderr)
                     print(traceback.format_exc(), file=sys.stderr)
-                    ContainerJobHandler._handle_failure(job, status_logger, status_file)
-                finally:
-                    ContainerJobHandler._cleanup(
-                        exit_event,
-                        upload_thread,
-                        job,
-                        is_completed,
-                        status_logger,
-                        status_file
-                    )
+                    if status_logger:
+                        status_logging.get_status_logger().write(
+                            message=f"{job['action_name']} action couldn't be launched for {job['neural_network_name']}",
+                            status_level=status_logging.Status.FAILURE
+                        )
+                    ContainerJobHandler._cleanup(exit_event, upload_thread)
 
-            # Launch job asynchronously
-            entrypoint_thread = threading.Thread(target=run_entrypoint, daemon=True)
-            entrypoint_thread.start()
+            # Launch the async setup and execution
+            setup_thread = threading.Thread(target=async_setup_and_run, daemon=True)
+            setup_thread.start()
 
             return job["job_id"]
 
         except Exception:
             print("Traceback", file=sys.stderr)
             print(traceback.format_exc(), file=sys.stderr)
-            if status_logger:
-                status_logging.get_status_logger().write(
-                    message=f"{job['action_name']} action couldn't be launched for {job['neural_network_name']}",
-                    status_level=status_logging.Status.FAILURE
-                )
-            ContainerJobHandler._cleanup(exit_event, upload_thread)
             return None
 
     @staticmethod
@@ -235,18 +243,19 @@ class ContainerJobHandler:
         return status_files[0]
 
     @staticmethod
-    def get_current_job_status(specs):
+    def get_current_job_status(results_dir):
         """Finds 'status.json' under specs['results_dir'] and returns the last entry's status."""
-        results_dir = specs.get("results_dir")
         if "://" in results_dir:
             bucket_name = results_dir.split("//")[1].split("/")[0]
             results_dir = results_dir[results_dir.find(bucket_name) + len(bucket_name):]
 
-        if not results_dir or not os.path.isdir(results_dir):
-            raise ValueError("Invalid or missing 'results_dir' in specs.")
+        if not results_dir:
+            raise ValueError("Empty 'results_dir' in specs.")
+        if not os.path.isdir(results_dir):
+            print(f"results_dir directory {results_dir} does not exist", file=sys.stderr)
+            return "Pending"
 
         file_path = ContainerJobHandler.get_status_file(results_dir)
-
         last_status = None
 
         if not os.path.exists(file_path):

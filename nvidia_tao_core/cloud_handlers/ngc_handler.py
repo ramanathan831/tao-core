@@ -98,7 +98,7 @@ def download_ngc_model(ngc_path, ptm_root, key, is_cookie_set, use_ngc_staging):
     try:
         clt.configure(api_key=key, org_name=org, team_name=team)
     except Exception as e:
-        if not("Invalid org" in str(e) or "Invalid team" in str(e)):
+        if not ("Invalid org" in str(e) or "Invalid team" in str(e)):
             logging.error("Can't configure the passed NGC KEY for Org {}, team {}".format(org, team)) # noqa pylint: disable=C0209
             return False
         logging.info("Can't validate the passed NGC KEY for Org {}, team {}, going to try download without configuring credentials".format(org, team)) # noqa pylint: disable=C0209

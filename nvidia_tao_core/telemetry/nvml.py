@@ -42,6 +42,7 @@ BRAND_NAMES = {
     pynvml.NVML_BRAND_TITAN_RTX:            "TITAN RTX",
 }
 
+
 class GPUDevice:
     """Data structure to represent a GPU device."""
 

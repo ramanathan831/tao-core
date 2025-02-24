@@ -184,6 +184,8 @@ class StatusLogger(BaseLogger):
         """Logger to write out the status."""
         super().__init__(is_master=is_master, verbosity=verbosity)
         self.log_path = os.path.realpath(filename)
+        if not os.path.exists(os.path.dirname(self.log_path)):
+            os.makedirs(os.path.dirname(self.log_path))
         self.append = append
         self.is_master = is_master
         if os.path.exists(self.log_path):

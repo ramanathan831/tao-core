@@ -1066,8 +1066,8 @@ def vila(config, job_context, handler_metadata):
     train_ds = handler_metadata.get("train_datasets", [])[0]
     train_ds_metadata = get_handler_metadata(train_ds, kind="datasets")
     train_root = f"{workspace_identifier}{train_ds_metadata.get('cloud_file_path')}"
-    config["dataset"]["image_dir_path"] = f"{train_root}/images.tar.gz"
-    config["dataset"]["annotation_path"] = f"{train_root}/annotations.json"
+    config["dataset"]["media_dir"] = f"{train_root}/images.tar.gz"
+    config["dataset"]["data_path"] = f"{train_root}/annotations.json"
     return config
 
 

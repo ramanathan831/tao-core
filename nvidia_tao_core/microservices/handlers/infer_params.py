@@ -59,6 +59,8 @@ def infer_output_dir(job_context, handler_metadata):
     workspace_id = handler_metadata.get("workspace")
     workspace_identifier = get_workspace_string_identifier(workspace_id, workspace_cache={})
     dnn_results_dir = f'{workspace_identifier}results/{job_context.id}'
+    if job_context.network == "vila":
+        dnn_results_dir = f'{workspace_identifier}results/{job_context.id}/lora'
     return dnn_results_dir
 
 
