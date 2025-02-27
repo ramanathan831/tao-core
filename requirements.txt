@@ -1,0 +1,9 @@
+PyYAML==6.0.2
+requests==2.32.3
+ngcsdk==3.60.2
+apache-libcloud==3.8.0
+omegaconf==2.3.0
+transformers==4.48.2
+packaging==24.2
+pynvml==12.0.0
+setuptools==75.8.0
