@@ -14,7 +14,7 @@
 
 """Handler functions to manage NGC related operations"""
 from ngcsdk import Client
-from ngcbpc import errors
+from ngcbase import errors
 
 import os
 import requests

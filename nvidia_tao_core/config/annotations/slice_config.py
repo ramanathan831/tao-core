@@ -18,6 +18,8 @@ from dataclasses import dataclass, field
 from omegaconf import MISSING
 from typing import Optional, List, Any
 
+from nvidia_tao_core.config.utils.types import DATACLASS_FIELD
+
 
 @dataclass
 class DataConfig:
@@ -45,6 +47,6 @@ class FilterConfig:
 class SliceConfig:
     """Experiment configuration template."""
 
-    data: DataConfig = DataConfig()
-    filter: FilterConfig = FilterConfig()
+    data: DataConfig = DATACLASS_FIELD(DataConfig())
+    filter: FilterConfig = DATACLASS_FIELD(FilterConfig())
     results_dir: Optional[str] = None
