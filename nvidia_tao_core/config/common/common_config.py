@@ -200,7 +200,97 @@ class InferenceConfig:
         """)
 
 
+@dataclass
+class ExportConfig:
+    """Export experiment config."""
+
+    results_dir: Optional[str] = STR_FIELD(
+        value=None,
+        default_value="",
+        display_name="Results directory",
+        description="""
+        Path to where all the assets generated from a task are stored.
+        """
+    )
+    gpu_id: int = INT_FIELD(
+        value=0,
+        default_value=0,
+        description="""The index of the GPU to build the TensorRT engine.""",
+        display_name="GPU ID"
+    )
+    checkpoint: str = STR_FIELD(
+        value=MISSING,
+        default_value="",
+        description="Path to the checkpoint file to run export.",
+        display_name="checkpoint"
+    )
+    onnx_file: str = STR_FIELD(
+        value=MISSING,
+        default_value="",
+        display_name="onnx file",
+        description="""
+        Path to the onnx model file.
+        """
+    )
+    on_cpu: bool = BOOL_FIELD(
+        value=False,
+        default_value=False,
+        display_name="on cpu",
+        description="""Flag to export CPU compatible model."""
+    )
+    input_channel: int = INT_FIELD(
+        value=3,
+        default_value=3,
+        description="Number of channels in the input Tensor.",
+        display_name="input channel",
+        valid_min=1,
+        valid_options=[1, 3],
+    )
+    input_width: int = INT_FIELD(
+        value=960,
+        default_value=960,
+        description="Width of the input image tensor.",
+        display_name="input width",
+        valid_min=32,
+    )
+    input_height: int = INT_FIELD(
+        value=544,
+        default_value=544,
+        description="Height of the input image tensor.",
+        display_name="input height",
+        valid_min=32,
+    )
+    opset_version: int = INT_FIELD(
+        value=17,
+        default_value=17,
+        description="""Operator set version of the ONNX model used to generate
+                    the TensorRT engine.""",
+        display_name="opset version",
+        valid_min=1,
+    )
+    batch_size: int = INT_FIELD(
+        value=-1,
+        default_value=-1,
+        valid_min=-1,
+        description="""The batch size of the input Tensor for the engine.
+                    A value of :code:`-1` implies dynamic tensor shapes.""",
+        display_name="batch size"
+    )
+    verbose: bool = BOOL_FIELD(
+        value=False,
+        default_value=False,
+        display_name="verbose",
+        description="""Flag to enable verbose TensorRT logging."""
+    )
+    format: str = STR_FIELD(
+        value="onnx",
+        display_name="export format",
+        description="""File format to export to.""",
+        valid_options="onnx,xdl",
+    )
+
 # TAO Deploy configs
+
 
 @dataclass
 class CalibrationConfig:

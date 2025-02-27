@@ -16,19 +16,18 @@
 
 from typing import Optional, Dict
 from dataclasses import dataclass
-from omegaconf import MISSING
 
 from nvidia_tao_core.config.utils.types import (
     BOOL_FIELD,
     DATACLASS_FIELD,
     DICT_FIELD,
     FLOAT_FIELD,
-    INT_FIELD,
-    STR_FIELD
+    INT_FIELD
 )
 from nvidia_tao_core.config.common.common_config import (
     CommonExperimentConfig,
     EvaluateConfig,
+    ExportConfig,
     InferenceConfig
 )
 from nvidia_tao_core.config.deformable_detr.dataset import (
@@ -110,88 +109,15 @@ class DDEvalExpConfig(EvaluateConfig):
 
 
 @dataclass
-class DDExportExpConfig:
-    """Export experiment config."""
+class DDExportExpConfig(ExportConfig):
+    """Structured configuration schema for Deformable DETR export."""
 
-    results_dir: Optional[str] = STR_FIELD(
-        value=None,
-        display_name="Results directory",
-        description="""
-        Path to where all the assets generated from a task are stored.
-        """
-    )
-    gpu_id: int = INT_FIELD(
-        value=0,
-        default_value=0,
-        description="""The index of the GPU to build the TensorRT engine.""",
-        display_name="GPU ID"
-    )
-    checkpoint: str = STR_FIELD(
-        value=MISSING,
-        description="Path to the checkpoint file to run export.",
-        display_name="checkpoint"
-    )
-    onnx_file: str = STR_FIELD(
-        value=MISSING,
-        display_name="onnx file",
-        description="""
-        Path to the onnx model file.
-        """
-    )
-    on_cpu: bool = BOOL_FIELD(
+    serialize_nvdsinfer: bool = BOOL_FIELD(
         value=False,
         default_value=False,
-        display_name="verbose",
-        description="""Flag to export CPU compatible model."""
-    )
-    format: str = STR_FIELD(
-        value="onnx",
-        display_name="export format",
-        description="""File format to export to.""",
-        valid_options="onnx,xdl",
-    )
-    input_channel: int = INT_FIELD(
-        value=3,
-        default_value=3,
-        description="Number of channels in the input Tensor.",
-        display_name="input channel",
-        valid_min=3,
-    )
-    input_width: int = INT_FIELD(
-        value=960,
-        default_value=960,
-        description="Width of the input image tensor.",
-        display_name="input width",
-        valid_min=32,
-    )
-    input_height: int = INT_FIELD(
-        value=544,
-        default_value=544,
-        description="Height of the input image tensor.",
-        display_name="input height",
-        valid_min=32,
-    )
-    opset_version: int = INT_FIELD(
-        value=17,
-        default_value=17,
-        description="""Operator set version of the ONNX model used to generate
-                    the TensorRT engine.""",
-        display_name="opset version",
-        valid_min=1,
-    )
-    batch_size: int = INT_FIELD(
-        value=-1,
-        default_value=-1,
-        valid_min=-1,
-        description="""The batch size of the input Tensor for the engine.
-                    A value of :code:`-1` implies dynamic tensor shapes.""",
-        display_name="batch size"
-    )
-    verbose: bool = BOOL_FIELD(
-        value=False,
-        default_value=False,
-        display_name="verbose",
-        description="""Flag to enable verbose TensorRT logging."""
+        display_name="Serialize DeepStream config.",
+        description="""Flag to enable serializing the required
+                    configs for integrating with DeepStream."""
     )
 
 

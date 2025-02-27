@@ -29,6 +29,7 @@ from nvidia_tao_core.config.utils.types import (
 )
 from nvidia_tao_core.config.common.common_config import (
     CommonExperimentConfig,
+    ExportConfig,
     TrainConfig,
     EvaluateConfig,
     InferenceConfig,
@@ -282,23 +283,6 @@ class CNInferenceExpConfig(InferenceConfig):
 
 
 @dataclass
-class CNExportExpConfig:
-    """Export experiment config."""
-
-    results_dir: Optional[str] = STR_FIELD(value=None, default_value="", description="Results directory", display_name="Results directory")
-    gpu_id: int = INT_FIELD(value=0, default_value=0, description="GPU ID", display_name="GPU ID", value_min=0)
-    checkpoint: str = STR_FIELD(value=MISSING, default_value="", description="Path to checkpoint file", display_name="Path to checkpoint file")
-    onnx_file: Optional[str] = STR_FIELD(value=MISSING, default_value="", description="ONNX file", display_name="ONNX file")
-    on_cpu: bool = BOOL_FIELD(value=False, default_value=False, description="Flag to export on cpu", display_name="On CPU")
-    input_channel: int = INT_FIELD(value=3, default_value=3, description="Input channel", display_name="Input channel")
-    input_width: int = INT_FIELD(value=224, default_value=224, description="Input width", display_name="Input width", valid_min=128)
-    input_height: int = INT_FIELD(value=224, default_value=224, description="Input height", display_name="Input height", valid_min=128)
-    opset_version: int = INT_FIELD(value=17, default_value=12, valid_min=1, display_name="opset version", description="""Operator set version of the ONNX model used to generate the TensorRT engine.""")
-    batch_size: int = INT_FIELD(value=-1, default_value=-1, description="Batch size", display_name="Batch size", valid_min=0)
-    verbose: bool = BOOL_FIELD(value=False, default_value=False, description="Verbose", display_name="Verbose")
-
-
-@dataclass
 class CNTrtConfig(TrtConfig):
     """Trt config."""
 
@@ -330,6 +314,11 @@ class ExperimentConfig(CommonExperimentConfig):
     train: CNTrainExpConfig = DATACLASS_FIELD(CNTrainExpConfig())
     evaluate: CNEvalExpConfig = DATACLASS_FIELD(CNEvalExpConfig())
     inference: CNInferenceExpConfig = DATACLASS_FIELD(CNInferenceExpConfig())
-    export: CNExportExpConfig = DATACLASS_FIELD(CNExportExpConfig())
+    export: ExportConfig = DATACLASS_FIELD(
+        ExportConfig(
+            input_channel=3,
+            input_height=224,
+            input_width=224,
+        ))
     gen_trt_engine: CNGenTrtEngineExpConfig = DATACLASS_FIELD(CNGenTrtEngineExpConfig())
     task: Optional[str] = STR_FIELD(value="segment", default_value="segment", valid_options="segment,classify")
