@@ -25,9 +25,9 @@ import tarfile
 import time
 import traceback
 
-from nvidia_tao_core.cloud_handlers.cloud_storage import CloudStorage
-from nvidia_tao_core.cloud_handlers.ngc_handler import download_ngc_model, split_ngc_path
-from nvidia_tao_core.cloud_handlers.nvcf_handler import invoke_function
+from nvidia_tao_core.microservices.handlers.cloud_storage import CloudStorage
+from nvidia_tao_core.microservices.handlers.ngc_handler import download_ngc_model, split_ngc_path
+from nvidia_tao_core.microservices.handlers.nvcf_handler import invoke_function
 
 
 logger = logging.getLogger(__name__)
@@ -103,7 +103,7 @@ def search_for_ptm(root, network="", parameter_name=""):
         return model_path
     if os.path.exists(root):
         if network == "vila":
-            return os.path.join(root, "vila-1.5-40b_vvila-yi-34b-siglip-stage3_1003_video_v8")
+            return os.path.join(root, "nvila_vnvila-15b-highres")
         return root
     logger.info("PTM can't be found")
     return None
@@ -269,9 +269,19 @@ def upload_files(local_path, cloud_storage, file_last_modified):
             if current_last_modified:
 
                 # Check if the file is new or modified
-                if file_path not in file_last_modified or current_last_modified > file_last_modified[file_path]:
+                if (file_path not in file_last_modified or current_last_modified > file_last_modified[file_path]) and ("checkpoint-" not in file_path and "tmp" not in file_path):
                     logger.info("File event created/modified {}".format(file_path))  # noqa pylint: disable=C0209
-                    cloud_storage.upload_file(file_path, file_path)
+                    try:
+                        cloud_storage.upload_file(file_path, file_path)
+                    except Exception as e:
+                        logger.error("Failed to upload file: {} - Error: {}".format(file_path, str(e)))  # noqa pylint: disable=C0209
+                    # Remove file after successful upload
+                    try:
+                        if cloud_storage.is_file(file_path):
+                            os.remove(file_path)
+                            logger.info("File successfully uploaded and removed: {}".format(file_path))  # noqa pylint: disable=C0209
+                    except Exception as e:
+                        logger.error("Failed to remove file after upload: {} - Error: {}".format(file_path, str(e)))  # noqa pylint: disable=C0209
 
                     # Update the last modification time for the file
                     file_last_modified[file_path] = current_last_modified
@@ -357,14 +367,17 @@ def status_callback(data_string, retry=0):
                     kind = url_parts[7]
                     handler_id = url_parts[8]
                     job_id = url_parts[10]
+                    docker_env_vars = {
+                        "TAO_USER_KEY": ngc_key,
+                    }
                     invoke_function(
                         deployment_string=nvcf_helm_deployment,
-                        api_endpoint="status_update",
+                        microservice_action="status_update",
+                        docker_env_vars=docker_env_vars,
                         kind=kind,
                         handler_id=handler_id,
                         job_id=job_id,
                         request_body=data,
-                        ngc_key=ngc_key,
                     )
                 else:
                     try:
