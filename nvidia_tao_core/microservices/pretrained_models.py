@@ -343,8 +343,10 @@ class BaseExperimentMetadata:
         try:
             clt.configure(api_key=ngc_token, org_name=org, team_name=team)
         except Exception as e:
-            print(f"NGC configuration error for org {org}, team {team} - ", e, file=sys.stderr)
-            return False
+            if not ("Invalid org" in str(e) or "Invalid team" in str(e)):
+                print("Can't configure the passed NGC KEY for Org {}, team {}".format(org, team)) # noqa pylint: disable=C0209
+                return False
+            print("Can't validate the passed NGC KEY for Org {}, team {}, going to try download without configuring credentials".format(org, team)) # noqa pylint: disable=C0209
         # Check and download experiment.yaml file
         model_files = list(clt.registry.model.list_files(ngc_path))
         file_paths = list(map(lambda x: x.path, model_files))
