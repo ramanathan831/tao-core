@@ -467,12 +467,27 @@ class JobResultSchema(Schema):
 class AllowedDockerEnvVariables(Enum):
     """Allowed docker environment variables while launching DNN containers"""
 
+    HF_TOKEN = "HF_TOKEN"
     WANDB_API_KEY = "WANDB_API_KEY"
     CLEARML_WEB_HOST = "CLEARML_WEB_HOST"
     CLEARML_API_HOST = "CLEARML_API_HOST"
     CLEARML_FILES_HOST = "CLEARML_FILES_HOST"
     CLEARML_API_ACCESS_KEY = "CLEARML_API_ACCESS_KEY"
     CLEARML_API_SECRET_KEY = "CLEARML_API_SECRET_KEY"
+
+    CLOUD_BASED = "CLOUD_BASED"
+    NVCF_HELM = "NVCF_HELM"
+    TELEMETRY_OPT_OUT = "TELEMETRY_OPT_OUT"
+    TAO_USER_KEY = "TAO_USER_KEY"
+    TAO_ADMIN_KEY = "TAO_ADMIN_KEY"
+    TAO_COOKIE_SET = "TAO_COOKIE_SET"
+    TAO_API_SERVER = "TAO_API_SERVER"
+    TAO_LOGGING_SERVER_URL = "TAO_LOGGING_SERVER_URL"
+    AUTOML_EXPERIMENT_NUMBER = "AUTOML_EXPERIMENT_NUMBER"
+    JOB_ID = "JOB_ID"
+    TAO_API_JOB_ID = "TAO_API_JOB_ID"  # Automl brain job id
+    USE_NGC_STAGING = "USE_NGC_STAGING"
+    DEPLOYMENT_MODE = "DEPLOYMENT_MODE"
 
 
 #
@@ -975,15 +990,7 @@ class ContainerJobSchema(Schema):
     cloud_metadata = fields.Raw()
     ngc_key = fields.Str(format="regex", regex=r'.*', validate=fields.validate.Length(max=1000), allow_none=True)
     job_id = fields.Str(format="uuid", validate=fields.validate.Length(max=36), allow_none=True)
-    telemetry_opt_out = fields.Str(format="regex", regex=r'.*', validate=fields.validate.Length(max=1000), allow_none=True)
-    use_ngc_staging = fields.Str(format="regex", regex=r'.*', validate=fields.validate.Length(max=1000), allow_none=True)
-    tao_api_ui_cookie = fields.Str(format="regex", regex=r'.*', validate=fields.validate.Length(max=1000), allow_none=True)
-    tao_api_admin_key = fields.Str(format="regex", regex=r'.*', validate=fields.validate.Length(max=1000), allow_none=True)
-    tao_api_base_url = fields.URL(validate=fields.validate.Length(max=2048))
-    tao_api_status_callback_url = fields.URL(validate=fields.validate.Length(max=2048))
-    automl_experiment_number = fields.Str(format="regex", regex=r'.*', validate=fields.validate.Length(max=1000), allow_none=True)
-    hosted_service_interaction = fields.Str(format="regex", regex=r'.*', validate=fields.validate.Length(max=1000), allow_none=True)
-    nvcf_helm = fields.Str(format="regex", regex=r'.*', validate=fields.validate.Length(max=1000), allow_none=True)
+    docker_env_vars = fields.Dict(keys=EnumField(AllowedDockerEnvVariables), values=fields.Str(format="regex", regex=r'.*', validate=fields.validate.Length(max=500), allow_none=True))
 
 
 @app.route('/api/v1/internal/container_job', methods=['POST'])
@@ -1176,7 +1183,8 @@ def authenticate_without_ingress():
         return None
     if "super_endpoint" in request.path:
         request_body = request.get_json(force=True)
-        if "container_job" in request_body.get("api_endpoint"):
+        if "container_job" in request_body.get("api_endpoint") or "status_update" in request_body.get("api_endpoint"):
+            print("skipping authentication", file=sys.stderr)
             return None
     print(f"authenticate without ingress, auth being called now for {request.path}", file=sys.stderr)
     auth_response = auth()

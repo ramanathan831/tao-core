@@ -50,20 +50,7 @@ class ContainerJobHandler:
             str: Job ID if launch successful, None otherwise
         """
         try:
-            # Extract job configuration and update environment variables first
-            env_vars = {
-                "CLOUD_BASED": job.get('hosted_service_interaction', ""),
-                "NVCF_HELM": job.get('nvcf_helm', ""),
-                "TELEMETRY_OPT_OUT": job.get('telemetry_opt_out', "no"),
-                "TAO_USER_KEY": job.get('ngc_key', ""),
-                "TAO_ADMIN_KEY": job.get('tao_api_admin_key', ""),
-                "TAO_API_SERVER": job.get('tao_api_base_url', ""),
-                "TAO_LOGGING_SERVER_URL": job.get('tao_api_status_callback_url', ""),
-                "AUTOML_EXPERIMENT_NUMBER": job.get('automl_experiment_number', ""),
-                "JOB_ID": job["job_id"]
-            }
-            os.environ.update(env_vars)
-            docker_env_vars = job.get('docker_env_vars')
+            docker_env_vars = job.get('docker_env_vars', {})
             if docker_env_vars:
                 os.environ.update(docker_env_vars)
 
@@ -88,9 +75,9 @@ class ContainerJobHandler:
                         data=specs,
                         job_id=job["job_id"],
                         network_arch=job["neural_network_name"],
-                        ngc_key=job.get("ngc_key"),
-                        tao_api_ui_cookie=job.get('tao_api_ui_cookie', ""),
-                        use_ngc_staging=job.get('use_ngc_staging', "False")
+                        ngc_key=docker_env_vars.get("TAO_USER_KEY"),
+                        tao_api_ui_cookie=docker_env_vars.get('TAO_API_UI_COOKIE', ""),
+                        use_ngc_staging=docker_env_vars.get('USE_NGC_STAGING', "False")
                     )
 
                     # Save spec file

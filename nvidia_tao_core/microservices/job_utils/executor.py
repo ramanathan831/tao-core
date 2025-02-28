@@ -439,7 +439,7 @@ def wait_for_service(org_name, handler_id, job_id, handler_kind):
     return "Error"
 
 
-def create_microservice_and_send_request(api_endpoint, network, action, ngc_key="", cloud_metadata={}, specs={}, microservice_pod_id="", tao_api_admin_key="", tao_api_base_url="", tao_api_status_callback_url="", tao_api_ui_cookie="", use_ngc_staging="", nvcf_helm="", automl_experiment_number="", num_gpu=-1, microservice_container="", org_name="", handler_id="", handler_kind="", accelerator=None):
+def create_microservice_and_send_request(api_endpoint, network, action, cloud_metadata={}, specs={}, microservice_pod_id="", num_gpu=-1, microservice_container="", org_name="", handler_id="", handler_kind="", accelerator=None, docker_env_vars={}):
     """Create a DNN container microservice pod and send request to the POD IP"""
     try:
         if not microservice_pod_id:
@@ -453,17 +453,10 @@ def create_microservice_and_send_request(api_endpoint, network, action, ngc_key=
         create_microservice_pod(microservice_pod_id, microservice_container, num_gpu=num_gpu, accelerator=accelerator)
         if wait_for_service(org_name, handler_id, microservice_pod_id, handler_kind):
             response = send_microservice_request(api_endpoint, network, action,
-                                                 ngc_key=ngc_key,
                                                  cloud_metadata=cloud_metadata,
                                                  specs=specs,
                                                  job_id=microservice_pod_id,
-                                                 tao_api_admin_key=tao_api_admin_key,
-                                                 tao_api_base_url=tao_api_base_url,
-                                                 tao_api_status_callback_url=tao_api_status_callback_url,
-                                                 tao_api_ui_cookie=tao_api_ui_cookie,
-                                                 nvcf_helm=nvcf_helm,
-                                                 use_ngc_staging=use_ngc_staging,
-                                                 automl_experiment_number=automl_experiment_number)
+                                                 docker_env_vars=docker_env_vars)
             if api_endpoint != "post_action":
                 delete(microservice_pod_id, use_ngc=False)
             return response
@@ -680,7 +673,7 @@ def override_k8_status(job_name, k8_status):
     return override_status
 
 
-def status(org_name, handler_id, job_name, handler_kind, use_ngc=True, network="", action="", automl_exp_job=False):
+def status(org_name, handler_id, job_name, handler_kind, use_ngc=True, network="", action="", automl_exp_job=False, docker_env_vars={}):
     """Returns status of kubernetes job"""
     name_space = _get_name_space()
     if os.getenv("DEV_MODE", "False").lower() in ("true", "1"):
@@ -695,9 +688,9 @@ def status(org_name, handler_id, job_name, handler_kind, use_ngc=True, network="
             nv_job_metadata = job_metadata.get("backend_details", {}).get("nvcf_metadata", {})
             job_status = job_metadata.get("status", "Pending")
             team_name = nv_job_metadata.get("teamName", "")
-            ngc_key = nv_job_metadata.get("TAO_USER_KEY")
+            ngc_key = docker_env_vars.get("TAO_USER_KEY")
             deployment_string = nv_job_metadata.get("deployment_string", "")
-            tao_api_status_callback_url = nv_job_metadata.get("TAO_LOGGING_SERVER_URL")
+            tao_api_status_callback_url = docker_env_vars.get("TAO_LOGGING_SERVER_URL")
             job_message_job_id = tao_api_status_callback_url.split("/")[-1]
             if job_status == "Pending":
                 if deployment_string.find(":") != -1:
@@ -711,8 +704,7 @@ def status(org_name, handler_id, job_name, handler_kind, use_ngc=True, network="
                         return "Error"
                     if nvcf_function_metadata.get("function", {}).get("status") == "ACTIVE":
                         deployment_string = f"{nvcf_function_metadata['function']['id']}:{nvcf_function_metadata['function']['versionId']}"
-                        print(f"Function {deployment_string} for {job_name} deployed successfully", file=sys.stderr)
-                        job_status, message = create_microservice_job_on_nvcf(job_metadata)
+                        job_status, message = create_microservice_job_on_nvcf(job_metadata, docker_env_vars=docker_env_vars)
                         job_metadata["status"] = job_status
                         if job_metadata.get("job_details", {}).get(job_name, {}):
                             job_metadata["job_details"][job_name]["detailed_status"]["message"] = message
@@ -724,9 +716,7 @@ def status(org_name, handler_id, job_name, handler_kind, use_ngc=True, network="
                         return "Error"
 
             override_status = override_k8_status(job_name, job_status)
-            job_status = get_nvcf_microservices_job_status(job_metadata, status=override_status)
-            if job_status == "Processing":
-                job_status = "Running"
+            job_status = get_nvcf_microservices_job_status(job_metadata, status=override_status, docker_env_vars=docker_env_vars)
             if override_status and override_status != job_status:
                 job_status = override_status
                 print(f"job metadata status is {job_status}, Toolkit Status is {override_status}, so overwriting", file=sys.stderr)

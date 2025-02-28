@@ -28,7 +28,7 @@ from nvidia_tao_core.microservices.constants import (_DATA_GENERATE_ACTIONS, _DA
                                                      MONAI_NETWORKS, MEDICAL_AUTOML_ARCHITECT, MEDICAL_NETWORK_ARCHITECT, MEDICAL_CUSTOM_ARCHITECT, NETWORK_METRIC_MAPPING,
                                                      NETWORK_CONTAINER_MAPPING, COPY_MODEL_PARAMS_FROM_TRAIN_NETWORKS)
 from nvidia_tao_core.microservices.handlers.cloud_storage import create_cs_instance
-from nvidia_tao_core.microservices.handlers.ngc_handler import get_user_key, ngc_team_name
+from nvidia_tao_core.microservices.handlers.ngc_handler import get_user_key
 from nvidia_tao_core.microservices.handlers.nvcf_handler import get_available_nvcf_instances
 from nvidia_tao_core.microservices.handlers.docker_images import DOCKER_IMAGE_MAPPER, DOCKER_IMAGE_VERSION
 from nvidia_tao_core.microservices.handlers.infer_data_sources import DS_CONFIG_TO_FUNCTIONS
@@ -130,6 +130,7 @@ class ActionPipeline:
 
         self.spec = {}
         self.config = {}
+        self.job_env_variables = {}
         self.platform_id = self.job_context.platform_id
         if not self.platform_id:
             if BACKEND == "NVCF":
@@ -174,7 +175,7 @@ class ActionPipeline:
                 if encryption.check_config()[0]:
                     docker_env_vars[docker_env_var_key] = encryption.decrypt(docker_env_var_value)
 
-    def generate_env_variables(self, job_env_variables, automl_brain_job_id=None, experiment_number=None, automl_exp_job_id=None):
+    def generate_env_variables(self, automl_brain_job_id=None, experiment_number=None, automl_exp_job_id=None):
         """Generate env variables required for a job"""
         host_base_url = os.getenv("HOSTBASEURL", "no_url")
         if HOST_PLATFORM == "NVCF":
@@ -183,7 +184,7 @@ class ActionPipeline:
                 raise ValueError("For HOST Platform NVCF, FUNCTION_TAO_API should be present in chart values in the form of function_id:version_id")
             if BACKEND == "local-k8s":
                 raise ValueError("For HOST Platform NVCF, Backend should also be NVCF")
-            job_env_variables["NVCF_HELM"] = function_version_string
+            self.job_env_variables["NVCF_HELM"] = function_version_string
             host_base_url = "http://10.123.4.56:32080"  # Will not be used by DNN containers, just to match a URL format
         log_callback_job_id = self.job_context.id
         if automl_exp_job_id:
@@ -203,37 +204,35 @@ class ActionPipeline:
         if automl_brain_job_id:
             status_url = f"{host_base_url}/api/v1/orgs/{org_name}/{handler_kind}/{self.handler_id}/jobs/{automl_brain_job_id}"
             if experiment_number:
-                job_env_variables["AUTOML_EXPERIMENT_NUMBER"] = experiment_number
+                self.job_env_variables["AUTOML_EXPERIMENT_NUMBER"] = experiment_number
 
-        job_env_variables["TELEMETRY_OPT_OUT"] = os.getenv('TELEMETRY_OPT_OUT', default='no')
-        job_env_variables["CLOUD_BASED"] = "True"
+        self.job_env_variables["TELEMETRY_OPT_OUT"] = os.getenv('TELEMETRY_OPT_OUT', default='no')
+        self.job_env_variables["CLOUD_BASED"] = "True"
         user_key, ngc_cookie = get_user_key(self.job_context.user_id, self.job_context.org_name)
-        job_env_variables["TAO_USER_KEY"] = user_key
-        job_env_variables["TAO_COOKIE_SET"] = str(ngc_cookie)
-        job_env_variables["TAO_ADMIN_KEY"] = get_admin_key()
-        job_env_variables["TAO_API_SERVER"] = host_base_url
-        job_env_variables["TAO_API_JOB_ID"] = log_callback_job_id
-        job_env_variables["TAO_LOGGING_SERVER_URL"] = status_url
-        job_env_variables["USE_NGC_STAGING"] = "True"
-        job_env_variables["DEPLOYMENT_MODE"] = os.getenv("DEPLOYMENT_MODE", "PROD")
-        if job_env_variables["DEPLOYMENT_MODE"] == "PROD":
-            job_env_variables["USE_NGC_STAGING"] = "False"
+        self.job_env_variables["TAO_USER_KEY"] = user_key
+        self.job_env_variables["TAO_COOKIE_SET"] = str(ngc_cookie)
+        self.job_env_variables["TAO_ADMIN_KEY"] = get_admin_key()
+        self.job_env_variables["TAO_API_SERVER"] = host_base_url
+        self.job_env_variables["TAO_API_JOB_ID"] = log_callback_job_id
+        self.job_env_variables["TAO_LOGGING_SERVER_URL"] = status_url
+        self.job_env_variables["USE_NGC_STAGING"] = "True"
+        self.job_env_variables["DEPLOYMENT_MODE"] = os.getenv("DEPLOYMENT_MODE", "PROD")
+        if self.job_env_variables["DEPLOYMENT_MODE"] == "PROD":
+            self.job_env_variables["USE_NGC_STAGING"] = "False"
 
-    def generate_nv_job_metadata(self, container_run_command, nv_job_metadata, job_env_variables):
+    def generate_nv_job_metadata(self, container_run_command, nv_job_metadata):
         """Convert run command generated into format that"""
-        nv_job_metadata["teamName"] = ngc_team_name
+        nv_job_metadata["teamName"] = os.getenv("NVCF_DEPLOYMENT_TEAM_NAME", "no_team")
         nv_job_metadata["dockerImageName"] = self.image
         if BACKEND == "NVCF":
             nv_job_metadata["workspace_ids"] = list(self.workspace_ids)
             nv_job_metadata["deployment_string"] = os.getenv(f'FUNCTION_{NETWORK_CONTAINER_MAPPING[self.network]}')
 
             available_nvcf_instances = get_available_nvcf_instances(self.job_context.user_id, self.job_context.org_name)
-            print("available_instances", available_nvcf_instances, file=sys.stderr)
             # if not available_nvcf_instances:
             available_nvcf_instances["052fc221-ffaa-5c15-8d22-b663e7339349"] = {"cluster": "GFN",
                                                                                 "gpu_type": "L40S",
                                                                                 "instance_type": "gl40s_1x2.br25_4xlarge"}
-            print("available_instances", available_nvcf_instances, file=sys.stderr)
             nv_job_metadata["nvcf_backend_details"] = {"cluster": available_nvcf_instances[self.platform_id]["cluster"],
                                                        "gpu_type": available_nvcf_instances[self.platform_id]["gpu_type"],
                                                        "instance_type": available_nvcf_instances[self.platform_id]["instance_type"],
@@ -241,7 +240,7 @@ class ActionPipeline:
             if self.tao_deploy_actions:
                 nv_job_metadata["deployment_string"] = os.getenv('FUNCTION_TAO_DEPLOY')
             nv_job_metadata["network"] = self.network
-            for key, value in job_env_variables.items():
+            for key, value in self.job_env_variables.items():
                 nv_job_metadata[key] = value
 
     def get_handler_cloud_details(self):
@@ -296,30 +295,22 @@ class ActionPipeline:
         """Prints the details of the job to the console"""
         printc(*args, context=vars(self.job_context), **kwargs)
 
-    def create_microservice_action_job(self, job_env_variables, job_id):
+    def create_microservice_action_job(self, job_id):
         """Call executor function to create microservice pod and then invoke it"""
         print("Creating microservices job_action ms pod", file=sys.stderr)
-        ngc_key, _ = get_user_key(self.job_context.user_id, self.job_context.org_name)
         response = jobDriver.create_microservice_and_send_request(api_endpoint="post_action",
                                                                   network=self.network,
                                                                   action=self.action,
-                                                                  ngc_key=ngc_key,
                                                                   cloud_metadata=self.cloud_metadata,
                                                                   specs=self.spec,
                                                                   microservice_pod_id=self.job_name,
-                                                                  tao_api_admin_key=job_env_variables["TAO_ADMIN_KEY"],
-                                                                  tao_api_base_url=job_env_variables["TAO_API_SERVER"],
-                                                                  tao_api_status_callback_url=job_env_variables["TAO_LOGGING_SERVER_URL"],
-                                                                  tao_api_ui_cookie=job_env_variables["TAO_COOKIE_SET"],
-                                                                  use_ngc_staging=job_env_variables["USE_NGC_STAGING"],
-                                                                  nvcf_helm=job_env_variables.get("NVCF_HELM", ""),
-                                                                  automl_experiment_number=job_env_variables.get("AUTOML_EXPERIMENT_NUMBER", "0"),
                                                                   num_gpu=self.num_gpu,
                                                                   microservice_container=self.image,
                                                                   org_name=self.job_context.org_name,
                                                                   handler_id=self.handler_id,
                                                                   handler_kind=self.handler_kind,
-                                                                  accelerator=self.platform_id)
+                                                                  accelerator=self.platform_id,
+                                                                  docker_env_vars=self.job_env_variables)
         if response and not response.ok:
             update_job_details_with_microservices_response(response.json().get("error", ""), job_id, self.job_name)
 
@@ -343,7 +334,7 @@ class ActionPipeline:
         if not metric:
             metric = NETWORK_METRIC_MAPPING.get(self.network, "loss")
 
-        k8s_status = jobDriver.status(self.job_context.org_name, self.handler_id, self.job_name, self.handler_kind, use_ngc=self.ngc_runner, network=self.network, action=self.action, automl_exp_job=False)
+        k8s_status = jobDriver.status(self.job_context.org_name, self.handler_id, self.job_name, self.handler_kind, use_ngc=self.ngc_runner, network=self.network, action=self.action, automl_exp_job=False, docker_env_vars=self.job_env_variables)
 
         # Delete job if is canceled/paused during pod creation
         metadata_status = get_handler_job_metadata(self.job_name).get("status", "Error")
@@ -394,7 +385,7 @@ class ActionPipeline:
 
             # Pending is if we have queueing systems down the road
             elif k8s_status == "Pending":
-                k8s_status = jobDriver.status(self.job_context.org_name, self.handler_id, self.job_name, self.handler_kind, use_ngc=self.ngc_runner, network=self.network, action=self.action, automl_exp_job=False)
+                k8s_status = jobDriver.status(self.job_context.org_name, self.handler_id, self.job_name, self.handler_kind, use_ngc=self.ngc_runner, network=self.network, action=self.action, automl_exp_job=False, docker_env_vars=self.job_env_variables)
                 continue
 
             # If the job never submitted or errored out!
@@ -403,7 +394,7 @@ class ActionPipeline:
                 update_job_metadata(self.handler_id, self.job_name, metadata_key="job_details", data=new_results, kind=self.handler_kind)
                 update_job_status(self.handler_id, self.job_name, status="Error", kind=self.handler_kind)
                 break
-            k8s_status = jobDriver.status(self.job_context.org_name, self.handler_id, self.job_name, self.handler_kind, use_ngc=self.ngc_runner, network=self.network, action=self.action, automl_exp_job=False)
+            k8s_status = jobDriver.status(self.job_context.org_name, self.handler_id, self.job_name, self.handler_kind, use_ngc=self.ngc_runner, network=self.network, action=self.action, automl_exp_job=False, docker_env_vars=self.job_env_variables)
 
         metadata_status = get_handler_job_metadata(self.job_name).get("status", "Error")
 
@@ -467,20 +458,20 @@ class ActionPipeline:
             # If platform is indeed None, jobDriver.create would take care of it.
             docker_env_vars = self.handler_metadata.get("docker_env_vars", {})
             self.decrypt_docker_env_vars(docker_env_vars)
-            job_env_variables = copy.deepcopy(docker_env_vars)
+            self.job_env_variables = copy.deepcopy(docker_env_vars)
             # Add environment variables from monai.
-            self.generate_env_variables(job_env_variables)
+            self.generate_env_variables()
             if self.monai_env_variable:
-                job_env_variables.update(self.monai_env_variable)
+                self.job_env_variables.update(self.monai_env_variable)
 
             # The monai local jobs like training for cl jobs are designed to run on cluster local GPUs.
             if self.ngc_runner:
-                self.generate_nv_job_metadata(self.run_command, nv_job_metadata, job_env_variables)
+                self.generate_nv_job_metadata(self.run_command, nv_job_metadata)
             else:
                 nv_job_metadata = None
 
             if self.network not in MONAI_NETWORKS and BACKEND == "local-k8s":
-                self.create_microservice_action_job(job_env_variables, self.job_name)
+                self.create_microservice_action_job(self.job_name)
             else:
                 jobDriver.create(
                     self.job_context.org_name,
@@ -489,7 +480,7 @@ class ActionPipeline:
                     self.run_command,
                     num_gpu=self.num_gpu,
                     accelerator=self.platform_id,
-                    docker_env_vars=job_env_variables,
+                    docker_env_vars=self.job_env_variables,
                     nv_job_metadata=nv_job_metadata,
                     local_cluster=self.local_cluster,
                     automl_exp_job=False
@@ -795,7 +786,7 @@ class AutoMLPipeline(ActionPipeline):
                 break
         return rec_number
 
-    def monitor_job(self, job_env_variables=None, nv_job_metadata=None):
+    def monitor_job(self, nv_job_metadata=None):
         """Monitors the job status and updates job metadata"""
         if not self.spec:
             recommended_values = self.recs_dict[self.rec_number].get("specs", {})
@@ -804,19 +795,19 @@ class AutoMLPipeline(ActionPipeline):
             self.get_handler_cloud_details()
             self.save_recommendation_specs()
 
-        if not job_env_variables:
+        if not self.job_env_variables:
             docker_env_vars = self.handler_metadata.get("docker_env_vars", {})
             self.decrypt_docker_env_vars(docker_env_vars)
-            job_env_variables = copy.deepcopy(docker_env_vars)
-            self.generate_env_variables(job_env_variables, automl_brain_job_id=self.automl_brain_job_id, experiment_number=str(self.rec_number))
+            self.job_env_variables = copy.deepcopy(docker_env_vars)
+            self.generate_env_variables(automl_brain_job_id=self.automl_brain_job_id, experiment_number=str(self.rec_number))
 
         run_command = self.generate_run_command()
         if not nv_job_metadata:
             nv_job_metadata = {}
             if self.ngc_runner:
-                self.generate_nv_job_metadata(run_command, nv_job_metadata, job_env_variables)
+                self.generate_nv_job_metadata(run_command, nv_job_metadata)
 
-        k8s_status = jobDriver.status(self.job_context.org_name, self.handler_id, self.job_name, self.handler_kind, use_ngc=self.ngc_runner, network=self.network, action=self.action, automl_exp_job=True)
+        k8s_status = jobDriver.status(self.job_context.org_name, self.handler_id, self.job_name, self.handler_kind, use_ngc=self.ngc_runner, network=self.network, action=self.action, automl_exp_job=True, docker_env_vars=self.job_env_variables)
         while k8s_status in ["Done", "Error", "Running", "Pending", "Creating"]:
             time.sleep(5)
             if get_dnn_status(self.automl_brain_job_id, automl=True, experiment_number=str(self.rec_number)) or (BACKEND == "NVCF" and k8s_status == "Running"):
@@ -829,10 +820,10 @@ class AutoMLPipeline(ActionPipeline):
                 self.detailed_print(f"Relaunching job {self.job_name}", file=sys.stderr)
                 wait_for_job_completion(self.job_name)
                 if self.network not in MONAI_NETWORKS and BACKEND == "local-k8s":
-                    self.create_microservice_action_job(job_env_variables, self.automl_brain_job_id)
+                    self.create_microservice_action_job(self.automl_brain_job_id)
                 else:
-                    jobDriver.create(self.job_context.org_name, self.job_name, self.image, run_command, num_gpu=self.num_gpu, docker_env_vars=job_env_variables, nv_job_metadata=nv_job_metadata, automl_exp_job=True)
-            k8s_status = jobDriver.status(self.job_context.org_name, self.handler_id, self.job_name, self.handler_kind, use_ngc=self.ngc_runner, network=self.network, action=self.action, automl_exp_job=True)
+                    jobDriver.create(self.job_context.org_name, self.job_name, self.image, run_command, num_gpu=self.num_gpu, docker_env_vars=self.job_env_variables, nv_job_metadata=nv_job_metadata, automl_exp_job=True)
+            k8s_status = jobDriver.status(self.job_context.org_name, self.handler_id, self.job_name, self.handler_kind, use_ngc=self.ngc_runner, network=self.network, action=self.action, automl_exp_job=True, docker_env_vars=self.job_env_variables)
         if k8s_status == "Error":
             self.recs_dict[self.rec_number]["status"] = "failure"
             save_automl_controller_info(self.automl_brain_job_id, self.recs_dict)
@@ -858,19 +849,19 @@ class AutoMLPipeline(ActionPipeline):
             delete_lingering_checkpoints(self.recs_dict[self.rec_number].get("best_epoch_number", ""), self.expt_root)
             docker_env_vars = self.handler_metadata.get("docker_env_vars", {})
             self.decrypt_docker_env_vars(docker_env_vars)
-            job_env_variables = copy.deepcopy(docker_env_vars)
-            self.generate_env_variables(job_env_variables, automl_brain_job_id=self.automl_brain_job_id, experiment_number=str(self.rec_number), automl_exp_job_id=self.job_name)
+            self.job_env_variables = copy.deepcopy(docker_env_vars)
+            self.generate_env_variables(automl_brain_job_id=self.automl_brain_job_id, experiment_number=str(self.rec_number), automl_exp_job_id=self.job_name)
 
             nv_job_metadata = {}
             if self.ngc_runner:
-                self.generate_nv_job_metadata(run_command, nv_job_metadata, job_env_variables)
+                self.generate_nv_job_metadata(run_command, nv_job_metadata)
 
             if self.network not in MONAI_NETWORKS and BACKEND == "local-k8s":
-                self.create_microservice_action_job(job_env_variables, self.automl_brain_job_id)
+                self.create_microservice_action_job(self.automl_brain_job_id)
             else:
-                jobDriver.create(self.job_context.org_name, self.job_name, self.image, run_command, num_gpu=self.num_gpu, docker_env_vars=job_env_variables, nv_job_metadata=nv_job_metadata, automl_exp_job=False)
+                jobDriver.create(self.job_context.org_name, self.job_name, self.image, run_command, num_gpu=self.num_gpu, docker_env_vars=self.job_env_variables, nv_job_metadata=nv_job_metadata, automl_exp_job=False)
             self.detailed_print(f"AutoML recommendation with experiment id {self.rec_number} and job id {self.job_name} submitted", file=sys.stderr)
-            self.monitor_job(job_env_variables, nv_job_metadata)
+            self.monitor_job(nv_job_metadata)
 
             return True
 
@@ -914,11 +905,11 @@ class ContinualLearning(ActionPipeline):
 
     def monitor_job(self):
         """Monitors the job status and updates job metadata"""
-        k8s_status = jobDriver.status(self.job_context.org_name, self.handler_id, self.job_name, self.handler_kind, use_ngc=False, automl_exp_job=False)
+        k8s_status = jobDriver.status(self.job_context.org_name, self.handler_id, self.job_name, self.handler_kind, use_ngc=False, automl_exp_job=False, docker_env_vars=self.job_env_variables)
         while k8s_status in ["Running", "Pending"]:
             # Poll every 30 seconds
             time.sleep(30)
-            k8s_status = jobDriver.status(self.job_context.org_name, self.handler_id, self.job_name, self.handler_kind, use_ngc=False, automl_exp_job=False)
+            k8s_status = jobDriver.status(self.job_context.org_name, self.handler_id, self.job_name, self.handler_kind, use_ngc=False, automl_exp_job=False, docker_env_vars=self.job_env_variables)
         self.detailed_print(f"Job status: {k8s_status}", file=sys.stderr)
         if k8s_status == "Error":
             update_job_status(self.handler_id, self.job_context.id, status="Error")
