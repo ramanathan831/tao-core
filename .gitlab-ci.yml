@@ -11,7 +11,7 @@ validate_mr_title:
       MR_TITLE=$CI_MERGE_REQUEST_TITLE
 
       # Regular expression for the MR title validation
-      REGEX="^\[(JIRA|TLT)-[0-9]+\]\[(CI|CD|Bugfix|Hotfix|CV|LLM|Feature|Model-Cards|Docs)\] .+$"
+      REGEX="^\[(JIRA|TLT|TAO)-[0-9]+\]\[(CI|CD|Bugfix|Hotfix|CV|LLM|Feature|Model-Cards|Docs)\] .+$"
 
       # Validate the MR title
       if [[ "$MR_TITLE" =~ $REGEX ]]; then
