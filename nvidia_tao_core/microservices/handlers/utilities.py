@@ -881,41 +881,64 @@ def get_cloud_metadata(workspace_ids, cloud_metadata):
         add_workspace_to_cloud_metadata(workspace_metadata, cloud_metadata)
 
 
-def send_microservice_request(api_endpoint, network, action, ngc_key="", cloud_metadata={}, specs={}, job_id="", tao_api_admin_key="", tao_api_base_url="", tao_api_status_callback_url="", tao_api_ui_cookie="", nvcf_helm="", use_ngc_staging="", automl_experiment_number=""):
-    """Make a requests call to the microservice pod"""
-    if not tao_api_base_url:
-        tao_api_base_url = "https://nvidia.com"
-    if not tao_api_status_callback_url:
-        tao_api_status_callback_url = "https://nvidia.com"
+def send_microservice_request(api_endpoint, network, action, cloud_metadata={}, specs={}, job_id="", nvcf_helm="", docker_env_vars={}):
+    """Make a requests call to the microservice pod
 
+    Args:
+        api_endpoint (str): The API endpoint to call, e.g. "get_job_status"
+        network (str): The neural network name
+        action (str): The action to perform, e.g. "train", "retrain"
+        cloud_metadata (dict, optional): Cloud metadata. Defaults to {}.
+        specs (dict, optional): Job specifications. Defaults to {}.
+        job_id (str, optional): Job ID. Defaults to "".
+        nvcf_helm (str, optional): NVCF helm configuration. Defaults to "".
+        docker_env_vars (dict, optional): Docker environment variables. Defaults to {}.
+
+    Returns:
+        requests.Response: The response from the microservice pod
+    """
+    # Set default URLs if not provided
+    if not docker_env_vars.get("TAO_API_SERVER"):
+        docker_env_vars["TAO_API_SERVER"] = "https://nvidia.com"
+    if not docker_env_vars.get("TAO_LOGGING_SERVER_URL"):
+        docker_env_vars["TAO_LOGGING_SERVER_URL"] = "https://nvidia.com"
+
+    # Normalize action name
     if action == "retrain":
         action = "train"
 
-    request_metadata = {"neural_network_name": network,
-                        "action_name": action,
-                        "specs": specs,
-                        "cloud_metadata": cloud_metadata,
-                        "ngc_key": ngc_key,
-                        "job_id": job_id,
-                        "use_ngc_staging": use_ngc_staging,
-                        "tao_api_admin_key": tao_api_admin_key,
-                        "tao_api_base_url": tao_api_base_url,
-                        "tao_api_status_callback_url": tao_api_status_callback_url,
-                        "tao_api_ui_cookie": tao_api_ui_cookie,
-                        "automl_experiment_number": automl_experiment_number,
-                        "hosted_service_interaction": "True"
-                        # "nvcf_helm": nvcf_helm,
-                        }
+    # Prepare request metadata
+    request_metadata = {
+        "neural_network_name": network,
+        "action_name": action,
+        "specs": specs,
+        "cloud_metadata": cloud_metadata,
+        "docker_env_vars": docker_env_vars,
+    }
+
+    request_metadata["docker_env_vars"]["CLOUD_BASED"] = "True"
+    request_metadata["docker_env_vars"]["JOB_ID"] = job_id
+
+    # Construct base URL and endpoint
     base_url = f"http://flask-service-{job_id}.default.svc.cluster.local:8000"
-    data = json.dumps(request_metadata)
     endpoint = f"{base_url}/api/v1/internal/container_job"
+
+    # Modify endpoint and request_metadata for get_job_status
     if api_endpoint == "get_job_status":
         endpoint = f"{base_url}/api/v1/internal/container_job:status"
+        request_metadata = {"results_dir": specs.get("results_dir", "")}
+
+    # Send request
     try:
-        response = requests.post(endpoint, data=data, timeout=120)
+        if api_endpoint == "get_job_status":
+            response = requests.get(endpoint, params=request_metadata, timeout=120)
+        else:
+            data = json.dumps(request_metadata)
+            response = requests.post(endpoint, data=data, timeout=120)
     except Exception as e:
         print("Exception caught during sending a microservice request", e, file=sys.stderr)
         raise e
+
     return response
 
 
@@ -1053,22 +1076,26 @@ def format_epoch(network, epoch_number):
 def search_for_checkpoint(handler_metadata, job_id, res_root, files, checkpoint_choose_method):
     """Based onf the choice of choosing checkpoint, handle different function calls and return the path found"""
     network = handler_metadata.get("network_arch")
-    epoch_number_dictionary = handler_metadata.get("checkpoint_epoch_number", {})
-    epoch_number = epoch_number_dictionary.get(f"{checkpoint_choose_method}_{job_id}", 0)
-
-    if checkpoint_choose_method == "latest_model" or "/best_model" in res_root:
-        checkpoint_function = latest_model
-    elif checkpoint_choose_method in ("best_model", "from_epoch_number"):
-        checkpoint_function = from_epoch_number
+    if network == "vila":
+        parent_specs = get_job_specs(job_id)
+        result_file = parent_specs.get("results_dir", "")
     else:
-        raise ValueError(f"Chosen method to pick checkpoint not valid: {checkpoint_choose_method}")
+        epoch_number_dictionary = handler_metadata.get("checkpoint_epoch_number", {})
+        epoch_number = epoch_number_dictionary.get(f"{checkpoint_choose_method}_{job_id}", 0)
 
-    format_epoch_number = format_epoch(network, epoch_number)
-    result_file = _get_result_file_path(checkpoint_function=checkpoint_function, files=files, format_epoch_number=format_epoch_number)
-    if (not result_file) and (checkpoint_choose_method in ("best_model", "from_epoch_number")):
-        print("Couldn't find the epoch number requested or the checkpointed associated with the best metric value, defaulting to latest_model", file=sys.stderr)
-        checkpoint_function = latest_model
+        if checkpoint_choose_method == "latest_model" or "/best_model" in res_root:
+            checkpoint_function = latest_model
+        elif checkpoint_choose_method in ("best_model", "from_epoch_number"):
+            checkpoint_function = from_epoch_number
+        else:
+            raise ValueError(f"Chosen method to pick checkpoint not valid: {checkpoint_choose_method}")
+
+        format_epoch_number = format_epoch(network, epoch_number)
         result_file = _get_result_file_path(checkpoint_function=checkpoint_function, files=files, format_epoch_number=format_epoch_number)
+        if (not result_file) and (checkpoint_choose_method in ("best_model", "from_epoch_number")):
+            print("Couldn't find the epoch number requested or the checkpointed associated with the best metric value, defaulting to latest_model", file=sys.stderr)
+            checkpoint_function = latest_model
+            result_file = _get_result_file_path(checkpoint_function=checkpoint_function, files=files, format_epoch_number=format_epoch_number)
 
     return result_file
 
@@ -1118,7 +1145,8 @@ def resolve_checkpoint_root_and_search(handler_metadata, job_id):
 
     if result_file:
         workspace_identifier = get_workspace_string_identifier(workspace_id, workspace_cache={})
-        result_file = f"{workspace_identifier}{result_file}"
+        if workspace_identifier not in result_file:
+            result_file = f"{workspace_identifier}{result_file}"
 
     return result_file
 
