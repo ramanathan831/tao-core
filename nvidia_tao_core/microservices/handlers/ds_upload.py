@@ -543,21 +543,27 @@ def data_services_image(org_name, handler_metadata, temp_dir="", workspace_metad
         return False
 
 
-def vila(org_name, handler_metadata, temp_dir="", workspace_metadata=None):
-    """Vila Dataset structure
+def vlm(org_name, handler_metadata, temp_dir="", workspace_metadata=None):
+    """VLM Dataset structure
 
     Upload - uploads and untars
-    - /images.tar.gz
+    - /dataset.tar.gz
     - /annotations.json
     """
     handler = SimpleHandler(org_name, handler_metadata, temp_dir=temp_dir, workspace_metadata=workspace_metadata)
     try:
         # Validate images and labels paths exist
-        assert handler.check_for_file_existence(os.path.join(handler.root, "images.tar.gz"))
-        assert handler.check_for_file_existence(os.path.join(handler.root, "annotations.json"))
+        if handler.format == "default":
+            assert handler.check_for_file_existence(os.path.join(handler.root, "dataset.tar.gz"))
+            assert handler.check_for_file_existence(os.path.join(handler.root, "annotations.json"))
+        elif handler.format == "raw":
+            valid_extensions = ['.jpg', '.jpeg', '.png', ".mp4", ".mkv", ".webm"]
+            pattern = os.path.join(handler.root, '**', f'*.[{"|".join(valid_extensions)}]')
+            media_files = glob.glob(pattern, recursive=True)
+            assert media_files
         return True
     except Exception as e:
-        print(f"Exception thrown in vila is {str(e)}", file=sys.stderr)
+        print(f"Exception thrown in vlm is {str(e)}", file=sys.stderr)
         return False
 
 
@@ -578,6 +584,6 @@ DS_UPLOAD_TO_FUNCTIONS = {"object_detection": object_detection,
                           "centerpose": centerpose,
                           "image": data_services_image,
                           "maxine_eye_contact": maxine_eye_contact,
-                          "vila": vila}
+                          "vlm": vlm}
 
 DS_CHANGE_PERMISSIONS = {"ocrnet": ocrnet_permission_change}

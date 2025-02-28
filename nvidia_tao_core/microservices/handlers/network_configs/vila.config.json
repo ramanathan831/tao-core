@@ -1,8 +1,8 @@
 {
     "api_params": {
-        "dataset_type":"object_detection",
+        "dataset_type":"vlm",
         "actions": ["train","evaluate","inference"],
-        "formats":["coco", "coco_raw"],
+        "formats":["default", "raw"],
         "accepted_ds_intents": ["training", "evaluation", "testing"],
         "image":"VILA",
         "spec_backend":"yaml",
@@ -20,11 +20,13 @@
         },
         "evaluate":{
             "results_dir":"output_dir",
-            "model_path":"ptm_if_no_resume_model"
+            "model_path":"parent_model",
+            "model_base":"ptm_if_no_resume_model"
         },
         "inference":{
             "results_dir":"output_dir",
-            "model_path":"ptm_if_no_resume_model"
+            "model_path":"parent_model",
+            "model_base":"ptm_if_no_resume_model"
         }
     },
 

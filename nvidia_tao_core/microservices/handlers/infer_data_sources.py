@@ -1063,11 +1063,18 @@ def vila(config, job_context, handler_metadata):
     """Function to create data sources for vila module"""
     workspace_cache = {}
     workspace_identifier = get_workspace_string_identifier(handler_metadata.get('workspace'), workspace_cache)
-    train_ds = handler_metadata.get("train_datasets", [])[0]
-    train_ds_metadata = get_handler_metadata(train_ds, kind="datasets")
-    train_root = f"{workspace_identifier}{train_ds_metadata.get('cloud_file_path')}"
-    config["dataset"]["media_dir"] = f"{train_root}/images.tar.gz"
-    config["dataset"]["data_path"] = f"{train_root}/annotations.json"
+    if job_context.action == "train":
+        train_ds = handler_metadata.get("train_datasets", [])[0]
+        train_ds_metadata = get_handler_metadata(train_ds, kind="datasets")
+        train_root = f"{workspace_identifier}{train_ds_metadata.get('cloud_file_path')}"
+        config["train"]["dataset"]["media_dir"] = f"{train_root}/dataset.tar.gz"
+        config["train"]["dataset"]["data_path"] = f"{train_root}/annotations.json"
+    elif job_context.action == "inference":
+        infer_ds = handler_metadata.get("inference_dataset", None)
+        if infer_ds is not None:
+            infer_ds_metadata = get_handler_metadata(infer_ds, kind="datasets")
+            infer_root = f"{workspace_identifier}{infer_ds_metadata.get('cloud_file_path')}"
+            config["inference"]["media"] = infer_root
     return config
 
 
