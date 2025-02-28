@@ -50,7 +50,11 @@ def convert_dict_to_cli_args(data, parent_key=""):
             # Append the CLI argument as --key value
             if str(value):
                 cli_args.append(f"--{key}")
-                cli_args.append(str(value))
+                # Handle multi-word strings by adding quotes if needed
+                if isinstance(value, str) and (" " in value or "\t" in value):
+                    cli_args.append(f'"{value}"')
+                else:
+                    cli_args.append(str(value))
 
     return cli_args
 
