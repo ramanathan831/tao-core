@@ -58,39 +58,48 @@ def get_available_nvcf_instances(user_id, org_name):
 
 
 @retry_method(response=True)
-def invoke_function(deployment_string, network, action, microservice_action="", cloud_metadata={}, specs={}, ngc_key="", job_id="", tao_api_admin_key="", tao_api_base_url="", tao_api_status_callback_url="", tao_api_ui_cookie="", use_ngc_staging="", automl_experiment_number=""):
+def invoke_function(deployment_string, network="", action="", microservice_action="", cloud_metadata={}, specs={}, docker_env_vars={}, kind="", handler_id="", job_id="", request_body={}):
     """Invoke a NVCF function"""
-    if not tao_api_base_url:
-        tao_api_base_url = "https://nvidia.com"
-    if not tao_api_status_callback_url:
-        tao_api_status_callback_url = "https://nvidia.com"
+    if not request_body:
+        if not docker_env_vars.get("TAO_API_SERVER"):
+            docker_env_vars["TAO_API_SERVER"] = "https://nvidia.com"
+        if not docker_env_vars.get("TAO_LOGGING_SERVER_URL"):
+            docker_env_vars["TAO_LOGGING_SERVER_URL"] = "https://nvidia.com"
 
     if action == "retrain":
         action = "train"
 
     request_metadata = {
         "api_endpoint": microservice_action,
-        "request_body": {
-            "neural_network_name": network,
-            "action_name": action,
-            "specs": specs,
-            "cloud_metadata": cloud_metadata,
-            "ngc_key": ngc_key,
-            "job_id": job_id,
-            "use_ngc_staging": use_ngc_staging,
-            "tao_api_admin_key": tao_api_admin_key,
-            "tao_api_base_url": tao_api_base_url,
-            "tao_api_status_callback_url": tao_api_status_callback_url,
-            "tao_api_ui_cookie": tao_api_ui_cookie,
-            "automl_experiment_number": automl_experiment_number,
-            "hosted_service_interaction": "True"
-        },
+        "request_body": {},
+        "is_job": True,
+        "kind": kind,
+        "handler_id": handler_id,
+        "job_id": job_id,
         "is_json_request": True
     }
-    if os.getenv("HOST_PLATFORM", "local") == "NVCF":
-        request_metadata["request_body"]["nvcf_helm"] = os.getenv("FUNCTION_TAO_API", "")
-        if not os.getenv("FUNCTION_TAO_API", ""):
-            raise ValueError("FUNCTION_TAO_API should be present for NVCF as host platform")
+    if not request_body and docker_env_vars:
+        request_metadata["request_body"]["docker_env_vars"] = docker_env_vars
+    if network:
+        request_metadata["request_body"]["neural_network_name"] = network
+    if action:
+        request_metadata["request_body"]["action_name"] = action
+    if specs:
+        request_metadata["request_body"]["specs"] = specs
+    if cloud_metadata:
+        request_metadata["request_body"]["cloud_metadata"] = cloud_metadata
+    if request_body:
+        request_metadata["request_body"].update(request_body)
+
+    if not request_body:
+        if "docker_env_vars" not in request_metadata["request_body"]:
+            request_metadata["request_body"]["docker_env_vars"] = {}
+        request_metadata["request_body"]["docker_env_vars"]["CLOUD_BASED"] = "True"
+        if os.getenv("HOST_PLATFORM", "local") == "NVCF":
+            function_tao_api = os.getenv("FUNCTION_TAO_API", "")
+            if not function_tao_api:
+                raise ValueError("FUNCTION_TAO_API should be present for NVCF as host platform")
+            request_metadata["request_body"]["docker_env_vars"]["NVCF_HELM"] = function_tao_api
 
     function_id, version_id = deployment_string.split(":")
 
@@ -98,7 +107,7 @@ def invoke_function(deployment_string, network, action, microservice_action="", 
     headers = {
         'accept': 'application/json',
         'Content-Type': 'application/json',
-        "Authorization": f"Bearer {ngc_key}",
+        "Authorization": f"Bearer {docker_env_vars.get('TAO_USER_KEY')}",
     }
 
     try:
@@ -162,7 +171,7 @@ def create_function(org_name, team_name, job_id, container, ngc_key):
     }
 
     team_string = f"teams/{team_name}/"
-    if team_name in "no_team":
+    if team_name in ["no_team"]:
         team_string = ""
     endpoint = f"https://api.ngc.nvidia.com/v2/orgs/{org_name}/{team_string}nvcf/functions"
     requests_method = "POST"
@@ -205,20 +214,16 @@ def delete_function_version(org_name, team_name, function_id, version_id, ngc_ke
     return send_ngc_api_request(endpoint, requests_method, request_body={}, json=False, ngc_key=ngc_key)
 
 
-def create_microservice_job_on_nvcf(job_metadata):
+def create_microservice_job_on_nvcf(job_metadata, docker_env_vars={}):
     """Create TAO microservice job on nvcf function"""
     nvcf_metadata = job_metadata.get("backend_details", {}).get("nvcf_metadata", {})
     network = job_metadata.get("network")
     action = job_metadata.get("action")
     tao_api_job_id = job_metadata.get("id")
     deployment_string = nvcf_metadata.get("deployment_string")
-    ngc_key = nvcf_metadata.get("TAO_USER_KEY")
-    tao_api_admin_key = nvcf_metadata.get("TAO_ADMIN_KEY")
-    tao_api_base_url = nvcf_metadata.get("TAO_API_SERVER")
-    tao_api_status_callback_url = nvcf_metadata.get("TAO_LOGGING_SERVER_URL")
-    tao_api_ui_cookie = nvcf_metadata.get("TAO_COOKIE_SET")
-    use_ngc_staging = nvcf_metadata.get("USE_NGC_STAGING")
-    automl_experiment_number = nvcf_metadata.get("AUTOML_EXPERIMENT_NUMBER", "0")
+    ngc_key = docker_env_vars.get("TAO_USER_KEY")
+    tao_api_status_callback_url = docker_env_vars.get("TAO_LOGGING_SERVER_URL", "")
+    automl_experiment_number = docker_env_vars.get("AUTOML_EXPERIMENT_NUMBER", "0")
 
     job_message_job_id = tao_api_status_callback_url.split("/")[-1]
 
@@ -236,14 +241,8 @@ def create_microservice_job_on_nvcf(job_metadata):
                                           microservice_action="container_job_run",
                                           cloud_metadata=cloud_metadata,
                                           specs=specs,
-                                          ngc_key=ngc_key,
-                                          job_id=tao_api_job_id,
-                                          tao_api_admin_key=tao_api_admin_key,
-                                          tao_api_base_url=tao_api_base_url,
-                                          tao_api_status_callback_url=tao_api_status_callback_url,
-                                          tao_api_ui_cookie=tao_api_ui_cookie,
-                                          use_ngc_staging=use_ngc_staging,
-                                          automl_experiment_number=automl_experiment_number)
+                                          docker_env_vars=docker_env_vars,
+                                          )
 
     if job_create_response.status_code not in [200, 202]:
         job_create_response_json = job_create_response.json()
@@ -284,7 +283,7 @@ def create_microservice_job_on_nvcf(job_metadata):
     return "Running", "Job submitted to NVCF"
 
 
-def get_nvcf_microservices_job_status(job_metadata, status=""):
+def get_nvcf_microservices_job_status(job_metadata, status="", docker_env_vars={}):
     """Get and update NVCF custom resource status"""
     nvcf_metadata = job_metadata.get("backend_details", {}).get("nvcf_metadata", {})
     if not status:
@@ -296,9 +295,9 @@ def get_nvcf_microservices_job_status(job_metadata, status=""):
         job_id = job_metadata.get("id")
         job_handler_id = job_metadata.get("handler_id")
         job_status = job_metadata.get("status")
-        ngc_key = nvcf_metadata.get("TAO_USER_KEY")
-        automl_experiment_number = nvcf_metadata.get("AUTOML_EXPERIMENT_NUMBER", "0")
-        tao_api_status_callback_url = nvcf_metadata.get("TAO_LOGGING_SERVER_URL", "")
+        ngc_key = docker_env_vars.get("TAO_USER_KEY")
+        automl_experiment_number = docker_env_vars.get("AUTOML_EXPERIMENT_NUMBER", "0")
+        tao_api_status_callback_url = docker_env_vars.get("TAO_LOGGING_SERVER_URL", "")
 
         job_message_job_id = tao_api_status_callback_url.split("/")[-1]
 
@@ -313,9 +312,7 @@ def get_nvcf_microservices_job_status(job_metadata, status=""):
         if job_status in ("Done", "Error"):
             return job_status
 
-        print("update status", deployment_string, file=sys.stderr)
-        print("specs", specs, file=sys.stderr)
-        job_monitor_response = invoke_function(deployment_string, network, action, microservice_action="container_job_status", specs=specs, ngc_key=ngc_key, job_id=job_id)
+        job_monitor_response = invoke_function(deployment_string, network, action, microservice_action="container_job_status", specs=specs, docker_env_vars=docker_env_vars)
         if job_monitor_response.status_code == 404:
             status = "Error"
             if job_monitor_response.json().get("title") == "Not Found":
@@ -344,9 +341,7 @@ def get_nvcf_microservices_job_status(job_metadata, status=""):
                 error_message = job_monitor_response_json.get("detail")
                 status = job_monitor_response_json.get("status")
                 if status:
-                    if status == "Processing":
-                        status = "Running"
-                    elif status not in ("Pending", "Done"):
+                    if status not in ("Pending", "Done", "Running"):
                         logfile = get_log_file_path(user_id, org_name, job_handler_id, job_message_job_id, job_id, automl_experiment_number)
                         internal_job_status_update(job_message_job_id, automl=False, automl_experiment_number=automl_experiment_number, message="Container microservices reported an error, more logs to be found on NVCF UI", logfile=logfile)
                         status = "Error"

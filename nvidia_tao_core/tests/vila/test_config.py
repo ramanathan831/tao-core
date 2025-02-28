@@ -134,7 +134,7 @@ TEST_CONFIG_BLOCKS = [
     (sample_trainer_config, TrainerConfig),
     (sample_system_config, SystemConfig),
     (sample_experiment_config, ExperimentConfig),
-    (simple_experiment_config, ExperimentConfig),]
+    (simple_experiment_config, ExperimentConfig)]
 
 
 @pytest.mark.vila

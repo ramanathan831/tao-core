@@ -123,9 +123,17 @@ class CloudStorage:
         :local_file_path: Local file path to be uploaded.
         :cloud_file_path: Destination path in the cloud storage bucket.
         """
-        # Upload the file to cloud storage
-        with open(local_file_path, 'rb') as file_stream:
-            self.driver.upload_object_via_stream(file_stream, container=self.container, object_name=cloud_file_path)
+        try:
+            # Upload the file to cloud storage
+            if os.path.exists(local_file_path):
+                with open(local_file_path, 'rb') as file_stream:
+                    self.driver.upload_object_via_stream(file_stream, container=self.container, object_name=cloud_file_path)
+                if self.is_file(cloud_file_path):
+                    print("File {} was uploaded successfully".format(cloud_file_path))  # noqa pylint: disable=C0209
+                else:
+                    raise ValueError(f"File {cloud_file_path} was not uploaded successfully")
+        except Exception as e:
+            raise e
 
     @retry_method
     def upload_folder(self, local_folder, cloud_subfolder):
@@ -134,20 +142,23 @@ class CloudStorage:
         local_folder: Local folder path.
         cloud_subfolder: Target subfolder in the cloud storage bucket.
         """
-        # Remove leading/trailing slashes from cloud_subfolder
-        cloud_subfolder = cloud_subfolder.strip("/")
+        try:
+            # Remove leading/trailing slashes from cloud_subfolder
+            cloud_subfolder = cloud_subfolder.strip("/")
 
-        for root, _, files in os.walk(local_folder):
-            for file in files:
-                local_file_path = os.path.join(root, file)
-                relative_path = os.path.relpath(local_file_path, local_folder)
+            for root, _, files in os.walk(local_folder):
+                for file in files:
+                    local_file_path = os.path.join(root, file)
+                    relative_path = os.path.relpath(local_file_path, local_folder)
 
-                # Construct the cloud object name without a leading slash
-                cloud_object_name = f"{cloud_subfolder}/{relative_path.replace(os.path.sep, '/')}"
+                    # Construct the cloud object name without a leading slash
+                    cloud_object_name = f"{cloud_subfolder}/{relative_path.replace(os.path.sep, '/')}"
 
-                # Upload the file to cloud storage
-                with open(local_file_path, 'rb') as file_stream:
-                    self.driver.upload_object_via_stream(file_stream, container=self.container, object_name=cloud_object_name)
+                    # Upload the file to cloud storage
+                    with open(local_file_path, 'rb') as file_stream:
+                        self.driver.upload_object_via_stream(file_stream, container=self.container, object_name=cloud_object_name)
+        except Exception as e:
+            raise e
 
     @retry_method
     def list_files_in_folder(self, folder):
@@ -156,10 +167,13 @@ class CloudStorage:
         folder: Cloud folder path.
         :return: List of cloud storage objects in the specified folder.
         """
-        folder = folder + '/' if not folder.endswith('/') else folder
-        file_objects = self.driver.list_container_objects(container=self.container, ex_prefix=folder)
-        file_names = [file_object.name for file_object in file_objects]
-        return file_names, file_objects
+        try:
+            folder = folder + '/' if not folder.endswith('/') else folder
+            file_objects = self.driver.list_container_objects(container=self.container, ex_prefix=folder)
+            file_names = [file_object.name for file_object in file_objects]
+            return file_names, file_objects
+        except Exception as e:
+            raise e
 
     @retry_method
     def download_file(self, cloud_file_path, local_destination):
@@ -169,14 +183,17 @@ class CloudStorage:
         local_destination: Local path to save the downloaded file.
         """
         if not self.is_file(cloud_file_path):
-            print(f"Cloud file {cloud_file_path} trying to download doesn't exist", file=sys.stderr)
+            print("Cloud file {} trying to download doesn't exist".format(cloud_file_path), file=sys.stderr)  # noqa pylint: disable=C0209
             return
-        base_path = os.path.dirname(local_destination)
-        if not os.path.exists(base_path):
-            os.makedirs(base_path)
+        try:
+            base_path = os.path.dirname(local_destination)
+            if not os.path.exists(base_path):
+                os.makedirs(base_path)
 
-        obj = self.driver.get_object(container_name=self.bucket_name, object_name=cloud_file_path)
-        obj.download(destination_path=local_destination, overwrite_existing=True)
+            obj = self.driver.get_object(container_name=self.bucket_name, object_name=cloud_file_path)
+            obj.download(destination_path=local_destination, overwrite_existing=True)
+        except Exception as e:
+            raise e
 
     @retry_method
     def download_folder(self, cloud_folder, local_destination, maintain_src_folder_structure=False):
@@ -204,9 +221,12 @@ class CloudStorage:
 
         folder: Cloud folder path to be deleted.
         """
-        _, objects = self.list_files_in_folder(folder)
-        for obj in objects:
-            self.driver.delete_object(obj)
+        try:
+            _, objects = self.list_files_in_folder(folder)
+            for obj in objects:
+                self.driver.delete_object(obj)
+        except Exception as e:
+            raise e
 
     @retry_method
     def delete_file(self, file_path):
@@ -214,8 +234,14 @@ class CloudStorage:
 
         file_path: Cloud file path to be deleted.
         """
-        obj = self.driver.get_object(container_name=self.bucket_name, object_name=file_path)
-        self.driver.delete_object(obj)
+        try:
+            if self.is_file(file_path):
+                obj = self.driver.get_object(container_name=self.bucket_name, object_name=file_path)
+                self.driver.delete_object(obj)
+            else:
+                print("File {} doesn't exist".format(file_path))  # noqa pylint: disable=C0209
+        except Exception as e:
+            raise e
 
     @retry_method
     def is_file(self, cloud_path):
@@ -241,13 +267,16 @@ class CloudStorage:
         :param cloud_path: Cloud path to be checked.
         :return: True if the path represents a folder, False otherwise.
         """
-        prefix = cloud_path.rstrip('/') + '/'
+        try:
+            prefix = cloud_path.rstrip('/') + '/'
 
-        # List objects with the specified prefix
-        objects = self.driver.list_container_objects(container=self.container, ex_prefix=prefix)
+            # List objects with the specified prefix
+            objects = self.driver.list_container_objects(container=self.container, ex_prefix=prefix)
 
-        # Check if there are any objects with the specified prefix
-        return any(objects)
+            # Check if there are any objects with the specified prefix
+            return any(objects)
+        except Exception as e:
+            raise e
 
     @retry_method
     def move_file(self, source_path, destination_path):
@@ -329,10 +358,13 @@ class CloudStorage:
         Args:
             folder (str): Folder path to be created in the cloud storage bucket.
         """
-        # Ensure the folder path ends with a trailing slash
-        if not folder.endswith('/'):
-            folder += '/'
+        try:
+            # Ensure the folder path ends with a trailing slash
+            if not folder.endswith('/'):
+                folder += '/'
 
-        # Upload an empty object to represent the folder
-        empty_data = io.BytesIO(b'')
-        self.driver.upload_object_via_stream(empty_data, container=self.container, object_name=folder)
+            # Upload an empty object to represent the folder
+            empty_data = io.BytesIO(b'')
+            self.driver.upload_object_via_stream(empty_data, container=self.container, object_name=folder)
+        except Exception as e:
+            raise e

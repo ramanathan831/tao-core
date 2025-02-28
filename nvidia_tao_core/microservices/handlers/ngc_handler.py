@@ -17,6 +17,8 @@ import json
 import os
 import requests
 import sys
+import logging
+from ngcbpc import errors
 
 from nvidia_tao_core.microservices.handlers.encrypt import NVVaultEncryption
 from nvidia_tao_core.microservices.handlers.mongo_handler import MongoHandler
@@ -27,10 +29,7 @@ from nvidia_tao_core.microservices.utils import send_delete_request_with_retry, 
 DEPLOYMENT_MODE = os.getenv("DEPLOYMENT_MODE", "PROD")
 NUM_OF_RETRY = 3
 TIMEOUT = 120
-ngc_org_name = "ea-tlt"
-if DEPLOYMENT_MODE == "STAGING":
-    ngc_org_name = "ygcrk6indslt"
-ngc_team_name = "tao_ea"
+logger = logging.getLogger(__name__)
 
 
 class ErrorResponse:
@@ -58,6 +57,23 @@ def send_ngc_api_request(endpoint, requests_method, request_body, json=False, ng
     else:
         raise ValueError(f"Unsupported request method: {requests_method}")
     return response
+
+
+def split_ngc_path(ngc_path):
+    """Split ngc path into org, team and model name, model version"""
+    path_split = ngc_path.replace("/no-team", "").split("/")
+    if len(path_split) == 3:
+        org, team, model_name = path_split
+    elif len(path_split) == 2:
+        org, model_name = path_split
+        team = ""
+    else:
+        raise ValueError(f"Invalid ngc_path: {ngc_path}")
+    if ":" in model_name:
+        model_name, model_version = model_name.split(":")
+    else:
+        model_version = ""
+    return org, team, model_name, model_version
 
 
 def create_user_personal_key(org_name, cookie):
@@ -251,6 +267,61 @@ def upload_model(org_name, team_name, handler_metadata, source_file, ngc_key, jo
         return 404, str(e)
     os.remove(local_path)
     return 200, "Published model into requested org"
+
+
+def download_ngc_model(ngc_path, ptm_root, key, is_cookie_set, use_ngc_staging):
+    """Download models from NGC model registry.
+
+    Args:
+        ngc_path (str): The NGC path to the desired model in the format 'org/team/model:version'.
+        ptm_root (str): The directory where the downloaded model will be saved.
+
+    Returns:
+        bool: True if the download is successful, False otherwise.
+    """
+    if ngc_path == "":
+        logging.info("Invalid ngc path.")
+        return False
+    if not key.startswith("nvapi"):
+        logging.info('Credentials error: Invalid NGC_PERSONAL_KEY, NGC_keys are no longer valid, generate a personal key with Cloud Functions, NGC Catalog and Private registry services https://org.ngc.nvidia.com/setup/personal-keys')
+        return False
+    ngc_configs = ngc_path.split('/')
+    org = ngc_configs[0]
+    team = ""
+    if len(ngc_configs) == 3:
+        team = ngc_configs[1]
+
+    # Get access token using k8s admin secret
+    if not key:
+        logging.info("Personal key/Cookie is None")
+        return False
+
+    # Download model with ngc sdk
+    from ngcsdk import Client  # pylint: disable=C0415
+    clt = Client()
+
+    try:
+        clt.configure(api_key=key, org_name=org, team_name=team)
+    except Exception as e:
+        if not ("Invalid org" in str(e) or "Invalid team" in str(e)):
+            logging.error("Can't configure the passed NGC KEY for Org {}, team {}".format(org, team)) # noqa pylint: disable=C0209
+            return False
+        logging.info("Can't validate the passed NGC KEY for Org {}, team {}, going to try download without configuring credentials".format(org, team)) # noqa pylint: disable=C0209
+    try:
+        if not os.path.exists(ptm_root):
+            os.makedirs(ptm_root, exist_ok=True)
+            clt.registry.model.download_version(ngc_path, destination=ptm_root)
+            logging.info("Saving base_experiment file to {}".format(ptm_root)) # noqa pylint: disable=C0209
+        else:
+            logging.info("Base_experiment already present in {}".format(ptm_root)) # noqa pylint: disable=C0209
+    except errors.ResourceNotFoundException as e:
+        logging.error("Model {} not found. Error: {}".format(ngc_path, e))  # noqa pylint: disable=C0209
+        return False
+    except errors.NgcException as e:
+        logging.error("Failed to download {}. Error: {}".format(ngc_path, e))  # noqa pylint: disable=C0209
+        return False
+
+    return True
 
 
 def delete_model(org_name, team_name, handler_metadata, ngc_key, use_cookie, job_id, job_action):
