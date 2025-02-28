@@ -36,6 +36,7 @@ from nvidia_tao_core.config.common.common_config import (
     TrtConfig,
     CalibrationConfig
 )
+from nvidia_tao_pytorch.core.distillation.config import DistillationConfig
 
 
 @dataclass
@@ -49,6 +50,8 @@ class OptimConfig:
     policy_params: Dict[str, Any] = DICT_FIELD({"step_size": 30, "gamma": 0.1}, default_value={"step_size": 30, "gamma": 0.1}, description="Optimizer policy parameters")
     momentum: float = FLOAT_FIELD(value=0.9, default_value=0.9, math_cond="> 0.0", display_name="momentum - AdamW", description="The momentum for the AdamW optimizer.", automl_enabled="TRUE")
     weight_decay: float = FLOAT_FIELD(value=0.01, default_value=0.01, math_cond="> 0.0", display_name="weight decay", description="The weight decay coefficient.", automl_enabled="TRUE")
+    betas: Optional[List[float]] = LIST_FIELD([0.9, 0.999], automl_enabled="TRUE", description="coefficients used for computing running averages on adamw")
+    skip_names: Optional[List[str]] = LIST_FIELD([], description="layers names which do not need weight decay")
 
 
 @dataclass
@@ -216,6 +219,46 @@ class EvalExpConfig(EvaluateConfig):
 
 
 @dataclass
+class ClassDistillationConfig(DistillationConfig):
+    """Distillation config for classifier."""
+
+    teacher: ModelConfig = DATACLASS_FIELD(
+        ModelConfig(),
+        descripton="Configuration hyper parameters for the teacher model.",
+        display_name="teacher"
+    )
+    loss_type: str = STR_FIELD(
+        value="KL",
+        default_value="KL",
+        display_name="Distillation loss",
+        valid_options="KL,CE,L1,L2",
+        description="""
+        Loss function for logits distillation.
+        """
+    )
+    loss_lambda: Optional[float] = FLOAT_FIELD(
+        value=0.5,
+        default_value=0.5,
+        math_cond="> 0.0 <= 1.0",
+        display_name="distill weight",
+        description="The weight to be applied to the distillation loss as compared to task loss",
+    )
+    pretrained_teacher_model_path: Optional[str] = STR_FIELD(
+        value=MISSING,
+        display_name="Pretrained teacher model path",
+        description="Path to the pre-trained teacher model."
+    )
+    results_dir: Optional[str] = STR_FIELD(
+        value=None,
+        default_value="",
+        display_name="Results directory",
+        description="""
+        Path to where all the assets generated from a task are stored.
+        """
+    )
+
+
+@dataclass
 class InferenceExpConfig(InferenceConfig):
     """Inference experiment config."""
 
@@ -267,3 +310,4 @@ class ExperimentConfig(CommonExperimentConfig):
     inference: InferenceExpConfig = DATACLASS_FIELD(InferenceExpConfig())
     export: ExportExpConfig = DATACLASS_FIELD(ExportExpConfig())
     gen_trt_engine: GenTrtEngineExpConfig = DATACLASS_FIELD(GenTrtEngineExpConfig())
+    distill: ClassDistillationConfig = DATACLASS_FIELD(ClassDistillationConfig())
