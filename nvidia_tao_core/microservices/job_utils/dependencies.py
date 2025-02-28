@@ -26,7 +26,7 @@ import sys
 
 from nvidia_tao_core.microservices.constants import NO_PTM_MODELS, MONAI_NETWORKS
 from nvidia_tao_core.microservices.handlers.utilities import get_num_gpus_from_spec
-from nvidia_tao_core.microservices.handlers.stateless_handlers import get_root, get_handler_root, get_jobs_root, get_handler_log_root, update_job_status, get_handler_job_metadata, get_handler_metadata, get_handler_id, get_base_experiment_metadata, base_exp_uuid, get_job_specs, get_automl_controller_info
+from nvidia_tao_core.microservices.handlers.stateless_handlers import get_root, get_handler_root, get_handler_log_root, update_job_status, get_handler_job_metadata, get_handler_metadata, get_handler_id, get_base_experiment_metadata, base_exp_uuid, get_job_specs, get_automl_controller_info
 from nvidia_tao_core.microservices.job_utils import executor
 
 
@@ -46,7 +46,7 @@ def dependency_check_parent(job_context, dependency):
     if parent_action == "annotation":
         return True, ""
     parent_status = parent_job_metadata.get("status", "")
-    parent_root = os.path.join(get_jobs_root(job_context.user_id, org_name), parent_job_id)
+    # parent_root = os.path.join(get_jobs_root(job_context.user_id, org_name), parent_job_id)
     # Parent Job must be done or canceled
     # Parent job output folder must exist
     failure_message = ""
@@ -67,9 +67,10 @@ def dependency_check_parent(job_context, dependency):
 
     if parent_status not in ("Done", "Canceled"):
         failure_message += f"Parent job {parent_job_id}'s status is not Done/Canceled"
-    if not os.path.isdir(parent_root):
-        failure_message += f" Parent job {parent_job_id}'s folder {parent_root} doesn't exist"
-    return bool(parent_status in ("Done", "Canceled") and os.path.isdir(parent_root)), failure_message
+    return bool(parent_status in ("Done", "Canceled")), failure_message
+    # if not os.path.isdir(parent_root):
+    #     failure_message += f" Parent job {parent_job_id}'s folder {parent_root} doesn't exist"
+    # return bool(parent_status in ("Done", "Canceled") and os.path.isdir(parent_root)), failure_message
 
 
 def dependency_check_specs(job_context, dependency):
