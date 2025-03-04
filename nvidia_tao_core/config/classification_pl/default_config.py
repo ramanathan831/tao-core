@@ -46,12 +46,13 @@ class OptimConfig:
     monitor_name: str = STR_FIELD(value="val_loss", default_value="val_loss", description="Monitor Name")
     optim: str = STR_FIELD(value="adamw", default_value="adamw", description="Optimizer", valid_options="adamw,adam,sgd")
     lr: float = FLOAT_FIELD(value=0.00006, default_value=0.00006, valid_min=0, valid_max="inf", automl_enabled="TRUE", description="Optimizer learning rate")
-    policy: str = STR_FIELD(value="linear", default_value="linear", valid_options="linear,step", description="Optimizer policy")
-    policy_params: Dict[str, Any] = DICT_FIELD({"step_size": 30, "gamma": 0.1}, default_value={"step_size": 30, "gamma": 0.1}, description="Optimizer policy parameters")
+    policy: str = STR_FIELD(value="linear", default_value="linear", valid_options="linear,step,cosine,multistep", description="Optimizer policy")
+    policy_params: Dict[str, Any] = DICT_FIELD({"step_size": 30, "gamma": 0.1, "milestones": [10, 20]}, default_value={"step_size": 30, "gamma": 0.1}, description="Optimizer policy parameters")
     momentum: float = FLOAT_FIELD(value=0.9, default_value=0.9, math_cond="> 0.0", display_name="momentum - AdamW", description="The momentum for the AdamW optimizer.", automl_enabled="TRUE")
     weight_decay: float = FLOAT_FIELD(value=0.01, default_value=0.01, math_cond="> 0.0", display_name="weight decay", description="The weight decay coefficient.", automl_enabled="TRUE")
     betas: Optional[List[float]] = LIST_FIELD([0.9, 0.999], automl_enabled="TRUE", description="coefficients used for computing running averages on adamw")
     skip_names: Optional[List[str]] = LIST_FIELD([], description="layers names which do not need weight decay")
+    warmup_epochs: int = INT_FIELD(value=20, default_value=20, valid_min=0, valid_max="inf", description="Warmup epochs.")
 
 
 @dataclass
@@ -132,17 +133,36 @@ class RandomCropWithScale:
 
 
 @dataclass
+class RandomErase:
+    """RandomErase augmentation config."""
+
+    enable: bool = BOOL_FIELD(value=True, default_value=True, description="Flag to enable Random Erase", automl_enabled="TRUE")
+    erase_probability: float = FLOAT_FIELD(value=0.2, default_value=0.2, valid_min=0, valid_max=1, description="Random Erase Probability", automl_enabled="TRUE")
+
+
+@dataclass
+class RandomAug:
+    """RandomAug augmentation config."""
+
+    enable: bool = BOOL_FIELD(value=True, default_value=True, description="Flag to enable Random Aug", automl_enabled="TRUE")
+
+
+@dataclass
 class AugmentationConfig:
     """Augmentation config."""
 
     random_flip: RandomFlip = DATACLASS_FIELD(RandomFlip())
     random_rotate: RandomRotation = DATACLASS_FIELD(RandomRotation())
     random_color: RandomColor = DATACLASS_FIELD(RandomColor())
+    random_erase: RandomErase = DATACLASS_FIELD(RandomErase())
+    random_aug: RandomAug = DATACLASS_FIELD(RandomAug())
     with_scale_random_crop: RandomCropWithScale = DATACLASS_FIELD(RandomCropWithScale())
     with_random_blur: bool = BOOL_FIELD(value=True, default_value=True, description="Flag to enable with_random_blur")
     with_random_crop: bool = BOOL_FIELD(value=True, default_value=True, description="Flag to enable with_random_crop")
     mean: List[float] = LIST_FIELD(arrList=[0.485, 0.456, 0.406], default_value=[0.485, 0.456, 0.406], description="Mean for the augmentation", display_name="Mean")  # non configurable here
     std: List[float] = LIST_FIELD(arrList=[0.229, 0.224, 0.225], default_value=[0.229, 0.224, 0.225], description="Standard deviation for the augmentation", display_name="Standard Deviation")  # non configurable here
+    mixup_cutmix: bool = BOOL_FIELD(value=True, default_value=True, description="Flag to enable mixup and cutmix. It is not recommend when doing binary classification.")
+    mixup_alpha: float = FLOAT_FIELD(value=0.4, default_value=0.4, valid_min=0, valid_max=1, description="Mixup alpha")
 
 
 @dataclass
@@ -175,8 +195,17 @@ class TestData:
 
 
 @dataclass
+class UnstructuredTrainData:
+    """Train Data Dataclass"""
+
+    folder_path: Optional[str] = STR_FIELD(
+        value="", default_value="", description="Dataset directory path"
+    )
+
+
+@dataclass
 class DatasetConfig:
-    """Segmentation Dataset Config."""
+    """Classification Dataset Config."""
 
     root_dir: str = STR_FIELD(value=MISSING, default_value="", description="Path to root directory for dataset")
     dataset: str = STR_FIELD(value="CLDataset", default_value="CLDataset", valid_options="Dataset", description="dataset class")
@@ -187,6 +216,7 @@ class DatasetConfig:
     shuffle: bool = BOOL_FIELD(value=True, default_value=True, description="Shuffle dataloader")
     augmentation: AugmentationConfig = DATACLASS_FIELD(AugmentationConfig())
     train: TrainData = DATACLASS_FIELD(TrainData())
+    train_nolabel: UnstructuredTrainData = DATACLASS_FIELD(UnstructuredTrainData())
     val: ValData = DATACLASS_FIELD(ValData())
     test: TestData = DATACLASS_FIELD(TestData())
 
@@ -207,6 +237,18 @@ class TrainExpConfig(TrainConfig):
     pretrained_model_path: Optional[str] = STR_FIELD(value=None, default_value="", description="Pretrained model path", display_name="pretrained model path")
     tensorboard: Optional[TensorBoardLogger] = DATACLASS_FIELD(TensorBoardLogger())
     enable_ema: bool = BOOL_FIELD(value=False, default_value=False, description="Flag to enable EMA")
+    ema_decay: float = FLOAT_FIELD(
+        value=0.998,
+        default_value=0.998,
+        display_name="EMA decay",
+        description="EMA decay",
+    )
+    clip_grad_norm: float = FLOAT_FIELD(
+        value=2.0,
+        default_value=2.0,
+        display_name="Grad norm",
+        description="Gradient Norm",
+    )
 
 
 @dataclass
@@ -214,7 +256,6 @@ class EvalExpConfig(EvaluateConfig):
     """Evaluation experiment config."""
 
     vis_after_n_batches: int = INT_FIELD(value=16, default_value=1, valid_min=1, valid_max="inf", description="Visualize evaluation segmentation results after n batches")
-    batch_size: int = INT_FIELD(value=-1, default_value=8, valid_min=1, valid_max="inf", description="Batch size", display_name="Batch Size")
     checkpoint: str = STR_FIELD(value=MISSING, default_value="", description="Path to checkpoint file", display_name="Path to checkpoint file")
 
 
@@ -263,7 +304,6 @@ class InferenceExpConfig(InferenceConfig):
     """Inference experiment config."""
 
     vis_after_n_batches: int = INT_FIELD(value=16, default_value=1, valid_min=1, valid_max="inf", description="Visualize evaluation segmentation results after n batches")
-    batch_size: int = INT_FIELD(value=-1, default_value=8, valid_min=1, valid_max="inf", description="Batch size", display_name="Batch Size")
     checkpoint: str = STR_FIELD(value=MISSING, default_value="", description="Path to checkpoint file", display_name="Path to checkpoint file")
 
 
