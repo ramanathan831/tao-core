@@ -436,7 +436,16 @@ class PPDataAugmentorConfig:
         description="List of disabled augmentations"
     )
     aug_config_list: Optional[List[Any]] = LIST_FIELD(
-        arrList=[{"db_info_path": ["dbinfos_train.pkl"], "disable_with_fake_lidar": False, "limit_whole_scene": False, "name": "gt_sampling", "num_point_features": 4, "preface": {"filter_by_min_points": ["Car:5", "Pedestrian:5", "Cyclist:5"]}, "remove_extra_width": [0.0, 0.0, 0.0], "sample_groups": ["Car:15", "Pedestrian:15", "Cyclist:15"]}],
+        arrList=[{
+            "db_info_path": ["dbinfos_train.pkl"],
+            "disable_with_fake_lidar": False,
+            "limit_whole_scene": False,
+            "name": "gt_sampling",
+            "num_point_features": 4,
+            "preface": {"filter_by_min_points": ["Car:5", "Pedestrian:5", "Cyclist:5"]},
+            "remove_extra_width": [0.0, 0.0, 0.0],
+            "sample_groups": ["Car:15", "Pedestrian:15", "Cyclist:15"]
+        }],
         display_name="aug_config_list",
         description="List of configurations of augmentations."
     )
@@ -488,7 +497,11 @@ class PPDatasetConfig:
         description="Flag to enable balanced resampling or not."
     )
     point_feature_encoding: Optional[Dict[str, Any]] = DICT_FIELD(
-        {"encoding_type": "absolute_coordinates_encoding", "src_feature_list": ["x", "y", "z", "intensity"], "used_feature_list": ["x", "y", "z", "intensity"]},
+        {
+            "encoding_type": "absolute_coordinates_encoding",
+            "src_feature_list": ["x", "y", "z", "intensity"],
+            "used_feature_list": ["x", "y", "z", "intensity"]
+        },
         display_name="point_feature_encoding",
         description="Point feature encoding configurations."
     )
@@ -499,7 +512,22 @@ class PPDatasetConfig:
     )
     data_augmentor: PPDataAugmentorConfig = DATACLASS_FIELD(PPDataAugmentorConfig())
     data_processor: Optional[List[Any]] = LIST_FIELD(
-        arrList=[{"name": "mask_points_and_boxes_outside_range", "remove_outside_boxes": True}, {"name": "shuffle_points", "shuffle": {"test": False, "train": True}}, {"max_number_of_voxels": {"test": 10000, "train": 16000}, "max_points_per_voxel": 32, "name": "transform_points_to_voxels", "voxel_size": [0.16, 0.16, 4]}],
+        arrList=[
+            {
+                "name": "mask_points_and_boxes_outside_range",
+                "remove_outside_boxes": True
+            },
+            {
+                "name": "shuffle_points",
+                "shuffle": {"test": False, "train": True}
+            },
+            {
+                "max_number_of_voxels": {"test": 10000, "train": 16000},
+                "max_points_per_voxel": 32,
+                "name": "transform_points_to_voxels",
+                "voxel_size": [0.16, 0.16, 4]
+            }
+        ],
         display_name="data_processor",
         description="Data processor configurations."
     )

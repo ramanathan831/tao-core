@@ -15,13 +15,9 @@
 """Functions to infer data sources"""
 import os
 import re
-import tempfile
-import sys
 
-from nvidia_tao_core.microservices.handlers.monai_dataset_handler import MonaiDatasetHandler
-from nvidia_tao_core.microservices.handlers.monai.dataset.dicom import DicomEndpoint
-from nvidia_tao_core.microservices.handlers.stateless_handlers import get_job_id_of_action, get_handler_metadata, get_handler_job_metadata, get_workspace_string_identifier
-from nvidia_tao_core.microservices.handlers.infer_params import CLI_CONFIG_TO_FUNCTIONS
+from handlers.stateless_handlers import get_handler_metadata, get_workspace_string_identifier, get_handler_job_metadata
+from utils import read_network_config
 
 
 def contains_results_uuid(data_path):
@@ -34,1088 +30,529 @@ def contains_results_uuid(data_path):
     return bool(match)
 
 
-def maxine_eye_contact(config, job_contect, handler_metadata):
-    """Assigns paths of data sources to the respective config params for Maxine Eye Contact"""
-    # if action == train:
-    workspace_cache = {}
-    if "datamodule" not in list(config.keys()):
-        config["datamodule"] = {"init_args": {}}
-    else:
-        if "init_args" not in config["datamodule"].keys():
-            config["datamodule"]["init_args"] = {}
+def get_datasets_from_metadata(metadata, source_key):
+    """Gets a list of datasets from metadata based on source key.
 
-    train_ds_list = handler_metadata.get("train_datasets", [])
-    if not len(train_ds_list) == 1:
-        raise ValueError(f"Maxine Eye Contact training supports exactly 1 train dataset, {len(train_ds_list)} were given")
-    config["datamodule"]["init_args"]["datasets"] = {}
-    train_ds = train_ds_list[0]
-    train_ds_metadata = get_handler_metadata(train_ds, kind="datasets")
-    workspace_identifier = get_workspace_string_identifier(train_ds_metadata.get('workspace'), workspace_cache)
-    config["datamodule"]["init_args"]["datasets"]["h5py_path"] = f"{workspace_identifier}{train_ds_metadata.get('cloud_file_path')}/data.h5"
-    eval_ds = handler_metadata.get("eval_dataset", None)
-    if not eval_ds:
-        raise ValueError("Eval dataset required for Maxine Eye Contact training.")
-    config["datamodule"]["init_args"]["val_datasets"] = {}
-    eval_ds_metadata = get_handler_metadata(eval_ds, kind="datasets")
-    workspace_identifier = get_workspace_string_identifier(eval_ds_metadata.get('workspace'), workspace_cache)
-    config["datamodule"]["init_args"]["val_datasets"]["h5py_path"] = f"{workspace_identifier}{eval_ds_metadata.get('cloud_file_path')}/data.h5"
-    return config
+    Args:
+        metadata (dict): Handler metadata containing dataset information
+        source_key (str): Key to lookup in metadata (e.g. 'train_datasets')
+
+    Returns:
+        list: List of dataset IDs, or empty list if not found
+    """
+    dataset = metadata.get(source_key)
+    print("get datasets from metadata", dataset)
+    if dataset:
+        if isinstance(dataset, list):
+            return dataset
+        return [dataset]
+    return []
 
 
-def bevfusion(config, job_context, handler_metadata):
-    """Assigns paths of data sources to the respective config params for bevfusion"""
-    workspace_cache = {}
+def get_nested_config_value(config, path):
+    """Gets a value from nested config using dot notation path."""
+    parts = path.replace("]", "").replace("[", ".").split(".")
+    current = config
 
-    # Training datasets
-    if handler_metadata.get("train_datasets", []) != []:
-        if "train_dataset" not in config["dataset"].keys():
-            config["dataset"]["train_dataset"] = {}
-            if "data_prefix" not in config["dataset"]["train_dataset"].keys():
-                config["dataset"]["train_dataset"]["data_prefix"] = {}
-        if "val_dataset" not in config["dataset"].keys():
-            config["dataset"]["val_dataset"] = {}
-            if "data_prefix" not in config["dataset"]["val_dataset"].keys():
-                config["dataset"]["val_dataset"]["data_prefix"] = {}
-        if "test_dataset" not in config["dataset"].keys():
-            config["dataset"]["test_dataset"] = {}
-            if "data_prefix" not in config["dataset"]["test_dataset"].keys():
-                config["dataset"]["test_dataset"]["data_prefix"] = {}
-
-        train_ds = handler_metadata.get("train_datasets", [])[0]
-        train_ds_metadata = get_handler_metadata(train_ds, kind="datasets")
-        workspace_identifier = get_workspace_string_identifier(train_ds_metadata.get('workspace'), workspace_cache)
-        train_ds_convert_job_id = get_job_id_of_action(train_ds, kind="datasets", action="dataset_convert")
-        dataset_convert_root = f"{workspace_identifier}results/{train_ds_convert_job_id}"
-
-        config["dataset"]["root_dir"] = ""
-        config["dataset"]["train_dataset"]["ann_file"] = f"{dataset_convert_root}/kitti_person_infos_train.pkl"
-        config["dataset"]["train_dataset"]["data_prefix"]["pts"] = f"{dataset_convert_root}/training/velodyne_reduced"
-        config["dataset"]["train_dataset"]["data_prefix"]["img"] = f"{workspace_identifier}{train_ds_metadata.get('cloud_file_path')}/training/image_2.tar.gz"
-
-        config["dataset"]["val_dataset"]["ann_file"] = f"{dataset_convert_root}/kitti_person_infos_val.pkl"
-        config["dataset"]["val_dataset"]["data_prefix"]["pts"] = f"{dataset_convert_root}/training/velodyne_reduced"
-        config["dataset"]["val_dataset"]["data_prefix"]["img"] = f"{workspace_identifier}{train_ds_metadata.get('cloud_file_path')}/training/image_2.tar.gz"
-
-        config["dataset"]["test_dataset"]["ann_file"] = f"{dataset_convert_root}/kitti_person_infos_val.pkl"
-        config["dataset"]["test_dataset"]["data_prefix"]["pts"] = f"{dataset_convert_root}/training/velodyne_reduced"
-        config["dataset"]["test_dataset"]["data_prefix"]["img"] = f"{workspace_identifier}{train_ds_metadata.get('cloud_file_path')}/training/image_2.tar.gz"
-
-    else:
-        workspace_identifier = get_workspace_string_identifier(handler_metadata.get('workspace'), workspace_cache)
-        config["root_dir"] = f"{workspace_identifier}{handler_metadata.get('cloud_file_path')}"
-    return config
-
-
-def segformer(config, job_context, handler_metadata):
-    """Assigns paths of data sources to the respective config params for Segformer"""
-    workspace_cache = {}
-    # Init
-    if "dataset" not in list(config.keys()):
-        config["dataset"] = {}
-
-    # Training datasets
-    if handler_metadata.get("train_datasets", []) != []:
-        if "train_dataset" not in config["dataset"].keys():
-            config["dataset"]["train_dataset"] = {}
-        config["dataset"]["train_dataset"]["ann_dir"] = []
-        config["dataset"]["train_dataset"]["img_dir"] = []
-        for train_ds in handler_metadata.get("train_datasets", []):
-            train_ds_metadata = get_handler_metadata(train_ds, kind="datasets")
-            workspace_identifier = get_workspace_string_identifier(train_ds_metadata.get('workspace'), workspace_cache)
-            if config["dataset"]["train_dataset"].get("ann_dir", None):
-                config["dataset"]["train_dataset"]["ann_dir"].append(f"{workspace_identifier}{train_ds_metadata.get('cloud_file_path')}/masks/train.tar.gz")
-                config["dataset"]["train_dataset"]["img_dir"].append(f"{workspace_identifier}{train_ds_metadata.get('cloud_file_path')}/images/train.tar.gz")
-            else:
-                config["dataset"]["train_dataset"]["ann_dir"] = [f"{workspace_identifier}{train_ds_metadata.get('cloud_file_path')}/masks/train.tar.gz"]
-                config["dataset"]["train_dataset"]["img_dir"] = [f"{workspace_identifier}{train_ds_metadata.get('cloud_file_path')}/images/train.tar.gz"]
-    # Eval dataset
-    eval_ds = handler_metadata.get("eval_dataset", None)
-    if eval_ds is not None:
-        if job_context.action == "train":
-            eval_key = "val_dataset"
+    for part in parts:
+        if part.isdigit():
+            part = int(part)
+        if isinstance(current, dict):
+            if part not in current:
+                return None
+            current = current[part]
+        elif isinstance(current, list):
+            if part >= len(current):
+                return None
+            current = current[part]
         else:
-            eval_key = "test_dataset"
-        config["dataset"][eval_key] = {}
-        eval_ds_metadata = get_handler_metadata(eval_ds, kind="datasets")
-        workspace_identifier = get_workspace_string_identifier(eval_ds_metadata.get('workspace'), workspace_cache)
-        config["dataset"][eval_key]["ann_dir"] = f"{workspace_identifier}{eval_ds_metadata.get('cloud_file_path')}/masks/val.tar.gz"
-        config["dataset"][eval_key]["img_dir"] = f"{workspace_identifier}{eval_ds_metadata.get('cloud_file_path')}/images/val.tar.gz"
-    return config
+            return None
+
+    return current
 
 
-def mask2former(config, job_context, handler_metadata):
-    """Assigns paths of data sources to the respective config params for Mask2former"""
-    workspace_cache = {}
+def remove_nested_config_value(config, path):
+    """Removes a value from nested config using dot notation path."""
+    parts = path.replace("]", "").replace("[", ".").split(".")
+    current = config
 
-    # Training datasets
-    if handler_metadata.get("train_datasets", []) != []:
-        train_ds = handler_metadata.get("train_datasets", [])[0]
-        train_ds_metadata = get_handler_metadata(train_ds, kind="datasets")
-        workspace_identifier = get_workspace_string_identifier(train_ds_metadata.get('workspace'), workspace_cache)
-        config["dataset"]["train"]["img_dir"] = f"{workspace_identifier}{train_ds_metadata.get('cloud_file_path')}/images.tar.gz"
-        if train_ds_metadata.get("type", "") == "coco_panoptic":
-            config["dataset"]["label_map"] = f"{workspace_identifier}{train_ds_metadata.get('cloud_file_path')}/label_map_panoptic.json"
-            config["dataset"]["train"]["type"] = "coco_panoptic"
-            config["dataset"]["train"]["panoptic_json"] = f"{workspace_identifier}{train_ds_metadata.get('cloud_file_path')}/annotations_panoptic.json"
-            config["dataset"]["train"]["panoptic_dir"] = f"{workspace_identifier}{train_ds_metadata.get('cloud_file_path')}/images_panoptic.tar.gz"
-        else:
-            config["dataset"]["label_map"] = f"{workspace_identifier}{train_ds_metadata.get('cloud_file_path')}/label_map.json"
-            config["dataset"]["train"]["type"] = "coco"
-            config["dataset"]["train"]["instance_json"] = f"{workspace_identifier}{train_ds_metadata.get('cloud_file_path')}/annotations.json"
+    for part in parts[:-1]:
+        if part.isdigit():
+            part = int(part)
+        if part not in current:
+            return
+        current = current[part]
 
-    eval_ds = handler_metadata.get("eval_dataset", None)
-    if eval_ds is not None:
-        eval_ds_metadata = get_handler_metadata(train_ds, kind="datasets")
-        workspace_identifier = get_workspace_string_identifier(eval_ds_metadata.get('workspace'), workspace_cache)
-        config["dataset"]["val"]["img_dir"] = f"{workspace_identifier}{eval_ds_metadata.get('cloud_file_path')}/images.tar.gz"
-        config["dataset"]["test"]["img_dir"] = f"{workspace_identifier}{eval_ds_metadata.get('cloud_file_path')}/images.tar.gz"
-        if eval_ds_metadata.get("type", "") == "coco_panoptic":
-            config["dataset"]["val"]["type"] = "coco_panoptic"
-            config["dataset"]["val"]["panoptic_json"] = f"{workspace_identifier}{eval_ds_metadata.get('cloud_file_path')}/annotations_panoptic.tar.gz"
-            config["dataset"]["val"]["panoptic_dir"] = f"{workspace_identifier}{eval_ds_metadata.get('cloud_file_path')}/images_panoptic.tar.gz"
-        else:
-            config["dataset"]["val"]["type"] = "coco"
-            config["dataset"]["val"]["instance_json"] = f"{workspace_identifier}{eval_ds_metadata.get('cloud_file_path')}/annotations.json"
-
-    config["model"]["backbone"]["pretrained_weights"] = str({"link": "https://github.com/SwinTransformer/storage/releases/download/v1.0.8/swin_tiny_patch4_window7_224_22k.pth",
-                                                             "destination_path": "/ptm/mask2former/swin_tiny_patch4_window7_224_22k/swin_tiny_patch4_window7_224_22k.pth"})
-    return config
+    if parts[-1] in current:
+        del current[parts[-1]]
 
 
-def object_detection(config, job_context, handler_metadata):
-    """Returns config directly as no changes are required"""
-    return config
+def set_nested_config_value(config, path, value):
+    """Sets a value in nested config using dot notation path.
 
+    Args:
+        config (dict): Config dictionary to modify
+        path (str): Dot notation path (e.g. "dataset.train_data_sources")
+        value: Value to set at the path
 
-def efficientdet_tf2(config, job_context, handler_metadata):
-    """Assigns paths of data sources to the respective config params for EfficientDet tf2"""
-    workspace_cache = {}
-    # Dataset convert
-    if handler_metadata.get("train_datasets", []) == []:
-        if config.get("dataset_convert") is None:
-            config["dataset_convert"] = {}
-        workspace_identifier = get_workspace_string_identifier(handler_metadata.get('workspace'), workspace_cache)
-        ds_root = f"{workspace_identifier}{handler_metadata.get('cloud_file_path')}"
-        config["dataset_convert"]["image_dir"] = os.path.join(ds_root, "images.tar.gz") if not contains_results_uuid(ds_root) else os.path.join(ds_root, "images")
-        config["dataset_convert"]["annotations_file"] = os.path.join(ds_root, "annotations.json")
-        return config
+    Example:
+        >>> config = {}
+        >>> set_nested_config_value(config, "a.b.c", 123)
+        >>> config
+        {'a': {'b': {'c': 123}}}
+    """
+    parts = path.replace("]", "").replace("[", ".").split(".")
+    current = config
 
-    # Init
-    if "data" not in list(config.keys()):
-        config["dataset"] = {}
+    for part in parts[:-1]:
+        if part.isdigit():
+            part = int(part)
+        if part not in current:
+            # Create list if next part is numeric, dict otherwise
+            next_part = parts[parts.index(part) + 1]
+            current[part] = [] if next_part.isdigit() else {}
+        current = current[part]
 
-    # Training datasets
-    if handler_metadata.get("train_datasets", []) != []:
-        train_ds = handler_metadata.get("train_datasets", [])[0]
-        print("Warning: EfficientDet supports only one train dataset", file=sys.stderr)
-        train_ds_metadata = get_handler_metadata(train_ds, kind="datasets")
-        workspace_identifier = get_workspace_string_identifier(train_ds_metadata.get('workspace'), workspace_cache)
-        handler_root = f"{workspace_identifier}{train_ds_metadata.get('cloud_file_path')}"
-        train_ds_convert_job_id = get_job_id_of_action(train_ds, kind="datasets", action="convert_efficientdet_tf2")
-        dataset_convert_root = f"{workspace_identifier}results/{train_ds_convert_job_id}"
-        config["dataset"]["train_tfrecords"] = [dataset_convert_root + "/dataset_convert"]
+    last_part = parts[-1]
+    if last_part.isdigit():
+        last_part = int(last_part)
 
-    # Eval dataset
-    eval_ds = handler_metadata.get("eval_dataset", None)
-    if eval_ds is not None:
-        eval_ds_metadata = get_handler_metadata(eval_ds, kind="datasets")
-        workspace_identifier = get_workspace_string_identifier(eval_ds_metadata.get('workspace'), workspace_cache)
-        handler_root = f"{workspace_identifier}{eval_ds_metadata.get('cloud_file_path')}"
-        config["dataset"]["val_json_file"] = handler_root + "/annotations.json"
-        eval_ds_convert_job_id = get_job_id_of_action(eval_ds, kind="datasets", action="convert_efficientdet_tf2")
-        dataset_convert_root = f"{workspace_identifier}results/{eval_ds_convert_job_id}"
-        config["dataset"]["val_tfrecords"] = [dataset_convert_root + "/dataset_convert"]
-
-    # calibration dataset
-    calib_ds = handler_metadata.get("calibration_dataset", None)
-    if calib_ds and job_context.action == "gen_trt_engine":
-        calib_ds_metadata = get_handler_metadata(calib_ds, kind="datasets")
-        workspace_identifier = get_workspace_string_identifier(calib_ds_metadata.get('workspace'), workspace_cache)
-        calib_root = f"{workspace_identifier}{calib_ds_metadata.get('cloud_file_path')}"
-        config["gen_trt_engine"]["tensorrt"]["calibration"]["cal_image_dir"] = os.path.join(calib_root, "images.tar.gz") if not contains_results_uuid(calib_root) else os.path.join(calib_root, "images")
-
-    infer_ds = handler_metadata.get("inference_dataset", None)
-    if infer_ds:
-        if "inference" not in config.keys():
-            config["inference"] = {}
-        infer_ds_metadata = get_handler_metadata(infer_ds, kind="datasets")
-        workspace_identifier = get_workspace_string_identifier(infer_ds_metadata.get('workspace'), workspace_cache)
-        infer_ds_root = f"{workspace_identifier}{infer_ds_metadata.get('cloud_file_path')}"
-        if job_context.action in ("evaluate", "inference"):
-            config["inference"]["label_map"] = os.path.join(infer_ds_root, "label_map.yaml")
-        if job_context.action == "inference":
-            config["inference"]["image_dir"] = os.path.join(infer_ds_root, "images.tar.gz") if not contains_results_uuid(infer_ds_root) else os.path.join(infer_ds_root, "images")
-    return config
-
-
-def classification_tf2(config, job_context, handler_metadata):
-    """Assigns paths of data sources to the respective config params for Classification-tf2"""
-    workspace_cache = {}
-    if "dataset" not in list(config.keys()):
-        config["dataset"] = {}
-
-    print("Warning: Classification-tf2 supports only one train dataset", file=sys.stderr)
-    print("Warning: Train, eval datasets are both required to run Classification actions - train, evaluate, retrain, inference", file=sys.stderr)
-    train_datasets = handler_metadata.get("train_datasets", [])
-    if train_datasets != []:
-        train_ds_metadata = get_handler_metadata(train_datasets[0], kind="datasets")
-        workspace_identifier = get_workspace_string_identifier(train_ds_metadata.get('workspace'), workspace_cache)
-        config["dataset"]["train_dataset_path"] = f"{workspace_identifier}{train_ds_metadata.get('cloud_file_path')}" + "/images_train.tar.gz"
-
-    eval_ds = handler_metadata.get("eval_dataset", None)
-    if eval_ds is not None:
-        eval_ds_metadata = get_handler_metadata(eval_ds, kind="datasets")
-        workspace_identifier = get_workspace_string_identifier(eval_ds_metadata.get('workspace'), workspace_cache)
-        config["dataset"]["val_dataset_path"] = f"{workspace_identifier}{eval_ds_metadata.get('cloud_file_path')}" + "/images_val.tar.gz"
-
-    infer_ds = handler_metadata.get("inference_dataset", None)
-    if infer_ds is not None:
-        if "evaluate" not in config:
-            config["evaluate"] = {}
-        if "inference" not in config:
-            config["inference"] = {}
-        infer_ds_metadata = get_handler_metadata(infer_ds, kind="datasets")
-        workspace_identifier = get_workspace_string_identifier(infer_ds_metadata.get('workspace'), workspace_cache)
-        config["evaluate"]["dataset_path"] = f"{workspace_identifier}{infer_ds_metadata.get('cloud_file_path')}" + "/images_test.tar.gz"
-        if job_context.action == "inference":
-            config["inference"]["image_dir"] = f"{workspace_identifier}{infer_ds_metadata.get('cloud_file_path')}" + "/images_test.tar.gz"
-        config["inference"]["classmap"] = os.path.join(f"{workspace_identifier}{infer_ds_metadata.get('cloud_file_path')}", "classmap.json")
-
-    # calibration dataset
-    calib_ds = handler_metadata.get("calibration_dataset", None)
-    if calib_ds and job_context.action == "gen_trt_engine":
-        calib_ds_metadata = get_handler_metadata(calib_ds, kind="datasets")
-        workspace_identifier = get_workspace_string_identifier(calib_ds_metadata.get('workspace'), workspace_cache)
-        config["gen_trt_engine"]["tensorrt"]["calibration"]["cal_image_dir"] = f"{workspace_identifier}{calib_ds_metadata.get('cloud_file_path')}" + "/images_train.tar.gz"
-        if calib_ds == eval_ds:
-            config["gen_trt_engine"]["tensorrt"]["calibration"]["cal_image_dir"] = f"{workspace_identifier}{calib_ds_metadata.get('cloud_file_path')}" + "/images_val.tar.gz"
-
-    return config
-
-
-def classification_pyt(config, job_context, handler_metadata):
-    """Assigns paths of data sources to the respective config params for Classification-pyt"""
-    workspace_cache = {}
-
-    print("Warning: Classification-pyt supports only one train dataset", file=sys.stderr)
-    print("Warning: Train, eval datasets are both required to run Classification actions - train, evaluate, inference", file=sys.stderr)
-    train_datasets = handler_metadata.get("train_datasets", [])
-    if train_datasets != []:
-        train_ds_metadata = get_handler_metadata(train_datasets[0], kind="datasets")
-        workspace_identifier = get_workspace_string_identifier(train_ds_metadata.get('workspace'), workspace_cache)
-        config["dataset"]["data"]["train"]["data_prefix"] = f"{workspace_identifier}{train_ds_metadata.get('cloud_file_path')}" + "/images_train.tar.gz"
-        config["dataset"]["data"]["train"]["classes"] = f"{workspace_identifier}{train_ds_metadata.get('cloud_file_path')}" + "/classes.txt"
-
-    eval_ds = handler_metadata.get("eval_dataset", None)
-    if eval_ds is not None:
-        if "val" not in list(config["dataset"]["data"].keys()):
-            config["dataset"]["data"]["val"] = {}
-        eval_ds_metadata = get_handler_metadata(eval_ds, kind="datasets")
-        workspace_identifier = get_workspace_string_identifier(eval_ds_metadata.get('workspace'), workspace_cache)
-        config["dataset"]["data"]["val"]["data_prefix"] = f"{workspace_identifier}{eval_ds_metadata.get('cloud_file_path')}" + "/images_val.tar.gz"
-        config["dataset"]["data"]["val"]["classes"] = f"{workspace_identifier}{eval_ds_metadata.get('cloud_file_path')}" + "/classes.txt"
-
-    infer_ds = handler_metadata.get("inference_dataset", None)
-    if infer_ds is not None:
-        if "test" not in list(config["dataset"]["data"].keys()):
-            config["dataset"]["data"]["test"] = {}
-        infer_ds_metadata = get_handler_metadata(infer_ds, kind="datasets")
-        workspace_identifier = get_workspace_string_identifier(infer_ds_metadata.get('workspace'), workspace_cache)
-        config["dataset"]["data"]["test"]["data_prefix"] = f"{workspace_identifier}{infer_ds_metadata.get('cloud_file_path')}" + "/images_test.tar.gz"
-        config["dataset"]["data"]["test"]["classes"] = f"{workspace_identifier}{infer_ds_metadata.get('cloud_file_path')}" + "/classes.txt"
-
-    if config.get("model", {}).get("head", {}).get("loss", {}).get("type", "") == "LabelSmoothLoss":
-        if config.get("model", {}).get("head", {}).get("loss", {}).get("use_soft", "") != "":
-            config["model"]["head"]["loss"].pop("use_soft", None)
-
-    return config
-
-
-def action_recogntion_dynamic_config(config, action):
-    """Dynamically drop out spec parameters based on certain other parameters"""
-    model_type = config["model"]["model_type"]  # rgb/of/joint
-
-    if model_type == "rgb":
-        config["model"].pop("of_seq_length", None)
-        if action == "train":
-            config["model"].pop("of_pretrained_num_classes", None)
-        config["dataset"]["augmentation_config"].pop("of_input_mean", None)
-        config["dataset"]["augmentation_config"].pop("of_input_std", None)
-        config["model"].pop("of_pretrained_model_path", None)
-    elif model_type == "of":
-        config["model"].pop("rgb_seq_length", None)
-        if action == "train":
-            config["model"].pop("rgb_pretrained_num_classes", None)
-        config["dataset"]["augmentation_config"].pop("rgb_input_mean", None)
-        config["dataset"]["augmentation_config"].pop("rgb_input_std", None)
-        config["model"].pop("rgb_pretrained_model_path", None)
-    elif model_type == "joint":
-        if "rgb_pretrained_model_path" in config["model"].keys():
-            ptm_paths = config["model"]["rgb_pretrained_model_path"].split(",")
-            rgb_pretrained_model_path = ptm_paths[0] if ptm_paths[0].find("_rgb_") else ptm_paths[1]
-            of_pretrained_model_path = ptm_paths[0] if ptm_paths[0].find("_of_") else ptm_paths[1]
-            config["model"]["rgb_pretrained_model_path"] = rgb_pretrained_model_path
-            config["model"]["of_pretrained_model_path"] = of_pretrained_model_path
-
-    if "label_map" not in config["dataset"]:
-        config["dataset"]["label_map"] = {}
-    if not config["dataset"]["label_map"]:
-        config["dataset"]["label_map"] = {"catch": 0, "smile": 1}
-    return config
-
-
-def action_recognition(config, job_context, handler_metadata):
-    """Assigns paths of data sources to the respective config params for Action recognition"""
-    workspace_cache = {}
-    config = action_recogntion_dynamic_config(config, job_context.action)
-    if handler_metadata.get("train_datasets", []) != []:
-        train_ds = handler_metadata.get("train_datasets", [])[0]
-        train_ds_metadata = get_handler_metadata(train_ds, kind="datasets")
-        workspace_identifier = get_workspace_string_identifier(train_ds_metadata.get('workspace'), workspace_cache)
-        root = f"{workspace_identifier}{train_ds_metadata.get('cloud_file_path')}"
-        if job_context.action == "train":
-            config["dataset"]["train_dataset_dir"] = os.path.join(root, "train.tar.gz")
-            config["dataset"]["val_dataset_dir"] = os.path.join(root, "test.tar.gz")
-        elif job_context.action == "evaluate":
-            config["evaluate"]["test_dataset_dir"] = os.path.join(root, "test.tar.gz")
-        elif job_context.action == "inference":
-            config["inference"]["inference_dataset_dir"] = os.path.join(root, "test/smile.tar.gz")
-    return config
-
-
-def pointpillars(config, job_context, handler_metadata):
-    """Assigns paths of data sources to the respective config params for Pointpillars"""
-    workspace_cache = {}
-    train_ds = handler_metadata.get("train_datasets", [])
-    if train_ds != []:
-        train_ds = train_ds[0]
+    # If both are dictionaries, merge them instead of replacing
+    if isinstance(current.get(last_part), dict) and isinstance(value, dict):
+        current[last_part].update(value)
     else:
-        train_ds = handler_metadata.get("id")
-
-    train_ds_metadata = get_handler_metadata(train_ds, kind="datasets")
-    workspace_identifier = get_workspace_string_identifier(train_ds_metadata.get('workspace'), workspace_cache)
-    data_root = f"{workspace_identifier}{train_ds_metadata.get('cloud_file_path')}"
-    config["dataset"]["data_path"] = data_root
-
-    if handler_metadata.get("train_datasets", []) != []:
-        ds_convert_job_id = get_job_id_of_action(train_ds, kind="datasets", action="dataset_convert")
-        data_info_root = f"{workspace_identifier}results/{ds_convert_job_id}/data_info/"
-        config["dataset"]["data_info_path"] = data_info_root
-    return config
+        current[last_part] = value
 
 
-def pose_classification_dynamic_config(config, action):
-    """Dynamically drop out spec parameters based on certain other parameters"""
-    model_type = config["model"]["graph_layout"]  # openpose/nvidia
-    if model_type == "nvidia":
-        if action == "train":
-            config["dataset"].pop("random_choose", None)
-            config["dataset"].pop("random_move", None)
-            config["dataset"].pop("window_size", None)
-    elif model_type == "openpose":
-        if action == "train":
-            config["model"].pop("pretrained_model_path", None)
-    return config
+def get_job_id_of_action(dataset_id, kind, action):
+    """Gets job ID for a specific action on a dataset."""
+    # Implementation of getting job ID from dataset and action
+    dataset_metadata = get_handler_metadata(dataset_id, kind)
+    for job in dataset_metadata.get("jobs", []):
+        job_metadata = get_handler_job_metadata(job)
+        if job_metadata.get("action") == action and job_metadata.get("status") == "Done":
+            return job_metadata.get("id")
+    return None
 
 
-def pose_classification(config, job_context, handler_metadata):
-    """Assigns paths of data sources to the respective config params for Pose classification"""
+def apply_transforms(
+    value,
+    transforms,
+    source_root=None,
+    source_ds=None,
+    dataset_convert_action=None,
+    workspace_identifier=None
+):
+    """Apply a list of transforms to a value.
+
+    Args:
+        value: The value to transform
+        transforms: List of transforms to apply
+        source_root: Root path of the source dataset
+        source_ds: Source dataset ID
+        dataset_convert_action: Action for dataset conversion
+        workspace_identifier: Workspace identifier for dataset convert job paths
+    """
+    if isinstance(transforms, str):
+        transforms = [transforms]
+
+    for transform in transforms:
+        if transform == "handle_tar_path":
+            value = os.path.join(source_root, "images") if contains_results_uuid(source_root) else value
+        elif transform == "wrap_in_list":
+            value = [value]
+        elif transform == "use_dataset_convert_job":
+            dataset_convert_job_id = get_job_id_of_action(source_ds, kind="datasets", action=dataset_convert_action)
+            corrected_value = value.replace("{dataset_convert_job_id}", dataset_convert_job_id).replace(source_root, "")
+            if corrected_value.startswith("/"):
+                corrected_value = corrected_value[1:]
+            value = f"{workspace_identifier}{corrected_value}"
+
+    return value
+
+
+def get_source_root(source_ds_metadata, workspace_identifier):
+    """Get the source root path for a dataset."""
+    return f"{workspace_identifier}{source_ds_metadata.get('cloud_file_path')}"
+
+
+def get_dataset_metadata_and_paths(source_ds, workspace_cache, kind="datasets"):
+    """Helper function to get common dataset metadata and paths."""
+    source_ds_metadata = get_handler_metadata(source_ds, kind=kind)
+    workspace_identifier = get_workspace_string_identifier(
+        source_ds_metadata.get('workspace'),
+        workspace_cache
+    )
+    source_root = get_source_root(source_ds_metadata, workspace_identifier)
+    return source_ds_metadata, workspace_identifier, source_root
+
+
+def process_mapping_entry(mapping, source_root, source_ds, dataset_convert_action, workspace_identifier):
+    """Process a single mapping entry.
+
+    Handles two types of mappings:
+    1. Simple mappings with direct path and transform (like ann_file)
+    2. Nested mappings with sub-mappings (like data_prefix with pts and img)
+    """
+    # Check if this is a nested mapping (like data_prefix with pts and img)
+    if any(isinstance(v, dict) and "path" in v for k, v in mapping.items()):
+        # This is a nested mapping (e.g., data_prefix with pts and img)
+        result = {}
+        for key, sub_mapping in mapping.items():
+            if isinstance(sub_mapping, dict) and "path" in sub_mapping:
+                # Skip optional paths that don't exist
+                if sub_mapping.get("optional") and not check_file_exists(source_root, sub_mapping["path"]):
+                    continue
+
+                # Get the path value
+                value = os.path.join(source_root, sub_mapping["path"]) if sub_mapping.get("path") else source_root
+
+                # Apply any transforms
+                if "transform" in sub_mapping:
+                    value = apply_transforms(
+                        value, sub_mapping["transform"],
+                        source_root, source_ds, dataset_convert_action,
+                        workspace_identifier)
+                result[key] = value
+        return result if result else None
+
+    # This is a simple mapping (e.g., ann_file with direct path and transform)
+    if "path" in mapping:
+        # Skip optional paths that don't exist
+        if mapping.get("optional") and not check_file_exists(source_root, mapping["path"]):
+            return None
+
+        # Get the path value
+        value = os.path.join(source_root, mapping["path"]) if mapping.get("path") else source_root
+
+        # Apply any transforms
+        if "transform" in mapping:
+            value = apply_transforms(
+                value, mapping["transform"],
+                source_root, source_ds, dataset_convert_action,
+                workspace_identifier)
+        return value
+
+    return None
+
+
+def get_metadata_value(metadata, path_type):
+    """Helper function to get metadata values safely"""
+    if path_type == "intent":
+        use_for = metadata.get("use_for", [])
+        return use_for[0] if use_for else None
+    if path_type == "type":
+        return metadata.get("type", None)
+    if path_type == "format":
+        return metadata.get("format", None)
+    return None
+
+
+def apply_data_source_config(config, job_context, handler_metadata):
+    """Generic data source configuration using config file"""
     workspace_cache = {}
-    model_type = config["model"]["graph_layout"]  # openpose/nvidia
-    if model_type == "openpose":
-        model_type = "kinetics"
-    pose_classification_dynamic_config(config, job_context.action)
+    dataset_convert_action = "dataset_convert"
+    if job_context.network == "efficientdet_tf2":
+        dataset_convert_action = "convert_efficientdet_tf2"
 
-    if handler_metadata.get("train_datasets", []) != []:
-        train_ds = handler_metadata.get("train_datasets", [])[0]
-        train_ds_metadata = get_handler_metadata(train_ds, kind="datasets")
-        workspace_identifier = get_workspace_string_identifier(train_ds_metadata.get('workspace'), workspace_cache)
-        root = f"{workspace_identifier}{train_ds_metadata.get('cloud_file_path')}"
-        if job_context.action == "train":
-            config["dataset"]["train_dataset"] = {}
-            config["dataset"]["val_dataset"] = {}
-            config["dataset"]["train_dataset"]["data_path"] = os.path.join(root, model_type, "train_data.npy")
-            config["dataset"]["train_dataset"]["label_path"] = os.path.join(root, model_type, "train_label.pkl")
-            config["dataset"]["val_dataset"]["data_path"] = os.path.join(root, model_type, "val_data.npy")
-            config["dataset"]["val_dataset"]["label_path"] = os.path.join(root, model_type, "val_label.pkl")
-        elif job_context.action in ("evaluate", "inference"):
-            config[job_context.action]["test_dataset"] = {}
-            config[job_context.action]["test_dataset"]["data_path"] = os.path.join(root, model_type, "val_data.npy")
-            if job_context.action == "evalute":
-                config[job_context.action]["test_dataset"]["label_path"] = os.path.join(root, model_type, "val_label.pkl")
-    return config
+    network_config = read_network_config(job_context.network)
 
+    # Keep track of paths that have already been set by special handlers
+    already_configured_paths = set()
 
-def re_identification(config, job_context, handler_metadata):
-    """Assigns paths of data sources to the respective config params for Re-identification"""
-    workspace_cache = {}
-    if handler_metadata.get("train_datasets", []) != []:
-        train_ds = handler_metadata.get("train_datasets", [])[0]
-        train_ds_metadata = get_handler_metadata(train_ds, kind="datasets")
-        workspace_identifier = get_workspace_string_identifier(train_ds_metadata.get('workspace'), workspace_cache)
-        root = f"{workspace_identifier}{train_ds_metadata.get('cloud_file_path')}"
-        if job_context.action == "train":
-            config["dataset"]["train_dataset_dir"] = os.path.join(root, "sample_train.tar.gz")
-            config["dataset"]["test_dataset_dir"] = os.path.join(root, "sample_test.tar.gz")
-            config["dataset"]["query_dataset_dir"] = os.path.join(root, "sample_query.tar.gz")
-        elif job_context.action in ("evaluate", "inference"):
-            config[job_context.action]["test_dataset"] = os.path.join(root, "sample_test.tar.gz")
-            config[job_context.action]["query_dataset"] = os.path.join(root, "sample_query.tar.gz")
-    return config
+    # Handle dynamic config adjustments first
+    if "dynamic_config" in network_config:
+        dynamic_config = network_config["dynamic_config"]
+        model_type_key = dynamic_config.get("model_type_key")
+        model_type = get_nested_config_value(config, model_type_key) if model_type_key else None
 
-
-def deformable_detr(config, job_context, handler_metadata):
-    """Assigns paths of data sources to the respective config params for Deformable-Detr"""
-    workspace_cache = {}
-    # Train dataset
-    if handler_metadata.get("train_datasets", []) != []:
-        train_ds = handler_metadata.get("train_datasets", [])[0]
-        train_ds_metadata = get_handler_metadata(train_ds, kind="datasets")
-        workspace_identifier = get_workspace_string_identifier(train_ds_metadata.get('workspace'), workspace_cache)
-        train_root = f"{workspace_identifier}{train_ds_metadata.get('cloud_file_path')}"
-        if job_context.action == "train":
-            config["dataset"]["train_data_sources"] = [{}]
-            if job_context.network in ("grounding_dino", "mask_grounding_dino"):
-                config["dataset"]["train_data_sources"][0]["image_dir"] = os.path.join(train_root, "images.tar.gz") if not contains_results_uuid(train_root) else os.path.join(train_root, "images")
-                config["dataset"]["train_data_sources"][0]["json_file"] = os.path.join(train_root, "annotations_odvg.jsonl")
-                config["dataset"]["train_data_sources"][0]["label_map"] = os.path.join(train_root, "annotations_odvg_labelmap.json")
-            else:
-                config["dataset"]["train_data_sources"][0]["image_dir"] = os.path.join(train_root, "images.tar.gz") if not contains_results_uuid(train_root) else os.path.join(train_root, "images")
-                config["dataset"]["train_data_sources"][0]["json_file"] = os.path.join(train_root, "annotations.json")
-
-    # Eval dataset
-    eval_ds = handler_metadata.get("eval_dataset", None)
-    if eval_ds is not None:
-        eval_ds_metadata = get_handler_metadata(eval_ds, kind="datasets")
-        workspace_identifier = get_workspace_string_identifier(eval_ds_metadata.get('workspace'), workspace_cache)
-        eval_root = f"{workspace_identifier}{eval_ds_metadata.get('cloud_file_path')}"
-        if job_context.action == "train":
-            if job_context.network in ("grounding_dino", "mask_grounding_dino", "rtdetr"):
-                config["dataset"]["val_data_sources"] = {}
-                config["dataset"]["val_data_sources"]["image_dir"] = os.path.join(eval_root, "images.tar.gz") if not contains_results_uuid(eval_root) else os.path.join(eval_root, "images")
-                config["dataset"]["val_data_sources"]["json_file"] = os.path.join(eval_root, "annotations.json")
-            else:
-                config["dataset"]["val_data_sources"] = [{}]
-                config["dataset"]["val_data_sources"][0]["image_dir"] = os.path.join(eval_root, "images.tar.gz") if not contains_results_uuid(eval_root) else os.path.join(eval_root, "images")
-                config["dataset"]["val_data_sources"][0]["json_file"] = os.path.join(eval_root, "annotations.json")
-        if job_context.action == "evaluate":
-            config["dataset"]["test_data_sources"] = {}
-            config["dataset"]["test_data_sources"]["image_dir"] = os.path.join(eval_root, "images.tar.gz") if not contains_results_uuid(eval_root) else os.path.join(eval_root, "images")
-            config["dataset"]["test_data_sources"]["json_file"] = os.path.join(eval_root, "annotations.json")
-
-    # Inference dataset
-    infer_ds = handler_metadata.get("inference_dataset", None)
-    if infer_ds is not None:
-        infer_ds_metadata = get_handler_metadata(infer_ds, kind="datasets")
-        workspace_identifier = get_workspace_string_identifier(infer_ds_metadata.get('workspace'), workspace_cache)
-        infer_root = f"{workspace_identifier}{infer_ds_metadata.get('cloud_file_path')}"
-        if job_context.action == "inference":
-            captions_backup = ""
-            if "captions" in config["dataset"]["infer_data_sources"]:
-                captions_backup = config["dataset"]["infer_data_sources"]["captions"]
-            config["dataset"]["infer_data_sources"] = {}
-            config["dataset"]["infer_data_sources"]["image_dir"] = [os.path.join(infer_root, "images.tar.gz") if not contains_results_uuid(infer_root) else os.path.join(infer_root, "images")]
-            config["dataset"]["infer_data_sources"]["classmap"] = os.path.join(infer_root, "label_map.txt")
-            if captions_backup:
-                config["dataset"]["infer_data_sources"]["captions"] = captions_backup
-
-    # calibration dataset
-    if job_context.network not in ("grounding_dino", "mask_grounding_dino"):
-        calib_ds = handler_metadata.get("calibration_dataset", None)
-        if calib_ds and job_context.action == "gen_trt_engine":
-            calib_ds_metadata = get_handler_metadata(calib_ds, kind="datasets")
-            workspace_identifier = get_workspace_string_identifier(calib_ds_metadata.get('workspace'), workspace_cache)
-            calib_root = f"{workspace_identifier}{calib_ds_metadata.get('cloud_file_path')}"
-            config["gen_trt_engine"]["tensorrt"]["calibration"]["cal_image_dir"] = [os.path.join(calib_root, "images.tar.gz") if not contains_results_uuid(calib_root) else os.path.join(calib_root, "images")]
-
-    if job_context.action != "train":
-        if "pretrained_backbone_path" in config["model"].keys():
-            del config["model"]["pretrained_backbone_path"]
-        if "resume_training_checkpoint_path" in config["train"].keys():
-            del config["train"]["resume_training_checkpoint_path"]
-
-    return config
-
-
-def mal(config, job_context, handler_metadata):
-    """Assigns paths of data sources to the respective config params for MAL"""
-    workspace_cache = {}
-    # Train dataset
-    if handler_metadata.get("train_datasets", []) != []:
-        train_ds = handler_metadata.get("train_datasets", [])[0]
-        train_ds_metadata = get_handler_metadata(train_ds, kind="datasets")
-        workspace_identifier = get_workspace_string_identifier(train_ds_metadata.get('workspace'), workspace_cache)
-        train_root = f"{workspace_identifier}{train_ds_metadata.get('cloud_file_path')}"
-        if job_context.action in ("evaluate", "inference", "train"):
-            if "dataset" not in config.keys():
-                config["dataset"] = {}
-            config["dataset"]["train_img_dir"] = os.path.join(train_root, "images.tar.gz")
-            config["dataset"]["train_ann_path"] = os.path.join(train_root, "annotations.json")
-
-    # Eval dataset
-    eval_ds = handler_metadata.get("eval_dataset", None)
-    if eval_ds is not None:
-        eval_ds_metadata = get_handler_metadata(eval_ds, kind="datasets")
-        workspace_identifier = get_workspace_string_identifier(eval_ds_metadata.get('workspace'), workspace_cache)
-        eval_root = f"{workspace_identifier}{eval_ds_metadata.get('cloud_file_path')}"
-        if job_context.action in ("evaluate", "inference", "train"):
-            if "dataset" not in config.keys():
-                config["dataset"] = {}
-            config["dataset"]["val_img_dir"] = os.path.join(eval_root, "images.tar.gz")
-            config["dataset"]["val_ann_path"] = os.path.join(eval_root, "annotations.json")
-
-    # Inference dataset
-    infer_ds = handler_metadata.get("inference_dataset", None)
-    if infer_ds is not None:
-        infer_ds_metadata = get_handler_metadata(infer_ds, kind="datasets")
-        workspace_identifier = get_workspace_string_identifier(infer_ds_metadata.get('workspace'), workspace_cache)
-        infer_root = f"{workspace_identifier}{infer_ds_metadata.get('cloud_file_path')}"
-        if job_context.action == "inference":
-            if "inference" not in config.keys():
-                config["inference"] = {}
-            config["inference"]["img_dir"] = os.path.join(infer_root, "images.tar.gz")
-            config["inference"]["ann_path"] = os.path.join(infer_root, "annotations.json")
-
-    return config
-
-
-dino = deformable_detr
-grounding_dino = deformable_detr
-mask_grounding_dino = deformable_detr
-rtdetr = deformable_detr
-
-
-def ml_recog(config, job_context, handler_metadata):
-    """Assigns paths of data sources to the respective config params for Metric Learning Recognition"""
-    workspace_cache = {}
-    # Train dataset
-    if handler_metadata.get("train_datasets", []) != []:
-        train_ds = handler_metadata.get("train_datasets", [])[0]
-        train_ds_metadata = get_handler_metadata(train_ds, kind="datasets")
-        workspace_identifier = get_workspace_string_identifier(train_ds_metadata.get('workspace'), workspace_cache)
-        train_root = f"{workspace_identifier}{train_ds_metadata.get('cloud_file_path')}"
-        if "dataset" not in config.keys():
-            config["dataset"] = {}
-        if job_context.action == "train":
-            config["dataset"]["train_dataset"] = f"{train_root}/metric_learning_recognition/retail-product-checkout-dataset_classification_demo/known_classes/train.tar.gz"
-            config["dataset"]["val_dataset"] = {
-                "reference": f"{train_root}/metric_learning_recognition/retail-product-checkout-dataset_classification_demo/known_classes/reference.tar.gz",
-                "query": f"{train_root}/metric_learning_recognition/retail-product-checkout-dataset_classification_demo/known_classes/val.tar.gz"}
-        if job_context.action == "evaluate":
-            config["dataset"]["val_dataset"] = {
-                "reference": f"{train_root}/metric_learning_recognition/retail-product-checkout-dataset_classification_demo/unknown_classes/reference.tar.gz",
-                "query": f"{train_root}/metric_learning_recognition/retail-product-checkout-dataset_classification_demo/unknown_classes/test.tar.gz"}
-        if job_context.action == "inference":
-            if "inference" not in config.keys():
-                config["inference"] = {}
-            config["dataset"]["val_dataset"] = {
-                "reference": f"{train_root}/metric_learning_recognition/retail-product-checkout-dataset_classification_demo/unknown_classes/reference.tar.gz",
-                "query": ""}
-            config["inference"]["input_path"] = f"{train_root}/metric_learning_recognition/retail-product-checkout-dataset_classification_demo/unknown_classes/test.tar.gz"
-
-    # calibration dataset
-    calib_ds = handler_metadata.get("calibration_dataset", None)
-    if calib_ds and job_context.action == "gen_trt_engine":
-        calib_ds_metadata = get_handler_metadata(calib_ds, kind="datasets")
-        workspace_identifier = get_workspace_string_identifier(calib_ds_metadata.get('workspace'), workspace_cache)
-        config["gen_trt_engine"]["tensorrt"]["calibration"]["cal_image_dir"] = [f"{workspace_identifier}{calib_ds_metadata.get('cloud_file_path')}" + "/metric_learning_recognition/retail-product-checkout-dataset_classification_demo/known_classes/test.tar.gz"]
-    return config
-
-
-def ocdnet(config, job_context, handler_metadata):
-    """Assigns paths of data sources to the respective config params for OCDNET"""
-    workspace_cache = {}
-    parent_action = get_handler_job_metadata(job_context.parent_id).get("action")
-    if parent_action == "retrain" or job_context.action == "retrain":
-        config["model"]["load_pruned_graph"] = True
-    # Train dataset
-    if handler_metadata.get("train_datasets", []) != []:
-        train_ds = handler_metadata.get("train_datasets", [])[0]
-        train_ds_metadata = get_handler_metadata(train_ds, kind="datasets")
-        workspace_identifier = get_workspace_string_identifier(train_ds_metadata.get('workspace'), workspace_cache)
-        train_root = f"{workspace_identifier}{train_ds_metadata.get('cloud_file_path')}"
-        if "dataset" not in config.keys():
-            config["dataset"] = {}
-            config["dataset"]["train_dataset"] = {}
-            config["dataset"]["validate_dataset"] = {}
-        if job_context.action in ("train", "retrain"):
-            config["dataset"]["train_dataset"]["data_path"] = [os.path.join(train_root, "train.tar.gz")]
-
-    # Eval dataset
-    eval_ds = handler_metadata.get("eval_dataset", None)
-    if eval_ds is not None:
-        eval_ds_metadata = get_handler_metadata(eval_ds, kind="datasets")
-        workspace_identifier = get_workspace_string_identifier(eval_ds_metadata.get('workspace'), workspace_cache)
-        eval_root = f"{workspace_identifier}{eval_ds_metadata.get('cloud_file_path')}"
-        if "dataset" not in config.keys():
-            config["dataset"] = {}
-            config["dataset"]["train_dataset"] = {}
-            config["dataset"]["validate_dataset"] = {}
-        config["dataset"]["validate_dataset"]["data_path"] = [os.path.join(eval_root, "test.tar.gz")]
-        if job_context.action == "inference":
-            if "inference" not in config.keys():
-                config["inference"] = {}
-            config["inference"]["input_folder"] = os.path.join(eval_root, "test/img.tar.gz")
-
-    # calibration dataset
-    calib_ds = handler_metadata.get("calibration_dataset", None)
-    if calib_ds and job_context.action == "gen_trt_engine":
-        calib_ds_metadata = get_handler_metadata(calib_ds, kind="datasets")
-        workspace_identifier = get_workspace_string_identifier(calib_ds_metadata.get('workspace'), workspace_cache)
-        config["gen_trt_engine"]["tensorrt"]["calibration"]["cal_image_dir"] = [f"{workspace_identifier}{calib_ds_metadata.get('cloud_file_path')}" + "/train/img.tar.gz"]
-    return config
-
-
-def ocrnet(config, job_context, handler_metadata):
-    """Assigns paths of data sources to the respective config params for OCRNET"""
-    workspace_cache = {}
-    if job_context.action == "dataset_convert":
-        # ds = handler_metadata.get("id")
-        intent = handler_metadata.get("use_for")
-        dataset_format = ""
-        if intent == ["training"]:
-            dataset_format = "train"
-        elif intent == ["evaluation"]:
-            dataset_format = "test"
-        workspace_identifier = get_workspace_string_identifier(handler_metadata.get('workspace'), workspace_cache)
-        root = f"{workspace_identifier}{handler_metadata.get('cloud_file_path')}"
-        if "dataset_convert" not in config.keys():
-            config["dataset_convert"] = {}
-        config["dataset_convert"]["input_img_dir"] = f"{root}/{dataset_format}.tar.gz"
-        config["dataset_convert"]["gt_file"] = f"{root}/{dataset_format}/gt_new.txt"
-
-    # Eval dataset
-    eval_ds = handler_metadata.get("eval_dataset", None)
-    if eval_ds is not None:
-        eval_ds_metadata = get_handler_metadata(eval_ds, kind="datasets")
-        workspace_identifier = get_workspace_string_identifier(eval_ds_metadata.get('workspace'), workspace_cache)
-        eval_root = f"{workspace_identifier}{eval_ds_metadata.get('cloud_file_path')}"
-        eval_ds_convert_job_id = get_job_id_of_action(eval_ds, kind="datasets", action="dataset_convert")
-        eval_ds_convert_root = f"{workspace_identifier}results/{eval_ds_convert_job_id}"
-
-    # Train dataset
-    if handler_metadata.get("train_datasets", []) != []:
-        train_ds = handler_metadata.get("train_datasets", [])[0]
-        train_ds_metadata = get_handler_metadata(train_ds, kind="datasets")
-        if "dataset" not in config.keys():
-            config["dataset"] = {}
-        if job_context.action in ("train", "retrain"):
-            train_ds_convert_job_id = get_job_id_of_action(train_ds, kind="datasets", action="dataset_convert")
-            workspace_identifier = get_workspace_string_identifier(train_ds_metadata.get('workspace'), workspace_cache)
-            train_ds_convert_root = f"{workspace_identifier}results/{train_ds_convert_job_id}"
-            config["dataset"]["train_dataset_dir"] = [os.path.join(train_ds_convert_root, "dataset_convert/lmdb")]
-            if eval_ds is not None:
-                config["dataset"]["val_dataset_dir"] = os.path.join(eval_ds_convert_root, "dataset_convert/lmdb")
-        if eval_ds is not None:
-            config["dataset"]["character_list_file"] = f"{eval_root}/character_list"
-
-    if eval_ds is not None:
-        if job_context.action == "evaluate":
-            if "evaluate" not in config.keys():
-                config["evaluate"] = {}
-            config["evaluate"]["test_dataset_dir"] = os.path.join(eval_ds_convert_root, "dataset_convert/lmdb")
-        if job_context.action == "inference":
-            if "inference" not in config.keys():
-                config["inference"] = {}
-            config["inference"]["inference_dataset_dir"] = os.path.join(eval_root, "test.tar.gz")
-
-    # calibration dataset
-    calib_ds = handler_metadata.get("calibration_dataset", None)
-    if calib_ds and job_context.action == "gen_trt_engine":
-        calib_ds_metadata = get_handler_metadata(calib_ds, kind="datasets")
-        workspace_identifier = get_workspace_string_identifier(calib_ds_metadata.get('workspace'), workspace_cache)
-        config["gen_trt_engine"]["tensorrt"]["calibration"]["cal_image_dir"] = [f"{workspace_identifier}{calib_ds_metadata.get('cloud_file_path')}" + "/train.tar.gz"]
-        if calib_ds == eval_ds:
-            config["gen_trt_engine"]["tensorrt"]["calibration"]["cal_image_dir"] = [f"{workspace_identifier}{calib_ds_metadata.get('cloud_file_path')}" + "/test.tar.gz"]
-    return config
-
-
-def optical_inspection(config, job_context, handler_metadata):
-    """Assigns paths of data sources to the respective config params for optical inspection"""
-    workspace_cache = {}
-    # Train dataset
-    if handler_metadata.get("train_datasets", []) != []:
-        train_ds = handler_metadata.get("train_datasets", [])[0]
-        train_ds_metadata = get_handler_metadata(train_ds, kind="datasets")
-        workspace_identifier = get_workspace_string_identifier(train_ds_metadata.get('workspace'), workspace_cache)
-        train_root = f"{workspace_identifier}{train_ds_metadata.get('cloud_file_path')}"
-        if "dataset" not in config.keys():
-            config["dataset"] = {}
-        if "train_dataset" not in config["dataset"].keys():
-            config["dataset"]["train_dataset"] = {}
-        config["dataset"]["train_dataset"]["images_dir"] = os.path.join(train_root, "images.tar.gz")
-        config["dataset"]["train_dataset"]["csv_path"] = os.path.join(train_root, "dataset.csv")
-
-    # Eval dataset
-    eval_ds = handler_metadata.get("eval_dataset", None)
-    if eval_ds is not None:
-        eval_ds_metadata = get_handler_metadata(eval_ds, kind="datasets")
-        workspace_identifier = get_workspace_string_identifier(eval_ds_metadata.get('workspace'), workspace_cache)
-        eval_root = f"{workspace_identifier}{eval_ds_metadata.get('cloud_file_path')}"
-        if "dataset" not in config.keys():
-            config["dataset"] = {}
-        if "validation_dataset" not in config["dataset"].keys():
-            config["dataset"]["validation_dataset"] = {}
-        if "test_dataset" not in config["dataset"].keys():
-            config["dataset"]["test_dataset"] = {}
-        config["dataset"]["validation_dataset"]["images_dir"] = os.path.join(eval_root, "images.tar.gz")
-        config["dataset"]["validation_dataset"]["csv_path"] = os.path.join(eval_root, "dataset.csv")
-        config["dataset"]["test_dataset"]["images_dir"] = os.path.join(eval_root, "images.tar.gz")
-        config["dataset"]["test_dataset"]["csv_path"] = os.path.join(eval_root, "dataset.csv")
-
-    # Inference dataset
-    infer_ds = handler_metadata.get("inference_dataset", None)
-    if infer_ds is not None:
-        infer_ds_metadata = get_handler_metadata(infer_ds, kind="datasets")
-        workspace_identifier = get_workspace_string_identifier(infer_ds_metadata.get('workspace'), workspace_cache)
-        infer_root = f"{workspace_identifier}{infer_ds_metadata.get('cloud_file_path')}"
-        if "dataset" not in config.keys():
-            config["dataset"] = {}
-        if "infer_dataset" not in config["dataset"].keys():
-            config["dataset"]["infer_dataset"] = {}
-        config["dataset"]["infer_dataset"]["images_dir"] = os.path.join(infer_root, "images.tar.gz")
-        config["dataset"]["infer_dataset"]["csv_path"] = os.path.join(infer_root, "dataset.csv")
-
-    # calibration dataset
-    calib_ds = handler_metadata.get("calibration_dataset", None)
-    if calib_ds and job_context.action == "gen_trt_engine":
-        calib_ds_metadata = get_handler_metadata(calib_ds, kind="datasets")
-        workspace_identifier = get_workspace_string_identifier(calib_ds_metadata.get('workspace'), workspace_cache)
-        config["gen_trt_engine"]["tensorrt"]["calibration"]["cal_image_dir"] = [f"{workspace_identifier}{calib_ds_metadata.get('cloud_file_path')}" + "/images.tar.gz"]
-    return config
-
-
-def centerpose(config, job_context, handler_metadata):
-    """Assigns paths of data sources to the respective config params for CenterPose"""
-    workspace_cache = {}
-    # Train dataset
-    if handler_metadata.get("train_datasets", []) != []:
-        train_ds = handler_metadata.get("train_datasets", [])[0]
-        train_ds_metadata = get_handler_metadata(train_ds, kind="datasets")
-        workspace_identifier = get_workspace_string_identifier(train_ds_metadata.get('workspace'), workspace_cache)
-        train_root = f"{workspace_identifier}{train_ds_metadata.get('cloud_file_path')}"
-        if job_context.action == "train":
-            config["dataset"]["train_data"] = {}
-            config["dataset"]["train_data"] = os.path.join(train_root, 'train.tar.gz')
-
-    # Eval dataset
-    eval_ds = handler_metadata.get("eval_dataset", None)
-    if eval_ds is not None:
-        eval_ds_metadata = get_handler_metadata(eval_ds, kind="datasets")
-        workspace_identifier = get_workspace_string_identifier(eval_ds_metadata.get('workspace'), workspace_cache)
-        eval_root = f"{workspace_identifier}{eval_ds_metadata.get('cloud_file_path')}"
-        if job_context.action == "train":
-            config["dataset"]["val_data"] = {}
-            config["dataset"]["val_data"] = os.path.join(eval_root, "val.tar.gz")
-        if job_context.action == "evaluate":
-            config["dataset"]["test_data"] = {}
-            config["dataset"]["test_data"] = os.path.join(eval_root, "test.tar.gz")
-
-    # Inference dataset
-    infer_ds = handler_metadata.get("inference_dataset", None)
-    if infer_ds is not None:
-        infer_ds_metadata = get_handler_metadata(infer_ds, kind="datasets")
-        workspace_identifier = get_workspace_string_identifier(infer_ds_metadata.get('workspace'), workspace_cache)
-        infer_root = f"{workspace_identifier}{infer_ds_metadata.get('cloud_file_path')}"
-        if job_context.action == "inference":
-            config["dataset"]["inference_data"] = {}
-            config["dataset"]["inference_data"] = os.path.join(infer_root, "val.tar.gz")
-
-    # calibration dataset
-    calib_ds = handler_metadata.get("calibration_dataset", None)
-    if calib_ds and job_context.action == "gen_trt_engine":
-        calib_ds_metadata = get_handler_metadata(calib_ds, kind="datasets")
-        workspace_identifier = get_workspace_string_identifier(calib_ds_metadata.get('workspace'), workspace_cache)
-        config["gen_trt_engine"]["tensorrt"]["calibration"]["cal_image_dir"] = [f"{workspace_identifier}{calib_ds_metadata.get('cloud_file_path')}" + "/train.tar.gz"]
-
-    if job_context.action != "train":
-        if "backbone" in config["model"].keys():
-            if "pretrained_backbone_path" in config["model"]["backbone"].keys():
-                del config["model"]["backbone"]["pretrained_backbone_path"]
-        if "train" in config.keys() and "resume_training_checkpoint_path" in config["train"].keys():
-            del config["train"]["resume_training_checkpoint_path"]
-
-    return config
-
-
-def visual_changenet_classify(config, job_context, handler_metadata):
-    """Assigns paths of data sources to the respective config params for visual_changenet_classify"""
-    workspace_cache = {}
-    # Train dataset
-    if handler_metadata.get("train_datasets", []) != []:
-        train_ds = handler_metadata.get("train_datasets", [])[0]
-        train_ds_metadata = get_handler_metadata(train_ds, kind="datasets")
-        workspace_identifier = get_workspace_string_identifier(train_ds_metadata.get('workspace'), workspace_cache)
-        train_root = f"{workspace_identifier}{train_ds_metadata.get('cloud_file_path')}"
-        if "dataset" not in config.keys():
-            config["dataset"] = {}
-        if "classify" not in config["dataset"].keys():
-            config["dataset"]["classify"] = {}
-        if "train_dataset" not in config["dataset"]["classify"].keys():
-            config["dataset"]["classify"]["train_dataset"] = {}
-        config["dataset"]["classify"]["train_dataset"]["images_dir"] = os.path.join(train_root, "images.tar.gz")
-        config["dataset"]["classify"]["train_dataset"]["csv_path"] = os.path.join(train_root, "dataset.csv")
-
-    # Eval dataset
-    eval_ds = handler_metadata.get("eval_dataset", None)
-    if eval_ds is not None:
-        eval_ds_metadata = get_handler_metadata(eval_ds, kind="datasets")
-        workspace_identifier = get_workspace_string_identifier(eval_ds_metadata.get('workspace'), workspace_cache)
-        eval_root = f"{workspace_identifier}{eval_ds_metadata.get('cloud_file_path')}"
-        if "dataset" not in config.keys():
-            config["dataset"] = {}
-        if "classify" not in config["dataset"].keys():
-            config["dataset"]["classify"] = {}
-        if "validation_dataset" not in config["dataset"]["classify"].keys():
-            config["dataset"]["classify"]["validation_dataset"] = {}
-        if "test_dataset" not in config["dataset"]["classify"].keys():
-            config["dataset"]["classify"]["test_dataset"] = {}
-        config["dataset"]["classify"]["validation_dataset"]["images_dir"] = os.path.join(eval_root, "images.tar.gz")
-        config["dataset"]["classify"]["validation_dataset"]["csv_path"] = os.path.join(eval_root, "dataset.csv")
-        config["dataset"]["classify"]["test_dataset"]["images_dir"] = os.path.join(eval_root, "images.tar.gz")
-        config["dataset"]["classify"]["test_dataset"]["csv_path"] = os.path.join(eval_root, "dataset.csv")
-
-    # Inference dataset
-    infer_ds = handler_metadata.get("inference_dataset", None)
-    if infer_ds is not None:
-        infer_ds_metadata = get_handler_metadata(infer_ds, kind="datasets")
-        workspace_identifier = get_workspace_string_identifier(infer_ds_metadata.get('workspace'), workspace_cache)
-        infer_root = f"{workspace_identifier}{infer_ds_metadata.get('cloud_file_path')}"
-        if "dataset" not in config.keys():
-            config["dataset"] = {}
-        if "classify" not in config["dataset"].keys():
-            config["dataset"]["classify"] = {}
-        if "infer_dataset" not in config["dataset"]["classify"].keys():
-            config["dataset"]["classify"]["infer_dataset"] = {}
-        config["dataset"]["classify"]["infer_dataset"]["images_dir"] = os.path.join(infer_root, "images.tar.gz")
-        config["dataset"]["classify"]["infer_dataset"]["csv_path"] = os.path.join(infer_root, "dataset.csv")
-
-    # calibration dataset
-    calib_ds = handler_metadata.get("calibration_dataset", None)
-    if calib_ds and job_context.action == "gen_trt_engine":
-        calib_ds_metadata = get_handler_metadata(calib_ds, kind="datasets")
-        workspace_identifier = get_workspace_string_identifier(calib_ds_metadata.get('workspace'), workspace_cache)
-        config["gen_trt_engine"]["tensorrt"]["calibration"]["cal_image_dir"] = [f"{workspace_identifier}{calib_ds_metadata.get('cloud_file_path')}" + "/images.tar.gz"]
-    return config
-
-
-def visual_changenet(config, job_context, handler_metadata):
-    """Assigns paths of data sources to the respective config params for visual changenet"""
-    workspace_cache = {}
-    # Train dataset
-    if handler_metadata.get("train_datasets", []) != []:
-        print("Warning: checking handler visual changenet", handler_metadata.get("train_datasets"), file=sys.stderr)
-        train_ds = handler_metadata.get("train_datasets", [])[0]
-        train_dataset_metadata = get_handler_metadata(train_ds, "datasets")
-        if train_dataset_metadata.get('format') == 'visual_changenet_classify':
-            return visual_changenet_classify(config, job_context, handler_metadata)
-        train_ds_metadata = get_handler_metadata(train_ds, kind="datasets")
-        workspace_identifier = get_workspace_string_identifier(train_ds_metadata.get('workspace'), workspace_cache)
-        train_root = f"{workspace_identifier}{train_ds_metadata.get('cloud_file_path')}"
-        if "dataset" not in config.keys():
-            config["dataset"] = {}
-        if "segment" not in config["dataset"].keys():
-            config["dataset"]["segment"] = {}
-        config["dataset"]["segment"]["root_dir"] = train_root
-
-    return config
-
-
-def analytics(config, job_context, handler_metadata):
-    """Function to create data sources for analytics module"""
-    workspace_cache = {}
-    workspace_identifier = get_workspace_string_identifier(handler_metadata.get('workspace'), workspace_cache)
-    config["data"]["image_dir"] = f"{workspace_identifier}{handler_metadata.get('cloud_file_path')}" + "/images.tar.gz"
-    if config["data"]["input_format"] == "COCO":
-        config["data"]["ann_path"] = f"{workspace_identifier}{handler_metadata.get('cloud_file_path')}" + "/annotations.json"  # Annotation format conversion action's parent id
-        if job_context.parent_id:
+        # Check parent action rules
+        if "parent_action_rules" in dynamic_config and job_context.parent_id:
             parent_job_metadata = get_handler_job_metadata(job_context.parent_id)
-            parent_action = parent_job_metadata.get("action")
-            if parent_action == "annotation_format_convert":
-                output_format = parent_job_metadata.get("specs", {}).get("data", {}).get("output_format")
-                if output_format == "COCO":
-                    config["data"]["ann_path"] = f"{workspace_identifier}results/{job_context.parent_id}" + "/annotations.json"
-    elif config["data"]["input_format"] == "KITTI":
-        config["data"]["ann_path"] = f"{workspace_identifier}{handler_metadata.get('cloud_file_path')}" + "/labels.tar.gz"
-    return config
+            parent_action = parent_job_metadata.get("action") if parent_job_metadata else None
 
+            if parent_action and parent_action in dynamic_config["parent_action_rules"]:
+                rules = dynamic_config["parent_action_rules"][parent_action]
 
-def data_services_image(config, job_context, handler_metadata):
-    """Function to create data sources for data_service's image module"""
-    workspace_cache = {}
-    workspace_identifier = get_workspace_string_identifier(handler_metadata.get('workspace'), workspace_cache)
-    infer_root = f"{workspace_identifier}{handler_metadata.get('cloud_file_path')}"
-    if "data" not in config.keys():
-        config["data"] = {}
-    config["data"]["image_dir"] = infer_root
-    return config
+                # Handle direct set_value rules
+                if "set_value" in rules:
+                    # Check if there's an action_restriction
+                    action_restriction = rules.get("action_restriction", None)
 
+                    # Check conditional if present
+                    conditional_pass = True
+                    if "conditional" in rules:
+                        cond = rules["conditional"]
+                        if "metadata_key" in cond:
+                            meta_value = handler_metadata.get(cond["metadata_key"], None)
+                            if "equals" in cond and meta_value != cond["equals"]:
+                                conditional_pass = False
+                            if "not_equals" in cond and meta_value == cond["not_equals"]:
+                                conditional_pass = False
+                        elif "config_path" in cond:
+                            config_value = get_nested_config_value(config, cond["config_path"])
+                            if "equals" in cond and config_value != cond["equals"]:
+                                conditional_pass = False
+                            if "not_equals" in cond and config_value == cond["not_equals"]:
+                                conditional_pass = False
 
-def annotations(config, job_context, handler_metadata):
-    """Function to create data sources for annotations module"""
-    workspace_cache = {}
-    workspace_identifier = get_workspace_string_identifier(handler_metadata.get('workspace'), workspace_cache)
-    if config["data"]["input_format"] == "COCO":
-        if "coco" not in config.keys():
-            config["coco"] = {}
-        config["coco"]["ann_file"] = f"{workspace_identifier}{handler_metadata.get('cloud_file_path')}" + "/annotations.json"
-    elif config["data"]["input_format"] == "KITTI":
-        if "kitti" not in config.keys():
-            config["kitti"] = {}
-        config["kitti"]["image_dir"] = f"{workspace_identifier}{handler_metadata.get('cloud_file_path')}" + "/images.tar.gz"
-        config["kitti"]["label_dir"] = f"{workspace_identifier}{handler_metadata.get('cloud_file_path')}" + "/labels.tar.gz"
-    return config
+                    if conditional_pass:
+                        for config_path, value in rules["set_value"].items():
+                            # Check if this config_path is restricted to specific actions
+                            if action_restriction:
+                                if isinstance(action_restriction, list):
+                                    # Simple list of allowed actions
+                                    if job_context.action not in action_restriction:
+                                        continue
+                                elif isinstance(action_restriction, dict):
+                                    # Dict mapping config paths to allowed actions
+                                    if config_path in action_restriction:
+                                        if job_context.action not in action_restriction[config_path]:
+                                            continue
+                                    else:
+                                        # If config_path not in action_restriction dict, apply to all actions
+                                        pass
 
+                            # Replace {parent_id} with actual parent ID if present
+                            if isinstance(value, str) and "{parent_id}" in value:
+                                value = value.replace("{parent_id}", job_context.parent_id)
 
-def augmentation(config, job_context, handler_metadata):
-    """Function to create data sources for augmentation module"""
-    workspace_cache = {}
-    workspace_identifier = get_workspace_string_identifier(handler_metadata.get('workspace'), workspace_cache)
-    config["data"]["image_dir"] = f"{workspace_identifier}{handler_metadata.get('cloud_file_path')}" + "/images.tar.gz"
+                                # If this is a path to results, prepend workspace identifier
+                                if "results/" in value:
+                                    workspace_identifier = get_workspace_string_identifier(
+                                        handler_metadata.get('workspace'),
+                                        workspace_cache
+                                    )
+                                    value = workspace_identifier + value
 
-    # Correct dataset_type based on current dataset format. This is for when augment is after annotation convert.
-    if handler_metadata.get("format", None):
-        config["data"]["dataset_type"] = handler_metadata.get("format")
+                            set_nested_config_value(config, config_path, value)
+                            already_configured_paths.add(config_path)
 
-    if config["data"]["dataset_type"] == "kitti":
-        config["data"]["ann_path"] = f"{workspace_identifier}{handler_metadata.get('cloud_file_path')}" + "/labels.tar.gz"
-        config["spatial_aug"]["rotation"]["refine_box"]["gt_cache"] = os.path.join(f"{workspace_identifier}{handler_metadata.get('cloud_file_path')}", "label.json")
-        config["spatial_aug"]["rotation"]["refine_box"]["enabled"] = False
-    elif config["data"]["dataset_type"] == "coco":
-        config["data"]["ann_path"] = f"{workspace_identifier}{handler_metadata.get('cloud_file_path')}" + "/annotations.json"
-        if job_context.parent_id:
-            parent_job_metadata = get_handler_job_metadata(job_context.parent_id)  # Auto label action's parent id
-            parent_action = parent_job_metadata.get("action")
-            if parent_action == "auto_label":
-                config["data"]["ann_path"] = f"{workspace_identifier}results/{job_context.parent_id}" + "/label.json"
-        config["spatial_aug"]["rotation"]["refine_box"]["gt_cache"] = config["data"]["ann_path"]
-    return config
+                # Handle check_parent_specs rules
+                if "check_parent_specs" in rules:
+                    # Get action_restriction if present
+                    action_restriction = rules.get("action_restriction", None)
 
+                    for spec_path, expected_value in rules["check_parent_specs"].items():
+                        if spec_path == "if_match":
+                            continue
 
-def auto_label(config, job_context, handler_metadata):
-    """Function to create data sources for auto_label module"""
-    workspace_cache = {}
-    workspace_identifier = get_workspace_string_identifier(handler_metadata.get('workspace'), workspace_cache)
-    config["mal"]["inference"]["img_dir"] = f"{workspace_identifier}{handler_metadata.get('cloud_file_path')}" + "/images.tar.gz"
-    config["mal"]["inference"]["ann_path"] = f"{workspace_identifier}{handler_metadata.get('cloud_file_path')}" + "/annotations.json"
-    if job_context.parent_id:
-        parent_job_metadata = get_handler_job_metadata(job_context.parent_id)  # Annotation format conversion action's parent id
-        parent_action = parent_job_metadata.get("action")
-        if parent_action == "annotation_format_convert":
-            output_format = parent_job_metadata.get("specs", {}).get("data", {}).get("output_format")
-            if output_format == "COCO":
-                config["mal"]["inference"]["ann_path"] = f"{workspace_identifier}results/{job_context.parent_id}" + "/annotations.json"
-    config["mal"]["inference"]["label_dump_path"] = f"/results/{job_context.id}/label.json"
-    return config
+                        # Get the actual value from parent specs
+                        parent_specs = parent_job_metadata.get("specs", {})
+                        actual_value = get_nested_config_value(parent_specs, spec_path)
 
+                        # If the value matches, apply the rules in if_match
+                        if actual_value == expected_value and "if_match" in rules["check_parent_specs"]:
+                            match_rules = rules["check_parent_specs"]["if_match"]
 
-def prepare_job_datalist(config, job_context, handler_metadata):
-    """Function to create data sources for monai bundles."""
-    job_action = job_context.action
-    train_datasets = handler_metadata["train_datasets"]
-    if len(train_datasets) > 1:
-        raise ValueError(f"Only one train dataset is supported, but {len(train_datasets)} are given.")
-    datasets = {}
-    datasets['train'] = train_datasets[0] if len(train_datasets) == 1 else None
-    datasets['validate'] = handler_metadata["eval_dataset"]
-    datasets['batchinfer'] = handler_metadata["inference_dataset"]
-    _, _, overridden_output_dir = CLI_CONFIG_TO_FUNCTIONS["monai_output_dir"](job_context, handler_metadata)
-    local_job = (job_context.specs and "cluster" in job_context.specs and job_context.specs["cluster"] == "local")
-    if job_action == "train":
-        datasets.pop("batchinfer")
+                            if "set_value" in match_rules:
+                                for config_path, value in match_rules["set_value"].items():
+                                    # Check if this config_path is restricted to specific actions
+                                    if action_restriction:
+                                        if isinstance(action_restriction, list):
+                                            # Simple list of allowed actions
+                                            if job_context.action not in action_restriction:
+                                                continue
+                                        elif isinstance(action_restriction, dict):
+                                            # Dict mapping config paths to allowed actions
+                                            if config_path in action_restriction:
+                                                if job_context.action not in action_restriction[config_path]:
+                                                    continue
+                                            else:
+                                                # If config_path not in action_restriction dict, apply to all actions
+                                                pass
 
-    if job_action in ["batchinfer", "generate"]:
-        datasets.pop("train")
-        datasets.pop("validate")
+                                    # Replace {parent_id} with actual parent ID if present
+                                    if isinstance(value, str) and "{parent_id}" in value:
+                                        value = value.replace("{parent_id}", job_context.parent_id)
 
-    # Workaround for the ci test.
-    config["datasets_info"] = {}
-    for dataset_usage, dataset_id in datasets.items():
-        if dataset_id is None:
+                                        # If this is a path to results, prepend workspace identifier
+                                        if "results/" in value:
+                                            workspace_identifier = get_workspace_string_identifier(
+                                                handler_metadata.get('workspace'),
+                                                workspace_cache
+                                            )
+                                            value = workspace_identifier + value
+
+                                    set_nested_config_value(config, config_path, value)
+                                    already_configured_paths.add(config_path)
+
+        # Check action rules
+        if "action_rules" in dynamic_config:
+            if job_context.action in dynamic_config["action_rules"]:
+                rules = dynamic_config["action_rules"][job_context.action]
+                if "set_value" in rules:
+                    for config_path, value in rules["set_value"].items():
+                        set_nested_config_value(config, config_path, value)
+                if "remove" in rules:
+                    for path in rules["remove"]:
+                        remove_nested_config_value(config, path)
+
+        # Handle model type specific rules
+        if model_type and "rules" in dynamic_config:
+            rules = dynamic_config["rules"].get(model_type, {})
+
+            # Handle removals
+            for path in rules.get("remove", []):
+                remove_nested_config_value(config, path)
+
+            # Handle action-specific removals
+            for path in rules.get("remove_if_action", {}).get(job_context.action, []):
+                remove_nested_config_value(config, path)
+
+            # Handle joint model path splitting
+            if (rules.get("transform") == "split_pretrained_paths" and
+                    "rgb_pretrained_model_path" in config.get("model", {})):
+                ptm_paths = config["model"]["rgb_pretrained_model_path"].split(",")
+                rgb_path = next((p for p in ptm_paths if "_rgb_" in p), ptm_paths[0])
+                of_path = next((p for p in ptm_paths if "_of_" in p), ptm_paths[1])
+                config["model"]["rgb_pretrained_model_path"] = rgb_path
+                config["model"]["of_pretrained_model_path"] = of_path
+
+        # Handle defaults
+        for path, value in dynamic_config.get("defaults", {}).items():
+            if not get_nested_config_value(config, path):
+                set_nested_config_value(config, path, value)
+
+    # Apply data source mappings
+    data_sources = network_config.get("data_sources", {}).get(job_context.action, {})
+
+    for config_path, source_config in data_sources.items():
+        # Get source datasets
+        if config_path in already_configured_paths:
+            continue
+        if source_config["source"] == "id":
+            source_datasets = [handler_metadata.get("id")]
+        else:
+            source_datasets = get_datasets_from_metadata(handler_metadata, source_config["source"])
+            if not source_datasets:
+                continue
+        (source_ds_metadata,
+         workspace_identifier,
+         source_root) = get_dataset_metadata_and_paths(source_datasets[0], workspace_cache)
+
+        # Handle value from metadata
+        if "value_from_metadata" in source_config:
+            meta_config = source_config["value_from_metadata"]
+            meta_value = source_ds_metadata.get(meta_config["key"], None)
+            if meta_value in meta_config["mapping"]:
+                value = meta_config["mapping"][meta_value]
+            else:
+                value = meta_config["mapping"].get("*", meta_config["default"])
+            set_nested_config_value(config, config_path, value)
+            already_configured_paths.add(config_path)  # Mark as configured
             continue
 
-        datalist_json = os.path.join(overridden_output_dir, f"{dataset_usage}_datalist.json")
-        dataset_metadata = get_handler_metadata(dataset_id, "datasets")
-        endpoint = MonaiDatasetHandler.endpoint(dataset_metadata)
-        config[f"{dataset_usage}#dataset#data"] = f"%{datalist_json}"
-        config["datasets_info"][dataset_usage] = {"url": endpoint.url,
-                                                  "client_id": endpoint.client_id,
-                                                  "client_secret": endpoint.client_secret,
-                                                  "secret_env": f"{dataset_usage.upper()}_SECRET",
-                                                  "is_dicom": False,
-                                                  "filepath": tempfile.TemporaryDirectory().name,  # pylint: disable=R1732
-                                                  "datalist_path": datalist_json,
-                                                  "skip_label": False}
-        if job_action == "batchinfer":
-            config["dataset#data"] = f"%{datalist_json}"
-            # Skip the lable check.
-            config["datasets_info"][dataset_usage]["skip_label"] = True
+        # Handle path from type/intent/source/model_type cases
+        for path_type in ["type", "format", "intent", "source", "model_type"]:
+            key = f"path_from_{path_type}"
+            if key in source_config:
+                meta_value = {
+                    "model_type": lambda: get_nested_config_value(config, model_type_key) if model_type_key else None,
+                    "source": lambda x=source_config: x["source"],
+                    "type": lambda x=source_ds_metadata: get_metadata_value(x, "type"),
+                    "format": lambda x=source_ds_metadata: get_metadata_value(x, "format"),
+                    "intent": lambda x=source_ds_metadata: get_metadata_value(x, "intent")
+                }[path_type]()
 
-        if isinstance(endpoint, DicomEndpoint):
-            if not local_job:
-                raise RuntimeError("Batch actions only support object storage datasets.")
-            config["datasets_info"][dataset_usage]["is_dicom"] = True
+                if path_type == "model_type" and meta_value == "openpose":
+                    meta_value = "kinetics"
+
+                if meta_value in source_config[key]:
+                    path = source_config[key][meta_value]
+                elif path_type != "intent":  # intent doesn't use fallback
+                    path = source_config[key].get("*")
+                else:
+                    continue
+
+                value = os.path.join(source_root, path)
+                if path_type == "source":
+                    value = apply_transforms(
+                        value, source_config.get("transform", []),
+                        source_root, source_datasets[0], dataset_convert_action,
+                        workspace_identifier)
+                set_nested_config_value(config, config_path, value)
+                already_configured_paths.add(config_path)  # Mark as configured
+                continue
+
+        # Skip rest of processing if already configured by a special handler
+        if config_path in already_configured_paths:
+            continue
+
+        # Check conditional
+        if "conditional" in source_config:
+            cond = source_config["conditional"]
+            meta_value = source_ds_metadata.get(cond["metadata_key"], None)
+            if "equals" in cond and meta_value != cond["equals"]:
+                continue
+            if "not_equals" in cond and meta_value == cond["not_equals"]:
+                continue
+
+        if source_config.get("multiple_sources", False):
+            # Handle multiple sources
+            result_list = []
+            for source_ds in source_datasets:
+                (source_ds_metadata,
+                 workspace_identifier,
+                 source_root) = get_dataset_metadata_and_paths(source_ds, workspace_cache)
+
+                if "mapping" in source_config:
+                    entry = {}
+                    for key, mapping in source_config["mapping"].items():
+                        value = process_mapping_entry(
+                            mapping, source_root, source_ds,
+                            dataset_convert_action, workspace_identifier)
+                        if value is not None:
+                            entry[key] = value
+                    if entry:
+                        result_list.append(entry)
+                else:
+                    path = source_config.get("path", "")
+                    value = source_root if path == "" else os.path.join(source_root, path)
+                    result_list.append(value)
+
+            if result_list:
+                set_nested_config_value(config, config_path, result_list)
+
+        else:
+            # Handle single source
+            source_ds = source_datasets[0]
+            if source_config.get("value") is not None:
+                # Replace {job_id} with actual job ID if present
+                value = source_config["value"]
+                if isinstance(value, str) and "{job_id}" in value:
+                    value = value.replace("{job_id}", job_context.id)
+                set_nested_config_value(config, config_path, value)
+                continue
+
+            (source_ds_metadata,
+             workspace_identifier,
+             source_root) = get_dataset_metadata_and_paths(source_ds, workspace_cache)
+
+            if "mapping" in source_config:
+                result = {}
+                for key, mapping in source_config["mapping"].items():
+                    value = process_mapping_entry(
+                        mapping, source_root, source_ds,
+                        dataset_convert_action, workspace_identifier)
+                    if value is not None:
+                        result[key] = value
+
+                if result:
+                    set_nested_config_value(config, config_path, result)
+            else:
+                path = source_config.get("path", "")
+                value = source_root if path == "" else os.path.join(source_root, path)
+                value = apply_transforms(
+                    value, source_config.get("transform", []),
+                    source_root, source_ds, dataset_convert_action,
+                    workspace_identifier)
+                set_nested_config_value(config, config_path, value)
 
     return config
 
 
-def vila(config, job_context, handler_metadata):
-    """Function to create data sources for vila module"""
-    workspace_cache = {}
-    workspace_identifier = get_workspace_string_identifier(handler_metadata.get('workspace'), workspace_cache)
-    if job_context.action == "train":
-        train_ds = handler_metadata.get("train_datasets", [])[0]
-        train_ds_metadata = get_handler_metadata(train_ds, kind="datasets")
-        train_root = f"{workspace_identifier}{train_ds_metadata.get('cloud_file_path')}"
-        config["train"]["dataset"]["media_dir"] = f"{train_root}/dataset.tar.gz"
-        config["train"]["dataset"]["data_path"] = f"{train_root}/annotations.json"
-    elif job_context.action == "inference":
-        infer_ds = handler_metadata.get("inference_dataset", None)
-        if infer_ds is not None:
-            infer_ds_metadata = get_handler_metadata(infer_ds, kind="datasets")
-            infer_root = f"{workspace_identifier}{infer_ds_metadata.get('cloud_file_path')}"
-            config["inference"]["media"] = infer_root
-    return config
-
-
-DS_CONFIG_TO_FUNCTIONS = {"bevfusion": bevfusion,
-                          "segformer": segformer,
-                          "efficientdet_tf2": efficientdet_tf2,
-                          "classification_pyt": classification_pyt,
-                          "classification_tf2": classification_tf2,
-                          "action_recognition": action_recognition,
-                          "mal": mal,
-                          "mask2former": mask2former,
-                          "ml_recog": ml_recog,
-                          "monai_annotation": prepare_job_datalist,
-                          "monai_vista3d": prepare_job_datalist,
-                          "monai_vista2d": prepare_job_datalist,
-                          "monai_automl": prepare_job_datalist,
-                          "monai_automl_generated": prepare_job_datalist,
-                          "monai_custom": prepare_job_datalist,
-                          "monai_classification": prepare_job_datalist,
-                          "monai_detection": prepare_job_datalist,
-                          "monai_segmentation": prepare_job_datalist,
-                          "monai_genai": prepare_job_datalist,
-                          "monai_maisi": prepare_job_datalist,
-                          "ocdnet": ocdnet,
-                          "ocrnet": ocrnet,
-                          "optical_inspection": optical_inspection,
-                          "pointpillars": pointpillars,
-                          "pose_classification": pose_classification,
-                          "re_identification": re_identification,
-                          "deformable_detr": deformable_detr,
-                          "dino": dino,
-                          "grounding_dino": grounding_dino,
-                          "mask_grounding_dino": mask_grounding_dino,
-                          "rtdetr": rtdetr,
-                          "object_detection": object_detection,
-                          "centerpose": centerpose,
-                          "data_analytics": analytics,
-                          "annotations": annotations,
-                          "augment": augmentation,
-                          "image": data_services_image,
-                          "auto_label": auto_label,
-                          "visual_changenet": visual_changenet,
-                          "maxine_eye_contact": maxine_eye_contact,
-                          "vila": vila}
+def check_file_exists(root_path, file_path):
+    """Check if a file exists in the given root path."""
+    full_path = os.path.join(root_path, file_path)
+    return os.path.exists(full_path)

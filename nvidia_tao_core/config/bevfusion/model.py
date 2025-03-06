@@ -112,19 +112,26 @@ class ImageBackboneConfig:
         value=False,
         default_value=False,
         display_name="with checkpoint",
-        description="""Use checkpoint or not. Using checkpoint
-                       will save some memory while slowing down the training speed."""
+        description=(
+            "Use checkpoint or not. Using checkpoint will save some memory "
+            "while slowing down the training speed."
+        )
     )
     convert_weights: bool = BOOL_FIELD(
         value=True,
         default_value=True,
         display_name="convert weights",
-        description="""The flag indicates whether the
-                        pre-trained model is from the original repo."""
+        description=(
+            "The flag indicates whether the pre-trained model is from the original repo."
+        )
     )
     init_cfg: Optional[Dict[Any, Any]] = DICT_FIELD(
-        hashMap={"type": "Pretrained",
-                 "checkpoint": "https://github.com/SwinTransformer/storage/releases/download/v1.0.0/swin_tiny_patch4_window7_224.pth"},
+        hashMap={
+            "type": "Pretrained",
+            "checkpoint": (
+                "https://github.com/SwinTransformer/storage/releases/download/v1.0.0/swin_tiny_patch4_window7_224.pth"
+            )
+        },
         default_value=None,
         description="Configuration for initialzation."
     )

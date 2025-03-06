@@ -19,7 +19,12 @@ import math
 from nvidia_tao_core.microservices.automl.utils import ResumeRecommendation, JobStates, get_valid_range, clamp_value
 from nvidia_tao_core.microservices.automl.automl_algorithm_base import AutoMLAlgorithmBase
 from nvidia_tao_core.microservices.handlers.utilities import get_flatten_specs
-from nvidia_tao_core.microservices.stateless_handlers import save_job_specs, get_job_specs, save_automl_brain_info, get_automl_brain_info
+from nvidia_tao_core.microservices.handlers.stateless_handlers import (
+    save_job_specs,
+    get_job_specs,
+    save_automl_brain_info,
+    get_automl_brain_info
+)
 
 np.random.seed(95051)
 
@@ -57,7 +62,7 @@ class HyperBand(AutoMLAlgorithmBase):
     def brackets_and_sh_sequence(self, R, nu):
         """Generate ni,ri arrays based on R and nu values"""
         smax = int(np.log(R) / np.log(nu))
-        for itr, s in enumerate(range(smax, 0, -1)):  # This would be range(smax,-1,-1) to follow the paper, but the last bracket has n recommendations and no pruning and they are just random recs. Unless using a Bayesian HP recommendation, this can be 0
+        for itr, s in enumerate(range(smax, 0, -1)):
             self.ni[str(itr)] = []
             self.ri[str(itr)] = []
             n = int(math.ceil(int((smax + 1) / (s + 1)) * (nu**s)))
@@ -104,7 +109,8 @@ class HyperBand(AutoMLAlgorithmBase):
             random_float = clamp_value(random_float, v_min, v_max)
 
             if not (type(parent_param) is float and math.isnan(parent_param)):
-                if (type(parent_param) is str and parent_param != "nan" and parent_param == "TRUE") or (type(parent_param) is bool and parent_param):
+                if ((type(parent_param) is str and parent_param != "nan" and parent_param == "TRUE") or
+                        (type(parent_param) is bool and parent_param)):
                     self.parent_params[parameter_config.get("parameter")] = random_float
             return random_float
 
@@ -174,14 +180,25 @@ class HyperBand(AutoMLAlgorithmBase):
             self.resume_epoch_number = int(self.ri[self.bracket][self.sh_iter - 1] * self.epoch_multiplier)
             if self.expt_iter == 0:
                 if self.sh_iter == 1:
-                    self.experiments_considered = sorted(history[lower:], key=lambda rec: rec.result, reverse=self.reverse_sort)[0:self.ni[self.bracket][self.sh_iter]]
+                    self.experiments_considered = sorted(
+                        history[lower:],
+                        key=lambda rec: rec.result,
+                        reverse=self.reverse_sort
+                    )[0:self.ni[self.bracket][self.sh_iter]]
                 else:
                     for experiment in self.experiments_considered:
                         experiment.result = history[experiment.id].result
-                    self.experiments_considered = sorted(self.experiments_considered, key=lambda rec: rec.result, reverse=self.reverse_sort)[0:self.ni[self.bracket][self.sh_iter]]
+                    self.experiments_considered = sorted(
+                        self.experiments_considered,
+                        key=lambda rec: rec.result,
+                        reverse=self.reverse_sort
+                    )[0:self.ni[self.bracket][self.sh_iter]]
 
             self.epoch_number = self.ri[self.bracket][self.sh_iter] * self.epoch_multiplier
-            resumerec = ResumeRecommendation(self.experiments_considered[self.expt_iter].id, self.experiments_considered[self.expt_iter].specs)
+            resumerec = ResumeRecommendation(
+                self.experiments_considered[self.expt_iter].id,
+                self.experiments_considered[self.expt_iter].specs
+            )
             to_return = resumerec
         self.expt_iter += 1
 

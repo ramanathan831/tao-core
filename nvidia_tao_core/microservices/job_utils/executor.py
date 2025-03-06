@@ -23,9 +23,25 @@ from kubernetes import client, config
 from kubernetes.client.rest import ApiException
 
 from nvidia_tao_core.microservices.constants import MONAI_NETWORKS, NETWORK_CONTAINER_MAPPING
-from nvidia_tao_core.microservices.handlers.stateless_handlers import BACKEND, get_handler_job_metadata, get_toolkit_status, internal_job_status_update, write_job_metadata, update_job_message, get_job_specs
+from nvidia_tao_core.microservices.handlers.stateless_handlers import (
+    BACKEND,
+    get_handler_job_metadata,
+    get_toolkit_status,
+    internal_job_status_update,
+    write_job_metadata,
+    update_job_message,
+    get_job_specs
+)
 from nvidia_tao_core.microservices.handlers.utilities import send_microservice_request
-from nvidia_tao_core.microservices.handlers.nvcf_handler import create_function, deploy_function, get_function, create_microservice_job_on_nvcf, get_nvcf_microservices_job_status, delete_function_version
+from nvidia_tao_core.microservices.handlers.nvcf_handler import (
+    create_function,
+    deploy_function,
+    get_function,
+    delete_function_version,
+    add_authorized_party,
+    create_microservice_job_on_nvcf,
+    get_nvcf_microservices_job_status
+)
 
 if os.getenv("BACKEND"):  # To see if the container is going to be used for Service pods or network jobs
     from nvidia_tao_core.microservices.handlers.mongo_handler import mongo_secret
@@ -73,12 +89,29 @@ def get_available_local_k8s_gpus():
     return available_local_k8s_gpus
 
 
-def create(org_name, job_name, image, command, num_gpu=-1, accelerator=None, docker_env_vars=None, port=False, nv_job_metadata=None, automl_brain=False, automl_exp_job=False, cl_medical=False, local_cluster=False):
+def create(
+    org_name,
+    job_name,
+    image,
+    command,
+    num_gpu=-1,
+    accelerator=None,
+    docker_env_vars=None,
+    port=False,
+    nv_job_metadata=None,
+    automl_brain=False,
+    automl_exp_job=False,
+    cl_medical=False,
+    local_cluster=False
+):
     """Creates a kubernetes job"""
     name_space = _get_name_space()
     host_base_url = os.getenv("HOSTBASEURL", "no_url")
     if host_base_url == "no_url":
-        raise ValueError(f"Base URL not set in values yaml. Please set it as http(s)://<ip_address>:{release_name}-ingress-nginx-controller service's port number>")
+        raise ValueError(
+            f"Base URL not set in values yaml. Please set it as "
+            f"http(s)://<ip_address>:{release_name}-ingress-nginx-controller service's port number>"
+        )
     if BACKEND == "NVCF" and nv_job_metadata:
         team_name = nv_job_metadata["teamName"]
         nvcf_backend_details = nv_job_metadata["nvcf_backend_details"]
@@ -98,11 +131,21 @@ def create(org_name, job_name, image, command, num_gpu=-1, accelerator=None, doc
                     deployment_string = f"{function_id}:{version_id}"
                     print(f"Function deployment initiated successfully for job {job_name}", file=sys.stderr)
                 else:
-                    internal_job_status_update(job_name, automl=automl_exp_job, automl_experiment_number=nv_job_metadata.get("AUTOML_EXPERIMENT_NUMBER", "0"), message="NVCF deployment intitiation errored out, retry job again")
+                    internal_job_status_update(
+                        job_name,
+                        automl=automl_exp_job,
+                        automl_experiment_number=nv_job_metadata.get("AUTOML_EXPERIMENT_NUMBER", "0"),
+                        message="NVCF deployment intitiation error"
+                    )
                     print(f"Function deployment request failed for job {job_name}", file=sys.stderr)
                     return
             else:
-                internal_job_status_update(job_name, automl=automl_exp_job, automl_experiment_number=nv_job_metadata.get("AUTOML_EXPERIMENT_NUMBER", "0"), message="NVCF function couldn't be created, retry job again")
+                internal_job_status_update(
+                    job_name,
+                    automl=automl_exp_job,
+                    automl_experiment_number=nv_job_metadata.get("AUTOML_EXPERIMENT_NUMBER", "0"),
+                    message="NVCF function couldn't be created, retry job again"
+                )
                 print(f"Function creation request failed for job {job_name}", file=sys.stderr)
                 return
 
@@ -140,8 +183,9 @@ def create(org_name, job_name, image, command, num_gpu=-1, accelerator=None, doc
         in_cluster_url = f"http://{in_cluster_ip}:{cluster_port}" if nv_job_metadata is None else None
         if "TAO_API_SERVER" in docker_env_vars:
             docker_env_vars["TAO_API_SERVER"] = docker_env_vars["TAO_API_SERVER"].replace(host_base_url, in_cluster_url)
-        if "TAO_LOGGING_SERVER_URL" in docker_env_vars:
-            docker_env_vars["TAO_LOGGING_SERVER_URL"] = docker_env_vars["TAO_LOGGING_SERVER_URL"].replace(host_base_url, in_cluster_url)
+        docker_env_vars["TAO_LOGGING_SERVER_URL"] = (
+            docker_env_vars["TAO_LOGGING_SERVER_URL"].replace(host_base_url, in_cluster_url)
+        )
     dshm_volume_mount = client.V1VolumeMount(
         name="dshm",
         mount_path="/dev/shm")
@@ -439,7 +483,21 @@ def wait_for_service(org_name, handler_id, job_id, handler_kind):
     return "Error"
 
 
-def create_microservice_and_send_request(api_endpoint, network, action, cloud_metadata={}, specs={}, microservice_pod_id="", num_gpu=-1, microservice_container="", org_name="", handler_id="", handler_kind="", accelerator=None, docker_env_vars={}):
+def create_microservice_and_send_request(
+    api_endpoint,
+    network,
+    action,
+    cloud_metadata={},
+    specs={},
+    microservice_pod_id="",
+    num_gpu=-1,
+    microservice_container="",
+    org_name="",
+    handler_id="",
+    handler_kind="",
+    accelerator=None,
+    docker_env_vars={}
+):
     """Create a DNN container microservice pod and send request to the POD IP"""
     try:
         if not microservice_pod_id:
@@ -452,11 +510,13 @@ def create_microservice_and_send_request(api_endpoint, network, action, cloud_me
                 microservice_container = os.getenv('IMAGE_TAO_DEPLOY')
         create_microservice_pod(microservice_pod_id, microservice_container, num_gpu=num_gpu, accelerator=accelerator)
         if wait_for_service(org_name, handler_id, microservice_pod_id, handler_kind):
-            response = send_microservice_request(api_endpoint, network, action,
-                                                 cloud_metadata=cloud_metadata,
-                                                 specs=specs,
-                                                 job_id=microservice_pod_id,
-                                                 docker_env_vars=docker_env_vars)
+            response = send_microservice_request(
+                api_endpoint="get_job_status",
+                network=network,
+                action=action,
+                job_id=microservice_pod_id,
+                specs=specs
+            )
             if api_endpoint != "post_action":
                 delete(microservice_pod_id, use_ngc=False)
             return response
@@ -639,7 +699,8 @@ def status_tis_service(tis_service_name, ports=(8000, 8001, 8002)):
             endpoint_response = requests.get(url, timeout=120)
             if endpoint_response.status_code == 200:
                 return {"status": "Running", "tis_service_ip": tis_service_ip}
-            # TODO: here defined a new status, in order to find the situation that the TIS Service is started but not ready.
+            # TODO: here defined a new status, in order to find the situation that
+            # the TIS Service is started but not ready.
             return {"status": "NotReady"}
         except Exception as e:
             print(f"Exception thrown in status_tis_service is {str(e)}", file=sys.stderr)
@@ -673,7 +734,18 @@ def override_k8_status(job_name, k8_status):
     return override_status
 
 
-def status(org_name, handler_id, job_name, handler_kind, use_ngc=True, network="", action="", automl_exp_job=False, docker_env_vars={}):
+def status(
+    org_name,
+    handler_id,
+    job_name,
+    handler_kind,
+    use_ngc=True,
+    network="",
+    action="",
+    automl_exp_job=False,
+    docker_env_vars={},
+    authorized_party_nca_id=""
+):
     """Returns status of kubernetes job"""
     name_space = _get_name_space()
     if os.getenv("DEV_MODE", "False").lower() in ("true", "1"):
@@ -698,28 +770,70 @@ def status(org_name, handler_id, job_name, handler_kind, use_ngc=True, network="
                     nvcf_function_response = get_function(org_name, team_name, function_id, version_id, ngc_key)
                     if nvcf_function_response.status_code == 200:
                         nvcf_function_metadata = nvcf_function_response.json()
-                        update_job_message(job_handler_id, job_message_job_id, handler_kind, "NVCF function is being deployed", automl_expt_job_id=job_name, update_automl_expt=True)
+                        update_job_message(
+                            job_handler_id,
+                            job_message_job_id,
+                            handler_kind,
+                            "NVCF function is being deployed",
+                            automl_expt_job_id=job_name,
+                            update_automl_expt=True
+                        )
                     else:
-                        internal_job_status_update(job_name, automl=automl_exp_job, automl_experiment_number=nv_job_metadata.get("AUTOML_EXPERIMENT_NUMBER", "0"), message="NVCF deployment intitiation errored out, retry job again")
+                        internal_job_status_update(
+                            job_name,
+                            automl=automl_exp_job,
+                            automl_experiment_number=nv_job_metadata.get("AUTOML_EXPERIMENT_NUMBER", "0"),
+                            message="NVCF deployment intitiation error"
+                        )
                         return "Error"
                     if nvcf_function_metadata.get("function", {}).get("status") == "ACTIVE":
-                        deployment_string = f"{nvcf_function_metadata['function']['id']}:{nvcf_function_metadata['function']['versionId']}"
-                        job_status, message = create_microservice_job_on_nvcf(job_metadata, docker_env_vars=docker_env_vars)
+                        deployment_string = (
+                            f"{nvcf_function_metadata['function']['id']}:"
+                            f"{nvcf_function_metadata['function']['versionId']}"
+                        )
+                        job_status, message = create_microservice_job_on_nvcf(
+                            job_metadata, docker_env_vars=docker_env_vars
+                        )
                         job_metadata["status"] = job_status
                         if job_metadata.get("job_details", {}).get(job_name, {}):
                             job_metadata["job_details"][job_name]["detailed_status"]["message"] = message
                         write_job_metadata(job_name, job_metadata)
+                        if authorized_party_nca_id:
+                            print(
+                                f"Adding authorized party {authorized_party_nca_id} for job {job_name}",
+                                file=sys.stderr
+                            )
+                            add_authorized_party(
+                                org_name,
+                                team_name,
+                                function_id,
+                                version_id,
+                                authorized_party_nca_id,
+                                ngc_key
+                            )
 
                     if nvcf_function_metadata.get("function", {}).get("status") == "ERROR":
                         print(f"Get function deployment status for job {job_name} returned error", file=sys.stderr)
-                        internal_job_status_update(job_name, automl=automl_exp_job, automl_experiment_number=nv_job_metadata.get("AUTOML_EXPERIMENT_NUMBER", "0"), message="NVCF deployment intitiation errored out, retry job again")
+                        internal_job_status_update(
+                            job_name,
+                            automl=automl_exp_job,
+                            automl_experiment_number=nv_job_metadata.get("AUTOML_EXPERIMENT_NUMBER", "0"),
+                            message="NVCF deployment intitiation error"
+                        )
                         return "Error"
 
             override_status = override_k8_status(job_name, job_status)
-            job_status = get_nvcf_microservices_job_status(job_metadata, status=override_status, docker_env_vars=docker_env_vars)
+            job_status = get_nvcf_microservices_job_status(
+                job_metadata,
+                status=override_status,
+                docker_env_vars=docker_env_vars
+            )
             if override_status and override_status != job_status:
                 job_status = override_status
-                print(f"job metadata status is {job_status}, Toolkit Status is {override_status}, so overwriting", file=sys.stderr)
+                print(
+                    f"job metadata status is {job_status}, Toolkit Status is {override_status}, so overwriting",
+                    file=sys.stderr
+                )
                 print(f"Microservices job status via NVCF is {job_status}", file=sys.stderr)
             return job_status
         except Exception as e:
@@ -733,7 +847,13 @@ def status(org_name, handler_id, job_name, handler_kind, use_ngc=True, network="
         if service_status == "Running":
             specs = get_job_specs(job_name)
             if specs:
-                response = send_microservice_request(api_endpoint="get_job_status", network=network, action=action, job_id=job_name, specs=specs)
+                response = send_microservice_request(
+                    api_endpoint="get_job_status",
+                    network=network,
+                    action=action,
+                    job_id=job_name,
+                    specs=specs
+                )
                 if response and response.ok:
                     job_status = response.json()
                     status = job_status.get("status")
@@ -843,7 +963,12 @@ def list_namespace_jobs():
     api_instance = client.BatchV1Api()
     api_response = None
     try:
-        api_response = api_instance.list_namespaced_job(namespace=name_space, label_selector="purpose=tao-toolkit-job", watch=False, limit=1000)
+        api_response = api_instance.list_namespaced_job(
+            namespace=name_space,
+            label_selector="purpose=tao-toolkit-job",
+            watch=False,
+            limit=1000
+        )
     except Exception as e:
         print(f"Exception thrown in list_namespace_jobs is {str(e)}", file=sys.stderr)
         pass
@@ -1007,7 +1132,10 @@ def create_tensorboard_service(tb_service_name, deploy_label):
     service = client.V1Service(
         api_version="v1",
         kind="Service",
-        metadata=client.V1ObjectMeta(name=tb_service_name, labels={"app": tb_service_name, "resource-type": "tensorboard"}, annotations=annotation),
+        metadata=client.V1ObjectMeta(name=tb_service_name, labels={
+            "app": tb_service_name,
+            "resource-type": "tensorboard"
+        }, annotations=annotation),
         spec=spec,
     )
     api_instance = client.CoreV1Api()

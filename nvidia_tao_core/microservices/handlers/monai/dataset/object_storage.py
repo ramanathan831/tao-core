@@ -51,7 +51,12 @@ class ObjectStorageClient:
             if sample["image"].get("id") and image_id == sample["image"]["id"]:
                 return sample["image"]
 
-            if sample.get("label") and isinstance(sample["label"], dict) and sample["label"].get("id") and image_id == sample["label"]["id"]:
+            if (
+                sample.get("label") and
+                isinstance(sample["label"], dict) and
+                sample["label"].get("id") and
+                image_id == sample["label"]["id"]
+            ):
                 return sample["label"]
         return None
 
@@ -155,7 +160,11 @@ class ObjectStorageEndpoint(BaseEndpoint):
         # which is the link to manifest file.
         super().__init__(url, client_id, client_secret, filters)
         self.driver = None
-        self.container_name, self.prefix = self._parse_container_name(self.url)  # NOTE: prefix is the subfolder(s) in the container.
+        # NOTE: prefix is the subfolder(s) in the container.
+        (
+            self.container_name,
+            self.prefix
+        ) = self._parse_container_name(self.url)
         self.download_retry_times = 3
         # The input url is one of these:
         # - https://myaccount.blob.core.windows.net/containername/mydataset/manifest.json
@@ -202,7 +211,11 @@ class ObjectStorageEndpoint(BaseEndpoint):
         return container_name, prefix
 
     def _get_driver(self):
-        """Try all the providers in the PROVIDER_LIST and return None if none of them can connect to the cloud storage."""
+        """Get the appropriate storage driver.
+
+        Returns:
+            driver: The storage driver based on the configured storage type.
+        """
         if self.driver is not None:
             return self.driver
 
@@ -266,7 +279,11 @@ class ObjectStorageEndpoint(BaseEndpoint):
         object_set = self._get_all_objects()
         paths_exist = [x in object_set for x in paths_list]
         if not all(paths_exist):
-            return False, "Some samples don't exist in the given object storage. Please check path correctness of the manifest file."
+            return (
+                False,
+                "Some samples don't exist in the given object storage. "
+                "Please check path correctness of the manifest file."
+            )
 
         return True, None
 
@@ -333,13 +350,22 @@ class ObjectStorageEndpoint(BaseEndpoint):
                 try:
                     driver.download_object(obj, file_name, overwrite_existing=True)
                 except Exception as e:
-                    print(f"#{i}: Cannot download file {file_name} from {container_name} in {self.url}.", file=sys.stderr)
+                    print(
+                        f"#{i}: Cannot download file {file_name} from {container_name} in {self.url}.",
+                        file=sys.stderr
+                    )
                     if i == self.download_retry_times - 1:
-                        raise TimeoutError(f"Cannot download file {file_name} from {container_name} in {self.url}.") from e
+                        raise TimeoutError(
+                            f"Cannot download file {file_name} from {container_name} in {self.url}."
+                        ) from e
                     continue
                 break
 
-        print(f"Time to download object storage container {self.url}: {time.time() - start_time:.3f} (sec)", file=sys.stderr)
+        print(
+            f"Time to download object storage container {self.url}: "
+            f"{time.time() - start_time:.3f} (sec)",
+            file=sys.stderr
+        )
         return filepath
 
     def status_check(self):

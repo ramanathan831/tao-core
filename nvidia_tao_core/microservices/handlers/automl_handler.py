@@ -20,7 +20,16 @@ import time
 from copy import deepcopy
 from datetime import datetime, timezone
 
-from nvidia_tao_core.microservices.handlers.stateless_handlers import get_handler_metadata, get_handler_type, get_jobs_root, save_automl_controller_info, serialize_object, write_job_metadata, update_handler_with_jobs_info, get_automl_controller_info
+from nvidia_tao_core.microservices.handlers.stateless_handlers import (
+    get_handler_metadata,
+    get_handler_type,
+    get_jobs_root,
+    save_automl_controller_info,
+    serialize_object,
+    write_job_metadata,
+    update_handler_with_jobs_info,
+    get_automl_controller_info
+)
 from nvidia_tao_core.microservices.handlers.utilities import Code, decrypt_handler_metadata
 from nvidia_tao_core.microservices.handlers.docker_images import DOCKER_IMAGE_MAPPER
 from nvidia_tao_core.microservices.job_utils import executor as jobDriver
@@ -95,11 +104,39 @@ class AutoMLHandler:
         # Call the script
         print("Starting automl", job_id, file=sys.stderr)
 
-        run_command = f"""umask 0 && python3 automl_start.py --user_id={user_id} --org_name={org_name} --name='{name}' --root={root} --automl_job_id={job_id} --network={network} --experiment_id={experiment_id} --resume=False --automl_algorithm={automl_algorithm} --automl_max_recommendations={automl_max_recommendations} --automl_delete_intermediate_ckpt={automl_delete_intermediate_ckpt} --automl_R={automl_R} --automl_nu={automl_nu} --metric={metric} --epoch_multiplier={epoch_multiplier} --automl_hyperparameters="{automl_hyperparameters}" --override_automl_disabled_params={override_automl_disabled_params} --decrypted_workspace_metadata='{json.dumps(decrypted_workspace_metadata, default=serialize_object)}'"""
+        run_command = (
+            f"umask 0 && python3 automl_start.py "
+            f"--user_id={user_id} "
+            f"--org_name={org_name} "
+            f"--name='{name}' "
+            f"--root={root} "
+            f"--automl_job_id={job_id} "
+            f"--network={network} "
+            f"--experiment_id={experiment_id} "
+            f"--resume=False "
+            f"--automl_algorithm={automl_algorithm} "
+            f"--automl_max_recommendations={automl_max_recommendations} "
+            f"--automl_delete_intermediate_ckpt={automl_delete_intermediate_ckpt} "
+            f"--automl_R={automl_R} "
+            f"--automl_nu={automl_nu} "
+            f"--metric={metric} "
+            f"--epoch_multiplier={epoch_multiplier} "
+            f"--automl_hyperparameters='{automl_hyperparameters}' "
+            f"--override_automl_disabled_params={override_automl_disabled_params} "
+            f"--decrypted_workspace_metadata='{json.dumps(decrypted_workspace_metadata, default=str)}'"
+        )
         if platform_id:
             run_command = f"{run_command} --platform_id={platform_id}"
 
-        jobDriver.create(org_name, job_id, image, run_command, num_gpu=0, automl_brain=True, automl_exp_job=False)  # TODO: Commented for testing only
+        jobDriver.create(
+            org_name,
+            job_id,
+            image,
+            run_command,
+            num_gpu=0,
+            automl_brain=True,
+            automl_exp_job=False
+        )  # TODO: Commented for testing only
 
     @staticmethod
     def stop(user_id, org_name, experiment_id, job_id):
@@ -118,11 +155,25 @@ class AutoMLHandler:
 
         try:
             jobDriver.delete(job_id, use_ngc=False)
-            k8s_status = jobDriver.status(org_name, experiment_id, job_id, "experiments", use_ngc=False, automl_exp_job=False)
+            k8s_status = jobDriver.status(
+                org_name,
+                experiment_id,
+                job_id,
+                "experiments",
+                use_ngc=False,
+                automl_exp_job=False
+            )
             while k8s_status in ("Done", "Error", "Running", "Pending"):
                 if k8s_status in ("Done", "Error"):
                     break
-                k8s_status = jobDriver.status(org_name, experiment_id, job_id, "experiments", use_ngc=False, automl_exp_job=False)
+                k8s_status = jobDriver.status(
+                    org_name,
+                    experiment_id,
+                    job_id,
+                    "experiments",
+                    use_ngc=False,
+                    automl_exp_job=False
+                )
                 time.sleep(5)
             recommendations = get_automl_controller_info(job_id)
             for recommendation in recommendations:
@@ -132,11 +183,23 @@ class AutoMLHandler:
                         recommendation["status"] = "canceling"
                         save_automl_controller_info(job_id, recommendations)
                     jobDriver.delete(recommendation_job_id)
-                    rec_k8s_status = jobDriver.status(org_name, experiment_id, recommendation_job_id, "experiments", automl_exp_job=True)
+                    rec_k8s_status = jobDriver.status(
+                        org_name,
+                        experiment_id,
+                        recommendation_job_id,
+                        "experiments",
+                        automl_exp_job=True
+                    )
                     while rec_k8s_status in ("Done", "Error", "Running", "Pending"):
                         if rec_k8s_status in ("Done", "Error"):
                             break
-                        rec_k8s_status = jobDriver.status(org_name, experiment_id, recommendation_job_id, "experiments", automl_exp_job=True)
+                        rec_k8s_status = jobDriver.status(
+                            org_name,
+                            experiment_id,
+                            recommendation_job_id,
+                            "experiments",
+                            automl_exp_job=True
+                        )
                         time.sleep(5)
                     if recommendation.get("status") in ("pending", "running", "started", "canceling"):
                         recommendation["status"] = "canceled"
@@ -187,7 +250,27 @@ class AutoMLHandler:
         decrypted_workspace_metadata.pop('_id', None)
 
         # Call the script
-        run_command = f"""python3 automl_start.py --user_id={user_id} --org_name={org_name} --name='{name}' --root={root} --automl_job_id={job_id} --network={network} --experiment_id={experiment_id} --resume=True --automl_algorithm={automl_algorithm} --automl_max_recommendations={automl_max_recommendations} --automl_delete_intermediate_ckpt={automl_delete_intermediate_ckpt} --automl_R={automl_R} --automl_nu={automl_nu} --metric={metric} --epoch_multiplier={epoch_multiplier} --automl_hyperparameters="{automl_hyperparameters}" --override_automl_disabled_params={override_automl_disabled_params} --decrypted_workspace_metadata='{json.dumps(decrypted_workspace_metadata, default=serialize_object)}'"""
+        run_command = (
+            f"python3 automl_start.py "
+            f"--user_id={user_id} "
+            f"--org_name={org_name} "
+            f"--name='{name}' "
+            f"--root={root} "
+            f"--automl_job_id={job_id} "
+            f"--network={network} "
+            f"--experiment_id={experiment_id} "
+            f"--resume=True "
+            f"--automl_algorithm={automl_algorithm} "
+            f"--automl_max_recommendations={automl_max_recommendations} "
+            f"--automl_delete_intermediate_ckpt={automl_delete_intermediate_ckpt} "
+            f"--automl_R={automl_R} "
+            f"--automl_nu={automl_nu} "
+            f"--metric={metric} "
+            f"--epoch_multiplier={epoch_multiplier} "
+            f'--automl_hyperparameters="{automl_hyperparameters}" '
+            f"--override_automl_disabled_params={override_automl_disabled_params} "
+            f"--decrypted_workspace_metadata='{json.dumps(decrypted_workspace_metadata, default=serialize_object)}'"
+        )
         if platform_id:
             run_command = f"{run_command} --platform_id={platform_id}"
         jobDriver.create(org_name, job_id, image, run_command, num_gpu=0, automl_brain=True, automl_exp_job=False)

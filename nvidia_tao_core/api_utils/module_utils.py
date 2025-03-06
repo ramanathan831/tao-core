@@ -18,12 +18,17 @@ import toml
 import importlib
 import pkg_resources
 
-entrypoint_paths = {"nvidia_tao_pytorch": "nvidia_tao_pytorch.core.entrypoint",
-                    "nvidia_tao_deploy": "nvidia_tao_deploy.cv.common.entrypoint.entrypoint_hydra",
-                    "nvidia_tao_tf2": "nvidia_tao_tf2.common.entrypoint.entrypoint",
-                    "nvidia_tao_ds": "nvidia_tao_ds.core.entrypoint.entrypoint"}
+entrypoint_paths = {
+    "nvidia_tao_pytorch": "nvidia_tao_pytorch.core.entrypoint",
+    "nvidia_tao_deploy": "nvidia_tao_deploy.cv.common.entrypoint.entrypoint_hydra",
+    "nvidia_tao_tf2": "nvidia_tao_tf2.common.entrypoint.entrypoint",
+    "nvidia_tao_ds": "nvidia_tao_ds.core.entrypoint.entrypoint"
+}
 
-entry_points = [p for p in pkg_resources.iter_entry_points('console_scripts') if p.module_name.split('.')[0] in entrypoint_paths.keys()]
+entry_points = [
+    p for p in pkg_resources.iter_entry_points('console_scripts')
+    if p.module_name.split('.')[0] in entrypoint_paths.keys()
+]
 
 
 def get_entry_points():
@@ -60,7 +65,9 @@ def get_neural_network_actions(neural_network_name):
 
 def get_entry_point_module_mapping(neural_network_name):
     """Construct and return a dictionary for entrypoints"""
-    entrypoints = {ep.name: ep.module_name for ep in entry_points}
+    entrypoints = {
+        ep.name: ep.module_name for ep in entry_points
+    }
     for ep in pkg_resources.iter_entry_points('console_scripts'):
         if neural_network_name in ep.name:
             model = ep.name.split("-")

@@ -113,10 +113,18 @@ def wait_for_job_completion(job_id):
 
 def delete_lingering_checkpoints(epoch_number, path):
     """Delete checkpoints which are present even after job deletion"""
-    trained_files = glob.glob(path + "/**/*.tlt", recursive=True) + glob.glob(path + "/**/*.hdf5", recursive=True) + glob.glob(path + "/**/*.pth", recursive=True) + glob.glob(path + "/**/*.ckzip", recursive=True) + glob.glob(path + "/**/*lightning_logs*", recursive=True)
+    trained_files = (
+        glob.glob(path + "/**/*.tlt", recursive=True) +
+        glob.glob(path + "/**/*.hdf5", recursive=True) +
+        glob.glob(path + "/**/*.pth", recursive=True) +
+        glob.glob(path + "/**/*.ckzip", recursive=True)
+    )
     for file_name in trained_files:
         if os.path.isfile(file_name):
-            if not (f"{epoch_number}.tlt" in file_name or f"{epoch_number}.hdf5" in file_name or f"{epoch_number}.pth" in file_name or f"{epoch_number}.ckzip" in file_name):
+            if not (f"{epoch_number}.tlt" in file_name or
+                    f"{epoch_number}.hdf5" in file_name or
+                    f"{epoch_number}.pth" in file_name or
+                    f"{epoch_number}.ckzip" in file_name):
                 os.remove(file_name)
 
 

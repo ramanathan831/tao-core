@@ -168,7 +168,9 @@ def get_log_file_path(user_id, org_name, handler_id, job_id, automl_expt_id, aut
         log_root = get_handler_log_root(user_id, org_name, handler_id)
         logfile = os.path.join(log_root, job_id + ".txt")
     else:
-        logfile = os.path.join(get_jobs_root(user_id, org_name), job_id, f"experiment_{automl_experiment_number}", "log.txt")
+        job_root = get_jobs_root(user_id, org_name)
+        experiment_dir = f"experiment_{automl_experiment_number}"
+        logfile = os.path.join(job_root, job_id, experiment_dir, "log.txt")
     return logfile
 
 
@@ -297,7 +299,10 @@ def get_job_id_of_action(handler_id, kind, action):
             handler_job_id = job_id
             break
     if not handler_job_id:
-        raise ValueError(f"No job found or no job with status Done found for action:{action}, handler:{handler_id}, kind:{kind}", file=sys.stderr)
+        raise ValueError(
+            f"No job found or no job with status Done found for action:{action}, handler:{handler_id}, kind:{kind}",
+            file=sys.stderr
+        )
     return handler_job_id
 
 
@@ -312,10 +317,12 @@ def update_handler_with_jobs_info(jobs_metadata, handler_id, job_id, kind):
         handler_metadata["jobs"][job_id]["name"] = jobs_metadata.get("name")
         handler_metadata["jobs"][job_id]["status"] = jobs_metadata.get("status")
         handler_metadata["jobs"][job_id]["action"] = jobs_metadata.get("action")
-        handler_metadata["jobs"][job_id]["detailed_status_message"] = jobs_metadata.get("job_details", {}).get(job_id, {}).get("detailed_status", {}).get("message")
+        job_details = jobs_metadata.get("job_details", {}).get(job_id, {})
+        detailed_status = job_details.get("detailed_status", {})
+        handler_metadata["jobs"][job_id]["detailed_status_message"] = detailed_status.get("message")
         handler_metadata["jobs"][job_id]["eta"] = jobs_metadata.get("job_details", {}).get(job_id, {}).get("eta")
         handler_metadata["jobs"][job_id]["epoch"] = jobs_metadata.get("job_details", {}).get(job_id, {}).get("epoch")
-        handler_metadata["jobs"][job_id]["max_epoch"] = jobs_metadata.get("job_details", {}).get(job_id, {}).get("max_epoch")
+        handler_metadata["jobs"][job_id]["max_epoch"] = job_details.get("max_epoch")
         write_handler_metadata(handler_id, handler_metadata, kind)
 
 
@@ -356,7 +363,9 @@ def update_job_status(handler_id, job_id, status, kind=""):
     metadata = get_handler_job_metadata(job_id)
     if metadata:
         current_status = metadata.get("status", "")
-        if current_status not in ("Canceled", "Canceling", "Pausing", "Paused") or (current_status == "Canceling" and status == "Canceled") or (current_status == "Pausing" and status == "Paused"):
+        if (current_status not in ("Canceled", "Canceling", "Pausing", "Paused") or
+                (current_status == "Canceling" and status == "Canceled") or
+                (current_status == "Pausing" and status == "Paused")):
             if status != current_status:
                 metadata["last_modified"] = datetime.now(tz=timezone.utc)
             metadata["status"] = status
@@ -515,7 +524,12 @@ def internal_job_status_update(job_id, automl=False, automl_experiment_number="0
 
 def save_dnn_status(job_id, automl=False, callback_data={}, experiment_number="0"):
     """Update DNN status with callback data"""
-    lookup_job_id = status_lookup_job_id(job_id, automl=automl, callback_data=callback_data, experiment_number=experiment_number)
+    lookup_job_id = status_lookup_job_id(
+        job_id,
+        automl=automl,
+        callback_data=callback_data,
+        experiment_number=experiment_number
+    )
     mongo_status_table_handler = MongoHandler("tao", "job_statuses")
     job_query = {'id': lookup_job_id}
     mongo_status_table_handler.upsert_append(job_query, json.loads(callback_data["status"]))
@@ -547,8 +561,14 @@ def update_job_details_with_microservices_response(error_message, job_id, automl
         error_message = error_message[error_message.find('Invalid schema'):].split('",')[0]
         if "job_details" not in job_metadata:
             job_metadata["job_details"] = {}
-        job_metadata["job_details"][update_job_id] = {"detailed_status": {"message": error_message, "status": "FAILURE"}}
-    if not automl_expt_job_id:  # For AutoML just because one experiment failed to launch doesn't mean the brain should be set to error
+        job_metadata["job_details"][update_job_id] = {
+            "detailed_status": {
+                "message": error_message,
+                "status": "FAILURE"
+            }
+        }
+    # For AutoML just because one experiment failed to launch doesn't mean the brain should be set to error
+    if not automl_expt_job_id:
         job_metadata["status"] = "Error"
     write_job_metadata(job_id, job_metadata)
 
@@ -640,6 +660,8 @@ def check_read_access(user_id, org_name, handler_id, base_experiment=False, kind
     handler_user_id = handler_metadata.get("user_id", "")
     under_user = (handler_org is not None and handler_org == org_name) and (user_id and user_id == handler_user_id)
 
+    # Users can always write to their own files
+    # Read-only restrictions only apply to non-owners
     if under_user:
         return True
     if public:
@@ -660,7 +682,8 @@ def check_write_access(user_id, org_name, handler_id, base_experiment=False, kin
     read_only = handler_metadata.get("read_only", False)  # Default is False
     handler_user_id = handler_metadata.get("user_id", "")
     under_user = (handler_org is not None and handler_org == org_name) and (user_id and user_id == handler_user_id)
-    if under_user:  # If under user, you can always write - no point in making it un-writable by owner. Read-only is for non-owners
+    # If under user, you can always write - no point in making it un-writable by owner. Read-only is for non-owners
+    if under_user:
         return True
     if public:
         if read_only:
@@ -738,7 +761,9 @@ def get_workspace_string_identifier(workspace_id, workspace_cache):
         workspace_cache[workspace_id] = workspace_metadata
     workspace_identifier = ""
     if workspace_metadata:
-        workspace_identifier = f"{workspace_metadata.get('cloud_type')}://{workspace_metadata.get('cloud_specific_details', {}).get('cloud_bucket_name')}/"
+        cloud_type = workspace_metadata.get('cloud_type')
+        bucket_name = workspace_metadata.get('cloud_specific_details', {}).get('cloud_bucket_name')
+        workspace_identifier = f"{cloud_type}://{bucket_name}/"
     return workspace_identifier
 
 
@@ -758,7 +783,9 @@ def check_dataset_type_match(user_id, org_name, experiment_meta, dataset_id, no_
     experiment_dataset_type = experiment_meta.get("dataset_type")
     network_arch = experiment_meta.get("network_arch")
 
-    if network_arch == "image" and experiment_dataset_type == "not_restricted":  # Allow Image action from dataservices to run on any model's dataset
+    # Allow Image action from dataservices to run on any model's dataset
+    if (network_arch == "image" and
+            experiment_dataset_type == "not_restricted"):
         return True
 
     dataset_type = dataset_meta.get("type")

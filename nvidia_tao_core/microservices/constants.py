@@ -14,41 +14,76 @@
 
 """Constants values"""
 
-TAO_NETWORKS = set(["classification_tf2", "efficientdet_tf2",
-                    "action_recognition", "bevfusion", "classification_pyt", "grounding_dino", "mal", "mask2former", "mask_grounding_dino", "ml_recog", "ocdnet", "ocrnet", "optical_inspection", "pointpillars", "pose_classification", "re_identification", "centerpose", "visual_changenet", "deformable_detr", "dino", "rtdetr", "segformer",  # PYT CV MODELS
-                    "annotations", "analytics", "augmentation", "auto_label", "image"])  # Data_Service tasks.
+TAO_NETWORKS = set([
+    "classification_tf2", "efficientdet_tf2",
+    "action_recognition", "bevfusion", "classification_pyt", "grounding_dino", "mal", "mask2former",
+    "mask_grounding_dino", "ml_recog", "ocdnet", "ocrnet", "optical_inspection", "pointpillars",
+    "pose_classification", "re_identification", "centerpose", "visual_changenet", "deformable_detr",
+    "dino", "rtdetr", "segformer",  # PYT CV MODELS
+    "annotations", "analytics", "augmentation", "auto_label", "image"  # Data_Service tasks.
+])
 MAXINE_NETWORKS = set(["maxine_eye_contact"])  # Maxine networks
 VLM_NETWORKS = set(["vlm"])  # VLM networks
 
 _OD_NETWORKS = set(["detectnet_v2", "efficientdet_tf2", "deformable_detr", "dino", "grounding_dino", "rtdetr"])
-_PURPOSE_BUILT_MODELS = set(["action_recognition", "bevfusion", "ml_recog", "ocdnet", "ocrnet", "optical_inspection", "pose_classification", "re_identification", "centerpose", "visual_changenet"])
+_PURPOSE_BUILT_MODELS = set([
+    "action_recognition", "bevfusion", "ml_recog", "ocdnet", "ocrnet", "optical_inspection",
+    "pose_classification", "re_identification", "centerpose", "visual_changenet"
+])
 
 _TF2_NETWORKS = set(["classification_tf2", "efficientdet_tf2"])
-_PYT_TAO_NETWORKS = set(["action_recognition", "bevfusion", "deformable_detr", "dino", "grounding_dino", "mask_grounding_dino", "mal", "mask2former", "ml_recog", "ocdnet", "ocrnet", "optical_inspection", "pointpillars", "pose_classification", "re_identification", "rtdetr", "centerpose", "segformer", "visual_changenet"])
+_PYT_TAO_NETWORKS = set([
+    "action_recognition", "bevfusion", "deformable_detr", "dino", "grounding_dino", "mask_grounding_dino",
+    "mal", "mask2former", "ml_recog", "ocdnet", "ocrnet", "optical_inspection", "pointpillars",
+    "pose_classification", "re_identification", "rtdetr", "centerpose", "segformer", "visual_changenet"
+])
 _PYT_PLAYGROUND_NETWORKS = set(["classification_pyt"])
 _PYT_CV_NETWORKS = _PYT_TAO_NETWORKS | _PYT_PLAYGROUND_NETWORKS
-_DATA_SERVICES_ACTIONS = set(["annotation_format_convert", "auto_label", "augment", "analyze", "validate_images", "validate_annotations"])
+_DATA_SERVICES_ACTIONS = set([
+    "annotation_format_convert", "auto_label", "augment", "analyze",
+    "validate_images", "validate_annotations"
+])
 _DATA_GENERATE_ACTIONS = set(["augment", "validate_images"])
 
 MEDICAL_CUSTOM_ARCHITECT = ["monai_custom", "monai_classification", "monai_detection", "monai_segmentation"]
-MEDICAL_NETWORK_ARCHITECT = ["monai_vista3d", "monai_vista2d", "monai_annotation", "monai_genai", "monai_maisi"] + MEDICAL_CUSTOM_ARCHITECT
+MEDICAL_NETWORK_ARCHITECT = [
+    "monai_vista3d", "monai_vista2d", "monai_annotation", "monai_genai", "monai_maisi"
+] + MEDICAL_CUSTOM_ARCHITECT
 MEDICAL_AUTOML_ARCHITECT = ["monai_automl", "monai_automl_generated"]
 MONAI_NETWORKS = set(MEDICAL_NETWORK_ARCHITECT + MEDICAL_AUTOML_ARCHITECT)  # Data_Service tasks.
-NO_SPEC_ACTIONS_MODEL = ("evaluate", "retrain", "inference", "inference_seq", "inference_trt")  # Actions with **optional** specs
+NO_SPEC_ACTIONS_MODEL = (
+    "evaluate", "retrain", "inference", "inference_seq", "inference_trt"
+)  # Actions with **optional** specs
 NO_PTM_MODELS = set([])  # These networks don't have a pretrained model that can be downloaded from ngc model registry
 _ITER_MODELS = set(["segformer"])  # These networks operate on iterations instead of epochs
 
-BACKBONE_AND_FULL_MODEL_PTM_SUPPORTING_NETWORKS = set(["dino", "grounding_dino", "mask_grounding_dino", "classification_pyt"])  # These networks have fields in their config file which has both backbone only loading weights as well as full architecture loading; ex: model.pretrained_backbone_path and train.pretrained_model_path in dino
+# These networks have fields in their config file which has both backbone only loading weights
+# as well as full architecture loading;
+# ex: model.pretrained_backbone_path and train.pretrained_model_path in dino
+BACKBONE_AND_FULL_MODEL_PTM_SUPPORTING_NETWORKS = set([
+    "dino", "grounding_dino", "mask_grounding_dino", "classification_pyt"
+])
 
 AUTOML_DISABLED_NETWORKS = ["mal", "maxine_eye_contact"]  # These networks can't support AutoML
-TENSORBOARD_DISABLED_NETWORKS = ['classification_pyt', 'segformer']  # These networks currently don't produce tfevents logs as they are third party models
+TENSORBOARD_DISABLED_NETWORKS = [
+    'classification_pyt', 'segformer'
+]  # These networks currently don't produce tfevents logs as they are third party models
 TENSORBOARD_EXPERIMENT_LIMIT = 10  # Maximum number of Tensorboard enabled experiments per user
-NO_VAL_METRICS_DURING_TRAINING_NETWORKS = set(["unet"])  # These networks can't support writing validation metrics at regular intervals during training, only at end of training they run evaluation
-MISSING_EPOCH_FORMAT_NETWORKS = set(["classification_pyt", "pointpillars", "segformer", "bevfusion"])  # These networks have the epoch/iter number not following a format; ex: 1.pth instead of 001.pth
-STATUS_CALLBACK_MISMATCH_WITH_CHECKPOINT_EPOCH = set(["pointpillars", "detectnet_v2"])  # status json epoch number is 1 less than epoch number generated in checkppoint file
+# These networks can't support writing validation metrics at regular intervals during training,
+# only at end of training they run evaluation
+NO_VAL_METRICS_DURING_TRAINING_NETWORKS = set(["unet"])
+MISSING_EPOCH_FORMAT_NETWORKS = set([
+    "classification_pyt", "pointpillars", "segformer", "bevfusion"
+])  # These networks have the epoch/iter number not following a format; ex: 1.pth instead of 001.pth
+STATUS_CALLBACK_MISMATCH_WITH_CHECKPOINT_EPOCH = set([
+    "pointpillars", "detectnet_v2"
+])  # status json epoch number is 1 less than epoch number generated in checkppoint file
 STATUS_CALLBACK_MISMATCH_WITH_CHECKPOINT_EPOCH_TMP = set(["ml_recog"])
 
-COPY_MODEL_PARAMS_FROM_TRAIN_NETWORKS = ["centerpose", "deformable_detr", "dino", "grounding_dino", "mask_grounding_dino", "mask2former"]
+COPY_MODEL_PARAMS_FROM_TRAIN_NETWORKS = [
+    "centerpose", "deformable_detr", "dino", "grounding_dino",
+    "mask_grounding_dino", "mask2former"
+]
 
 MONAI_DATASET_DEFAULT_SPECS = {
     "next_image_strategy": "sequential",

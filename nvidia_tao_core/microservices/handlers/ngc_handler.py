@@ -22,9 +22,14 @@ from ngcbpc import errors
 
 from nvidia_tao_core.microservices.handlers.encrypt import NVVaultEncryption
 from nvidia_tao_core.microservices.handlers.mongo_handler import MongoHandler
-from nvidia_tao_core.microservices.handlers.stateless_handlers import get_handler_metadata, get_jobs_root, get_user, get_workspace_string_identifier
+from nvidia_tao_core.microservices.handlers.stateless_handlers import (
+    get_handler_metadata, get_jobs_root, get_user, get_workspace_string_identifier
+)
 from nvidia_tao_core.microservices.handlers.cloud_storage import create_cs_instance
-from nvidia_tao_core.microservices.utils import send_delete_request_with_retry, sha256_checksum, read_network_config, retry_method
+from nvidia_tao_core.microservices.utils import (
+    send_delete_request_with_retry, sha256_checksum, read_network_config,
+    retry_method, get_admin_key
+)
 
 DEPLOYMENT_MODE = os.getenv("DEPLOYMENT_MODE", "PROD")
 NUM_OF_RETRY = 3
@@ -105,8 +110,10 @@ def create_user_personal_key(org_name, cookie):
     return response.json()
 
 
-def get_user_key(user_id, org_name):
+def get_user_key(user_id, org_name, admin_key_override=False):
     """Return user API key"""
+    if admin_key_override and os.getenv("USE_ADMIN_KEY", "").lower() == "true":
+        return get_admin_key(), False
     ngc_user_details = get_user(user_id)
     encrypted_ngc_key = ngc_user_details.get("key", {}).get(org_name, "")
     encrypted_sid_cookie = ngc_user_details.get("sid_cookie")
@@ -176,7 +183,13 @@ def get_model(org_name, team_name, model_name, ngc_key, use_cookie):
             print(f"Exception caught during getting NGC model {model_name}", e, file=sys.stderr)
             raise e
     else:
-        response = send_ngc_api_request(endpoint=endpoint, requests_method="GET", request_body={}, json=True, ngc_key=ngc_key)
+        response = send_ngc_api_request(
+            endpoint=endpoint,
+            requests_method="GET",
+            request_body={},
+            json=True,
+            ngc_key=ngc_key
+        )
 
     status_code = response.status_code
     print(f"get_model {model_name} status code is", status_code, file=sys.stderr)
@@ -224,7 +237,13 @@ def create_model(org_name, team_name, handler_metadata, source_file, ngc_key, us
             print("Exception caught during creating NGC model", e, file=sys.stderr)
             raise e
     else:
-        response = send_ngc_api_request(endpoint=endpoint, requests_method="POST", request_body=json.dumps(data), json=True, ngc_key=ngc_key)
+        response = send_ngc_api_request(
+            endpoint=endpoint,
+            requests_method="POST",
+            request_body=json.dumps(data),
+            json=True,
+            ngc_key=ngc_key
+        )
 
     status_code = response.status_code
     message = ""
@@ -283,7 +302,11 @@ def download_ngc_model(ngc_path, ptm_root, key, is_cookie_set, use_ngc_staging):
         logging.info("Invalid ngc path.")
         return False
     if not key.startswith("nvapi"):
-        logging.info('Credentials error: Invalid NGC_PERSONAL_KEY, NGC_keys are no longer valid, generate a personal key with Cloud Functions, NGC Catalog and Private registry services https://org.ngc.nvidia.com/setup/personal-keys')
+        logging.info(
+            'Credentials error: Invalid NGC_PERSONAL_KEY, NGC_keys are no longer valid, '
+            'generate a personal key with Cloud Functions, NGC Catalog and Private registry services '
+            'https://org.ngc.nvidia.com/setup/personal-keys'
+        )
         return False
     ngc_configs = ngc_path.split('/')
     org = ngc_configs[0]
@@ -304,9 +327,16 @@ def download_ngc_model(ngc_path, ptm_root, key, is_cookie_set, use_ngc_staging):
         clt.configure(api_key=key, org_name=org, team_name=team)
     except Exception as e:
         if not ("Invalid org" in str(e) or "Invalid team" in str(e)):
-            logging.error("Can't configure the passed NGC KEY for Org {}, team {}".format(org, team)) # noqa pylint: disable=C0209
+            logging.error(
+                "Can't configure the passed NGC KEY for Org {}, team {}".format(org, team)  # noqa pylint: disable=C0209
+            )
             return False
-        logging.info("Can't validate the passed NGC KEY for Org {}, team {}, going to try download without configuring credentials".format(org, team)) # noqa pylint: disable=C0209
+        msg = (
+            "Can't validate the passed NGC KEY for Org {}, team {}, "
+            "going to try download without configuring credentials"
+        ).format(org, team)
+        logging.info(msg)  # noqa pylint: disable=C0209
+
     try:
         if not os.path.exists(ptm_root):
             os.makedirs(ptm_root, exist_ok=True)
@@ -362,6 +392,11 @@ def validate_ptm_download(base_experiment_folder, sha256_digest):
                     if sha256_digest.get(filename):
                         downloaded_file_checksum = sha256_checksum(file_path)
                         if sha256_digest[filename] != downloaded_file_checksum:
-                            print(f"{filename} sha256 checksum not matched. Expected checksum is {sha256_digest.get(filename)} wheras downloaded file checksum is {downloaded_file_checksum}", file=sys.stderr)
+                            print(
+                                f"{filename} sha256 checksum not matched. "
+                                f"Expected checksum is {sha256_digest.get(filename)}"
+                                f"wheras downloaded file checksum is {downloaded_file_checksum}",
+                                file=sys.stderr
+                            )
                         return sha256_digest[filename] == downloaded_file_checksum
     return True

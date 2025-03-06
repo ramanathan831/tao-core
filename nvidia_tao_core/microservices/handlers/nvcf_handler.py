@@ -22,7 +22,12 @@ import requests
 import traceback
 
 from nvidia_tao_core.microservices.handlers.ngc_handler import send_ngc_api_request, get_user_key
-from nvidia_tao_core.microservices.handlers.stateless_handlers import update_job_details_with_microservices_response, get_job_specs, get_log_file_path, internal_job_status_update
+from nvidia_tao_core.microservices.handlers.stateless_handlers import (
+    update_job_details_with_microservices_response,
+    get_job_specs,
+    get_log_file_path,
+    internal_job_status_update
+)
 from nvidia_tao_core.microservices.handlers.utilities import get_cloud_metadata
 from nvidia_tao_core.microservices.utils import retry_method
 
@@ -32,10 +37,15 @@ NUM_OF_RETRY = 3
 
 def get_available_nvcf_instances(user_id, org_name):
     """For the given org, format and return the NVCF cluster info"""
-    ngc_key, _ = get_user_key(user_id, org_name)
+    ngc_key, _ = get_user_key(user_id, org_name, admin_key_override=True)
 
     nvcf_info_endpoint = f"https://api.ngc.nvidia.com/v3/orgs/{org_name}/nvcf"
-    nvcf_info_response = send_ngc_api_request(endpoint=nvcf_info_endpoint, requests_method="GET", request_body={}, ngc_key=ngc_key)
+    nvcf_info_response = send_ngc_api_request(
+        endpoint=nvcf_info_endpoint,
+        requests_method="GET",
+        request_body={},
+        ngc_key=ngc_key
+    )
     available_nvcf_instances = {}
     if nvcf_info_response.ok:
         gpu_data = nvcf_info_response.json()
@@ -57,8 +67,22 @@ def get_available_nvcf_instances(user_id, org_name):
     return available_nvcf_instances
 
 
+# NVCF API wrapper functions
+
 @retry_method(response=True)
-def invoke_function(deployment_string, network="", action="", microservice_action="", cloud_metadata={}, specs={}, docker_env_vars={}, kind="", handler_id="", job_id="", request_body={}):
+def invoke_function(
+    deployment_string,
+    network="",
+    action="",
+    microservice_action="",
+    cloud_metadata={},
+    specs={},
+    docker_env_vars={},
+    kind="",
+    handler_id="",
+    job_id="",
+    request_body={}
+):
     """Invoke a NVCF function"""
     if not request_body:
         if not docker_env_vars.get("TAO_API_SERVER"):
@@ -147,7 +171,10 @@ def get_function(org_name, team_name, function_id, version_id, ngc_key):
     team_string = f"teams/{team_name}/"
     if team_name in "no_team":
         team_string = ""
-    endpoint = f"https://api.ngc.nvidia.com/v2/orgs/{org_name}/{team_string}nvcf/functions/{function_id}/versions/{version_id}"
+    endpoint = (
+        f"https://api.ngc.nvidia.com/v2/orgs/{org_name}/"
+        f"{team_string}nvcf/functions/{function_id}/versions/{version_id}"
+    )
     requests_method = "GET"
     return send_ngc_api_request(endpoint, requests_method, request_body={}, json=False, ngc_key=ngc_key)
 
@@ -173,7 +200,10 @@ def create_function(org_name, team_name, job_id, container, ngc_key):
     team_string = f"teams/{team_name}/"
     if team_name in ["no_team"]:
         team_string = ""
-    endpoint = f"https://api.ngc.nvidia.com/v2/orgs/{org_name}/{team_string}nvcf/functions"
+    endpoint = (
+        f"https://api.ngc.nvidia.com/v2/orgs/{org_name}/"
+        f"{team_string}nvcf/functions"
+    )
     requests_method = "POST"
     print("create endpoint", endpoint, payload, file=sys.stderr)
     return send_ngc_api_request(endpoint, requests_method, request_body=json.dumps(payload), json=True, ngc_key=ngc_key)
@@ -198,7 +228,10 @@ def deploy_function(org_name, team_name, function_details, nvcf_backend_details,
     team_string = f"teams/{team_name}/"
     if team_name in "no_team":
         team_string = ""
-    endpoint = f"https://api.ngc.nvidia.com/v2/orgs/{org_name}/{team_string}nvcf/deployments/functions/{function_id}/versions/{version_id}"
+    endpoint = (
+        f"https://api.ngc.nvidia.com/v2/orgs/{org_name}/"
+        f"{team_string}nvcf/deployments/functions/{function_id}/versions/{version_id}"
+    )
     requests_method = "POST"
     print("deploy endpoint", endpoint, payload, file=sys.stderr)
     return send_ngc_api_request(endpoint, requests_method, request_body=json.dumps(payload), json=True, ngc_key=ngc_key)
@@ -209,10 +242,80 @@ def delete_function_version(org_name, team_name, function_id, version_id, ngc_ke
     team_string = f"teams/{team_name}/"
     if team_name in "no_team":
         team_string = ""
-    endpoint = f"https://api.ngc.nvidia.com/v2/orgs/{org_name}/{team_string}nvcf/deployments/functions/{function_id}/versions/{version_id}"
+    endpoint = (
+        f"https://api.ngc.nvidia.com/v2/orgs/{org_name}/"
+        f"{team_string}nvcf/deployments/functions/{function_id}/versions/{version_id}"
+    )
     requests_method = "DELETE"
     return send_ngc_api_request(endpoint, requests_method, request_body={}, json=False, ngc_key=ngc_key)
 
+
+def add_authorized_party(org_name, team_name, function_id, version_id, authorized_party_nca_id, ngc_key):
+    """Add an authorized party to a NVCF function
+
+    Args:
+        org_name (str): Organization name
+        team_name (str): Team name
+        function_id (str): Function ID
+        version_id (str): Version ID
+        authorized_party_nca_id (str): NCA ID of the authorized party to add
+        ngc_key (str): NGC API key
+
+    Returns:
+        Response object from the API request
+    """
+    team_string = f"teams/{team_name}/"
+    if team_name in "no_team":
+        team_string = ""
+
+    # First get current authorizations
+    endpoint = (
+        f"https://api.ngc.nvidia.com/v2/orgs/{org_name}/"
+        f"{team_string}nvcf/authorizations/functions/{function_id}/versions/{version_id}"
+    )
+    get_response = send_ngc_api_request(endpoint, "GET", request_body={}, json=True, ngc_key=ngc_key)
+
+    if not get_response.ok:
+        return get_response
+
+    # Add the new authorized party
+    payload = {
+        "authorizedParties": [{"ncaId": authorized_party_nca_id}]
+    }
+
+    return send_ngc_api_request(endpoint, "POST", request_body=json.dumps(payload), json=True, ngc_key=ngc_key)
+
+
+def remove_authorized_party(org_name, team_name, function_id, version_id, authorized_party_nca_id, ngc_key):
+    """Remove an authorized party from a NVCF function
+
+    Args:
+        org_name (str): Organization name
+        team_name (str): Team name
+        function_id (str): Function ID
+        version_id (str): Version ID
+        authorized_party_nca_id (str): NCA ID of the authorized party to remove
+        ngc_key (str): NGC API key
+
+    Returns:
+        Response object from the API request
+    """
+    team_string = f"teams/{team_name}/"
+    if team_name in "no_team":
+        team_string = ""
+
+    endpoint = (
+        f"https://api.ngc.nvidia.com/v2/orgs/{org_name}/"
+        f"{team_string}nvcf/authorizations/functions/{function_id}/versions/{version_id}/remove"
+    )
+    payload = {
+        "authorizedParty": {"ncaId": authorized_party_nca_id}
+    }
+
+    return send_ngc_api_request(endpoint, "PATCH", request_body=json.dumps(payload), json=True, ngc_key=ngc_key)
+
+
+# FTMS - NVCF interaction
 
 def create_microservice_job_on_nvcf(job_metadata, docker_env_vars={}):
     """Create TAO microservice job on nvcf function"""
@@ -248,8 +351,15 @@ def create_microservice_job_on_nvcf(job_metadata, docker_env_vars={}):
         job_create_response_json = job_create_response.json()
         print("Invocation error response code", job_create_response.status_code, file=sys.stderr)
         print("Invocation error response json", job_create_response_json, file=sys.stderr)
-        update_job_details_with_microservices_response(job_create_response_json.get('detail', ""), job_message_job_id, automl_expt_job_id=tao_api_job_id)
-        print(f"Setting status of job {tao_api_job_id} to Error as microservices job couldn't be created", file=sys.stderr)
+        update_job_details_with_microservices_response(
+            job_create_response_json.get('detail', ""),
+            job_message_job_id,
+            automl_expt_job_id=tao_api_job_id
+        )
+        print(
+            f"Setting status of job {tao_api_job_id} to Error as microservices job couldn't be created",
+            file=sys.stderr
+        )
         return "Error", "Microservice job couldn't be created"
 
     job_create_response_json = job_create_response.json()
@@ -263,15 +373,27 @@ def create_microservice_job_on_nvcf(job_metadata, docker_env_vars={}):
             if polling_response.status_code == 404:
                 if polling_response.json().get("title") != "Not Found":
                     print("Polling(job_create) response failed", polling_response.status_code, file=sys.stderr)
-                    print(f"Setting status of job {job_id} to Error as job create polling failed", file=sys.stderr)
-                    return "Error", "NVCF Polling failed with not found in error title"
+                    print(
+                        f"Setting status of job {job_id} to Error as job create polling "
+                        "failed with a non 200 response",
+                        file=sys.stderr
+                    )
+                    return "Error", "NVCF Polling failed"
             if polling_response.status_code != 202:
                 break
             time.sleep(10)
 
         if polling_response.status_code != 200:
-            print("Polling(job_create) response status code is not 200", polling_response.status_code, file=sys.stderr)
-            print(f"Setting status of job {job_id} to Error as job create polling failed with a non 200 response", file=sys.stderr)
+            print(
+                "Polling(job_create) response status code is not 200",
+                polling_response.status_code,
+                file=sys.stderr
+            )
+            print(
+                f"Setting status of job {job_id} to Error as job create polling "
+                "failed with a non 200 response",
+                file=sys.stderr
+            )
             return "Error", "NVCF Polling failed"
         job_id = polling_response.json().get("job_id")
 
@@ -305,14 +427,24 @@ def get_nvcf_microservices_job_status(job_metadata, status="", docker_env_vars={
         if deployment_string.find(":") == -1:
             if job_status == "Error":
                 return "Error"
-            print(f"Deployment not active yet for job {job_id} {deployment_string} (in get status function)", file=sys.stderr)
+            print(
+                f"Deployment not active yet for job {job_id} {deployment_string} (in get status function)",
+                file=sys.stderr
+            )
             status = "Pending"
             return status
 
         if job_status in ("Done", "Error"):
             return job_status
 
-        job_monitor_response = invoke_function(deployment_string, network, action, microservice_action="container_job_status", specs=specs, docker_env_vars=docker_env_vars)
+        job_monitor_response = invoke_function(
+            deployment_string,
+            network,
+            action,
+            microservice_action="container_job_status",
+            specs=specs,
+            docker_env_vars=docker_env_vars
+        )
         if job_monitor_response.status_code == 404:
             status = "Error"
             if job_monitor_response.json().get("title") == "Not Found":
@@ -332,7 +464,11 @@ def get_nvcf_microservices_job_status(job_metadata, status="", docker_env_vars={
                 time.sleep(10)
 
             if job_monitor_response.status_code != 200:
-                print("Polling(job_monitor) response status code is not 200", job_monitor_response.status_code, file=sys.stderr)
+                print(
+                    "Polling(job_monitor) response status code is not 200",
+                    job_monitor_response.status_code,
+                    file=sys.stderr
+                )
                 status = "Error"
 
         if not status:
@@ -342,8 +478,21 @@ def get_nvcf_microservices_job_status(job_metadata, status="", docker_env_vars={
                 status = job_monitor_response_json.get("status")
                 if status:
                     if status not in ("Pending", "Done", "Running"):
-                        logfile = get_log_file_path(user_id, org_name, job_handler_id, job_message_job_id, job_id, automl_experiment_number)
-                        internal_job_status_update(job_message_job_id, automl=False, automl_experiment_number=automl_experiment_number, message="Container microservices reported an error, more logs to be found on NVCF UI", logfile=logfile)
+                        logfile = get_log_file_path(
+                            user_id,
+                            org_name,
+                            job_handler_id,
+                            job_message_job_id,
+                            job_id,
+                            automl_experiment_number
+                        )
+                        internal_job_status_update(
+                            job_message_job_id,
+                            automl=False,
+                            automl_experiment_number=automl_experiment_number,
+                            message="Container microservices reported an error, more logs to be found on NVCF UI",
+                            logfile=logfile
+                        )
                         status = "Error"
                 else:
                     status = "Pending"
@@ -353,7 +502,11 @@ def get_nvcf_microservices_job_status(job_metadata, status="", docker_env_vars={
             except Exception as e:
                 print(f"Exception thrown in get_nvcf_microservices_job_status is {str(e)}", file=sys.stderr)
                 print(traceback.format_exc(), file=sys.stderr)
-                print(f"Exception while calling job fetch microservices in {deployment_string} for job {job_id}, {job_monitor_response.text}", file=sys.stderr)
+                print(
+                    f"Exception while calling job fetch microservices in {deployment_string} for job {job_id}, "
+                    f"{job_monitor_response.text}",
+                    file=sys.stderr
+                )
                 status = "Error"
 
     if not status:

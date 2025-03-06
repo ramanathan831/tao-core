@@ -26,7 +26,15 @@ import time
 import traceback
 import uuid
 
-from nvidia_tao_core.microservices.constants import (AUTOML_DISABLED_NETWORKS, TENSORBOARD_DISABLED_NETWORKS, TENSORBOARD_EXPERIMENT_LIMIT, VALID_MODEL_DOWNLOAD_TYPE, TAO_NETWORKS, MEDICAL_CUSTOM_ARCHITECT, MAXINE_NETWORKS)
+from nvidia_tao_core.microservices.constants import (
+    AUTOML_DISABLED_NETWORKS,
+    TENSORBOARD_DISABLED_NETWORKS,
+    TENSORBOARD_EXPERIMENT_LIMIT,
+    VALID_MODEL_DOWNLOAD_TYPE,
+    TAO_NETWORKS,
+    MEDICAL_CUSTOM_ARCHITECT,
+    MAXINE_NETWORKS,
+)
 from nvidia_tao_core.microservices.enum_constants import DatasetType, ExperimentNetworkArch
 from nvidia_tao_core.microservices.handlers import ngc_handler, stateless_handlers
 from nvidia_tao_core.microservices.handlers.nvcf_handler import get_available_nvcf_instances
@@ -35,25 +43,67 @@ from nvidia_tao_core.microservices.handlers.cloud_storage import create_cs_insta
 from nvidia_tao_core.microservices.handlers.ds_upload import DS_UPLOAD_TO_FUNCTIONS
 from nvidia_tao_core.microservices.handlers.encrypt import NVVaultEncryption
 # from nvidia_tao_core.microservices.handlers import nvcf_handler
-from nvidia_tao_core.microservices.handlers.monai.helpers import CapGpuUsage, download_from_url, validate_monai_bundle, CUSTOMIZED_BUNDLE_URL_FILE, CUSTOMIZED_BUNDLE_URL_KEY
+from nvidia_tao_core.microservices.handlers.monai.helpers import (
+    CapGpuUsage,
+    download_from_url,
+    validate_monai_bundle,
+    CUSTOMIZED_BUNDLE_URL_FILE,
+    CUSTOMIZED_BUNDLE_URL_KEY
+)
 from nvidia_tao_core.microservices.handlers.monai_dataset_handler import MONAI_DATASET_ACTIONS, MonaiDatasetHandler
 from nvidia_tao_core.microservices.handlers.monai_model_handler import MonaiModelHandler
 # TODO: force max length of code line to 120 chars
-from nvidia_tao_core.microservices.handlers.stateless_handlers import (check_read_access, check_write_access, get_base_experiment_metadata, get_job_specs,
-                                                                       infer_action_from_job, is_valid_uuid4, printc,
-                                                                       resolve_existence, resolve_metadata, resolve_root, get_handler_log_root,
-                                                                       get_handler_job_metadata, get_jobs_root, sanitize_handler_metadata, write_handler_metadata,
-                                                                       is_request_automl, get_automl_controller_info, get_automl_current_rec, get_handler_status, validate_automl_settings)
+from nvidia_tao_core.microservices.handlers.stateless_handlers import (
+    check_read_access,
+    check_write_access,
+    get_base_experiment_metadata,
+    get_job_specs,
+    infer_action_from_job,
+    is_valid_uuid4,
+    printc,
+    resolve_existence,
+    resolve_metadata,
+    resolve_root,
+    get_handler_log_root,
+    get_handler_job_metadata,
+    get_jobs_root,
+    sanitize_handler_metadata,
+    write_handler_metadata,
+    is_request_automl,
+    get_automl_controller_info,
+    get_automl_current_rec,
+    get_handler_status,
+    validate_automl_settings
+)
 from nvidia_tao_core.microservices.handlers.tis_handler import TISHandler
 from nvidia_tao_core.microservices.handlers.tensorboard_handler import TensorboardHandler
-from nvidia_tao_core.microservices.handlers.utilities import (Code, download_log_from_cloud, download_dataset, get_monai_bundle_path, get_files_from_cloud, prep_tis_model_repository,
-                                                              resolve_checkpoint_root_and_search, validate_and_update_experiment_metadata, validate_num_gpu, get_num_gpus_from_spec)
+from nvidia_tao_core.microservices.handlers.utilities import (
+    Code,
+    download_log_from_cloud,
+    download_dataset,
+    get_monai_bundle_path,
+    get_files_from_cloud,
+    prep_tis_model_repository,
+    resolve_checkpoint_root_and_search,
+    validate_and_update_experiment_metadata,
+    validate_num_gpu,
+    get_num_gpus_from_spec
+)
 from nvidia_tao_core.microservices.handlers.mongo_handler import MongoHandler
 from nvidia_tao_core.microservices.job_utils import executor as jobDriver
 from nvidia_tao_core.microservices.job_utils.workflow_driver import create_job_context, on_delete_job, on_new_job
 from nvidia_tao_core.microservices.job_utils.automl_job_utils import on_delete_automl_job
 from nvidia_tao_core.microservices.specs_utils import csv_to_json_schema
-from nvidia_tao_core.microservices.utils import run_system_command, read_network_config, merge_nested_dicts, override_dicts, check_and_convert, safe_dump_file, log_monitor, DataMonitorLogTypeEnum
+from nvidia_tao_core.microservices.utils import (
+    run_system_command,
+    read_network_config,
+    merge_nested_dicts,
+    override_dicts,
+    check_and_convert,
+    safe_dump_file,
+    log_monitor,
+    DataMonitorLogTypeEnum
+)
 
 from nvidia_tao_core.scripts.generate_schema import generate_schema
 
@@ -321,7 +371,12 @@ class AppHandler:
                 "format": dataset_format,
                 "use_for": dataset_intention
             }
-            is_cloud_dataset_present = DS_UPLOAD_TO_FUNCTIONS[dataset_type](org_name, dataset_handler_metadata, temp_dir=f"/{cloud_folder}", workspace_metadata=handler_metadata)
+            is_cloud_dataset_present = DS_UPLOAD_TO_FUNCTIONS[dataset_type](
+                org_name,
+                dataset_handler_metadata,
+                temp_dir=f"/{cloud_folder}",
+                workspace_metadata=handler_metadata
+            )
             if is_cloud_dataset_present:
                 suggestions.add(f"/{cloud_folder}")
         suggestions = list(suggestions)
@@ -436,10 +491,12 @@ class AppHandler:
                         if not os.getenv("DEV_MODE", "False").lower() in ("true", "1"):
                             return Code(400, {}, "Vault service does not work, can't save cloud workspace")
                         encryption = NVVaultEncryption(config_path)
-                        for cloud_key, cloud_value in request_dict["cloud_specific_details"]:
+                        for cloud_key, cloud_value in request_dict["cloud_specific_details"].items():
                             encrypted_metadata["cloud_specific_details"][cloud_key] = cloud_value
                             if encryption.check_config()[0]:
-                                encrypted_metadata["cloud_specific_details"][cloud_key] = encryption.encrypt(cloud_value)
+                                encrypted_metadata["cloud_specific_details"][cloud_key] = (
+                                    encryption.encrypt(cloud_value)
+                                )
 
         if encrypted_metadata["cloud_type"] in ("aws", "azure"):
             try:
@@ -482,7 +539,12 @@ class AppHandler:
             experiment_metadata = get_experiment(experiment_id)
             experiment_workspace = experiment_metadata.get("workspace", "")
             if experiment_workspace and workspace_id in experiment_workspace:
-                return Code(400, {}, f"Experiment {experiment_metadata['id']} ({experiment_metadata['id']}) in use; Delete experiment first")
+                return Code(
+                    400,
+                    {},
+                    f"Experiment {experiment_metadata['id']} "
+                    f"({experiment_metadata['id']}) in use; Delete experiment first"
+                )
 
             train_datasets = experiment_metadata.get("train_datasets", [])
             if not isinstance(train_datasets, list):
@@ -491,7 +553,12 @@ class AppHandler:
                 dataset_metadata = get_dataset(dataset_id)
                 dataset_workspace = dataset_metadata.get("workspace", "")
                 if workspace_id == dataset_workspace:
-                    return Code(400, {}, f"Dataset {dataset_metadata['id']} ({dataset_metadata['id']}) in use; Delete dataset first")
+                    return Code(
+                        400,
+                        {},
+                        f"Dataset {dataset_metadata['id']} "
+                        f"({dataset_metadata['id']}) in use; Delete dataset first"
+                    )
 
             for key in ["eval_dataset", "inference_dataset", "calibration_dataset"]:
                 additional_dataset_id = experiment_metadata.get(key)
@@ -499,7 +566,12 @@ class AppHandler:
                     dataset_metadata = get_dataset(additional_dataset_id)
                     dataset_workspace = dataset_metadata.get("workspace", "")
                     if workspace_id == dataset_workspace:
-                        return Code(400, {}, f"Dataset {dataset_metadata['id']} ({dataset_metadata['id']}) in use; Delete dataset first")
+                        return Code(
+                            400,
+                            {},
+                            f"Dataset {dataset_metadata['id']} "
+                            f"({dataset_metadata['id']}) in use; Delete dataset first"
+                        )
 
         mongo_users = MongoHandler("tao", "users")
         user = stateless_handlers.get_user(user_id, mongo_users)
@@ -557,7 +629,14 @@ class AppHandler:
                     dataset_formats += api_params.get("formats", [])
                 if api_params.get("accepted_ds_intents", []):
                     accepted_dataset_intents += api_params.get("accepted_ds_intents", [])
-            return Code(200, {"dataset_formats": dataset_formats, "accepted_dataset_intents": accepted_dataset_intents}, "")
+            return Code(
+                200,
+                {
+                    "dataset_formats": dataset_formats,
+                    "accepted_dataset_intents": accepted_dataset_intents
+                },
+                ""
+            )
         except Exception:
             print(traceback.format_exc(), file=sys.stderr)
             return Code(404, [], "Exception caught during getting dataset formats")
@@ -588,7 +667,12 @@ class AppHandler:
         if ds_type == "ocrnet":
             intention = request_dict.get("use_for", [])
             if not (intention in (["training"], ["evaluation"])):
-                return Code(400, {}, "Use_for in dataset metadata is not set ['training'] or ['evaluation']. Please set use_for appropriately")
+                return Code(
+                    400,
+                    {},
+                    "Use_for in dataset metadata is not set ['training'] or ['evaluation']. "
+                    "Please set use_for appropriately"
+                )
 
         ds_format = request_dict.get("format", None)
         # Perform basic checks - valid type and format?
@@ -622,6 +706,7 @@ class AppHandler:
         metadata = {"id": dataset_id,
                     "user_id": user_id,
                     "org_name": org_name,
+                    "authorized_party_nca_id": request_dict.get("authorized_party_nca_id", ""),
                     "created_on": datetime.now(tz=timezone.utc),
                     "last_modified": datetime.now(tz=timezone.utc),
                     "name": request_dict.get("name", "My Dataset"),
@@ -637,13 +722,19 @@ class AppHandler:
                     "client_id": request_dict.get("client_id", None),
                     "client_secret": request_dict.get("client_secret", None),  # TODO:: Store Secrets in Vault
                     "filters": request_dict.get("filters", None),
-                    "status": request_dict.get("status", "starting") if ds_format != "monai" else "pull_complete",
                     "cloud_file_path": request_dict.get("cloud_file_path"),
                     "url": request_dict.get("url"),
                     "workspace": request_dict.get("workspace"),
                     "use_for": intention,
                     "base_experiment": request_dict.get("base_experiment", []),
                     }
+
+        # Set status based on skip_validation flag
+        skip_validation = request_dict.get("skip_validation", False)
+        if skip_validation:
+            metadata["status"] = "pull_complete"
+        else:
+            metadata["status"] = request_dict.get("status", "starting") if ds_format != "monai" else "pull_complete"
 
         if metadata.get("url", ""):
             if not metadata.get("url").startswith("https"):
@@ -670,7 +761,13 @@ class AppHandler:
         # For MONAI dataset only
         if ds_format == "monai":
             client_url = request_dict.get("client_url", None)
-            log_content = f"user_id:{user_id}, org_name:{org_name}, from_ui:{from_ui}, dataset_url:{client_url}, action:creation"
+            log_content = (
+                f"user_id:{user_id}, "
+                f"org_name:{org_name}, "
+                f"from_ui:{from_ui}, "
+                f"dataset_url:{client_url}, "
+                f"action:creation"
+            )
             log_monitor(log_type=DataMonitorLogTypeEnum.medical_dataset, log_content=log_content)
             if client_url is None:
                 msg = "Must provide a url to create a MONAI dataset."
@@ -687,8 +784,8 @@ class AppHandler:
         datasets.append(dataset_id)
         mongo_users.upsert(user_query, {'id': user_id, 'datasets': datasets})
 
-        # Pull dataset in background if known URL
-        if pull:
+        # Pull dataset in background if known URL and not skipping validation
+        if pull and not skip_validation:
             job_run_thread = threading.Thread(target=AppHandler.pull_dataset, args=(user_id, org_name, dataset_id,))
             job_run_thread.start()
 
@@ -766,7 +863,10 @@ class AppHandler:
                     msg = f"Cannot change dataset {key}"
                     return Code(400, {}, msg)
 
-            if key in ["name", "description", "version", "logo", "shared", "base_experiment"]:
+            if key in [
+                "name", "description", "version", "logo", "shared",
+                "base_experiment", "authorized_party_nca_id"
+            ]:
                 requested_value = request_dict[key]
                 if requested_value:
                     metadata[key] = requested_value
@@ -774,7 +874,12 @@ class AppHandler:
 
             if key == "cloud_file_path":
                 if metadata["status"] not in ("pull_complete", "invalid_pull"):
-                    return Code(400, {}, f"Cloud file_path can be updated only when status is pull_complete or invalid_pull, the current status is {metadata['status']}. Try again after sometime")
+                    return Code(
+                        400,
+                        {},
+                        f"Cloud file_path can be updated only when status is pull_complete or "
+                        f"invalid_pull, the current status is {metadata['status']}. Try again after sometime"
+                    )
                 pull = True
                 metadata["status"] = "starting"
                 metadata["cloud_file_path"] = request_dict[key]
@@ -925,7 +1030,11 @@ class AppHandler:
 
             def validate_dataset_thread():
                 try:
-                    valid_datset_structure = DS_UPLOAD_TO_FUNCTIONS[metadata.get("type")](org_name, metadata, temp_dir=temp_dir)
+                    valid_datset_structure = DS_UPLOAD_TO_FUNCTIONS[metadata.get("type")](
+                        org_name,
+                        metadata,
+                        temp_dir=temp_dir
+                    )
                     shutil.rmtree(temp_dir)
                     metadata["status"] = "pull_complete"
                     if not valid_datset_structure:
@@ -1005,8 +1114,9 @@ class AppHandler:
         if metadata.get("base_experiment", []):
             for base_experiment_id in metadata["base_experiment"]:
                 base_experiment_metadata = get_base_experiment_metadata(base_experiment_id)
-                if base_experiment_metadata and base_experiment_metadata.get("base_experiment_metadata", {}).get("spec_file_present"):
-                    base_experiment_spec = base_experiment_metadata.get("base_experiment_metadata", {}).get("specs", {})
+                base_exp_meta = base_experiment_metadata.get("base_experiment_metadata", {})
+                if base_experiment_metadata and base_exp_meta.get("spec_file_present"):
+                    base_experiment_spec = base_exp_meta.get("specs", {})
                     if not base_experiment_spec:
                         return Code(404, {}, "Base specs not present.")
 
@@ -1058,7 +1168,13 @@ class AppHandler:
             if not os.path.exists(CSV_PATH):
                 # Try secondary format for CSV_PATH => "<network> - <action>__<dataset-format>.csv"
                 fmt = metadata.get("format", "_")
-                CSV_PATH = os.path.join(DIR_PATH, "specs_utils", "specs", network, f"{network} - {action}__{fmt}.csv")
+                CSV_PATH = os.path.join(
+                    DIR_PATH,
+                    "specs_utils",
+                    "specs",
+                    network,
+                    f"{network} - {action}__{fmt}.csv"
+                )
                 if not os.path.exists(CSV_PATH):
                     Code(404, {}, "Default specs do not exist for action")
             json_schema = csv_to_json_schema.convert(CSV_PATH)
@@ -1147,7 +1263,13 @@ class AppHandler:
             if not os.path.exists(CSV_PATH):
                 # Try secondary format for CSV_PATH => "<network> - <action>__<dataset-format>.csv"
                 fmt = metadata.get("format", "_")
-                CSV_PATH = os.path.join(DIR_PATH, "specs_utils", "specs", network, f"{network} - {action}__{fmt}.csv")
+                CSV_PATH = os.path.join(
+                    DIR_PATH,
+                    "specs_utils",
+                    "specs",
+                    network,
+                    f"{network} - {action}__{fmt}.csv"
+                )
                 if not os.path.exists(CSV_PATH):
                     Code(404, {}, "Default specs do not exist for action")
             json_schema = csv_to_json_schema.convert(CSV_PATH)
@@ -1156,13 +1278,20 @@ class AppHandler:
         if "popular" in json_schema and job_specs:
             json_schema["popular"] = override_dicts(json_schema["popular"], job_specs)
         if is_request_automl(handler_id, action, kind):
-            json_schema["automl_default_parameters"] = metadata.get("automl_settings", {}).get("automl_hyperparameters", "[]")
+            json_schema["automl_default_parameters"] = (
+                metadata.get("automl_settings", {}).get("automl_hyperparameters", "[]")
+            )
         # elif BACKEND == "NVCF":
         #     json_schema = {}
         #     deployment_string = os.getenv(f'FUNCTION_{NETWORK_CONTAINER_MAPPING[microservices_network]}')
         #     if action == "gen_trt_engine":
         #         deployment_string = os.getenv('FUNCTION_TAO_DEPLOY')
-        #     nvcf_response = nvcf_handler.invoke_function(deployment_string=deployment_string, network=microservices_network, action=microservices_action, microservice_action="get_schema")
+        #     nvcf_response = nvcf_handler.invoke_function(
+        #         deployment_string=deployment_string,
+        #         network=microservices_network,
+        #         action=microservices_action,
+        #         microservice_action="get_schema"
+        #     )
         #     if nvcf_response.status_code != 200:
         #         if nvcf_response.status_code == 202:
         #             return Code(404, {}, "Schema from NVCF couldn't be obtained in 60 seconds, Retry again")
@@ -1196,8 +1325,9 @@ class AppHandler:
         if action not in base_experiment_metadata.get("actions", []):
             return Code(404, {}, "Action not found")
 
-        if base_experiment_metadata and base_experiment_metadata.get("base_experiment_metadata", {}).get("spec_file_present"):
-            base_experiment_spec = base_experiment_metadata.get("base_experiment_metadata", {}).get("specs", {})
+        base_exp_meta = base_experiment_metadata.get("base_experiment_metadata", {})
+        if base_experiment_metadata and base_exp_meta.get("spec_file_present"):
+            base_experiment_spec = base_exp_meta.get("specs", {})
             if not base_experiment_spec:
                 return Code(404, {}, "Base specs not present.")
 
@@ -1215,17 +1345,22 @@ class AppHandler:
             DIR_PATH = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 
             # Try regular format for CSV_PATH => "<network> - <action>.csv"
-            CSV_PATH = os.path.join(DIR_PATH, "specs_utils", "specs", base_experiment_network, f"{base_experiment_network} - {action}.csv")
+            CSV_PATH = os.path.join(DIR_PATH, "specs_utils", "specs", base_experiment_network,
+                                    f"{base_experiment_network} - {action}.csv")
             if not os.path.exists(CSV_PATH):
                 Code(404, {}, "Default specs do not exist for action")
             json_schema = csv_to_json_schema.convert(CSV_PATH)
         if "default" in json_schema and base_experiment_spec:
             json_schema["default"] = merge_nested_dicts(json_schema["default"], base_experiment_spec)
-            if base_experiment_network == "visual_changenet" and "segmentation" in base_experiment_name and "train" in json_schema["default"]:
+            if (base_experiment_network == "visual_changenet" and
+                "segmentation" in base_experiment_name and
+                    "train" in json_schema["default"]):
                 json_schema["default"]["train"].pop("tensorboard", None)
         if "popular" in json_schema and base_experiment_spec:
             json_schema["popular"] = override_dicts(json_schema["popular"], base_experiment_spec)
-            if base_experiment_network == "visual_changenet" and "segmentation" in base_experiment_name and "train" in json_schema["popular"]:
+            if (base_experiment_network == "visual_changenet" and
+                "segmentation" in base_experiment_name and
+                    "train" in json_schema["popular"]):
                 json_schema["popular"]["train"].pop("tensorboard", None)
         return Code(200, json_schema, "Schema retrieved")
 
@@ -1272,7 +1407,13 @@ class AppHandler:
             CSV_PATH = os.path.join(DIR_PATH, "specs_utils", "specs", network, f"{network} - {action}.csv")
             if not os.path.exists(CSV_PATH):
                 # Try secondary format for CSV_PATH => "<network> - <action>__<dataset-format>.csv"
-                CSV_PATH = os.path.join(DIR_PATH, "specs_utils", "specs", network, f"{network} - {action}__{dataset_format}.csv")
+                CSV_PATH = os.path.join(
+                    DIR_PATH,
+                    "specs_utils",
+                    "specs",
+                    network,
+                    f"{network} - {action}__{dataset_format}.csv"
+                )
                 if not os.path.exists(CSV_PATH):
                     Code(404, {}, "Default specs do not exist for action")
 
@@ -1305,13 +1446,29 @@ class AppHandler:
             available_gpu_types = jobDriver.get_available_local_k8s_gpus()
             if available_gpu_types:
                 return Code(200, available_gpu_types, "Retrieved available GPU info")
-            return Code(404, [], "Requested GPU's are not available in the current deployment. Check if all nodes has accelerator labels")
+            return Code(
+                404, [],
+                "Requested GPU's are not available in the current deployment. "
+                "Check if all nodes has accelerator labels"
+            )
         return Code(404, [], f"GPU types can't be retrieved for deployed Backend {BACKEND}")
 
     # Job API
 
     @staticmethod
-    def job_run(org_name, handler_id, parent_job_id, action, kind, specs=None, name=None, description=None, num_gpu=-1, platform_id=None, from_ui=False):
+    def job_run(
+        org_name,
+        handler_id,
+        parent_job_id,
+        action,
+        kind,
+        specs=None,
+        name=None,
+        description=None,
+        num_gpu=-1,
+        platform_id=None,
+        from_ui=False
+    ):
         """Runs a job based on the specified parameters.
 
         This method initiates a job based on the given organization, experiment,
@@ -1354,7 +1511,11 @@ class AppHandler:
             return Code(404, {}, f"Action {action} requested not in {','.join(handler_metadata.get('actions', []))}")
 
         if not user_id:
-            return Code(404, [], "User ID couldn't be found in the experiment metadata. Try creating the experiment again")
+            return Code(
+                404, [],
+                "User ID couldn't be found in the experiment metadata. "
+                "Try creating the experiment again"
+            )
 
         if parent_job_id:
             parent_job_metadata = stateless_handlers.get_handler_job_metadata(parent_job_id)
@@ -1372,7 +1533,11 @@ class AppHandler:
 
                 if parent_kind == "experiment":
                     if parent_handler_id != handler_id:
-                        return Code(404, [], f"Parent job {parent_job_id} trying to assign doesn't belong to current experiment {handler_id}, it belongs to experiment {parent_handler_id}")
+                        return Code(
+                            404, [],
+                            f"Parent job {parent_job_id} trying to assign doesn't belong to current experiment "
+                            f"{handler_id}, it belongs to experiment {parent_handler_id}"
+                        )
 
         if BACKEND == "NVCF":
             available_nvcf_instances = get_available_nvcf_instances(user_id, org_name)
@@ -1404,14 +1569,30 @@ class AppHandler:
                                 gpu_based_subset[nvcf_instance_id] = nvcf_instance_info
 
                     if gpu_based_subset:
-                        sorted_platform_ids = sorted(gpu_based_subset, key=lambda x: gpu_based_subset[x]['current_available'], reverse=True)
+                        sorted_platform_ids = sorted(
+                            gpu_based_subset,
+                            key=lambda x: gpu_based_subset[x]['current_available'],
+                            reverse=True
+                        )
                     else:
-                        sorted_platform_ids = sorted(available_nvcf_instances, key=lambda x: available_nvcf_instances[x]['current_available'], reverse=True)
+                        sorted_platform_ids = sorted(
+                            available_nvcf_instances,
+                            key=lambda x: available_nvcf_instances[x]['current_available'],
+                            reverse=True
+                        )
                     platform_id = sorted_platform_ids[0]
                 if platform_id not in available_nvcf_instances:
-                    return Code(404, [], f"Requested NVCF resource {platform_id} not available. Valid platform_id options are {str(available_nvcf_instances.keys())}")
+                    return Code(
+                        404, [],
+                        f"Requested NVCF resource {platform_id} not available. "
+                        f"Valid platform_id options are {str(available_nvcf_instances.keys())}"
+                    )
                 if available_nvcf_instances[platform_id]["current_available"] == 0:
-                    return Code(404, [], f"Requested NVCF resource {platform_id} maxed out. Choose other platform_id options, valid options are: {str(available_nvcf_instances.keys())}")
+                    return Code(
+                        404, [],
+                        f"Requested NVCF resource {platform_id} maxed out. Choose other platform_id options, "
+                        f"valid options are: {str(available_nvcf_instances.keys())}"
+                    )
 
         if kind == "experiment" and handler_metadata.get("type").lower() == "medical":
             if action not in handler_metadata.get("actions", []):
@@ -1427,7 +1608,11 @@ class AppHandler:
             num_gpu, err_msg = validate_num_gpu(specs.get("num_gpu", None), action)
             if num_gpu <= 0 and err_msg:
                 return Code(400, [], err_msg)
-            log_content = f"user_id:{user_id}, org_name:{org_name}, from_ui:{from_ui}, job_type:experiment, network_arch:{network_arch}, action:{action}, num_gpu:{num_gpu}"
+            log_content = (
+                f"user_id:{user_id}, org_name:{org_name}, from_ui:{from_ui}, "
+                f"job_type:experiment, network_arch:{network_arch}, action:{action}, "
+                f"num_gpu:{num_gpu}"
+            )
             log_monitor(log_type=DataMonitorLogTypeEnum.medical_job, log_content=log_content)
             if action == "inference":
                 return MonaiModelHandler.run_inference(org_name, handler_id, handler_metadata, specs)
@@ -1441,7 +1626,10 @@ class AppHandler:
                     return Code(404, {}, "Annotation job requires eval dataset in the model metadata.")
 
         if kind == "dataset" and handler_metadata.get("format") == "monai":
-            log_content = f"user_id:{user_id}, org_name:{org_name}, from_ui:{from_ui}, job_type:dataset, action:{action}"
+            log_content = (
+                f"user_id:{user_id}, org_name:{org_name}, from_ui:{from_ui}, "
+                f"job_type:dataset, action:{action}"
+            )
             log_monitor(log_type=DataMonitorLogTypeEnum.medical_job, log_content=log_content)
             return MonaiDatasetHandler.run_job(org_name, handler_id, handler_metadata, action, specs)
 
@@ -1455,10 +1643,32 @@ class AppHandler:
                     check_and_convert(specs, default_spec)
             msg = ""
             if is_request_automl(handler_id, action, kind):
-                AutoMLHandler.start(user_id, org_name, handler_id, job_id, handler_metadata, name=name, platform_id=platform_id)
+                AutoMLHandler.start(
+                    user_id,
+                    org_name,
+                    handler_id,
+                    job_id,
+                    handler_metadata,
+                    name=name,
+                    platform_id=platform_id
+                )
                 msg = "AutoML "
             else:
-                job_context = create_job_context(parent_job_id, action, job_id, handler_id, user_id, org_name, kind, handler_metadata=handler_metadata, specs=specs, name=name, description=description, num_gpu=num_gpu, platform_id=platform_id)
+                job_context = create_job_context(
+                    parent_job_id,
+                    action,
+                    job_id,
+                    handler_id,
+                    user_id,
+                    org_name,
+                    kind,
+                    handler_metadata=handler_metadata,
+                    specs=specs,
+                    name=name,
+                    description=description,
+                    num_gpu=num_gpu,
+                    platform_id=platform_id
+                )
                 on_new_job(job_context)
             return Code(200, job_id, f"{msg}Job scheduled")
         except Exception as e:
@@ -1693,7 +1903,13 @@ class AppHandler:
         job_status = job_metadata.get("status", "Error")
 
         if job_status in ["Error", "Done", "Canceled", "Canceling", "Pausing", "Paused"]:
-            return Code(200, {f"Job {job_id} with current status {job_status} can't be attemped to cancel. Current status should be one of Running, Pending, Resuming"})
+            return Code(
+                200,
+                {
+                    f"Job {job_id} with current status {job_status} can't be attemped to cancel. "
+                    "Current status should be one of Running, Pending, Resuming"
+                }
+            )
 
         if job_status == "Pending":
             stateless_handlers.update_job_status(handler_id, job_id, status="Canceling", kind=kind + "s")
@@ -1708,11 +1924,25 @@ class AppHandler:
                 use_ngc = not (specs and "cluster" in specs and specs["cluster"] == "local")
                 stateless_handlers.update_job_status(handler_id, job_id, status="Canceling", kind=kind + "s")
                 jobDriver.delete(job_id, use_ngc=use_ngc)
-                k8s_status = jobDriver.status(org_name, handler_id, job_id, kind + "s", use_ngc=use_ngc, automl_exp_job=False)
+                k8s_status = jobDriver.status(
+                    org_name,
+                    handler_id,
+                    job_id,
+                    kind + "s",
+                    use_ngc=use_ngc,
+                    automl_exp_job=False
+                )
                 while k8s_status in ("Done", "Error", "Running", "Pending"):
                     if k8s_status in ("Done", "Error"):
                         break
-                    k8s_status = jobDriver.status(org_name, handler_id, job_id, kind + "s", use_ngc=use_ngc, automl_exp_job=False)
+                    k8s_status = jobDriver.status(
+                        org_name,
+                        handler_id,
+                        job_id,
+                        kind + "s",
+                        use_ngc=use_ngc,
+                        automl_exp_job=False
+                    )
                     time.sleep(5)
                 stateless_handlers.update_job_status(handler_id, job_id, status="Canceled", kind=kind + "s")
                 return Code(200, {"message": f"Running job {job_id} cancelled"})
@@ -1770,7 +2000,13 @@ class AppHandler:
 
         # If job is error / done, or one of cancel or pause states then pause is NoOp
         if job_status in ["Error", "Done", "Canceled", "Canceling", "Pausing", "Paused"]:
-            return Code(200, {"message": f"Job {job_id} with current status {job_status} can't be attemped to pause. Current status should be one of Running, Pending, Resuming"})
+            return Code(
+                200,
+                {
+                    f"Job {job_id} with current status {job_status} can't be attemped to pause. "
+                    "Current status should be one of Running, Pending, Resuming"
+                }
+            )
 
         if job_status == "Pending":
             stateless_handlers.update_job_status(handler_id, job_id, status="Pausing", kind=kind + "s")
@@ -1785,11 +2021,25 @@ class AppHandler:
                 use_ngc = not (specs and "cluster" in specs and specs["cluster"] == "local")
                 stateless_handlers.update_job_status(handler_id, job_id, status="Pausing", kind=kind + "s")
                 jobDriver.delete(job_id, use_ngc=use_ngc)
-                k8s_status = jobDriver.status(org_name, handler_id, job_id, kind + "s", use_ngc=use_ngc, automl_exp_job=False)
+                k8s_status = jobDriver.status(
+                    org_name,
+                    handler_id,
+                    job_id,
+                    kind + "s",
+                    use_ngc=use_ngc,
+                    automl_exp_job=False
+                )
                 while k8s_status in ("Done", "Error", "Running", "Pending"):
                     if k8s_status in ("Done", "Error"):
                         break
-                    k8s_status = jobDriver.status(org_name, handler_id, job_id, kind + "s", use_ngc=use_ngc, automl_exp_job=False)
+                    k8s_status = jobDriver.status(
+                        org_name,
+                        handler_id,
+                        job_id,
+                        kind + "s",
+                        use_ngc=use_ngc,
+                        automl_exp_job=False
+                    )
                     time.sleep(5)
                 stateless_handlers.update_job_status(handler_id, job_id, status="Paused", kind=kind + "s")
                 return Code(200, {"message": f"Running job {job_id} paused"})
@@ -1833,7 +2083,8 @@ class AppHandler:
                 if job_status not in ["Error", "Done", "Canceled", "Canceling", "Pausing", "Paused"] and job_id:
                     cancel_response = AppHandler.job_cancel(org_name, cancel_handler_id, job_id, cancel_kind)
                     if cancel_response.code != 200:
-                        if type(cancel_response.data) is dict and cancel_response.data.get("error_desc", "") != "incomplete job not found":
+                        if (type(cancel_response.data) is dict and
+                                cancel_response.data.get("error_desc", "") != "incomplete job not found"):
                             cancel_success = False
                             cancel_message += f"Cancelation for job {job_id} failed due to {str(cancel_response.data)} "
             return cancel_success, cancel_message
@@ -1945,7 +2196,11 @@ class AppHandler:
             return Code(404, {}, "Job is not in success or Done state")
         job_action = job_metadata.get("action", "")
         if job_action not in ("train", "prune", "retrain", "export", "gen_trt_engine"):
-            return Code(404, {}, "Publish model is available only for train, prune, retrain, export, gen_trt_engine actions")
+            return Code(
+                404,
+                {},
+                "Publish model is available only for train, prune, retrain, export, gen_trt_engine actions"
+            )
 
         try:
             source_file = resolve_checkpoint_root_and_search(handler_metadata, job_id)
@@ -1957,15 +2212,21 @@ class AppHandler:
             if not ngc_key:
                 return Code(403, {}, "User does not have access to publish model")
 
-            code, message = ngc_handler.create_model(org_name, team_name, handler_metadata, source_file, ngc_key, use_cookie, display_name, description)
+            code, message = ngc_handler.create_model(
+                org_name, team_name, handler_metadata, source_file, ngc_key, use_cookie, display_name, description
+            )
             if code not in [200, 200]:
                 print("Error while creating NGC model", file=sys.stderr)
                 return Code(code, {}, message)
 
             # Upload model version
-            response_code, response_message = ngc_handler.upload_model(org_name, team_name, handler_metadata, source_file, ngc_key, job_id, job_action)
+            response_code, response_message = ngc_handler.upload_model(
+                org_name, team_name, handler_metadata, source_file, ngc_key, job_id, job_action
+            )
             if "already exists" in response_message:
-                response_message = "Version trying to upload already exists, use remove_published_model endpoint to reupload the model"
+                response_message = (
+                    "Version trying to upload already exists, use remove_published_model endpoint to reupload the model"
+                )
             return Code(response_code, {}, response_message)
         except Exception as e:
             print(f"Exception thrown in publish_model is {str(e)}", file=sys.stderr)
@@ -2004,14 +2265,20 @@ class AppHandler:
             return Code(404, {}, "Job is not in success or Done state")
         job_action = job_metadata.get("action", "")
         if job_action not in ("train", "prune", "retrain", "export", "gen_trt_engine"):
-            return Code(404, {}, "Delete published model is available only for train, prune, retrain, export, gen_trt_engine actions")
+            return Code(
+                404,
+                {},
+                "Delete published model is available only for train, prune, retrain, export, gen_trt_engine actions"
+            )
 
         try:
             ngc_key, use_cookie = ngc_handler.get_user_key(user_id, org_name)
             if not ngc_key:
                 return Code(403, {}, "User does not have access to remove published model")
 
-            response = ngc_handler.delete_model(org_name, team_name, handler_metadata, ngc_key, use_cookie, job_id, job_action)
+            response = ngc_handler.delete_model(
+                org_name, team_name, handler_metadata, ngc_key, use_cookie, job_id, job_action
+            )
             if response.ok:
                 return Code(response.status_code, {}, "Sucessfully deleted model")
             return Code(response.status_code, {}, "Unable to delete published model")
@@ -2032,10 +2299,10 @@ class AppHandler:
         kind (str): The type of job, either "experiment" or "dataset".
 
         Returns:
-        Code: A response code (200 if the job is successfully deleted, 404 if not found, 400 if deletion is not allowed).
-              - 200: Successfully deleted the job.
-              - 404: If the job or handler is not found.
-              - 400: If the job is in "Running" or "Pending" state.
+        Code: A response code:
+                 - 200 if the job is successfully deleted
+                 - 404 if not found
+                 - 400 if deletion is not allowed
         """
         handler_metadata = resolve_metadata(kind, handler_id)
         if not handler_metadata:
@@ -2063,7 +2330,10 @@ class AppHandler:
                 handler_metadata["last_modified"] = datetime.now(tz=timezone.utc)
                 write_handler_metadata(handler_id, handler_metadata, kind)
             # Delete job logs
-            job_log_path = os.path.join(stateless_handlers.get_handler_log_root(user_id, org_name, handler_id), job_id + ".txt")
+            job_log_path = os.path.join(
+                stateless_handlers.get_handler_log_root(user_id, org_name, handler_id),
+                job_id + ".txt"
+            )
             if os.path.exists(job_log_path):
                 os.remove(job_log_path)
             return Code(200, [job_id], "job deleted")
@@ -2074,7 +2344,17 @@ class AppHandler:
 
     # Download experiment job
     @staticmethod
-    def job_download(org_name, handler_id, job_id, kind, file_lists=None, best_model=None, latest_model=None, tar_files=True, export_type="tao"):
+    def job_download(
+        org_name,
+        handler_id,
+        job_id,
+        kind,
+        file_lists=None,
+        best_model=None,
+        latest_model=None,
+        tar_files=True,
+        export_type="tao"
+    ):
         """Download files associated with the specified job.
 
         Parameters:
@@ -2147,9 +2427,21 @@ class AppHandler:
                     job_root = os.path.join(root, job_id)
                     if handler_metadata.get("automl_settings", {}).get("automl_enabled") is True and action == "train":
                         job_root = os.path.join(job_root, "best_model")
-                    find_trained_tlt = glob.glob(f"{job_root}/*{format_epoch_number}.tlt") + glob.glob(f"{job_root}/train/*{format_epoch_number}.tlt") + glob.glob(f"{job_root}/weights/*{format_epoch_number}.tlt")
-                    find_trained_pth = glob.glob(f"{job_root}/*{format_epoch_number}.pth") + glob.glob(f"{job_root}/train/*{format_epoch_number}.pth") + glob.glob(f"{job_root}/weights/*{format_epoch_number}.pth")
-                    find_trained_hdf5 = glob.glob(f"{job_root}/*{format_epoch_number}.hdf5") + glob.glob(f"{job_root}/train/*{format_epoch_number}.hdf5") + glob.glob(f"{job_root}/weights/*{format_epoch_number}.hdf5")
+                    find_trained_tlt = (
+                        glob.glob(f"{job_root}/*{format_epoch_number}.tlt") +
+                        glob.glob(f"{job_root}/train/*{format_epoch_number}.tlt") +
+                        glob.glob(f"{job_root}/weights/*{format_epoch_number}.tlt")
+                    )
+                    find_trained_pth = (
+                        glob.glob(f"{job_root}/*{format_epoch_number}.pth") +
+                        glob.glob(f"{job_root}/train/*{format_epoch_number}.pth") +
+                        glob.glob(f"{job_root}/weights/*{format_epoch_number}.pth")
+                    )
+                    find_trained_hdf5 = (
+                        glob.glob(f"{job_root}/*{format_epoch_number}.hdf5") +
+                        glob.glob(f"{job_root}/train/*{format_epoch_number}.hdf5") +
+                        glob.glob(f"{job_root}/weights/*{format_epoch_number}.hdf5")
+                    )
                     if find_trained_tlt:
                         files.append(find_trained_tlt[0])
                     if find_trained_pth:
@@ -2169,7 +2461,10 @@ class AppHandler:
                     files = list(set(files))
 
                 def get_files_recursively(directory):
-                    return [file for file in glob.glob(os.path.join(directory, '**'), recursive=True) if os.path.isfile(file) and not file.endswith(".lock")]
+                    return [
+                        file for file in glob.glob(os.path.join(directory, '**'), recursive=True)
+                        if os.path.isfile(file) and not file.endswith(".lock")
+                    ]
                 all_files = []
                 for file in files:
                     if os.path.isdir(file):
@@ -2177,7 +2472,11 @@ class AppHandler:
                     elif os.path.isfile(file):
                         all_files.append(file)
 
-                out_tar = out_tar.replace(".tar.gz", str(uuid.uuid4()) + ".tar.gz")  # Appending UUID to not overwrite the tar file created at end of job complete
+                # Appending UUID to not overwrite the tar file created at end of job complete
+                out_tar = out_tar.replace(
+                    ".tar.gz",
+                    str(uuid.uuid4()) + ".tar.gz"
+                )
                 with tarfile.open(out_tar, "w:gz") as tar:
                     for file_path in all_files:
                         tar.add(file_path, arcname=file_path.replace(root, "", 1).replace(log_root, "", 1))
@@ -2248,19 +2547,22 @@ class AppHandler:
 
         # Get log file path
         # Normal action log is saved at /orgs/<org_name>/users/<user_id>/logs/<job_id>.txt
-        # AutoML train  log is saved at /orgs/<org_name>/users/<user_id>/jobs/<job_id>/experiment_<recommendation_index>/log.txt
+        # AutoML train  log is saved at:
+        # /orgs/<org_name>/users/<user_id>/jobs/<job_id>/experiment_<recommendation_index>/log.txt
         user_id = handler_metadata.get("user_id")
         log_file_path = os.path.join(get_handler_log_root(user_id, org_name, handler_id), str(job_id) + ".txt")
         job_metadata = get_handler_job_metadata(job_id)
         automl_index = None
-        if handler_metadata.get("automl_settings", {}).get("automl_enabled", False) and job_metadata.get("action", "") == "train":
+        if (handler_metadata.get("automl_settings", {}).get("automl_enabled", False) and
+                job_metadata.get("action", "") == "train"):
             root = os.path.join(get_jobs_root(user_id, org_name), job_id)
             automl_index = get_automl_current_rec(job_id)
             if automl_experiment_index is not None:
                 automl_index = int(automl_experiment_index)
             log_file_path = os.path.join(root, f"experiment_{automl_index}", "log.txt")
 
-        if job_metadata.get("status", "") not in ("Done", "Error", "Canceled", "Paused") or not os.path.exists(log_file_path):
+        if (job_metadata.get("status", "") not in ("Done", "Error", "Canceled", "Paused") or
+                not os.path.exists(log_file_path)):
             workspace_id = handler_metadata.get("workspace", "")
             if not workspace_id:
                 return Code(404, {}, "Handler doesn't have workspace assigned, can't download logs.")
@@ -2268,11 +2570,17 @@ class AppHandler:
 
         # File not present - Use detailed message or job status
         if not os.path.exists(log_file_path):
-            detailed_result_msg = job_metadata.get("job_details", {}).get(job_id, {}).get("detailed_status", {}).get("message", "")
+            detailed_result_msg = (
+                job_metadata.get("job_details", {})
+                .get(job_id, {})
+                .get("detailed_status", {})
+                .get("message", "")
+            )
             if detailed_result_msg:
                 return Code(200, detailed_result_msg)
 
-            if handler_metadata.get("automl_settings", {}).get("automl_enabled", False) and job_metadata.get("action", "") == "train":
+            if (handler_metadata.get("automl_settings", {}).get("automl_enabled", False) and
+                    job_metadata.get("action", "") == "train"):
                 if handler_metadata.get("status") in ["Canceled", "Canceling"]:
                     return Code(200, "AutoML training has been canceled.")
                 if handler_metadata.get("status") in ["Paused", "Pausing"]:
@@ -2367,6 +2675,7 @@ class AppHandler:
         metadata = {"id": experiment_id,
                     "user_id": user_id,
                     "org_name": org_name,
+                    "authorized_party_nca_id": request_dict.get("authorized_party_nca_id", ""),
                     "created_on": datetime.now(tz=timezone.utc),
                     "last_modified": datetime.now(tz=timezone.utc),
                     "name": request_dict.get("name", "My Experiment"),
@@ -2381,8 +2690,16 @@ class AppHandler:
                     "network_arch": mdl_nw,
                     "type": mdl_type,
                     "dataset_type": read_network_config(mdl_nw)["api_params"]["dataset_type"],
-                    "dataset_formats": read_network_config(mdl_nw)["api_params"].get("formats", read_network_config(read_network_config(mdl_nw)["api_params"]["dataset_type"]).get("api_params", {}).get("formats", None)),
-                    "accepted_dataset_intents": read_network_config(mdl_nw)["api_params"].get("accepted_ds_intents", []),
+                    "dataset_formats": read_network_config(mdl_nw)["api_params"].get(
+                        "formats",
+                        read_network_config(
+                            read_network_config(mdl_nw)["api_params"]["dataset_type"]
+                        ).get("api_params", {}).get("formats", None)
+                    ),
+                    "accepted_dataset_intents": read_network_config(mdl_nw)["api_params"].get(
+                        "accepted_ds_intents",
+                        []
+                    ),
                     "actions": read_network_config(mdl_nw)["api_params"]["actions"],
                     "docker_env_vars": request_dict.get("docker_env_vars", {}),
                     "train_datasets": [],
@@ -2434,8 +2751,21 @@ class AppHandler:
                     return Code(400, {}, "Vault service does not work, can't enable MLOPs services")
 
         # Update datasets and base_experiments if given.
-        # "realtime_infer" will be checked later, since in some cases (in MEDICAL_CUSTOM_ARCHITECT), need to prepare base_experiment first
-        metadata, error_code = validate_and_update_experiment_metadata(user_id, org_name, request_dict, metadata, ["train_datasets", "eval_dataset", "inference_dataset", "calibration_dataset", "base_experiment"])
+        # "realtime_infer" will be checked later, since in some cases (in MEDICAL_CUSTOM_ARCHITECT),
+        # need to prepare base_experiment first
+        metadata, error_code = validate_and_update_experiment_metadata(
+            user_id,
+            org_name,
+            request_dict,
+            metadata,
+            [
+                "train_datasets",
+                "eval_dataset",
+                "inference_dataset",
+                "calibration_dataset",
+                "base_experiment"
+            ]
+        )
         if error_code:
             return error_code
 
@@ -2448,11 +2778,15 @@ class AppHandler:
             is_auto3seg_inference = metadata["network_arch"] == "monai_automl_generated"
             no_ptm = (metadata["base_experiment"] is None) or (len(metadata["base_experiment"]) == 0)
             if no_ptm and is_custom_bundle:
-                # If base_experiment is not provided, then we will need to create a model to host the files downloaded from NGC.
-                # This is a temporary solution until we have a better way to handle this.
+                # If base_experiment is not provided, then we will need to create a model
+                # to host the files downloaded from NGC.
                 bundle_url = request_dict.get("bundle_url", None)
                 if bundle_url is None:
-                    return Code(400, {}, "Either `bundle_url` or `ngc_path` needs to be defined for MONAI Custom Model.")
+                    return Code(
+                        400,
+                        {},
+                        "Either `bundle_url` or `ngc_path` needs to be defined for MONAI Custom Model."
+                    )
                 base_experiment_id = str(uuid.uuid4())
                 ptm_metadata = metadata.copy()
                 ptm_metadata["id"] = base_experiment_id
@@ -2461,7 +2795,8 @@ class AppHandler:
                 ptm_metadata["train_datasets"] = []
                 ptm_metadata["eval_dataset"] = None
                 ptm_metadata["inference_dataset"] = None
-                # since "realtime_infer" is not updated by update_metadata, specify it from request_dict here first for download.
+                # since "realtime_infer" is not updated by update_metadata,
+                # specify it from request_dict here first for download.
                 ptm_metadata["realtime_infer"] = request_dict.get("realtime_infer", False)
                 ptm_metadata["realtime_infer_support"] = ptm_metadata["realtime_infer"]
                 write_handler_metadata(base_experiment_id, ptm_metadata, "experiment")
@@ -2475,27 +2810,51 @@ class AppHandler:
                 ptm_file = validate_monai_bundle(base_experiment_id, checks=bundle_checks)
                 if (ptm_file is None) or (not os.path.isdir(ptm_file)):
                     clean_on_error(experiment_id=base_experiment_id)
-                    return Code(400, {}, "Failed to download base experiment, or the provided bundle does not follow MONAI bundle format.")
+                    return Code(
+                        400,
+                        {},
+                        "Failed to download base experiment, or the provided bundle does not follow "
+                        "MONAI bundle format."
+                    )
 
                 ptm_metadata["base_experiment_pull_complete"] = "pull_complete"
                 write_handler_metadata(base_experiment_id, ptm_metadata, "experiment")
-                bundle_url_path = os.path.join(resolve_root(org_name, "experiment", base_experiment_id), CUSTOMIZED_BUNDLE_URL_FILE)
+                bundle_url_path = os.path.join(
+                    resolve_root(org_name, "experiment", base_experiment_id),
+                    CUSTOMIZED_BUNDLE_URL_FILE
+                )
                 safe_dump_file(bundle_url_path, {CUSTOMIZED_BUNDLE_URL_KEY: bundle_url})
                 metadata["base_experiment"] = [base_experiment_id]
             elif no_ptm and is_auto3seg_inference:
                 bundle_url = request_dict.get("bundle_url", None)
                 if bundle_url is None:
-                    return Code(400, {}, "Either `bundle_url` or `ngc_path` needs to be defined for MONAI Custom Model.")
-                bundle_url_path = os.path.join(resolve_root(org_name, "experiment", experiment_id), CUSTOMIZED_BUNDLE_URL_FILE)
+                    return Code(
+                        400,
+                        {},
+                        "Either `bundle_url` or `ngc_path` needs to be defined for MONAI Custom Model."
+                    )
+                bundle_url_path = os.path.join(
+                    resolve_root(org_name, "experiment", experiment_id),
+                    CUSTOMIZED_BUNDLE_URL_FILE
+                )
                 os.makedirs(resolve_root(org_name, "experiment", experiment_id), exist_ok=True)
                 safe_dump_file(bundle_url_path, {CUSTOMIZED_BUNDLE_URL_KEY: bundle_url})
 
             network_arch = metadata.get("network_arch", None)
-            log_content = f"user_id:{user_id}, org_name:{org_name}, from_ui:{from_ui}, network_arch:{network_arch}, action:creation, no_ptm:{no_ptm}"
+            log_content = (
+                f"user_id:{user_id}, org_name:{org_name}, from_ui:{from_ui}, "
+                f"network_arch:{network_arch}, action:creation, no_ptm:{no_ptm}"
+            )
             log_monitor(log_type=DataMonitorLogTypeEnum.medical_experiment, log_content=log_content)
 
         # check "realtime_infer"
-        metadata, error_code = validate_and_update_experiment_metadata(user_id, org_name, request_dict, metadata, ["realtime_infer"])
+        metadata, error_code = validate_and_update_experiment_metadata(
+            user_id,
+            org_name,
+            request_dict,
+            metadata,
+            ["realtime_infer"]
+        )
         if error_code:
             return error_code
 
@@ -2509,8 +2868,19 @@ class AppHandler:
                 additional_id_info = request_dict.get("additional_id_info", None)
                 job_id = additional_id_info if additional_id_info and is_valid_uuid4(additional_id_info) else None
                 if not job_id:
-                    return Code(400, {}, f"Non-NGC base_experiment {base_experiment_id} needs job_id in the request for path location")
-            success, model_name, msg, bundle_metadata = prep_tis_model_repository(model_params, base_experiment_id, org_name, user_id, experiment_id, job_id=job_id)
+                    return Code(
+                        400,
+                        {},
+                        f"Non-NGC base_experiment {base_experiment_id} needs job_id in the request for path location"
+                    )
+            success, model_name, msg, bundle_metadata = prep_tis_model_repository(
+                model_params,
+                base_experiment_id,
+                org_name,
+                user_id,
+                experiment_id,
+                job_id=job_id
+            )
             if not success:
                 clean_on_error(experiment_id=experiment_id)
                 return Code(400, {}, msg)
@@ -2554,7 +2924,11 @@ class AppHandler:
                     return response
             else:
                 clean_on_error(experiment_id)
-                return Code(400, {}, f"Maximum of {TENSORBOARD_EXPERIMENT_LIMIT} Tensorboard Experiments allowed per user. Disable or delete a Tensorboard Experiment and try again.")
+                return Code(
+                    400,
+                    {},
+                    f"Maximum of {TENSORBOARD_EXPERIMENT_LIMIT} Tensorboard Experiments allowed per user."
+                )
 
         # Actual "creation" happens here...
         write_handler_metadata(experiment_id, metadata, "experiment")
@@ -2573,7 +2947,13 @@ class AppHandler:
         if retry_experiment_id:
             error_response = AppHandler.retry_experiment(org_name, user_id, retry_experiment_id, experiment_id, from_ui)
         elif experiment_actions:
-            error_response = AppHandler.retry_experiment_actions(user_id, org_name, experiment_id, experiment_actions, from_ui)
+            error_response = AppHandler.retry_experiment_actions(
+                user_id,
+                org_name,
+                experiment_id,
+                experiment_actions,
+                from_ui
+            )
         if error_response:
             clean_on_error(experiment_id)
             return error_response
@@ -2617,11 +2997,24 @@ class AppHandler:
                     retry_parent_job = get_job(retry_parent_job_id)
                     parent_action = retry_parent_job.get('action')
                     parent_job_id = job_map.get(parent_action, None)
-                response = AppHandler.job_run(org_name=org_name, handler_id=new_experiment_id, parent_job_id=parent_job_id, action=job_action, kind='experiment', specs=specs, name=name, description=description, from_ui=from_ui)
+                response = AppHandler.job_run(
+                    org_name=org_name,
+                    handler_id=new_experiment_id,
+                    parent_job_id=parent_job_id,
+                    action=job_action,
+                    kind='experiment',
+                    specs=specs,
+                    name=name,
+                    description=description,
+                    from_ui=from_ui
+                )
                 if response.code == 200:
                     job_id = response.data
                     job_map[job_action] = job_id
-                    print(f"Created {job_action} job with id {job_id} for experiment {new_experiment_id}", file=sys.stderr)
+                    print(
+                        f"Created {job_action} job with id {job_id} for experiment {new_experiment_id}",
+                        file=sys.stderr
+                    )
                 else:
                     return response
         return None
@@ -2650,7 +3043,13 @@ class AppHandler:
             description = action_dict.get('description')
             num_gpu = action_dict.get('num_gpu', -1)
             platform_id = action_dict.get('platform_id', None)
-            action_data = {'specs': specs, 'name': name, 'description': description, 'num_gpu': num_gpu, 'platform_id': platform_id}
+            action_data = {
+                'specs': specs,
+                'name': name,
+                'description': description,
+                'num_gpu': num_gpu,
+                'platform_id': platform_id
+            }
             if action:
                 raw_actions.append(action)
                 action_lookup[action] = action_data
@@ -2668,7 +3067,13 @@ class AppHandler:
                     lookup_data = action_lookup[child_action]
                     specs = {}
                     if not specs and not lookup_data.get('specs', {}):
-                        specs_response = AppHandler.get_spec_schema(user_id, org_name, experiment_id, child_action, 'experiment')
+                        specs_response = AppHandler.get_spec_schema(
+                            user_id,
+                            org_name,
+                            experiment_id,
+                            child_action,
+                            'experiment'
+                        )
                         if specs_response.code == 200:
                             spec_schema = specs_response.data
                             specs = spec_schema["default"]
@@ -2682,10 +3087,25 @@ class AppHandler:
                     num_gpu = lookup_data.get('num_gpu', -1)
                     platform_id = lookup_data.get('platform_id', None)
                     parent_job_id = job_action_to_id.get(parent_action, None)
-                    response = AppHandler.job_run(org_name=org_name, handler_id=experiment_id, parent_job_id=parent_job_id, action=child_action, kind='experiment', specs=specs, name=name, description=description, num_gpu=num_gpu, platform_id=platform_id, from_ui=from_ui)
+                    response = AppHandler.job_run(
+                        org_name=org_name,
+                        handler_id=experiment_id,
+                        parent_job_id=parent_job_id,
+                        action=child_action,
+                        kind='experiment',
+                        specs=specs,
+                        name=name,
+                        description=description,
+                        num_gpu=num_gpu,
+                        platform_id=platform_id,
+                        from_ui=from_ui
+                    )
                     if response.code == 200:
                         job_id = response.data
-                        print(f"Created {child_action} job with id {job_id} for experiment {experiment_id}", file=sys.stderr)
+                        print(
+                            f"Created {child_action} job with id {job_id} for experiment {experiment_id}",
+                            file=sys.stderr
+                        )
                         job_action_to_id[child_action] = job_id
                     else:
                         return response
@@ -2743,7 +3163,7 @@ class AppHandler:
 
             if key in ["name", "description", "version", "logo",
                        "ngc_path", "encryption_key", "read_only",
-                       "metric", "public", "shared", "tags"]:
+                       "metric", "public", "shared", "tags", "authorized_party_nca_id"]:
                 requested_value = request_dict[key]
                 if requested_value is not None:
                     metadata[key] = requested_value
@@ -2765,7 +3185,21 @@ class AppHandler:
                 else:
                     metadata["docker_env_vars"] = requested_value
 
-            metadata, error_code = validate_and_update_experiment_metadata(user_id, org_name, request_dict, metadata, ["train_datasets", "eval_dataset", "inference_dataset", "calibration_dataset", "base_experiment", "checkpoint_choose_method", "checkpoint_epoch_number"])
+            metadata, error_code = validate_and_update_experiment_metadata(
+                user_id,
+                org_name,
+                request_dict,
+                metadata,
+                [
+                    "train_datasets",
+                    "eval_dataset",
+                    "inference_dataset",
+                    "calibration_dataset",
+                    "base_experiment",
+                    "checkpoint_choose_method",
+                    "checkpoint_epoch_number"
+                ]
+            )
             if error_code:
                 return error_code
 
@@ -2778,7 +3212,11 @@ class AppHandler:
                 if value:
                     mdl_nw = metadata.get("network_arch", "")
                     if automl_enabled and BACKEND == "NVCF":
-                        return Code(400, {}, "Automl not supported on NVCF backend, use baremetal deployments of TAO-API")
+                        return Code(
+                            400,
+                            {},
+                            "Automl not supported on NVCF backend, use baremetal deployments of TAO-API"
+                        )
                     if tensorboard_enabled and automl_enabled:
                         return Code(400, {}, "automl_enabled cannot be True for Tensorboard experiment")
                     if mdl_nw not in AUTOML_DISABLED_NETWORKS:
@@ -2805,7 +3243,11 @@ class AppHandler:
                             TensorboardHandler.stop(experiment_id, user_id)
                             return response
                     else:
-                        return Code(400, {}, f"Maximum of {TENSORBOARD_EXPERIMENT_LIMIT} Tensorboard Experiments allowed per user. Disable or delete a Tensorboard Experiment and try again.")
+                        return Code(
+                            400,
+                            {},
+                            f"Maximum of {TENSORBOARD_EXPERIMENT_LIMIT} Tensorboard Experiments allowed per user. "
+                        )
                 elif tensorboard_enabled and not value:  # Disable Tensorboard
                     response = TensorboardHandler.stop(experiment_id, user_id)
                     if response.code != 200:
@@ -2820,21 +3262,23 @@ class AppHandler:
 
     @staticmethod
     def retrieve_experiment(org_name, experiment_id):
-        """Retrieves the metadata of an existing experiment.
+        """Retrieves experiment metadata.
 
         Args:
             org_name (str): Organization name.
             experiment_id (str): ID of the experiment to retrieve.
 
         Returns:
-            Response: A response indicating the outcome of the operation (200 with metadata for success, 404 if not found).
+            Response: A response indicating the outcome of the operation (200 with metadata for success,
+                     404 if not found).
         """
         handler_metadata = resolve_metadata("experiment", experiment_id)
         if experiment_id not in ("*", "all") and not handler_metadata:
             return Code(404, {}, "Experiment not found")
 
         user_id = handler_metadata.get("user_id")
-        if experiment_id not in ("*", "all") and not check_read_access(user_id, org_name, experiment_id, kind="experiments"):
+        if (experiment_id not in ("*", "all") and
+                not check_read_access(user_id, org_name, experiment_id, kind="experiments")):
             return Code(404, {}, "Experiment not found")
 
         handler_metadata["status"] = get_handler_status(handler_metadata)
@@ -2907,7 +3351,18 @@ class AppHandler:
         return Code(200, return_metadata, "Experiment deleted")
 
     @staticmethod
-    def resume_experiment_job(org_name, experiment_id, job_id, kind, parent_job_id=None, specs=None, name=None, description=None, num_gpu=-1, platform_id=None):
+    def resume_experiment_job(
+        org_name,
+        experiment_id,
+        job_id,
+        kind,
+        parent_job_id=None,
+        specs=None,
+        name=None,
+        description=None,
+        num_gpu=-1,
+        platform_id=None
+    ):
         """Resumes a paused experiment job, adding it back to the queue for processing.
 
         Args:
@@ -2947,7 +3402,11 @@ class AppHandler:
         if network in MAXINE_NETWORKS:
             return Code(400, [], "Maxine networks do not support resume.")
         if not user_id:
-            return Code(404, [], "User ID couldn't be found in the experiment metadata. Try creating the experiment again")
+            return Code(
+                404,
+                [],
+                "User ID couldn't be found in the experiment metadata. Try creating the experiment again"
+            )
 
         msg = ""
         try:
@@ -2959,7 +3418,15 @@ class AppHandler:
                 platform_id = job_metadata.get("platform_id", "")
             if is_request_automl(experiment_id, action, kind):
                 msg = "AutoML "
-                AutoMLHandler.resume(user_id, org_name, experiment_id, job_id, handler_metadata, name=name, platform_id=platform_id)
+                AutoMLHandler.resume(
+                    user_id,
+                    org_name,
+                    experiment_id,
+                    job_id,
+                    handler_metadata,
+                    name=name,
+                    platform_id=platform_id
+                )
             else:
                 # Create a job and run it
                 if not specs:
@@ -2972,7 +3439,21 @@ class AppHandler:
                     description = job_metadata.get("description", "")
                 if num_gpu == -1:
                     num_gpu = job_metadata.get("num_gpu", -1)
-                job_context = create_job_context(parent_job_id, "train", job_id, experiment_id, user_id, org_name, kind, handler_metadata=handler_metadata, specs=specs, name=name, description=description, num_gpu=num_gpu, platform_id=platform_id)
+                job_context = create_job_context(
+                    parent_job_id,
+                    "train",
+                    job_id,
+                    experiment_id,
+                    user_id,
+                    org_name,
+                    kind,
+                    handler_metadata=handler_metadata,
+                    specs=specs,
+                    name=name,
+                    description=description,
+                    num_gpu=num_gpu,
+                    platform_id=platform_id
+                )
                 on_new_job(job_context)
             return Code(200, {"message": f"{msg}Action for job {job_id} resumed"})
         except Exception as e:
@@ -2982,15 +3463,17 @@ class AppHandler:
 
     @staticmethod
     def automl_details(org_name, experiment_id, job_id):
-        """Retrieve the AutoML details for a given experiment.
+        """Retrieves AutoML details for a specific experiment and job.
 
-        Parameters:
-        - org_name (str): The name of the organization.
-        - experiment_id (str): The unique identifier of the experiment.
+        Args:
+            org_name (str): Organization name.
+            experiment_id (str): ID of the experiment.
+            job_id (str): ID of the job.
 
         Returns:
-        - Code(200, metadata, "AutoML details retrieved") if AutoML details are found successfully.
-        - Code(404, {}, "AutoML details not found") if the experiment does not have AutoML details or the experiment is not found.
+            - Code(200, details, None) if successful.
+            - Code(404, {}, "AutoML details not found") if the experiment does not have AutoML details
+              or the experiment is not found.
         """
         try:
             handler_metadata = resolve_metadata("experiment", experiment_id)

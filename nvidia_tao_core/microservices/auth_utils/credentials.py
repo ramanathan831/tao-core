@@ -48,12 +48,19 @@ def get_from_ngc(key, org_name):
             token = key
             url = f'https://api.{stg_prefix}ngc.nvidia.com/v3/keys/get-caller-info'
             try:
-                r = requests.post(url, headers={'Content-Type': 'application/x-www-form-urlencoded'}, data={'credentials': key}, timeout=5)
+                r = requests.post(
+                    url,
+                    headers={'Content-Type': 'application/x-www-form-urlencoded'},
+                    data={'credentials': key},
+                    timeout=5
+                )
             except Exception as e:
                 print("Exception caught during getting user info with personal key", e, file=sys.stderr)
                 raise e
         else:
-            err = 'Credentials error: Invalid NGC_PERSONAL_KEY, NGC_API_KEYs are no longer valid, generate a personal key with Cloud Functions, NGC Catalog and Private registry services https://org.ngc.nvidia.com/setup/personal-keys'
+            err = ('Credentials error: Invalid NGC_PERSONAL_KEY, NGC_API_KEYs are no longer valid, '
+                   'generate a personal key with Cloud Functions, NGC Catalog and Private registry services '
+                   'https://org.ngc.nvidia.com/setup/personal-keys')
             return creds, err
         if r.status_code != 200:
             err = 'Credentials error: Invalid NGC_PERSONAL_KEY'

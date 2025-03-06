@@ -57,10 +57,22 @@ class TensorboardHandler:
         decrypted_workspace_metadata = deepcopy(workspace_metadata)
         decrypt_handler_metadata(decrypted_workspace_metadata)
         decrypted_workspace_metadata.pop('_id', None)
-        logs_command = f"umask 0 && python3 tb_events_pull_start.py --experiment_id={experiment_id} --org_name={org} --decrypted_workspace_metadata='{json.dumps(decrypted_workspace_metadata, default=serialize_object)}'"
+        logs_command = (
+            f"umask 0 && python3 tb_events_pull_start.py "
+            f"--experiment_id={experiment_id} "
+            f"--org_name={org} "
+            f"--decrypted_workspace_metadata='{json.dumps(decrypted_workspace_metadata, default=serialize_object)}'"
+        )
         tb_image = DOCKER_IMAGE_MAPPER["tensorboard"]
         logs_image = DOCKER_IMAGE_MAPPER["API"]
-        jobDriver.create_tensorboard_deployment(tb_deployment_name, tb_image, command, logs_image, logs_command, replicas=replicas)
+        jobDriver.create_tensorboard_deployment(
+            tb_deployment_name,
+            tb_image,
+            command,
+            logs_image,
+            logs_command,
+            replicas=replicas
+        )
         timeout = 120
         not_ready_log = False
         print("Check deployment status", file=sys.stderr)
@@ -70,7 +82,12 @@ class TensorboardHandler:
             if status == "Running":
                 print(f"Deployed Tensorboard for {experiment_id}", file=sys.stderr)
                 TensorboardHandler.add_to_user_metadata(user_id)
-                return TensorboardHandler.start_tb_service(tb_service_name, deploy_label=tb_deployment_name, tb_ingress_name=tb_ingress_name, tb_ingress_path=tb_ingress_path)
+                return TensorboardHandler.start_tb_service(
+                    tb_service_name,
+                    deploy_label=tb_deployment_name,
+                    tb_ingress_name=tb_ingress_name,
+                    tb_ingress_path=tb_ingress_path
+                )
             if status == "ReplicaNotReady" and not_ready_log is False:
                 print("TensorboardService is deployed but replica not ready.", file=sys.stderr)
                 not_ready_log = True
@@ -124,7 +141,10 @@ class TensorboardHandler:
         tensorboard_experiment_count += 1
         user_metadata["tensorboard_experiment_count"] = tensorboard_experiment_count
         mongo_users.upsert({'id': user_id}, user_metadata)
-        print(f"Number of Tensorboard Experiments for user {user_id} is {tensorboard_experiment_count}", file=sys.stderr)
+        print(
+            f"Number of Tensorboard Experiments for user {user_id} is {tensorboard_experiment_count}",
+            file=sys.stderr
+        )
 
     @staticmethod
     def remove_from_user_metadata(user_id):
@@ -136,7 +156,10 @@ class TensorboardHandler:
             tensorboard_experiment_count -= 1
             user_metadata["tensorboard_experiment_count"] = tensorboard_experiment_count
             mongo_users.upsert({'id': user_id}, user_metadata)
-            print(f"Number of Tensorboard Experiments for user {user_id} is {tensorboard_experiment_count}", file=sys.stderr)
+            print(
+                f"Number of Tensorboard Experiments for user {user_id} is {tensorboard_experiment_count}",
+                file=sys.stderr
+            )
 
     @staticmethod
     def check_user_metadata(user_id):

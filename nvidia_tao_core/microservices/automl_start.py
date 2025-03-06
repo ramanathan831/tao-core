@@ -24,39 +24,102 @@ from nvidia_tao_core.microservices.automl.bayesian import Bayesian
 from nvidia_tao_core.microservices.automl.hyperband import HyperBand
 from nvidia_tao_core.microservices.automl.params import generate_hyperparams_to_search
 from nvidia_tao_core.microservices.handlers.utilities import JobContext
-from nvidia_tao_core.microservices.handlers.stateless_handlers import update_job_status, update_job_metadata, get_job_specs
+from nvidia_tao_core.microservices.handlers.stateless_handlers import (
+    update_job_status,
+    update_job_metadata,
+    get_job_specs
+)
 
 
-def automl_start(root, network, jc, resume, automl_algorithm, automl_max_recommendations, automl_delete_intermediate_ckpt, automl_R, automl_nu, metric, epoch_multiplier, automl_hyperparameters, override_automl_disabled_params, decrypted_workspace_metadata):
+def automl_start(
+    root,
+    network,
+    jc,
+    resume,
+    automl_algorithm,
+    automl_max_recommendations,
+    automl_delete_intermediate_ckpt,
+    automl_R,
+    automl_nu,
+    metric,
+    epoch_multiplier,
+    automl_hyperparameters,
+    override_automl_disabled_params,
+    decrypted_workspace_metadata
+):
     """Starts the automl controller"""
-    parameters, parameter_names = generate_hyperparams_to_search(jc, automl_hyperparameters, "/".join(root.split("/")[0:-2]), override_automl_disabled_params)
+    parameters, parameter_names = generate_hyperparams_to_search(
+        jc,
+        automl_hyperparameters,
+        "/".join(root.split("/")[0:-2]),
+        override_automl_disabled_params
+    )
 
     # Check if automl algorithm is valid for specific use-cases
     if network == "classification_pyt":
         if "model.head.type" in parameter_names and automl_algorithm == "hyperband":
-            error_message = "Hyperband not supported when non-epoch based models are chosen. Change algorithm to bayesian"
+            error_message = (
+                "Hyperband not supported when non-epoch based models are chosen. "
+                "Change algorithm to bayesian"
+            )
             result = {"message": error_message}
             update_job_metadata(jc.handler_id, jc.id, metadata_key="job_details", data=result, kind="experiments")
             raise ValueError(error_message)
 
     if resume:
         if automl_algorithm.lower() in ("hyperband", "h"):
-            brain = HyperBand.load_state(job_context=jc, root=root, network=network, parameters=parameters, R=int(automl_R), nu=int(automl_nu), epoch_multiplier=int(epoch_multiplier))
+            brain = HyperBand.load_state(
+                job_context=jc,
+                root=root,
+                network=network,
+                parameters=parameters,
+                R=int(automl_R),
+                nu=int(automl_nu),
+                epoch_multiplier=int(epoch_multiplier)
+            )
         elif automl_algorithm.lower() in ("bayesian", "b"):
             brain = Bayesian.load_state(jc, root, network, parameters)
         else:
             raise ValueError(f"AutoML Algorithm {automl_algorithm} is not valid")
-        controller = Controller.load_state(root, network, brain, jc, automl_max_recommendations, automl_delete_intermediate_ckpt, metric, automl_algorithm.lower(), decrypted_workspace_metadata)
+        controller = Controller.load_state(
+            root,
+            network,
+            brain,
+            jc,
+            automl_max_recommendations,
+            automl_delete_intermediate_ckpt,
+            metric,
+            automl_algorithm.lower(),
+            decrypted_workspace_metadata
+        )
         controller.start()
 
     else:
         if automl_algorithm.lower() in ("hyperband", "h"):
-            brain = HyperBand(job_context=jc, root=root, network=network, parameters=parameters, R=int(automl_R), nu=int(automl_nu), epoch_multiplier=int(epoch_multiplier))
+            brain = HyperBand(
+                job_context=jc,
+                root=root,
+                network=network,
+                parameters=parameters,
+                R=int(automl_R),
+                nu=int(automl_nu),
+                epoch_multiplier=int(epoch_multiplier)
+            )
         elif automl_algorithm.lower() in ("bayesian", "b"):
             brain = Bayesian(jc, root, network, parameters)
         else:
             raise ValueError(f"AutoML Algorithm {automl_algorithm} is not valid")
-        controller = Controller(root, network, brain, jc, automl_max_recommendations, automl_delete_intermediate_ckpt, metric, automl_algorithm.lower(), decrypted_workspace_metadata)
+        controller = Controller(
+            root,
+            network,
+            brain,
+            jc,
+            automl_max_recommendations,
+            automl_delete_intermediate_ckpt,
+            metric,
+            automl_algorithm.lower(),
+            decrypted_workspace_metadata
+        )
         controller.start()
 
 
@@ -151,7 +214,19 @@ if __name__ == "__main__":
         name = args.name
         platform_id = args.platform_id
         specs = get_job_specs(automl_job_id)
-        jc = JobContext(automl_job_id, None, network, "train", handler_id, user_id, org_name, "experiment", name=name, platform_id=platform_id, specs=specs)
+        jc = JobContext(
+            automl_job_id,
+            None,
+            network,
+            "train",
+            handler_id,
+            user_id,
+            org_name,
+            "experiment",
+            name=name,
+            platform_id=platform_id,
+            specs=specs
+        )
         resume = args.resume == "True"
         automl_algorithm = args.automl_algorithm
         automl_max_recommendations = args.automl_max_recommendations

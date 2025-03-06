@@ -19,7 +19,21 @@ from nvidia_tao_core.microservices.handlers.utilities import JobContext
 from nvidia_tao_core.microservices.job_utils.workflow import Dependency, Job, Workflow
 
 
-def create_job_context(parent_job_id, action, job_id, handler_id, user_id, org_name, kind, handler_metadata=None, specs=None, name=None, description=None, num_gpu=-1, platform_id=None):
+def create_job_context(
+    parent_job_id,
+    action,
+    job_id,
+    handler_id,
+    user_id,
+    org_name,
+    kind,
+    handler_metadata=None,
+    specs=None,
+    name=None,
+    description=None,
+    num_gpu=-1,
+    platform_id=None
+):
     """Calls the create job contexts function"""
     network = get_handler_type(handler_metadata)
     if not network:
@@ -29,7 +43,21 @@ def create_job_context(parent_job_id, action, job_id, handler_id, user_id, org_n
         raise ValueError(f"Specs are required to create a job context for {action} action.")
 
     # Create a jobcontext
-    job_context = JobContext(job_id, parent_job_id, network, action, handler_id, user_id, org_name, kind, specs=specs, name=name, description=description, num_gpu=num_gpu, platform_id=platform_id)
+    job_context = JobContext(
+        job_id,
+        parent_job_id,
+        network,
+        action,
+        handler_id,
+        user_id,
+        org_name,
+        kind,
+        specs=specs,
+        name=name,
+        description=description,
+        num_gpu=num_gpu,
+        platform_id=platform_id
+    )
     return job_context
 
 

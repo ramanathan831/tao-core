@@ -240,7 +240,11 @@ class CapGpuUsage:
             if user_config["current_used"] + num_gpus > user_config["max_gpu_realtime_infer"]:
                 used = user_config["current_used"]
                 max_allowed = user_config["max_gpu_realtime_infer"]
-                msg = f"Organization User request {num_gpus} GPU(s), But with {num_gpus} + {used} (GPUs in used) will exceed the maximum number of GPUs allowed ({max_allowed}). Please consider list the models and remove some of them."
+                msg = (
+                    f"Organization User request {num_gpus} GPU(s), But with {num_gpus} + {used} "
+                    f"(GPUs in used) will exceed the maximum number of GPUs allowed ({max_allowed}). "
+                    "Please consider list th"
+                )
                 print(msg, file=sys.stderr)
                 return False, msg
 
@@ -263,7 +267,10 @@ class CapGpuUsage:
 
         user_config_file = get_root() + f"{org_name}/user_config.json"
         if not os.path.exists(user_config_file):
-            print(f"Organization User config file does not exist when release_used is call for {org_name}", file=sys.stderr)
+            print(
+                f"Organization User config file does not exist when release_used is call for {org_name}",
+                file=sys.stderr
+            )
             return False, "Internal Error"
 
         lock_file = get_default_lock_file_path(user_config_file)

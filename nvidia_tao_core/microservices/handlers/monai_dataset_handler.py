@@ -180,7 +180,11 @@ class MonaiDatasetHandler:
                 print(f"Failed to cache {image_url};  Can't determine filename", file=sys.stderr)
                 return Code(400, cache_info, f"Failed to determine Caching Image type: {image}")
 
-            image_file = os.path.join(cache_path, cache_id, image_file)  # this will be /shared/orgs/<org_name>/cache/<cache_id>/<image_file>
+            image_file = os.path.join(
+                cache_path,
+                cache_id,
+                image_file
+            )  # this will be /shared/orgs/<org_name>/cache/<cache_id>/<image_file>
             if not os.path.exists(os.path.dirname(image_file)):
                 os.makedirs(os.path.dirname(image_file), exist_ok=True)  # exist_ok is True for simultaneous requests
 

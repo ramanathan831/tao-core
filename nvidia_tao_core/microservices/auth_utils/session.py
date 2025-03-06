@@ -80,7 +80,8 @@ def get_session(token, org_name):
     for user in users:
         try:
             for token_info in user.get('token_info', []):
-                if token_info.get('token', 'invalid') == token and isinstance(token_info.get('last_modified', False), datetime):
+                if (token_info.get('token', 'invalid') == token and
+                        isinstance(token_info.get('last_modified', False), datetime)):
                     dt_delta = datetime.now(tz=timezone.utc) - token_info['last_modified']
                     if dt_delta.total_seconds() < __SESSION_EXPIRY_SECONDS__:
                         session = user

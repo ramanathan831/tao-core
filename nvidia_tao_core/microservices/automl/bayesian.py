@@ -80,7 +80,9 @@ class Bayesian(AutoMLAlgorithmBase):
             quantized = clamp_value(normalized, v_min, v_max)
 
             if not (type(parent_param) is float and math.isnan(parent_param)):
-                if (isinstance(parent_param, str) and parent_param != "nan" and parent_param == "TRUE") or (isinstance(parent_param, bool) and parent_param):
+                if (isinstance(parent_param, str) and parent_param != "nan" and parent_param == "TRUE") or (
+                    isinstance(parent_param, bool) and parent_param
+                ):
                     self.parent_params[parameter_name] = quantized
             return quantized
 
@@ -177,18 +179,15 @@ class Bayesian(AutoMLAlgorithmBase):
     Used from:
     http://krasserm.github.io/2018/03/21/bayesian-optimization/
     """
-    def _expected_improvement(self, X):
-        """Computes the EI at points X based on existing samples X_sample and Y_sample using a Gaussian process surrogate model.
+    def _expected_improvement(self, X, xi=0.01):
+        """Calculate the expected improvement at points X based on existing samples.
 
         Args:
-            X: Points at which EI shall be computed (m x d).
-            X_sample: Sample locations (n x d).
-            Y_sample: Sample values (n x 1).
-            gpr: A GaussianProcessRegressor fitted to samples.
-            xi: Exploitation-exploration trade-off parameter.
+            X: Points at which EI shall be calculated (m x d)
+            xi: Exploitation-exploration trade-off parameter
 
         Returns:
-            Expected improvements at points X.
+            float: Expected improvements at points X
         """
         X = X.reshape(1, -1)
 

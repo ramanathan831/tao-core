@@ -156,7 +156,13 @@ def create_mongodb_replicaset():
 
     # Create the custom resource in the specified namespace
     try:
-        api_instance.create_namespaced_custom_object(mongodb_crd_group, mongodb_crd_version, mongodb_namespace, mongodb_crd_plural, mongodb_body)
+        api_instance.create_namespaced_custom_object(
+            mongodb_crd_group,
+            mongodb_crd_version,
+            mongodb_namespace,
+            mongodb_crd_plural,
+            mongodb_body
+        )
         print("MongoDB replicaset created successfully.", file=sys.stderr)
     except Exception as e:
         print(f"Failed to create MongoDB replicaset': {e}", file=sys.stderr)
@@ -177,7 +183,14 @@ def patch_mongodb_replicaset():
     }
 
     try:
-        api_instance.patch_namespaced_custom_object(mongodb_crd_group, mongodb_crd_version, mongodb_namespace, mongodb_crd_plural, name=mongodb_crd_name, body=updated_spec)
+        api_instance.patch_namespaced_custom_object(
+            mongodb_crd_group,
+            mongodb_crd_version,
+            mongodb_namespace,
+            mongodb_crd_plural,
+            name=mongodb_crd_name,
+            body=updated_spec
+        )
         print("MongoDB replicaset patched successfully.", file=sys.stderr)
     except Exception as e:
         print(f"Failed to patch MongoDB replicaset': {e}", file=sys.stderr)
@@ -189,7 +202,12 @@ if __name__ == "__main__":
     if not mongo_operator_enabled:
         try:
             from handlers.mongo_handler import MongoHandler
-            mongo_experiments = MongoHandler("tao", "experiments", retries=1)  # try to make a test connection to DB replicaset
+            # try to make a test connection to DB replicaset
+            mongo_experiments = MongoHandler(
+                "tao",
+                "experiments",
+                retries=1
+            )
         except Exception as e:  # if error, initialize replicaset
             print(f"Exception caught in mongodb start with message {str(e)}", file=sys.stderr)
             retry = 0
@@ -198,7 +216,12 @@ if __name__ == "__main__":
                     print("Retrying attempt: ", retry, file=sys.stderr)
                     init_time = 20 * mongodb_desired_replica_count
                     time.sleep(init_time)
-                    c = MongoClient(f'mongodb://default-user:{encoded_secret}@mongodb-0.mongodb-svc.{mongodb_namespace}.svc.cluster.local?authSource=admin', directConnection=True)
+                    connection_string = (
+                        f'mongodb://default-user:{encoded_secret}@'
+                        f'mongodb-0.mongodb-svc.{mongodb_namespace}.svc.cluster.local'
+                        '?authSource=admin'
+                    )
+                    c = MongoClient(connection_string, directConnection=True)
                     rs_members = []
                     for rs_id in range(mongodb_desired_replica_count):
                         rs_members.append({
@@ -230,7 +253,12 @@ if __name__ == "__main__":
         api_instance = client.CustomObjectsApi()
 
         try:
-            api_response = api_instance.list_namespaced_custom_object(group=mongodb_crd_group, version=mongodb_crd_version, namespace=mongodb_namespace, plural=mongodb_crd_plural)
+            api_response = api_instance.list_namespaced_custom_object(
+                group=mongodb_crd_group,
+                version=mongodb_crd_version,
+                namespace=mongodb_namespace,
+                plural=mongodb_crd_plural
+            )
             print("MongoDB response: ", api_response, file=sys.stderr)
             items = api_response['items']
             if len(items) == 0:
@@ -248,14 +276,23 @@ if __name__ == "__main__":
             replica_count = 0
             phase = 'Pending'
             while replica_count != mongodb_desired_replica_count and phase != 'Running':
-                api_response = api_instance.list_namespaced_custom_object(group=mongodb_crd_group, version=mongodb_crd_version, namespace=mongodb_namespace, plural=mongodb_crd_plural)
+                api_response = api_instance.list_namespaced_custom_object(
+                    group=mongodb_crd_group,
+                    version=mongodb_crd_version,
+                    namespace=mongodb_namespace,
+                    plural=mongodb_crd_plural
+                )
                 print("MongoDB response: ", api_response, file=sys.stderr)
                 items = api_response.get('items', [])
                 if items:
                     status = items[0].get('status', {})
                     phase = status.get('phase', 'Pending')
                     replica_count = status.get('currentStatefulSetReplicas', 0)
-                    print(f"Current Replica Count: {replica_count}, waiting for {mongodb_desired_replica_count - replica_count} more replicas to be ready", file=sys.stderr)
+                    print(
+                        f"Current Replica Count: {replica_count}, waiting for "
+                        f"{mongodb_desired_replica_count - replica_count} more replicas to be ready",
+                        file=sys.stderr
+                    )
                     print(f"Current ReplicaSet Phase {phase}", file=sys.stderr)
                 sleep(20)
 

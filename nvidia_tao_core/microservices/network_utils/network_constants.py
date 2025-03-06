@@ -71,7 +71,10 @@ image_size_mapper = {
     "classification_pyt": "",
     "classification_tf2": "model.input_height,model.input_width",
     "deformable_detr": "",
-    "detectnet_v2": "augmentation_config.preprocessing.output_image_height,augmentation_config.preprocessing.output_image_width",
+    "detectnet_v2": (
+        "augmentation_config.preprocessing.output_image_height,"
+        "augmentation_config.preprocessing.output_image_width"
+    ),
     "dino": "",
     "efficientdet_tf2": "model.input_height,model.input_width",
     "mal": "",

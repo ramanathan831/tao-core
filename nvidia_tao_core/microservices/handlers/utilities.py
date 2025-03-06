@@ -43,11 +43,44 @@ import traceback
 import subprocess
 from datetime import datetime, timezone, timedelta
 
-from nvidia_tao_core.microservices.constants import _ITER_MODELS, CONTINUOUS_STATUS_KEYS, _PYT_TAO_NETWORKS, STATUS_CALLBACK_MISMATCH_WITH_CHECKPOINT_EPOCH, NETWORK_METRIC_MAPPING, _TF2_NETWORKS, MISSING_EPOCH_FORMAT_NETWORKS, MONAI_NETWORKS
+from nvidia_tao_core.microservices.constants import (
+    _ITER_MODELS,
+    CONTINUOUS_STATUS_KEYS,
+    _PYT_TAO_NETWORKS,
+    STATUS_CALLBACK_MISMATCH_WITH_CHECKPOINT_EPOCH,
+    NETWORK_METRIC_MAPPING,
+    _TF2_NETWORKS,
+    MISSING_EPOCH_FORMAT_NETWORKS,
+    MONAI_NETWORKS
+)
 from nvidia_tao_core.microservices.handlers.cloud_storage import create_cs_instance
 from nvidia_tao_core.microservices.handlers.encrypt import NVVaultEncryption
-from nvidia_tao_core.microservices.handlers.stateless_handlers import get_handler_metadata, get_handler_job_metadata, get_handler_root, get_jobs_root, get_job_specs, get_base_experiment_path, get_root, get_latest_ver_folder, get_automl_brain_info, get_automl_controller_info, get_dnn_status, write_job_metadata, update_base_experiment_metadata, resolve_metadata, write_handler_metadata, experiment_update_handler_attributes, update_handler_with_jobs_info, get_workspace_string_identifier, BACKEND
-from nvidia_tao_core.microservices.handlers.monai.template_python import TEMPLATE_TIS_MODEL, TEMPLATE_TIS_CONFIG, TEMPLATE_CONTINUAL_LEARNING
+from nvidia_tao_core.microservices.handlers.stateless_handlers import (
+    get_handler_metadata,
+    get_handler_job_metadata,
+    get_handler_root,
+    get_jobs_root,
+    get_job_specs,
+    get_base_experiment_path,
+    get_root,
+    get_latest_ver_folder,
+    get_automl_brain_info,
+    get_automl_controller_info,
+    get_dnn_status,
+    write_job_metadata,
+    update_base_experiment_metadata,
+    resolve_metadata,
+    write_handler_metadata,
+    experiment_update_handler_attributes,
+    update_handler_with_jobs_info,
+    get_workspace_string_identifier,
+    BACKEND
+)
+from nvidia_tao_core.microservices.handlers.monai.template_python import (
+    TEMPLATE_TIS_MODEL,
+    TEMPLATE_TIS_CONFIG,
+    TEMPLATE_CONTINUAL_LEARNING
+)
 from nvidia_tao_core.microservices.handlers.ngc_handler import validate_ptm_download
 from nvidia_tao_core.microservices.handlers.monai.helpers import find_matching_bundle_dir
 from nvidia_tao_core.microservices.utils import create_folder_with_permissions
@@ -83,7 +116,23 @@ class JobContext:
     # Initialize Job Related fields
     # Contains API related parameters
     # ActionPipeline interacts with Toolkit and uses this JobContext
-    def __init__(self, job_id, parent_id, network, action, handler_id, user_id, org_name, kind, created_on=None, specs=None, name=None, description=None, num_gpu=-1, platform_id=None):
+    def __init__(
+        self,
+        job_id,
+        parent_id,
+        network,
+        action,
+        handler_id,
+        user_id,
+        org_name,
+        kind,
+        created_on=None,
+        specs=None,
+        name=None,
+        description=None,
+        num_gpu=-1,
+        platform_id=None
+    ):
         """Initialize JobContext class"""
         # Non-state variables
         self.id = job_id
@@ -298,11 +347,15 @@ class StatusParser:
                 if key in self.results["graphical"]:
                     # Put together x_min, x_max, y_min, y_max
                     graph_key_vals = self.results["graphical"][key]["values"]
-                    self.results["graphical"][key].update({"x_min": 0,
-                                                           "x_max": len(graph_key_vals),
-                                                           "y_min": 0,
-                                                           "y_max": StatusParser.force_max([val for key, val in graph_key_vals.items()]),
-                                                           "units": None})
+                    self.results["graphical"][key].update({
+                        "x_min": 0,
+                        "x_max": len(graph_key_vals),
+                        "y_min": 0,
+                        "y_max": StatusParser.force_max([
+                            val for key, val in graph_key_vals.items()
+                        ]),
+                        "units": None
+                    })
                     # If given in value, then update x_min, x_max, etc...
                     self.results["graphical"][key].update(plot_helper_dict)
 
@@ -337,7 +390,16 @@ class StatusParser:
             return max(values_no_none)
         return 1e10
 
-    def post_process_results(self, total_epochs=0, eta="", last_seen_epoch=0, automl=False, job_id="", processed_results=None, automl_brain=False):
+    def post_process_results(
+        self,
+        total_epochs=0,
+        eta="",
+        last_seen_epoch=0,
+        automl=False,
+        job_id="",
+        processed_results=None,
+        automl_brain=False
+    ):
         """Post process the status from DNN callbacks to be compatible with defined schema's in app.py"""
         # Copy the results
         if processed_results is None:
@@ -366,8 +428,14 @@ class StatusParser:
         # Categorical
         processed_results[job_id]["categorical"] = []
         for key, value_dict in self.results["categorical"].items():
-            value_dict_unwrapped = [{"category": cat, "value": StatusParser.force_float(val)} for cat, val in value_dict.items()]
-            processed_results[job_id]["categorical"].append({"metric": key, "category_wise_values": value_dict_unwrapped})
+            value_dict_unwrapped = [
+                {"category": cat, "value": StatusParser.force_float(val)}
+                for cat, val in value_dict.items()
+            ]
+            processed_results[job_id]["categorical"].append({
+                "metric": key,
+                "category_wise_values": value_dict_unwrapped
+            })
 
         # KPI and Graphical
         for result_type in ("kpi", "graphical"):
@@ -391,7 +459,18 @@ class StatusParser:
                 processed_results[result_key] = processed_results[job_id].pop(result_key)
         return processed_results
 
-    def update_results(self, experiment_number="0", total_epochs=0, eta="", last_seen_epoch=0, automl=False, job_id="", rec_job_id="", previous_result_metadata=None, automl_brain=False):
+    def update_results(
+        self,
+        experiment_number="0",
+        total_epochs=0,
+        eta="",
+        last_seen_epoch=0,
+        automl=False,
+        job_id="",
+        rec_job_id="",
+        previous_result_metadata=None,
+        automl_brain=False
+    ):
         """Update results in status DB"""
         # Read all the status lines in status DB till now
         good_statuses = []
@@ -427,7 +506,15 @@ class StatusParser:
         post_process_results_job_id = job_id
         if rec_job_id:
             post_process_results_job_id = rec_job_id
-        return self.post_process_results(total_epochs, eta, last_seen_epoch, automl, post_process_results_job_id, previous_result_metadata, automl_brain)
+        return self.post_process_results(
+            total_epochs,
+            eta,
+            last_seen_epoch,
+            automl,
+            post_process_results_job_id,
+            previous_result_metadata,
+            automl_brain
+        )
 
     def trim_list(self, metric_list, automl_algorithm, brain_epoch_number):
         """Retains only the tuples whose epoch numbers are <= required epochs"""
@@ -436,12 +523,21 @@ class StatusParser:
             epoch, value = (int(tuple_var[0]), tuple_var[1])
             if epoch >= 0:
                 if automl_algorithm in ("bayesian", "b", ""):
-                    if self.network in (_PYT_TAO_NETWORKS - set(["pointpillars", "segformer", "bevfusion", "ml_recog"])):
-                        if epoch < brain_epoch_number:  # epoch number in checkpoint starts from 0 or models whose validation logs are generated before the training logs
+                    excluded_networks = set(["pointpillars", "segformer", "bevfusion", "ml_recog"])
+                    if self.network in (_PYT_TAO_NETWORKS - excluded_networks):
+                        # epoch number in checkpoint starts from 0 or models whose validation logs
+                        # are generated before the training logs
+                        if epoch < brain_epoch_number:
                             trimmed_list.append((epoch, value))
                     else:
                         trimmed_list.append((epoch, value))
-                elif (self.network in _TF2_NETWORKS or self.network in ("segformer", "classification_pyt", "bevfusion", "ml_recog")) and epoch <= brain_epoch_number:
+                elif (self.network in _TF2_NETWORKS or
+                      self.network in (
+                          "segformer",
+                          "classification_pyt",
+                          "bevfusion",
+                          "ml_recog"
+                      ) and epoch <= brain_epoch_number):
                     trimmed_list.append((epoch, value))
                 elif epoch < brain_epoch_number:
                     trimmed_list.append((epoch, value))
@@ -467,15 +563,30 @@ class StatusParser:
 
                     if log["metric"] == criterion:
                         if log["values"]:
-                            values_to_search = self.trim_list(metric_list=log["values"].items(), automl_algorithm=automl_algorithm, brain_epoch_number=brain_epoch_number)
+                            values_to_search = self.trim_list(
+                                metric_list=log["values"].items(),
+                                automl_algorithm=automl_algorithm,
+                                brain_epoch_number=brain_epoch_number
+                            )
                             if automl_algorithm in ("hyperband", "h"):
                                 brain_dict = get_automl_brain_info(automl_brain_job_id)
-                                if (len(brain_dict.get("ni", [str(float('-inf'))])[str(brain_dict.get("bracket", 0))]) != (brain_dict.get("sh_iter", float('inf')) + 1)):
+                                bracket_key = str(brain_dict.get("bracket", 0))
+                                ni_list = brain_dict.get("ni", [str(float('-inf'))])[bracket_key]
+                                sh_iter = brain_dict.get("sh_iter", float('inf'))
+                                if len(ni_list) != (sh_iter + 1):
                                     self.best_epoch_number, metric_value = values_to_search[-1]
                                 else:
-                                    self.best_epoch_number, metric_value = sorted(sorted(values_to_search, key=lambda x: x[0], reverse=False), key=lambda x: x[1], reverse=reverse_sort)[0]
+                                    self.best_epoch_number, metric_value = sorted(
+                                        sorted(values_to_search, key=lambda x: x[0], reverse=False),
+                                        key=lambda x: x[1],
+                                        reverse=reverse_sort
+                                    )[0]
                             else:
-                                self.best_epoch_number, metric_value = sorted(sorted(values_to_search, key=lambda x: x[0], reverse=True), key=lambda x: x[1], reverse=reverse_sort)[0]
+                                self.best_epoch_number, metric_value = sorted(
+                                    sorted(values_to_search, key=lambda x: x[0], reverse=True),
+                                    key=lambda x: x[1],
+                                    reverse=reverse_sort
+                                )[0]
                             self.latest_epoch_number, _ = sorted(values_to_search, key=lambda x: x[0], reverse=True)[0]
                             metric_value = float(metric_value)
                             break
@@ -483,7 +594,10 @@ class StatusParser:
             # Something went wrong inside...
             print(traceback.format_exc(), file=sys.stderr)
             print("Requested metric not found, defaulting to 0.0", file=sys.stderr)
-            if (metric == "kpi" and NETWORK_METRIC_MAPPING[self.network] in ("loss", "evaluation_cost ")) or (metric in ("loss", "evaluation_cost ")):
+            if (
+                (metric == "kpi" and NETWORK_METRIC_MAPPING[self.network] in ("loss", "evaluation_cost ")) or
+                (metric in ("loss", "evaluation_cost "))
+            ):
                 metric_value = 0.0
             else:
                 metric_value = float('inf')
@@ -491,13 +605,21 @@ class StatusParser:
         if self.network in STATUS_CALLBACK_MISMATCH_WITH_CHECKPOINT_EPOCH:
             self.best_epoch_number += 1
             self.latest_epoch_number += 1
-        print(f"Metric returned is {metric_value} at best epoch/iter {self.best_epoch_number} while latest epoch/iter is {self.latest_epoch_number}", file=sys.stderr)
+        print(
+            f"Metric returned is {metric_value} at best epoch/iter {self.best_epoch_number} "
+            f"while latest epoch/iter is {self.latest_epoch_number}",
+            file=sys.stderr
+        )
         return metric_value + 1e-07, self.best_epoch_number, self.latest_epoch_number
 
 
 def search_for_dataset(root):
     """Return path of the dataset file"""
-    datasets = glob.glob(root + "/*.tar.gz", recursive=False) + glob.glob(root + "/*.tgz", recursive=False) + glob.glob(root + "/*.tar", recursive=False)
+    datasets = (
+        glob.glob(root + "/*.tar.gz", recursive=False) +
+        glob.glob(root + "/*.tgz", recursive=False) +
+        glob.glob(root + "/*.tar", recursive=False)
+    )
 
     if datasets:
         dataset_path = datasets[0]  # pick one arbitrarily
@@ -507,7 +629,13 @@ def search_for_dataset(root):
 
 def search_for_base_experiment(root, network=""):
     """Return path of the Base-experiment file for MonAI or spec file for TAO under the Base-experiment root folder"""
-    artifacts = glob.glob(root + "/**/*.tlt", recursive=True) + glob.glob(root + "/**/*.hdf5", recursive=True) + glob.glob(root + "/**/*.pth", recursive=True) + glob.glob(root + "/**/*.pth.tar", recursive=True) + glob.glob(root + "/**/*.pt", recursive=True)
+    artifacts = (
+        glob.glob(root + "/**/*.tlt", recursive=True) +
+        glob.glob(root + "/**/*.hdf5", recursive=True) +
+        glob.glob(root + "/**/*.pth", recursive=True) +
+        glob.glob(root + "/**/*.pth.tar", recursive=True) +
+        glob.glob(root + "/**/*.pt", recursive=True)
+    )
     if artifacts:
         artifact_path = artifacts[0]  # pick one arbitrarily
         return artifact_path
@@ -540,7 +668,10 @@ def get_dataset_download_command(dataset_metadata):
     # if pull url, then download the dataset into some place inside root
     cmnd = ""
     if cloud_type == "self_hosted":
-        cmnd = f"until wget --timeout=1 --tries=1 --retry-connrefused --no-verbose --directory-prefix={temp_dir}/ {cloud_download_url}; do sleep 10; done"
+        cmnd = (
+            f"until wget --timeout=1 --tries=1 --retry-connrefused --no-verbose "
+            f"--directory-prefix={temp_dir}/ {cloud_download_url}; do sleep 10; done"
+        )
     elif cloud_type in ("aws", "azure"):
         if cloud_file_path.startswith("/"):
             cloud_file_path = cloud_file_path[1:]
@@ -575,13 +706,25 @@ def download_dataset(handler_dataset):
         metadata["status"] = "in_progress"
         write_handler_metadata(handler_dataset, metadata, "datasets")
 
-        dataset_download_command, temp_dir = get_dataset_download_command(metadata)  # this will not be None since we check this earlier
+        # Get download command - guaranteed to be non-None based on earlier checks
+        dataset_download_command, temp_dir = get_dataset_download_command(metadata)  # Non-None (checked earlier)
         if dataset_download_command:
             if os.getenv("DEV_MODE", "False").lower() in ("true", "1"):
                 # In dev setting, we don't need to set HOME
-                result = subprocess.run(['/bin/bash', '-c', dataset_download_command], stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
+                result = subprocess.run(
+                    ['/bin/bash', '-c', dataset_download_command],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    check=False
+                )
             else:
-                result = subprocess.run(['/bin/bash', '-c', 'HOME=/var/www/ && ' + dataset_download_command], stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
+                cmd = 'HOME=/var/www/ && ' + dataset_download_command
+                result = subprocess.run(
+                    ['/bin/bash', '-c', cmd],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    check=False
+                )
             if result.stdout:
                 print("Dataset pull stdout", result.stdout.decode("utf-8"), file=sys.stderr)
             if result.stderr:
@@ -608,7 +751,8 @@ def validate_and_update_experiment_metadata(user_id, org_name, request_dict, met
     Returns:
         tuple:
             - dict: Updated metadata if the update is successful.
-            - Code or None: Returns `Code(400, {}, f"Provided {key} cannot be added")` if a key fails validation, otherwise `None`.
+            - Code or None: Returns `Code(400)` with error message if key validation fails,
+                           otherwise returns `None`.
 
     Notes:
         - Only updates keys present in `key_list` and `request_dict`.
@@ -722,12 +866,17 @@ def _check_gpu_conditions(field_name, field_value):
         if int(field_value) < 0:
             raise ValueError("GPU related value requested is negative")
         if int(field_value) > available_gpus:
-            raise ValueError(f"GPUs requested count of {field_value} is greater than gpus made available during deployment {available_gpus}")
+            raise ValueError(
+                f"GPUs requested count of {field_value} is greater than "
+                f"gpus made available during deployment {available_gpus}"
+            )
     if field_name in ("gpu_ids", "gpu_id"):
         available_gpu_ids = set(range(0, available_gpus))
         requested_gpu_ids = set(field_value)
         if not requested_gpu_ids.issubset(available_gpu_ids):
-            raise ValueError(f"GPU ids requested is {str(requested_gpu_ids)} but available gpu ids are {str(available_gpu_ids)}")
+            raise ValueError(
+                f"GPU ids requested is {str(requested_gpu_ids)} but available gpu ids are {str(available_gpu_ids)}"
+            )
 
 
 def get_num_gpus_from_spec(spec, action, default=0):
@@ -881,7 +1030,16 @@ def get_cloud_metadata(workspace_ids, cloud_metadata):
         add_workspace_to_cloud_metadata(workspace_metadata, cloud_metadata)
 
 
-def send_microservice_request(api_endpoint, network, action, cloud_metadata={}, specs={}, job_id="", nvcf_helm="", docker_env_vars={}):
+def send_microservice_request(
+    api_endpoint,
+    network,
+    action,
+    cloud_metadata={},
+    specs={},
+    job_id="",
+    nvcf_helm="",
+    docker_env_vars={}
+):
     """Make a requests call to the microservice pod
 
     Args:
@@ -946,8 +1104,9 @@ def sanitize_metadata(metadata):
     """Convert metadata datetime objects to strings.
 
     MongoDB natively supports datetime objects. However, we pass a dict string as env variable to DNN container.
-    DNN Container uses ast.literal_eval to safely reconstruct this string into a dict. However, ast.literal_eval doesn't support datetime objects, so we convert
-    datetime objects to string here before passing the dict as a string in the job env variables.
+    DNN Container uses ast.literal_eval to safely reconstruct this string into a dict.
+    However, ast.literal_eval doesn't support datetime objects, so we convert datetime
+    objects to string here before passing the dict as a string in the job env variables.
     """
     if 'last_modified' in metadata and isinstance(metadata['last_modified'], datetime):
         date_string = metadata['last_modified'].isoformat()
@@ -1018,7 +1177,18 @@ def format_checkpoints_path(checkpoints):
 
 
 def from_epoch_number(files, delimiters="", epoch_number="000"):
-    """Based on the epoch number string passed, returns the path of the checkpoint. If a checkpoint with the epoch info is not present, raises an exception"""
+    """Based on the epoch number string passed, returns the path of the checkpoint.
+
+    If a checkpoint with the epoch info is not present, raises an exception.
+
+    Args:
+        files: List of files to search through
+        delimiters: String of delimiters to use for parsing
+        epoch_number: Epoch number to search for
+
+    Returns:
+        str: Path to the checkpoint file, or None if not found
+    """
     regex_pattern = fr'''
     ^(?!.*lightning_logs)               # Exclude files with 'lightning_logs' in the path
     .*                                  # Match any preceding text
@@ -1061,7 +1231,9 @@ def download_log_from_cloud(handler_metadata, job_id, log_file_path, automl_inde
     if cs_instance.is_file(f"/results/{lookup_job_id}/microservices_log.txt"):
         cs_instance.download_file(f"/results/{lookup_job_id}/microservices_log.txt", log_file_path)
     else:
-        cs_instance.download_file(f"/results/{job_id}/microservices_log.txt", log_file_path)  # Best model files are moved under /results/brain_job_id
+        # Best model files are moved under /results/brain_job_id
+        log_path = f"/results/{job_id}/microservices_log.txt"
+        cs_instance.download_file(log_path, log_file_path)
 
 
 def format_epoch(network, epoch_number):
@@ -1091,11 +1263,23 @@ def search_for_checkpoint(handler_metadata, job_id, res_root, files, checkpoint_
             raise ValueError(f"Chosen method to pick checkpoint not valid: {checkpoint_choose_method}")
 
         format_epoch_number = format_epoch(network, epoch_number)
-        result_file = _get_result_file_path(checkpoint_function=checkpoint_function, files=files, format_epoch_number=format_epoch_number)
+        result_file = _get_result_file_path(
+            checkpoint_function=checkpoint_function,
+            files=files,
+            format_epoch_number=format_epoch_number
+        )
         if (not result_file) and (checkpoint_choose_method in ("best_model", "from_epoch_number")):
-            print("Couldn't find the epoch number requested or the checkpointed associated with the best metric value, defaulting to latest_model", file=sys.stderr)
+            print(
+                "Couldn't find the epoch number requested or the checkpointed "
+                "associated with the best metric value, defaulting to latest_model",
+                file=sys.stderr
+            )
             checkpoint_function = latest_model
-            result_file = _get_result_file_path(checkpoint_function=checkpoint_function, files=files, format_epoch_number=format_epoch_number)
+            result_file = _get_result_file_path(
+                checkpoint_function=checkpoint_function,
+                files=files,
+                format_epoch_number=format_epoch_number
+            )
 
     return result_file
 
@@ -1125,7 +1309,13 @@ def resolve_checkpoint_root_and_search(handler_metadata, job_id):
 
     if action == "train":
         checkpoint_choose_method = handler_metadata.get("checkpoint_choose_method", "best_model")
-        result_file = search_for_checkpoint(handler_metadata=handler_metadata, job_id=job_id, res_root=res_root, files=files, checkpoint_choose_method=checkpoint_choose_method)
+        result_file = search_for_checkpoint(
+            handler_metadata=handler_metadata,
+            job_id=job_id,
+            res_root=res_root,
+            files=files,
+            checkpoint_choose_method=checkpoint_choose_method
+        )
 
     elif action == "prune":
         result_file = filter_files(files)
@@ -1168,10 +1358,20 @@ def get_model_name(bundle_name):
     return re.sub(r"_v\d+\.\d+\.\d+", "", bundle_name)
 
 
-def copy_bundle_base_experiment2model(base_experiment_id, org_name, user_id, experiment_id, patterns=[r'(.+?)_v\d+\.\d+\.\d+'], job_id=None):
-    """Copies the pre-trained model to the model directory. Except the pre-trained weights, the whole bundle will be copied.
+def copy_bundle_base_experiment2model(
+    base_experiment_id,
+    org_name,
+    user_id,
+    experiment_id,
+    patterns=[r'(.+?)_v\d+\.\d+\.\d+'],
+    job_id=None
+):
+    """Copies the pre-trained model to the model directory.
 
-    - If the base_experiment is from NGC, then the directory will be under {base_exp_uuid}/experiments/{base_exp_uuid}/<experiment_id>:
+    Except the pre-trained weights, the whole bundle will be copied.
+
+    - If the base_experiment is from NGC, then the directory will be under:
+      {base_exp_uuid}/experiments/{base_exp_uuid}/<experiment_id>
         ├── metadata.json
         └── spleen_deepedit_annotation_v1.2.3 （not a real version)
             ├── configs
@@ -1208,7 +1408,11 @@ def copy_bundle_base_experiment2model(base_experiment_id, org_name, user_id, exp
         if job_id:
             base_experiment_root = os.path.join(get_jobs_root(user_id, org_name), str(job_id))
         else:
-            base_experiment_root = get_handler_root(org_name=org_name, kind="experiments", handler_id=base_experiment_id)
+            base_experiment_root = get_handler_root(
+                org_name=org_name,
+                kind="experiments",
+                handler_id=base_experiment_id
+            )
 
     if not os.path.isdir(base_experiment_root):
         return False, None, "PTM not found"
@@ -1325,10 +1529,26 @@ def generate_bundle_requirements_file(generate_dir, bundle_metadata):
                 f.write(f"{line}\n")
 
 
-def prep_tis_model_repository(model_params, base_experiment_id, org_name, user_id, experiment_id, patterns=[r'(.+?)_v\d+\.\d+\.\d+'], job_id=None, update_model=False):
+def prep_tis_model_repository(
+    model_params,
+    base_experiment_id,
+    org_name,
+    user_id,
+    experiment_id,
+    patterns=[r'(.+?)_v\d+\.\d+\.\d+'],
+    job_id=None,
+    update_model=False
+):
     """Prepare the model repository for Triton Inference Server"""
     # Copy the PTM to the model directory
-    success, bundle_name, msg = copy_bundle_base_experiment2model(base_experiment_id, org_name, user_id, experiment_id, patterns, job_id)
+    success, bundle_name, msg = copy_bundle_base_experiment2model(
+        base_experiment_id,
+        org_name,
+        user_id,
+        experiment_id,
+        patterns,
+        job_id
+    )
     if not success:
         # should return 4 values to unify with successful return
         return False, None, msg, None

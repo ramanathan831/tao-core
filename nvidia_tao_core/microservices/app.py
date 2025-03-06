@@ -40,12 +40,35 @@ from nvidia_tao_core.microservices.filter_utils import filtering, pagination
 from nvidia_tao_core.microservices.auth_utils import credentials, authentication, access_control, metrics
 from nvidia_tao_core.microservices.health_utils import health_check
 
-from nvidia_tao_core.microservices.enum_constants import ActionEnum, DatasetFormat, DatasetType, ExperimentNetworkArch, Metrics, BaseExperimentTask, BaseExperimentDomain, BaseExperimentBackboneType, BaseExperimentBackboneClass, BaseExperimentLicense
+from nvidia_tao_core.microservices.enum_constants import (
+    ActionEnum,
+    DatasetFormat,
+    DatasetType,
+    ExperimentNetworkArch,
+    Metrics,
+    BaseExperimentTask,
+    BaseExperimentDomain,
+    BaseExperimentBackboneType,
+    BaseExperimentBackboneClass,
+    BaseExperimentLicense
+)
 from nvidia_tao_core.microservices.handlers.app_handler import AppHandler as app_handler
 from nvidia_tao_core.microservices.handlers.container_handler import ContainerJobHandler as container_handler
-from nvidia_tao_core.microservices.handlers.stateless_handlers import resolve_metadata, get_root, get_metrics, set_metrics
+from nvidia_tao_core.microservices.handlers.stateless_handlers import (
+    resolve_metadata,
+    get_root,
+    get_metrics,
+    set_metrics
+)
 from nvidia_tao_core.microservices.handlers.utilities import validate_uuid
-from nvidia_tao_core.microservices.utils import is_pvc_space_free, safe_load_file, log_monitor, log_api_error, is_cookie_request, DataMonitorLogTypeEnum
+from nvidia_tao_core.microservices.utils import (
+    is_pvc_space_free,
+    safe_load_file,
+    log_monitor,
+    log_api_error,
+    is_cookie_request,
+    DataMonitorLogTypeEnum
+)
 from nvidia_tao_core.microservices.job_utils.workflow import Workflow
 
 from werkzeug.exceptions import HTTPException
@@ -76,9 +99,15 @@ def disk_space_check(f):
         threshold_bytes = 100 * 1024 * 1024
 
         pvc_free_space, pvc_free_bytes = is_pvc_space_free(threshold_bytes)
-        msg = f"PVC free space remaining is {pvc_free_bytes} bytes which is less than {threshold_bytes} bytes"
+        msg = (f"PVC free space remaining is {pvc_free_bytes} bytes "
+               f"which is less than {threshold_bytes} bytes")
         if not pvc_free_space:
-            return make_response(jsonify({'error': f'Disk space is nearly full. {msg}. Delete appropriate experiments/datasets'}), 500)
+            return make_response(
+                jsonify({
+                    'error': f'Disk space is nearly full. {msg}. Delete appropriate experiments/datasets'
+                }),
+                500
+            )
 
         return f(*args, **kwargs)
 
@@ -98,7 +127,11 @@ spec = APISpec(
         {"name": 'AUTHENTICATION', "description": 'Endpoints related to User Authentication'},
         {"name": 'DATASET', "description": 'Endpoints related to Datasets'},
         {"name": 'EXPERIMENT', "description": 'Endpoints related to Experiments'},
-        {"name": "nSpectId", "description": "NSPECT-1T59-RTYH", "externalDocs": {"url": "https://nspect.nvidia.com/review?id=NSPECT-1T59-RTYH"}}
+        {"name": "nSpectId",
+         "description": "NSPECT-1T59-RTYH",
+         "externalDocs": {
+             "url": "https://nspect.nvidia.com/review?id=NSPECT-1T59-RTYH"
+         }}
     ],
     plugins=[flask_plugin, marshmallow_plugin],
     security=[{"bearer-token": []}],
@@ -182,7 +215,10 @@ class ErrorRspSchema(Schema):
         ordered = True
         unknown = EXCLUDE
     error_desc = fields.Str(format="regex", regex=r'.*', validate=fields.validate.Length(max=1000))
-    error_code = fields.Int(validate=fields.validate.Range(min=-sys.maxsize - 1, max=sys.maxsize), format=sys_int_format())
+    error_code = fields.Int(
+        validate=fields.validate.Range(min=-sys.maxsize - 1, max=sys.maxsize),
+        format=sys_int_format()
+    )
 
 
 class JobStatusEnum(Enum):
@@ -290,13 +326,20 @@ class BulkOpsSchema(Schema):
     id = fields.Str(format="uuid", validate=fields.validate.Length(max=36))
     status = EnumField(BulkOpsStatus)
     error_desc = fields.Str(format="regex", regex=r'.*', validate=fields.validate.Length(max=1000), allow_none=True)
-    error_code = fields.Int(validate=fields.validate.Range(min=-sys.maxsize - 1, max=sys.maxsize), format=sys_int_format(), allow_none=True)
+    error_code = fields.Int(
+        validate=fields.validate.Range(min=-sys.maxsize - 1, max=sys.maxsize),
+        format=sys_int_format(),
+        allow_none=True
+    )
 
 
 class BulkOpsRspSchema(Schema):
     """Class defining bulk operation response schema"""
 
-    results = fields.List(fields.Nested(BulkOpsSchema, allow_none=True), validate=fields.validate.Length(max=sys.maxsize))
+    results = fields.List(
+        fields.Nested(BulkOpsSchema, allow_none=True),
+        validate=fields.validate.Length(max=sys.maxsize)
+    )
 
 
 #
@@ -325,8 +368,16 @@ class GraphSchema(Schema):
         ordered = True
         unknown = EXCLUDE
     metric = EnumFieldPrefix(Metrics)
-    x_min = fields.Int(allow_none=True, validate=fields.validate.Range(min=-sys.maxsize - 1, max=sys.maxsize), format=sys_int_format())
-    x_max = fields.Int(allow_none=True, validate=fields.validate.Range(min=-sys.maxsize - 1, max=sys.maxsize), format=sys_int_format())
+    x_min = fields.Int(
+        allow_none=True,
+        validate=fields.validate.Range(min=-sys.maxsize - 1, max=sys.maxsize),
+        format=sys_int_format()
+    )
+    x_max = fields.Int(
+        allow_none=True,
+        validate=fields.validate.Range(min=-sys.maxsize - 1, max=sys.maxsize),
+        format=sys_int_format()
+    )
     y_min = fields.Float(allow_none=True)
     y_max = fields.Float(allow_none=True)
     values = fields.Dict(keys=fields.Str(allow_none=True), values=fields.Float(allow_none=True))
@@ -354,7 +405,10 @@ class CategorySchema(Schema):
         ordered = True
         unknown = EXCLUDE
     metric = EnumFieldPrefix(Metrics)
-    category_wise_values = fields.List(fields.Nested(CategoryWiseSchema, allow_none=True), validate=fields.validate.Length(max=sys.maxsize))
+    category_wise_values = fields.List(
+        fields.Nested(CategoryWiseSchema, allow_none=True),
+        validate=fields.validate.Length(max=sys.maxsize)
+    )
 
 
 class KPISchema(Schema):
@@ -402,8 +456,16 @@ class AutoMLResultsDetailedSchema(Schema):
         """Class enabling sorting field values by the order in which they are declared"""
 
         ordered = True
-    current_experiment_id = fields.Int(allow_none=True, validate=fields.validate.Range(min=0, max=sys.maxsize), format=sys_int_format())
-    best_experiment_id = fields.Int(allow_none=True, validate=fields.validate.Range(min=0, max=sys.maxsize), format=sys_int_format())
+    current_experiment_id = fields.Int(
+        allow_none=True,
+        validate=fields.validate.Range(min=0, max=sys.maxsize),
+        format=sys_int_format()
+    )
+    best_experiment_id = fields.Int(
+        allow_none=True,
+        validate=fields.validate.Range(min=0, max=sys.maxsize),
+        format=sys_int_format()
+    )
     metric = EnumFieldPrefix(Metrics)
     experiments = fields.Raw()
 
@@ -431,9 +493,24 @@ class JobSubsetSchema(Schema):
     status = EnumField(JobStatusEnum)
     action = EnumField(ActionEnum)
     eta = fields.Str(allow_none=True, format="regex", regex=r'.*', validate=fields.validate.Length(max=sys.maxsize))
-    epoch = fields.Int(allow_none=True, validate=fields.validate.Range(min=-1, max=sys.maxsize), format=sys_int_format(), error="Epoch should be larger than -1. With -1 meaning non-valid.")
-    max_epoch = fields.Int(allow_none=True, validate=fields.validate.Range(min=0, max=sys.maxsize), format=sys_int_format(), error="Max epoch should be non negative.")
-    detailed_status_message = fields.Str(format="regex", regex=r'.*', validate=fields.validate.Length(max=6400), allow_none=True)
+    epoch = fields.Int(
+        allow_none=True,
+        validate=fields.validate.Range(min=-1, max=sys.maxsize),
+        format=sys_int_format(),
+        error="Epoch should be larger than -1. With -1 meaning non-valid."
+    )
+    max_epoch = fields.Int(
+        allow_none=True,
+        validate=fields.validate.Range(min=0, max=sys.maxsize),
+        format=sys_int_format(),
+        error="Max epoch should be non negative."
+    )
+    detailed_status_message = fields.Str(
+        format="regex",
+        regex=r'.*',
+        validate=fields.validate.Length(max=6400),
+        allow_none=True
+    )
 
 
 class JobResultSchema(Schema):
@@ -445,18 +522,54 @@ class JobResultSchema(Schema):
         ordered = True
         unknown = EXCLUDE
     # Metrics
-    graphical = fields.List(fields.Nested(GraphSchema, allow_none=True), validate=fields.validate.Length(max=sys.maxsize))
-    categorical = fields.List(fields.Nested(CategorySchema, allow_none=True), validate=fields.validate.Length(max=sys.maxsize))
+    graphical = fields.List(
+        fields.Nested(GraphSchema, allow_none=True),
+        validate=fields.validate.Length(max=sys.maxsize)
+    )
+    categorical = fields.List(
+        fields.Nested(CategorySchema, allow_none=True),
+        validate=fields.validate.Length(max=sys.maxsize)
+    )
     kpi = fields.List(fields.Nested(KPISchema, allow_none=True), validate=fields.validate.Length(max=sys.maxsize))
     # AutoML
-    epoch = fields.Int(allow_none=True, validate=fields.validate.Range(min=-1, max=sys.maxsize), format=sys_int_format(), error="Epoch should be larger than -1. With -1 meaning non-valid.")
-    max_epoch = fields.Int(allow_none=True, validate=fields.validate.Range(min=0, max=sys.maxsize), format=sys_int_format(), error="Max epoch should be non negative.")
-    automl_brain_info = fields.List(fields.Nested(StatsSchema, allow_none=True), validate=fields.validate.Length(max=sys.maxsize))
-    automl_result = fields.List(fields.Nested(AutoMLResultsSchema, allow_none=True), validate=fields.validate.Length(max=sys.maxsize))
+    epoch = fields.Int(
+        allow_none=True,
+        validate=fields.validate.Range(min=-1, max=sys.maxsize),
+        format=sys_int_format(),
+        error="Epoch should be larger than -1. With -1 meaning non-valid."
+    )
+    max_epoch = fields.Int(
+        allow_none=True,
+        validate=fields.validate.Range(min=0, max=sys.maxsize),
+        format=sys_int_format(),
+        error="Max epoch should be non negative."
+    )
+    automl_brain_info = fields.List(
+        fields.Nested(StatsSchema, allow_none=True),
+        validate=fields.validate.Length(max=sys.maxsize)
+    )
+    automl_result = fields.List(
+        fields.Nested(AutoMLResultsSchema, allow_none=True),
+        validate=fields.validate.Length(max=sys.maxsize)
+    )
     # Timing
-    time_per_epoch = fields.Str(allow_none=True, format="regex", regex=r'.*', validate=fields.validate.Length(max=sys.maxsize))
-    time_per_iter = fields.Str(allow_none=True, format="regex", regex=r'.*', validate=fields.validate.Length(max=sys.maxsize))
-    cur_iter = fields.Int(allow_none=True, validate=fields.validate.Range(min=0, max=sys.maxsize), format=sys_int_format())
+    time_per_epoch = fields.Str(
+        allow_none=True,
+        format="regex",
+        regex=r'.*',
+        validate=fields.validate.Length(max=sys.maxsize)
+    )
+    time_per_iter = fields.Str(
+        allow_none=True,
+        format="regex",
+        regex=r'.*',
+        validate=fields.validate.Length(max=sys.maxsize)
+    )
+    cur_iter = fields.Int(
+        allow_none=True,
+        validate=fields.validate.Range(min=0, max=sys.maxsize),
+        format=sys_int_format()
+    )
     eta = fields.Str(allow_none=True, format="regex", regex=r'.*', validate=fields.validate.Length(max=sys.maxsize))
     # General
     detailed_status = fields.Nested(DetailedStatusSchema, allow_none=True)
@@ -927,7 +1040,10 @@ def auth():
                         org_name, key = basic_auth.password.split(",")
                     except Exception as e:
                         print(f"Exception thrown in auth is {str(e)}", file=sys.stderr)
-                        metadata = {"error_desc": "Basic auth password not in the format of org_name,ngc_personal_key", "error_code": 1}
+                        metadata = {
+                            "error_desc": "Basic auth password not in the format of org_name,ngc_personal_key",
+                            "error_code": 1
+                        }
                         schema = ErrorRspSchema()
                         response = make_response(jsonify(schema.dump(schema.load(metadata))), 401)
                         return response
@@ -990,7 +1106,15 @@ class ContainerJobSchema(Schema):
     cloud_metadata = fields.Raw()
     ngc_key = fields.Str(format="regex", regex=r'.*', validate=fields.validate.Length(max=1000), allow_none=True)
     job_id = fields.Str(format="uuid", validate=fields.validate.Length(max=36), allow_none=True)
-    docker_env_vars = fields.Dict(keys=EnumField(AllowedDockerEnvVariables), values=fields.Str(format="regex", regex=r'.*', validate=fields.validate.Length(max=500), allow_none=True))
+    docker_env_vars = fields.Dict(
+        keys=EnumField(AllowedDockerEnvVariables),
+        values=fields.Str(
+            format="regex",
+            regex=r'.*',
+            validate=fields.validate.Length(max=500),
+            allow_none=True
+        )
+    )
 
 
 @app.route('/api/v1/internal/container_job', methods=['POST'])
@@ -1331,7 +1455,10 @@ def metrics_upsert():
     if not metrics:
         metrics = safe_load_file(os.path.join(get_root(), 'metrics.json'))
         if not metrics:
-            metadata = {"error_desc": "Metrics.json file not exists or can not be updated now, please try again later.", "error_code": 503}
+            metadata = {
+                "error_desc": "Metrics.json file not exists or can not be updated now, please try again later.",
+                "error_code": 503
+            }
             schema = ErrorRspSchema()
             response = make_response(jsonify(schema.dump(schema.load(metadata))), 500)
             return response
@@ -1446,7 +1573,10 @@ class WorkspaceReqSchema(Schema):
 
 
 class DateTimeField(fields.DateTime):
-    """Class defining datetime object deserialization (since marshmallow doesn't handle python date objects natively, expects a date string instead)"""
+    """Field for handling datetime objects.
+
+    This field is used to handle datetime objects in the API.
+    """
 
     def _deserialize(self, value, attr, data, **kwargs):
         if isinstance(value, datetime):
@@ -1487,7 +1617,15 @@ class WorkspaceListRspSchema(Schema):
 class DatasetPathLstSchema(Schema):
     """Class defining dataset actions schema"""
 
-    dataset_paths = fields.List(fields.Str(format="regex", regex=r'.*', validate=fields.validate.Length(max=500), allow_none=True), validate=validate.Length(max=sys.maxsize))
+    dataset_paths = fields.List(
+        fields.Str(
+            format="regex",
+            regex=r'.*',
+            validate=fields.validate.Length(max=500),
+            allow_none=True
+        ),
+        validate=validate.Length(max=sys.maxsize)
+    )
 
 
 @app.route('/api/v1/orgs/<org_name>/workspaces', methods=['GET'])
@@ -1725,7 +1863,14 @@ def workspace_retrieve_datasets(org_name, workspace_id):
     dataset_intention = request.args.getlist("dataset_intention")
     # Get response
     user_id = authentication.get_user_id(request.headers.get('Authorization', ''), request.cookies, org_name)
-    response = app_handler.retrieve_cloud_datasets(user_id, org_name, workspace_id, dataset_type, dataset_format, dataset_intention)
+    response = app_handler.retrieve_cloud_datasets(
+        user_id,
+        org_name,
+        workspace_id,
+        dataset_type,
+        dataset_format,
+        dataset_intention
+    )
     # Get schema
     schema = None
     if response.code == 200:
@@ -2206,8 +2351,20 @@ class DatasetIntentEnum(Enum):
 class LstStrSchema(Schema):
     """Class defining dataset actions schema"""
 
-    dataset_formats = fields.List(fields.Str(format="regex", regex=r'.*', validate=fields.validate.Length(max=500), allow_none=True), validate=validate.Length(max=sys.maxsize))
-    accepted_dataset_intents = fields.List(EnumField(DatasetIntentEnum), allow_none=True, validate=validate.Length(max=3))
+    dataset_formats = fields.List(
+        fields.Str(
+            format="regex",
+            regex=r'.*',
+            validate=fields.validate.Length(max=500),
+            allow_none=True
+        ),
+        validate=validate.Length(max=sys.maxsize)
+    )
+    accepted_dataset_intents = fields.List(
+        EnumField(DatasetIntentEnum),
+        allow_none=True,
+        validate=validate.Length(max=3)
+    )
 
 
 class DatasetReqSchema(Schema):
@@ -2222,14 +2379,27 @@ class DatasetReqSchema(Schema):
     shared = fields.Bool(allow_none=False)
     user_id = fields.Str(format="uuid", validate=fields.validate.Length(max=36))
     description = fields.Str(format="regex", regex=r'.*', validate=fields.validate.Length(max=1000))
-    docker_env_vars = fields.Dict(keys=EnumField(AllowedDockerEnvVariables), values=fields.Str(format="regex", regex=r'.*', validate=fields.validate.Length(max=500), allow_none=True))
+    docker_env_vars = fields.Dict(
+        keys=EnumField(AllowedDockerEnvVariables),
+        values=fields.Str(
+            format="regex",
+            regex=r'.*',
+            validate=fields.validate.Length(max=500),
+            allow_none=True
+        )
+    )
     version = fields.Str(format="regex", regex=r'^\d+\.\d+\.\d+$', validate=fields.validate.Length(max=10))
     logo = fields.URL(validate=fields.validate.Length(max=2048))
     type = EnumField(DatasetType)
     format = EnumField(DatasetFormat)
     workspace = fields.Str(format="uuid", validate=fields.validate.Length(max=36), allow_none=True)
     url = fields.URL(validate=fields.validate.Length(max=2048))  # For HuggingFace and Self_hosted
-    cloud_file_path = fields.Str(format="regex", regex=r'.*', validate=fields.validate.Length(max=2048), allow_none=True)
+    cloud_file_path = fields.Str(
+        format="regex",
+        regex=r'.*',
+        validate=fields.validate.Length(max=2048),
+        allow_none=True
+    )
     client_url = fields.Str(format="regex", regex=r'.*', validate=fields.validate.Length(max=2048), allow_none=True)
     client_id = fields.Str(format="regex", regex=r'.*', validate=fields.validate.Length(max=2048), allow_none=True)
     client_secret = fields.Str(format="regex", regex=r'.*', validate=fields.validate.Length(max=2048), allow_none=True)
@@ -2237,7 +2407,10 @@ class DatasetReqSchema(Schema):
     status = EnumField(PullStatus)
     use_for = fields.List(EnumField(DatasetIntentEnum), allow_none=True, validate=validate.Length(max=3))
     base_experiment_pull_complete = EnumField(PullStatus)
-    base_experiment = fields.List(fields.Str(format="uuid", validate=fields.validate.Length(max=36)), validate=validate.Length(max=2))
+    base_experiment = fields.List(
+        fields.Str(format="uuid", validate=fields.validate.Length(max=36)),
+        validate=validate.Length(max=2)
+    )
 
 
 class DatasetJobSchema(Schema):
@@ -2254,7 +2427,11 @@ class DatasetJobSchema(Schema):
     last_modified = DateTimeField(metadata={"maxLength": 24})
     action = EnumField(ActionEnum)
     status = EnumField(JobStatusEnum)
-    job_details = fields.Dict(keys=fields.Str(format="uuid", validate=fields.validate.Length(max=36)), values=fields.Nested(JobResultSchema), validate=validate.Length(max=sys.maxsize))
+    job_details = fields.Dict(
+        keys=fields.Str(format="uuid", validate=fields.validate.Length(max=36)),
+        values=fields.Nested(JobResultSchema),
+        validate=validate.Length(max=sys.maxsize)
+    )
     specs = fields.Raw(allow_none=True)
     name = fields.Str(format="regex", regex=r'.*', validate=fields.validate.Length(max=500), allow_none=True)
     description = fields.Str(format="regex", regex=r'.*', validate=fields.validate.Length(max=1000), allow_none=True)
@@ -2280,16 +2457,33 @@ class DatasetRspSchema(Schema):
     name = fields.Str(format="regex", regex=r'.*', validate=fields.validate.Length(max=500))
     shared = fields.Bool(allow_none=False)
     description = fields.Str(format="regex", regex=r'.*', validate=fields.validate.Length(max=1000))
-    docker_env_vars = fields.Dict(keys=EnumField(AllowedDockerEnvVariables), values=fields.Str(format="regex", regex=r'.*', validate=fields.validate.Length(max=500), allow_none=True))
+    docker_env_vars = fields.Dict(
+        keys=EnumField(AllowedDockerEnvVariables),
+        values=fields.Str(
+            format="regex",
+            regex=r'.*',
+            validate=fields.validate.Length(max=500),
+            allow_none=True
+        )
+    )
     version = fields.Str(format="regex", regex=r'^\d+\.\d+\.\d+$', validate=fields.validate.Length(max=10))
     logo = fields.URL(validate=fields.validate.Length(max=2048), allow_none=True)
     type = EnumField(DatasetType)
     format = EnumField(DatasetFormat)
     workspace = fields.Str(format="uuid", validate=fields.validate.Length(max=36), allow_none=True)
     url = fields.URL(validate=fields.validate.Length(max=2048), allow_none=True)  # For HuggingFace and Self_hosted
-    cloud_file_path = fields.Str(format="regex", regex=r'.*', validate=fields.validate.Length(max=2048), allow_none=True)
+    cloud_file_path = fields.Str(
+        format="regex",
+        regex=r'.*',
+        validate=fields.validate.Length(max=2048),
+        allow_none=True
+    )
     actions = fields.List(EnumField(ActionEnum), allow_none=True, validate=validate.Length(max=sys.maxsize))
-    jobs = fields.Dict(keys=fields.Str(format="uuid", validate=fields.validate.Length(max=36)), values=fields.Nested(JobSubsetSchema), validate=validate.Length(max=sys.maxsize))
+    jobs = fields.Dict(
+        keys=fields.Str(format="uuid", validate=fields.validate.Length(max=36)),
+        values=fields.Nested(JobSubsetSchema),
+        validate=validate.Length(max=sys.maxsize)
+    )
     client_url = fields.Str(format="regex", regex=r'.*', validate=fields.validate.Length(max=2048), allow_none=True)
     client_id = fields.Str(format="regex", regex=r'.*', validate=fields.validate.Length(max=2048), allow_none=True)
     client_secret = fields.Str(format="regex", regex=r'.*', validate=fields.validate.Length(max=2048), allow_none=True)
@@ -2297,7 +2491,10 @@ class DatasetRspSchema(Schema):
     status = EnumField(PullStatus)
     use_for = fields.List(EnumField(DatasetIntentEnum), allow_none=True, validate=validate.Length(max=3))
     base_experiment_pull_complete = EnumField(PullStatus)
-    base_experiment = fields.List(fields.Str(format="uuid", validate=fields.validate.Length(max=36)), validate=validate.Length(max=2))
+    base_experiment = fields.List(
+        fields.Str(format="uuid", validate=fields.validate.Length(max=36)),
+        validate=validate.Length(max=2)
+    )
 
 
 class DatasetListRspSchema(Schema):
@@ -2444,14 +2641,22 @@ def dataset_list(org_name):
         required: false
         schema:
           type: string
-          enum: ["kitti", "pascal_voc", "raw", "coco_raw", "unet", "coco", "lprnet", "train", "test", "default", "custom", "classification_pyt", "classification_tf2", "visual_changenet_segment", "visual_changenet_classify"]
+          enum: [
+              "kitti", "pascal_voc", "raw", "coco_raw", "unet", "coco", "lprnet", "train", "test",
+              "default", "custom", "classification_pyt", "classification_tf2", "visual_changenet_segment",
+              "visual_changenet_classify"
+          ]
       - name: type
         in: query
         description: Filter datasets by their primary type
         required: false
         schema:
           type: string
-          enum: [ "object_detection", "segmentation", "image_classification", "character_recognition", "action_recognition", "pointpillars", "pose_classification", "ml_recog", "ocdnet", "ocrnet", "optical_inspection", "re_identification", "visual_changenet", "centerpose" ]
+          enum: [
+              "object_detection", "segmentation", "image_classification", "character_recognition",
+              "action_recognition", "pointpillars", "pose_classification", "ml_recog", "ocdnet", "ocrnet",
+              "optical_inspection", "re_identification", "visual_changenet", "centerpose"
+          ]
       responses:
         200:
           description: Successfully retrieved list of accessible datasets
@@ -2715,7 +2920,9 @@ def dataset_create(org_name):
     schema_dict = schema.dump(schema.load(response.data))
     if response.code != 200:
         ds_format = request_dict.get("format", "")
-        log_type = DataMonitorLogTypeEnum.medical_dataset if ds_format == "monai" else DataMonitorLogTypeEnum.tao_dataset
+        log_type = (DataMonitorLogTypeEnum.medical_dataset
+                    if ds_format == "monai"
+                    else DataMonitorLogTypeEnum.tao_dataset)
         log_api_error(user_id, org_name, from_ui, schema_dict, log_type, action="creation")
 
     return make_response(jsonify(schema_dict), response.code)
@@ -2929,7 +3136,11 @@ def dataset_specs_schema(org_name, dataset_id, action):
         required: true
         schema:
           type: string
-          enum: [ "dataset_convert", "convert", "convert_efficientdet_tf2", "kmeans", "augment", "train", "evaluate", "prune", "retrain", "export", "gen_trt_engine", "trtexec", "inference", "annotation", "analyze", "validate", "auto_label", "calibration_tensorfile" ]
+          enum: [
+              "dataset_convert", "convert", "convert_efficientdet_tf2", "kmeans", "augment", "train",
+              "evaluate", "prune", "retrain", "export", "gen_trt_engine", "trtexec", "inference",
+              "annotation", "analyze", "validate", "auto_label", "calibration_tensorfile"
+          ]
       responses:
         200:
           description: Returned the Specs schema for given action
@@ -3066,7 +3277,11 @@ def dataset_job_run(org_name, dataset_id):
     platform_id = request_schema_data.get('platform_id', None)
     from_ui = is_cookie_request(request)
     # Get response
-    response = app_handler.job_run(org_name, dataset_id, requested_job, requested_action, "dataset", specs=specs, name=name, description=description, num_gpu=num_gpu, platform_id=platform_id, from_ui=from_ui)
+    response = app_handler.job_run(
+        org_name, dataset_id, requested_job, requested_action, "dataset",
+        specs=specs, name=name, description=description, num_gpu=num_gpu,
+        platform_id=platform_id, from_ui=from_ui
+    )
     handler_metadata = resolve_metadata("dataset", dataset_id)
     dataset_format = handler_metadata.get("format")
     # Get schema
@@ -4368,7 +4583,14 @@ def dataset_job_download_selective_files(org_name, dataset_id, job_id):
     if not file_lists:
         return make_response(jsonify("No files passed in list format to download or"), 400)
     # Get response
-    response = app_handler.job_download(org_name, dataset_id, job_id, "dataset", file_lists=file_lists, tar_files=tar_files)
+    response = app_handler.job_download(
+        org_name,
+        dataset_id,
+        job_id,
+        "dataset",
+        file_lists=file_lists,
+        tar_files=tar_files
+    )
     # Get schema
     schema = None
     if response.code == 200:
@@ -4668,7 +4890,14 @@ def dataset_jobs_cancel(org_name, dataset_id):
 class LstIntSchema(Schema):
     """Class defining dataset actions schema"""
 
-    data = fields.List(fields.Int(format="int64", validate=validate.Range(min=0, max=sys.maxsize), allow_none=True), validate=validate.Length(max=sys.maxsize))
+    data = fields.List(
+        fields.Int(
+            format="int64",
+            validate=validate.Range(min=0, max=sys.maxsize),
+            allow_none=True
+        ),
+        validate=validate.Length(max=sys.maxsize)
+    )
 
 
 class ExperimentActions(Schema):
@@ -4739,13 +4968,22 @@ class AutoMLSchema(Schema):
         unknown = EXCLUDE
     automl_enabled = fields.Bool(allow_none=True)
     automl_algorithm = EnumField(AutoMLAlgorithm, allow_none=True)
-    automl_max_recommendations = fields.Int(format="int64", validate=validate.Range(min=0, max=sys.maxsize), allow_none=True)
+    automl_max_recommendations = fields.Int(
+        format="int64",
+        validate=validate.Range(min=0, max=sys.maxsize),
+        allow_none=True
+    )
     automl_delete_intermediate_ckpt = fields.Bool(allow_none=True)
     override_automl_disabled_params = fields.Bool(allow_none=True)
     automl_R = fields.Int(format="int64", validate=validate.Range(min=0, max=sys.maxsize), allow_none=True)
     automl_nu = fields.Int(format="int64", validate=validate.Range(min=0, max=sys.maxsize), allow_none=True)
     epoch_multiplier = fields.Int(format="int64", validate=validate.Range(min=0, max=sys.maxsize), allow_none=True)
-    automl_hyperparameters = fields.Str(format="regex", regex=r'\[.*\]', validate=fields.validate.Length(max=5000), allow_none=True)
+    automl_hyperparameters = fields.Str(
+        format="regex",
+        regex=r'\[.*\]',
+        validate=fields.validate.Length(max=5000),
+        allow_none=True
+    )
 
 
 class BaseExperimentMetadataSchema(Schema):
@@ -4760,8 +4998,18 @@ class BaseExperimentMetadataSchema(Schema):
     domain = EnumField(BaseExperimentDomain, by_value=True, allow_none=True)
     backbone_type = EnumField(BaseExperimentBackboneType, by_value=True, allow_none=True)
     backbone_class = EnumField(BaseExperimentBackboneClass, by_value=True, allow_none=True)
-    num_parameters = fields.Str(format="regex", regex=r'^\d+(\.\d+)?M$', validate=fields.validate.Length(max=10), allow_none=True)
-    accuracy = fields.Str(format="regex", regex=r'^\d{1,3}(\.\d+)?%$', validate=fields.validate.Length(max=10), allow_none=True)
+    num_parameters = fields.Str(
+        format="regex",
+        regex=r'^\d+(\.\d+)?M$',
+        validate=fields.validate.Length(max=10),
+        allow_none=True
+    )
+    accuracy = fields.Str(
+        format="regex",
+        regex=r'^\d{1,3}(\.\d+)?%$',
+        validate=fields.validate.Length(max=10),
+        allow_none=True
+    )
     license = EnumField(BaseExperimentLicense, by_value=True, allow_none=True)
     model_card_link = fields.URL(validate=fields.validate.Length(max=2048), allow_none=True)
     is_backbone = fields.Bool()
@@ -4781,25 +5029,76 @@ class ExperimentReqSchema(Schema):
     name = fields.Str(format="regex", regex=r'.*', validate=fields.validate.Length(max=500))
     shared = fields.Bool(allow_none=False)
     user_id = fields.Str(format="uuid", validate=fields.validate.Length(max=36))
-    description = fields.Str(format="regex", regex=r'.*', validate=fields.validate.Length(max=1000))  # Model version description - not changing variable name for backward compatability
-    model_description = fields.Str(format="regex", regex=r'.*', validate=fields.validate.Length(max=1000))  # Description common to all versions of models
+    description = fields.Str(
+        format="regex",
+        regex=r'.*',
+        validate=fields.validate.Length(max=1000)
+    )  # Model version description - not changing variable name for backward compatability
+    model_description = fields.Str(
+        format="regex",
+        regex=r'.*',
+        validate=fields.validate.Length(max=1000)
+    )  # Description common to all versions of models
     version = fields.Str(format="regex", regex=r'.*', validate=fields.validate.Length(max=500))
-    logo = fields.URL(validate=fields.validate.Length(max=2048))
-    ngc_path = fields.Str(format="regex", regex=r'^\w+(/[\w-]+)?/[\w-]+:[\w.-]+$', validate=fields.validate.Length(max=250))
+    logo = fields.URL(validate=fields.validate.Length(max=2048), allow_none=True)
+    ngc_path = fields.Str(
+        format="regex",
+        regex=r'^\w+(/[\w-]+)?/[\w-]+:[\w.-]+$',
+        validate=fields.validate.Length(max=250)
+    )
     workspace = fields.Str(format="uuid", validate=fields.validate.Length(max=36), allow_none=True)
     sha256_digest = fields.Dict(allow_none=True)
     base_experiment_pull_complete = EnumField(PullStatus)
-    additional_id_info = fields.Str(format="regex", regex=r'.*', validate=fields.validate.Length(max=100), allow_none=True)
-    docker_env_vars = fields.Dict(keys=EnumField(AllowedDockerEnvVariables), values=fields.Str(format="regex", regex=r'.*', validate=fields.validate.Length(max=500), allow_none=True))
+    additional_id_info = fields.Str(
+        format="regex",
+        regex=r'.*',
+        validate=fields.validate.Length(max=100),
+        allow_none=True
+    )
+    docker_env_vars = fields.Dict(
+        keys=EnumField(AllowedDockerEnvVariables),
+        values=fields.Str(
+            format="regex",
+            regex=r'.*',
+            validate=fields.validate.Length(max=500),
+            allow_none=True
+        )
+    )
     checkpoint_choose_method = EnumField(CheckpointChooseMethodEnum)
-    checkpoint_epoch_number = fields.Dict(keys=fields.Str(format="regex", regex=r'(from_epoch_number|latest_model|best_model)_[0-9a-f]{8}-([0-9a-f]{4}-){3}[0-9a-f]{12}$', validate=fields.validate.Length(max=100), allow_none=True), values=fields.Int(format="int64", validate=validate.Range(min=0, max=sys.maxsize), allow_none=True))
+    checkpoint_epoch_number = fields.Dict(
+        keys=fields.Str(
+            format="regex",
+            regex=(
+                r'(from_epoch_number|latest_model|best_model)_[0-9a-f]{8}-([0-9a-f]{4}-){3}[0-9a-f]{12}$'
+            ),
+            validate=fields.validate.Length(max=100),
+            allow_none=True
+        ),
+        values=fields.Int(
+            format="int64",
+            validate=validate.Range(min=0, max=sys.maxsize),
+            allow_none=True
+        )
+    )
     encryption_key = fields.Str(format="regex", regex=r'.*', validate=fields.validate.Length(max=100))
     network_arch = EnumField(ExperimentNetworkArch)
-    base_experiment = fields.List(fields.Str(format="uuid", validate=fields.validate.Length(max=36)), validate=validate.Length(max=2))
+    base_experiment = fields.List(
+        fields.Str(
+            format="uuid",
+            validate=fields.validate.Length(max=36)
+        ),
+        validate=validate.Length(max=2)
+    )
     eval_dataset = fields.Str(format="uuid", validate=fields.validate.Length(max=36))
     inference_dataset = fields.Str(format="uuid", validate=fields.validate.Length(max=36))
     calibration_dataset = fields.Str(format="uuid", validate=fields.validate.Length(max=36))
-    train_datasets = fields.List(fields.Str(format="uuid", validate=fields.validate.Length(max=36)), validate=validate.Length(max=sys.maxsize))
+    train_datasets = fields.List(
+        fields.Str(
+            format="uuid",
+            validate=fields.validate.Length(max=36)
+        ),
+        validate=validate.Length(max=sys.maxsize)
+    )
     read_only = fields.Bool()
     public = fields.Bool()
     automl_settings = fields.Nested(AutoMLSchema, allow_none=True)
@@ -4808,10 +5107,24 @@ class ExperimentReqSchema(Schema):
     realtime_infer = fields.Bool(default=False)
     model_params = fields.Dict(allow_none=True)
     bundle_url = fields.Str(format="regex", regex=r'.*', validate=fields.validate.Length(max=1000), allow_none=True)
-    realtime_infer_request_timeout = fields.Int(format="int64", validate=validate.Range(min=0, max=sys.maxsize), allow_none=True)
-    experiment_actions = fields.List(fields.Nested(ExperimentActions, allow_none=True), validate=fields.validate.Length(max=sys.maxsize))
+    realtime_infer_request_timeout = fields.Int(
+        format="int64",
+        validate=validate.Range(min=0, max=sys.maxsize),
+        allow_none=True
+    )
+    experiment_actions = fields.List(
+        fields.Nested(ExperimentActions, allow_none=True),
+        validate=validate.Length(max=sys.maxsize)
+    )
     tensorboard_enabled = fields.Bool(allow_none=True)
-    tags = fields.List(fields.Str(format="regex", regex=r'.*', validate=fields.validate.Length(max=36)), validate=validate.Length(max=16))
+    tags = fields.List(
+        fields.Str(
+            format="regex",
+            regex=r'.*',
+            validate=fields.validate.Length(max=36)
+        ),
+        validate=validate.Length(max=16)
+    )
     retry_experiment_id = fields.Str(format="uuid", validate=fields.validate.Length(max=36), allow_none=True)
 
 
@@ -4829,7 +5142,14 @@ class ExperimentJobSchema(Schema):
     last_modified = DateTimeField(metadata={"maxLength": 24})
     action = EnumField(ActionEnum)
     status = EnumField(JobStatusEnum)
-    job_details = fields.Dict(keys=fields.Str(format="uuid", validate=fields.validate.Length(max=36)), values=fields.Nested(JobResultSchema), validate=validate.Length(max=sys.maxsize))
+    job_details = fields.Dict(
+        keys=fields.Str(
+            format="uuid",
+            validate=fields.validate.Length(max=36)
+        ),
+        values=fields.Nested(JobResultSchema),
+        validate=validate.Length(max=sys.maxsize)
+    )
     sync = fields.Bool()
     specs = fields.Raw(allow_none=True)
     name = fields.Str(format="regex", regex=r'.*', validate=fields.validate.Length(max=500), allow_none=True)
@@ -4855,32 +5175,93 @@ class ExperimentRspSchema(Schema):
     last_modified = DateTimeField(metadata={"maxLength": 24})
     name = fields.Str(format="regex", regex=r'.*', validate=fields.validate.Length(max=500))
     shared = fields.Bool(allow_none=False)
-    description = fields.Str(format="regex", regex=r'.*', validate=fields.validate.Length(max=1000))  # Model version description - not changing variable name for backward compatability
-    model_description = fields.Str(format="regex", regex=r'.*', validate=fields.validate.Length(max=1000))  # Description common to all versions of models
+    description = fields.Str(
+        format="regex",
+        regex=r'.*',
+        validate=fields.validate.Length(max=1000)
+    )  # Model version description - not changing variable name for backward compatability
+    model_description = fields.Str(
+        format="regex",
+        regex=r'.*',
+        validate=fields.validate.Length(max=1000)
+    )  # Description common to all versions of models
     version = fields.Str(format="regex", regex=r'.*', validate=fields.validate.Length(max=500))
     logo = fields.URL(validate=fields.validate.Length(max=2048), allow_none=True)
-    ngc_path = fields.Str(format="regex", regex=r'^\w+(/[\w-]+)?/[\w-]+:[\w.-]+$', validate=fields.validate.Length(max=250))
+    ngc_path = fields.Str(
+        format="regex",
+        regex=r'^\w+(/[\w-]+)?/[\w-]+:[\w.-]+$',
+        validate=fields.validate.Length(max=250)
+    )
     workspace = fields.Str(format="uuid", validate=fields.validate.Length(max=36), allow_none=True)
     sha256_digest = fields.Dict(allow_none=True)
     base_experiment_pull_complete = EnumField(PullStatus)
-    additional_id_info = fields.Str(format="regex", regex=r'.*', validate=fields.validate.Length(max=100), allow_none=True)
-    docker_env_vars = fields.Dict(keys=EnumField(AllowedDockerEnvVariables), values=fields.Str(format="regex", regex=r'.*', validate=fields.validate.Length(max=500), allow_none=True))
+    additional_id_info = fields.Str(
+        format="regex",
+        regex=r'.*',
+        validate=fields.validate.Length(max=100),
+        allow_none=True
+    )
+    docker_env_vars = fields.Dict(
+        keys=EnumField(AllowedDockerEnvVariables),
+        values=fields.Str(
+            format="regex",
+            regex=r'.*',
+            validate=fields.validate.Length(max=500),
+            allow_none=True
+        )
+    )
     checkpoint_choose_method = EnumField(CheckpointChooseMethodEnum)
-    checkpoint_epoch_number = fields.Dict(keys=fields.Str(format="regex", regex=r'(from_epoch_number|latest_model|best_model)_[0-9a-f]{8}-([0-9a-f]{4}-){3}[0-9a-f]{12}$', validate=fields.validate.Length(max=100), allow_none=True), values=fields.Int(format="int64", validate=validate.Range(min=0, max=sys.maxsize), allow_none=True))
+    checkpoint_epoch_number = fields.Dict(
+        keys=fields.Str(
+            format="regex",
+            regex=(
+                r'(from_epoch_number|latest_model|best_model)_[0-9a-f]{8}-([0-9a-f]{4}-){3}[0-9a-f]{12}$'
+            ),
+            validate=fields.validate.Length(max=100),
+            allow_none=True
+        ),
+        values=fields.Int(
+            format="int64",
+            validate=validate.Range(min=0, max=sys.maxsize),
+            allow_none=True
+        )
+    )
     encryption_key = fields.Str(format="regex", regex=r'.*', validate=fields.validate.Length(max=100))
     network_arch = EnumField(ExperimentNetworkArch)
-    base_experiment = fields.List(fields.Str(format="uuid", validate=fields.validate.Length(max=36)), validate=validate.Length(max=2))
+    base_experiment = fields.List(
+        fields.Str(
+            format="uuid",
+            validate=fields.validate.Length(max=36)
+        ),
+        validate=validate.Length(max=2)
+    )
     dataset_type = EnumField(DatasetType)
     dataset_formats = fields.List(EnumField(DatasetFormat), allow_none=True, validate=validate.Length(max=sys.maxsize))
-    accepted_dataset_intents = fields.List(EnumField(DatasetIntentEnum), allow_none=True, validate=validate.Length(max=sys.maxsize))
+    accepted_dataset_intents = fields.List(
+        EnumField(DatasetIntentEnum, allow_none=True),
+        validate=validate.Length(max=sys.maxsize)
+    )
     eval_dataset = fields.Str(format="uuid", validate=fields.validate.Length(max=36), allow_none=True)
     inference_dataset = fields.Str(format="uuid", validate=fields.validate.Length(max=36), allow_none=True)
     calibration_dataset = fields.Str(format="uuid", validate=fields.validate.Length(max=36), allow_none=True)
-    train_datasets = fields.List(fields.Str(format="uuid", validate=fields.validate.Length(max=36)), validate=validate.Length(max=sys.maxsize))
+    train_datasets = fields.List(
+        fields.Str(
+            format="uuid",
+            validate=fields.validate.Length(max=36)
+        ),
+        validate=validate.Length(max=sys.maxsize)
+    )
     read_only = fields.Bool()
     public = fields.Bool()
     actions = fields.List(EnumField(ActionEnum), allow_none=True, validate=validate.Length(max=sys.maxsize))
-    jobs = fields.Dict(keys=fields.Str(format="uuid", validate=fields.validate.Length(max=36)), values=fields.Nested(JobSubsetSchema), validate=validate.Length(max=sys.maxsize))
+    jobs = fields.Dict(
+        keys=fields.Str(
+            format="uuid",
+            validate=fields.validate.Length(max=36)
+        ),
+        values=fields.Nested(JobSubsetSchema),
+        validate=validate.Length(max=sys.maxsize)
+    )
     status = EnumField(JobStatusEnum)
     all_jobs_cancel_status = EnumField(JobStatusEnum, allow_none=True)
     automl_settings = fields.Nested(AutoMLSchema)
@@ -4888,15 +5269,39 @@ class ExperimentRspSchema(Schema):
     type = EnumField(ExperimentTypeEnum, default=ExperimentTypeEnum.vision, allow_none=True)
     realtime_infer = fields.Bool(allow_none=True)
     realtime_infer_support = fields.Bool()
-    realtime_infer_endpoint = fields.Str(format="regex", regex=r'.*', validate=fields.validate.Length(max=1000), allow_none=True)
-    realtime_infer_model_name = fields.Str(format="regex", regex=r'.*', validate=fields.validate.Length(max=1000), allow_none=True)
+    realtime_infer_endpoint = fields.Str(
+        format="regex",
+        regex=r'.*',
+        validate=fields.validate.Length(max=1000),
+        allow_none=True
+    )
+    realtime_infer_model_name = fields.Str(
+        format="regex",
+        regex=r'.*',
+        validate=fields.validate.Length(max=1000),
+        allow_none=True
+    )
     model_params = fields.Dict(allow_none=True)
-    realtime_infer_request_timeout = fields.Int(format="int64", validate=validate.Range(min=0, max=86400), allow_none=True)
+    realtime_infer_request_timeout = fields.Int(
+        format="int64",
+        validate=validate.Range(min=0, max=86400),
+        allow_none=True
+    )
     bundle_url = fields.Str(format="regex", regex=r'.*', validate=fields.validate.Length(max=1000), allow_none=True)
     base_experiment_metadata = fields.Nested(BaseExperimentMetadataSchema, allow_none=True)
-    experiment_actions = fields.List(fields.Nested(ExperimentActions, allow_none=True), validate=fields.validate.Length(max=sys.maxsize))
+    experiment_actions = fields.List(
+        fields.Nested(ExperimentActions, allow_none=True),
+        validate=fields.validate.Length(max=sys.maxsize)
+    )
     tensorboard_enabled = fields.Bool(default=False)
-    tags = fields.List(fields.Str(format="regex", regex=r'.*', validate=fields.validate.Length(max=36)), validate=validate.Length(max=16))
+    tags = fields.List(
+        fields.Str(
+            format="regex",
+            regex=r'.*',
+            validate=fields.validate.Length(max=36)
+        ),
+        validate=validate.Length(max=16)
+    )
 
 
 class ExperimentTagListSchema(Schema):
@@ -4906,7 +5311,14 @@ class ExperimentTagListSchema(Schema):
         """Class enabling sorting field values by the order in which they are declared"""
 
         ordered = True
-    tags = fields.List(fields.Str(format="regex", regex=r'.*', validate=fields.validate.Length(max=36)), validate=validate.Length(max=16))
+    tags = fields.List(
+        fields.Str(
+            format="regex",
+            regex=r'.*',
+            validate=fields.validate.Length(max=36)
+        ),
+        validate=validate.Length(max=16)
+    )
 
 
 class ExperimentListRspSchema(Schema):
@@ -4917,7 +5329,10 @@ class ExperimentListRspSchema(Schema):
 
         ordered = True
         unknown = EXCLUDE
-    experiments = fields.List(fields.Nested(ExperimentRspSchema), validate=validate.Length(max=sys.maxsize))
+    experiments = fields.List(
+        fields.Nested(ExperimentRspSchema),
+        validate=validate.Length(max=sys.maxsize)
+    )
     pagination_info = fields.Nested(PaginationInfoSchema, allowed_none=True)
 
 
@@ -5010,7 +5425,27 @@ def experiment_list(org_name):
         required: false
         schema:
           type: string
-          enum: ["detectnet_v2", "unet", "classification_tf2", "efficientdet_tf2", "action_recognition", "classification_pyt", "mal", "ml_recog", "ocdnet", "ocrnet", "optical_inspection", "pointpillars", "pose_classification", "re_identification", "deformable_detr", "dino", "segformer", "visual_changenet", "centerpose"]
+          enum: [
+              "detectnet_v2",
+              "unet",
+              "classification_tf2",
+              "efficientdet_tf2",
+              "action_recognition",
+              "classification_pyt",
+              "mal",
+              "ml_recog",
+              "ocdnet",
+              "ocrnet",
+              "optical_inspection",
+              "pointpillars",
+              "pose_classification",
+              "re_identification",
+              "deformable_detr",
+              "dino",
+              "segformer",
+              "visual_changenet",
+              "centerpose"
+          ]
       - name: read_only
         in: query
         description: Optional read_only filter
@@ -5173,7 +5608,27 @@ def base_experiment_list(org_name):
         required: false
         schema:
           type: string
-          enum: ["detectnet_v2", "unet", "classification_tf2", "efficientdet_tf2", "action_recognition", "classification_pyt", "mal", "ml_recog", "ocdnet", "ocrnet", "optical_inspection", "pointpillars", "pose_classification", "re_identification", "deformable_detr", "dino", "segformer", "visual_changenet", "centerpose"]
+          enum: [
+              "detectnet_v2",
+              "unet",
+              "classification_tf2",
+              "efficientdet_tf2",
+              "action_recognition",
+              "classification_pyt",
+              "mal",
+              "ml_recog",
+              "ocdnet",
+              "ocrnet",
+              "optical_inspection",
+              "pointpillars",
+              "pose_classification",
+              "re_identification",
+              "deformable_detr",
+              "dino",
+              "segformer",
+              "visual_changenet",
+              "centerpose"
+          ]
       - name: read_only
         in: query
         description: Optional read_only filter
@@ -5730,7 +6185,11 @@ def specs_schema_without_handler_id(org_name, action):
         required: true
         schema:
           type: string
-          enum: [ "dataset_convert", "convert", "convert_efficientdet_tf2", "kmeans", "augment", "train", "evaluate", "prune", "retrain", "export", "gen_trt_engine", "trtexec", "inference", "annotation", "analyze", "validate", "auto_label", "calibration_tensorfile" ]
+          enum: [
+            "dataset_convert", "convert", "convert_efficientdet_tf2", "kmeans", "augment", "train",
+            "evaluate", "prune", "retrain", "export", "gen_trt_engine", "trtexec", "inference",
+            "annotation", "analyze", "validate", "auto_label", "calibration_tensorfile"
+          ]
       responses:
         200:
           description: Returned the Specs schema for given action and network
@@ -5809,7 +6268,11 @@ def experiment_specs_schema(org_name, experiment_id, action):
         required: true
         schema:
           type: string
-          enum: [ "dataset_convert", "convert", "convert_efficientdet_tf2", "kmeans", "augment", "train", "evaluate", "prune", "retrain", "export", "gen_trt_engine", "trtexec", "inference", "annotation", "analyze", "validate", "auto_label", "calibration_tensorfile" ]
+          enum: [
+            "dataset_convert", "convert", "convert_efficientdet_tf2", "kmeans", "augment", "train",
+            "evaluate", "prune", "retrain", "export", "gen_trt_engine", "trtexec", "inference",
+            "annotation", "analyze", "validate", "auto_label", "calibration_tensorfile"
+          ]
       responses:
         200:
           description: Returned the Specs schema for given action
@@ -5891,7 +6354,10 @@ def base_experiment_specs_schema(org_name, experiment_id, action):
         required: true
         schema:
           type: string
-          enum: ["train", "evaluate", "prune", "retrain", "export", "gen_trt_engine", "trtexec", "inference", "auto_label" ]
+          enum: [
+            "train", "evaluate", "prune", "retrain", "export", "gen_trt_engine", "trtexec",
+            "inference", "auto_label"
+          ]
       responses:
         200:
           description: Returned the Specs schema for given action
@@ -6037,14 +6503,22 @@ def experiment_job_run(org_name, experiment_id):
         response = make_response(jsonify(schema.dump(schema.load(metadata))), 400)
         return response
     # Get response
-    response = app_handler.job_run(org_name, experiment_id, requested_job, requested_action, "experiment", specs=specs, name=name, description=description, num_gpu=num_gpu, platform_id=platform_id, from_ui=from_ui)
+    response = app_handler.job_run(
+        org_name, experiment_id, requested_job, requested_action, "experiment",
+        specs=specs, name=name, description=description, num_gpu=num_gpu,
+        platform_id=platform_id, from_ui=from_ui
+    )
     # Get schema
     schema = None
     if response.code == 200:
         if hasattr(response, "attachment_key") and response.attachment_key:
             try:
                 output_path = response.data[response.attachment_key]
-                all_files = [os.path.join(dirpath, f) for dirpath, dirnames, filenames in os.walk(output_path) for f in filenames]
+                all_files = [
+                    os.path.join(dirpath, f)
+                    for dirpath, dirnames, filenames in os.walk(output_path)
+                    for f in filenames
+                ]
                 files_dict = {}
                 for f in all_files:
                     with open(f, "rb") as file:
@@ -6062,7 +6536,11 @@ def experiment_job_run(org_name, experiment_id):
                 # get user_id for more information
                 handler_metadata = resolve_metadata("experiment", experiment_id)
                 user_id = handler_metadata.get("user_id")
-                print(f"respond attached data for org: {org_name} experiment: {experiment_id} user: {user_id} failed, got error: {e}", file=sys.stderr)
+                print(
+                    f"respond attached data for org: {org_name} experiment: {experiment_id} "
+                    f"user: {user_id} failed, got error: {e}",
+                    file=sys.stderr
+                )
                 metadata = {"error_desc": "respond attached data failed", "error_code": 2}
                 schema = ErrorRspSchema()
                 response = make_response(jsonify(schema.dump(schema.load(metadata))), 500)
@@ -6299,7 +6777,14 @@ def experiment_model_publish(org_name, experiment_id, job_id):
     description = request_schema_data.get('description', '')
     team_name = request_schema_data.get('team_name', '')
     # Get response
-    response = app_handler.publish_model(org_name, team_name, experiment_id, job_id, display_name=display_name, description=description)
+    response = app_handler.publish_model(
+        org_name,
+        team_name,
+        experiment_id,
+        job_id,
+        display_name=display_name,
+        description=description
+    )
     # Get schema
     schema_dict = None
 
@@ -6407,7 +6892,10 @@ def experiment_job_get_epoch_numbers(org_name, experiment_id, job_id):
     return make_response(jsonify(schema_dict), response.code)
 
 
-@app.route('/api/v1/orgs/<org_name>/experiments/<experiment_id>/jobs/<job_id>:remove_published_model', methods=['DELETE'])
+@app.route(
+    '/api/v1/orgs/<org_name>/experiments/<experiment_id>/jobs/<job_id>:remove_published_model',
+    methods=['DELETE']
+)
 @disk_space_check
 def experiment_remove_published_model(org_name, experiment_id, job_id):
     """Remove published models from NGC.
@@ -6915,7 +7403,13 @@ def experiment_job_logs(org_name, experiment_id, job_id):
         response = make_response(jsonify(schema.dump(schema.load(metadata))), 400)
         return response
     # Get response
-    response = app_handler.get_job_logs(org_name, experiment_id, job_id, "experiment", request.args.get('automl_experiment_index', None))
+    response = app_handler.get_job_logs(
+        org_name,
+        experiment_id,
+        job_id,
+        "experiment",
+        request.args.get('automl_experiment_index', None)
+    )
     if response.code == 200:
         response = make_response(response.data, 200)
         response.mimetype = 'text/plain'
@@ -7876,7 +8370,18 @@ def experiment_job_resume(org_name, experiment_id, job_id):
         parent_job_id = str(parent_job_id)
     specs = request_schema_data.get('specs', {})
     # Get response
-    response = app_handler.resume_experiment_job(org_name, experiment_id, job_id, "experiment", parent_job_id, specs=specs, name=name, description=description, num_gpu=num_gpu, platform_id=platform_id)
+    response = app_handler.resume_experiment_job(
+        org_name,
+        experiment_id,
+        job_id,
+        "experiment",
+        parent_job_id,
+        specs=specs,
+        name=name,
+        description=description,
+        num_gpu=num_gpu,
+        platform_id=platform_id
+    )
     # Get schema
     if response.code == 200:
         schema = MessageOnlySchema()
@@ -8097,7 +8602,10 @@ def experiment_job_files_list(org_name, experiment_id, job_id):
     return make_response(jsonify(schema_dict), response.code)
 
 
-@app.route('/api/v1/orgs/<org_name>/experiments/<experiment_id>/jobs/<job_id>:download_selective_files', methods=['GET'])
+@app.route(
+    '/api/v1/orgs/<org_name>/experiments/<experiment_id>/jobs/<job_id>:download_selective_files',
+    methods=['GET']
+)
 @disk_space_check
 def experiment_job_download_selective_files(org_name, experiment_id, job_id):
     """Download selective Job Artifacts.
@@ -8185,9 +8693,21 @@ def experiment_job_download_selective_files(org_name, experiment_id, job_id):
     latest_model = ast.literal_eval(request.args.get('latest_model', "False"))
     tar_files = ast.literal_eval(request.args.get('tar_files', "True"))
     if not (file_lists or best_model or latest_model):
-        return make_response(jsonify("No files passed in list format to download or, best_model or latest_model is not enabled"), 400)
+        return make_response(
+            jsonify("No files passed in list format to download or, best_model or latest_model is not enabled"),
+            400
+        )
     # Get response
-    response = app_handler.job_download(org_name, experiment_id, job_id, "experiment", file_lists=file_lists, best_model=best_model, latest_model=latest_model, tar_files=tar_files)
+    response = app_handler.job_download(
+        org_name,
+        experiment_id,
+        job_id,
+        "experiment",
+        file_lists=file_lists,
+        best_model=best_model,
+        latest_model=latest_model,
+        tar_files=tar_files
+    )
     # Get schema
     schema = None
     if response.code == 200:
@@ -8249,7 +8769,16 @@ def readiness():
 @disk_space_check
 def root():
     """api root endpoint"""
-    return make_response(jsonify(['api', 'openapi.yaml', 'openapi.json', 'rapipdf', 'redoc', 'swagger', 'version', 'tao_api_notebooks.zip']))
+    return make_response(jsonify([
+        'api',
+        'openapi.yaml',
+        'openapi.json',
+        'rapipdf',
+        'redoc',
+        'swagger',
+        'version',
+        'tao_api_notebooks.zip'
+    ]))
 
 
 @app.route('/api', methods=['GET'])

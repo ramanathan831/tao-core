@@ -15,7 +15,8 @@
 """Dependency check modules
 
 1. Dataset - train (tfrecords, labels, images), evaluate, inference, calibration datasets depending on task
-2. Model - base_experiment, resume, .tlt from parent, .engine from parent, class map for some tasks, cal cache from parent for convert
+2. Model - base_experiment, resume, .tlt from parent, .engine from parent, class map for some tasks,
+   cal cache from parent for convert
 3. Platflorm - GPU
 4. Specs validation - Use Steve's code hardening
 5. Parent job done? - Poll status from metadata
@@ -26,7 +27,19 @@ import sys
 
 from nvidia_tao_core.microservices.constants import NO_PTM_MODELS, MONAI_NETWORKS
 from nvidia_tao_core.microservices.handlers.utilities import get_num_gpus_from_spec
-from nvidia_tao_core.microservices.handlers.stateless_handlers import get_root, get_handler_root, get_handler_log_root, update_job_status, get_handler_job_metadata, get_handler_metadata, get_handler_id, get_base_experiment_metadata, base_exp_uuid, get_job_specs, get_automl_controller_info
+from nvidia_tao_core.microservices.handlers.stateless_handlers import (
+    get_root,
+    get_handler_root,
+    get_handler_log_root,
+    update_job_status,
+    get_handler_job_metadata,
+    get_handler_metadata,
+    get_handler_id,
+    get_base_experiment_metadata,
+    base_exp_uuid,
+    get_job_specs,
+    get_automl_controller_info
+)
 from nvidia_tao_core.microservices.job_utils import executor
 
 
@@ -113,7 +126,8 @@ def dependency_check_dataset(job_context, dependency):
         # bypass the checks as the datasets are not downloaded for monai jobs at the time of job creation.
         valid_datset_structure = True
 
-    if not handler_metadata.get("network_arch", ""):  # For dataset convert jobs, we have dataset info directly in metadata
+    # For dataset convert jobs, we have dataset info directly in metadata
+    if not handler_metadata.get("network_arch", ""):
         valid_datset_structure = handler_metadata.get("status") == "pull_complete"
         invalid_datasets += append_dataset_id_to_message(handler_metadata, valid_datset_structure)
     elif train_datasets:
@@ -132,7 +146,10 @@ def dependency_check_dataset(job_context, dependency):
 
     failure_message = ""
     if not valid_datset_structure:
-        failure_message = f"Dataset(s) {invalid_datasets} still uploading, or uploaded data doesn't match the directory structure defined for this network"
+        failure_message = (
+            f"Dataset(s) {invalid_datasets} still uploading, or uploaded data "
+            "doesn't match the directory structure defined for this network"
+        )
     return valid_datset_structure, failure_message
 
 
@@ -167,14 +184,20 @@ def dependency_check_model(job_context, dependency):
         base_experiment_root = get_handler_root(base_exp_uuid, "experiments", base_exp_uuid, base_experiment_id)
         if not base_experiment_root:
             # Search in the base_exp_uuid fails, search in the org_name
-            base_experiment_root = get_handler_root(org_name=job_context.org_name, kind="experiments", handler_id=base_experiment_id)
-
+            base_experiment_root = get_handler_root(
+                org_name=job_context.org_name,
+                kind="experiments",
+                handler_id=base_experiment_id
+            )
         if not base_experiment_root:
             return False, f"Base experiment ID {base_experiment_id} is not found"
 
         if base_experiment_metadata.get("base_experiment_pull_complete") != "pull_complete":
             print("base_experiment_metadata", base_experiment_metadata, file=sys.stderr)
-            return False, f"Base Experiment file for ID {base_experiment_id} is being downloaded or downloaded file is corrupt"
+            return False, (
+                f"Base Experiment file for ID {base_experiment_id} is being downloaded "
+                "or downloaded file is corrupt"
+            )
     return True, ""
 
 

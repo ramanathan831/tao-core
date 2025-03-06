@@ -60,7 +60,12 @@ def flatten_properties(data, parent_key='', sep='.'):
     return flattened
 
 
-def generate_hyperparams_to_search(job_context, automl_hyperparameters, handler_root, override_automl_disabled_params=False):
+def generate_hyperparams_to_search(
+    job_context,
+    automl_hyperparameters,
+    handler_root,
+    override_automl_disabled_params=False
+):
     """Use train.csv spec of the network to choose the parameters of AutoML
 
     Returns: a list of dict for AutoML supported networks
@@ -85,7 +90,8 @@ def generate_hyperparams_to_search(job_context, automl_hyperparameters, handler_
         data_frame = pd.DataFrame.from_dict(format_json_schema, orient='index').reset_index()
         data_frame = data_frame[data_frame['value_type'].isin(_VALID_TYPES)]
 
-        # Optionally, filter based on `automl_enabled` flag if provided in your data (default=True in `flatten_properties`)
+        # Optionally, filter based on `automl_enabled` flag if provided in your data
+        # (default=True in `flatten_properties`)
         if not override_automl_disabled_params:
             data_frame = data_frame.loc[data_frame['automl_enabled'] != False]  # pylint: disable=C0121  # noqa: E712
 
@@ -101,6 +107,16 @@ def generate_hyperparams_to_search(job_context, automl_hyperparameters, handler_
         automl_params = data_frame.loc[data_frame['automl_enabled'] == True]  # pylint: disable=C0121  # noqa: E712
         automl_params = automl_params.loc[~automl_params['parameter'].isin(deleted_params)]
         # Select the required columns
-        automl_params = automl_params[["parameter", "value_type", "default_value", "valid_min", "valid_max", "valid_options", "math_cond", "parent_param", "depends_on"]]
+        automl_params = automl_params[[
+            "parameter",
+            "value_type",
+            "default_value",
+            "valid_min",
+            "valid_max",
+            "valid_options",
+            "math_cond",
+            "parent_param",
+            "depends_on"
+        ]]
         return automl_params.to_dict('records'), automl_params["parameter"].values
     return [{}], []

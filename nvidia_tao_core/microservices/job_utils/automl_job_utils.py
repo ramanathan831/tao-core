@@ -15,7 +15,13 @@
 """Util functions for AutoML jobs"""
 import sys
 
-from nvidia_tao_core.microservices.handlers.stateless_handlers import get_public_experiments, get_handler_job_metadata, write_job_metadata, get_job_specs, get_job
+from nvidia_tao_core.microservices.handlers.stateless_handlers import (
+    get_public_experiments,
+    get_handler_job_metadata,
+    write_job_metadata,
+    get_job_specs,
+    get_job
+)
 from nvidia_tao_core.microservices.job_utils.workflow import Workflow, Job, Dependency
 from nvidia_tao_core.microservices.job_utils import executor as jobDriver
 

@@ -23,8 +23,15 @@ import os
 import sys
 
 from nvidia_tao_core.microservices.constants import MONAI_NETWORKS
-from nvidia_tao_core.microservices.handlers.utilities import search_for_base_experiment, get_model_results_path, get_file_list_from_cloud_storage, search_for_checkpoint, filter_files
-from nvidia_tao_core.microservices.handlers.stateless_handlers import get_handler_root, get_jobs_root, get_handler_job_metadata, get_handler_metadata, get_handler_kind, get_base_experiment_metadata, get_automl_brain_info, get_workspace_string_identifier, base_exp_uuid
+from nvidia_tao_core.microservices.handlers.utilities import (
+    search_for_base_experiment, get_model_results_path,
+    get_file_list_from_cloud_storage, search_for_checkpoint, filter_files
+)
+from nvidia_tao_core.microservices.handlers.stateless_handlers import (
+    get_handler_root, get_jobs_root, get_handler_job_metadata,
+    get_handler_metadata, get_handler_kind, get_base_experiment_metadata,
+    get_automl_brain_info, get_workspace_string_identifier, base_exp_uuid
+)
 from nvidia_tao_core.microservices.handlers.monai.helpers import find_matching_bundle_dir
 
 
@@ -64,7 +71,14 @@ def infer_output_dir(job_context, handler_metadata):
     return dnn_results_dir
 
 
-def infer_automl_output_dir(job_context, handler_metadata, job_root, rec_number, exp_job_id, workspace_prefix_enable=True):
+def infer_automl_output_dir(
+    job_context,
+    handler_metadata,
+    job_root,
+    rec_number,
+    exp_job_id,
+    workspace_prefix_enable=True
+):
     """Creates output directory within jobs root for automl"""
     results_root = get_jobs_root(user_id=job_context.user_id, org_name=job_context.org_name)
     results_dir = os.path.join(results_root, job_context.id)
@@ -144,7 +158,14 @@ def infer_ptm_if_no_resume_model(job_context, handler_metadata):
 
 def infer_automl_assign_ptm(job_context, handler_metadata, job_root, rec_number, exp_job_id):
     """Returns path of path of the ptm files if there is no model to resume for AutoML"""
-    expt_root = infer_automl_output_dir(job_context, handler_metadata, job_root, rec_number, exp_job_id=exp_job_id, workspace_prefix_enable=False)
+    expt_root = infer_automl_output_dir(
+        job_context,
+        handler_metadata,
+        job_root,
+        rec_number,
+        exp_job_id=exp_job_id,
+        workspace_prefix_enable=False
+    )
     workspace_id = handler_metadata.get("workspace")
     workspace_metadata = get_handler_metadata(workspace_id, "workspaces")
     files = get_file_list_from_cloud_storage(workspace_metadata, expt_root)
@@ -156,7 +177,14 @@ def infer_automl_assign_ptm(job_context, handler_metadata, job_root, rec_number,
 
 def infer_automl_resume_model(job_context, handler_metadata, job_root, rec_number, exp_job_id):
     """Returns path of the checkpoint file for the automl recommendation to resume on"""
-    expt_root = infer_automl_output_dir(job_context, handler_metadata, job_root, rec_number, exp_job_id=exp_job_id, workspace_prefix_enable=False)
+    expt_root = infer_automl_output_dir(
+        job_context,
+        handler_metadata,
+        job_root,
+        rec_number,
+        exp_job_id=exp_job_id,
+        workspace_prefix_enable=False
+    )
     workspace_id = handler_metadata.get("workspace")
     workspace_metadata = get_handler_metadata(workspace_id, "workspaces")
     files = get_file_list_from_cloud_storage(workspace_metadata, expt_root)
@@ -171,7 +199,14 @@ def infer_automl_resume_model(job_context, handler_metadata, job_root, rec_numbe
 
 def infer_automl_ptm_if_no_resume_model(job_context, handler_metadata, job_root, rec_number, exp_job_id):
     """Returns path of the checkpoint file for the automl recommendation to resume on"""
-    expt_root = infer_automl_output_dir(job_context, handler_metadata, job_root, rec_number, exp_job_id=exp_job_id, workspace_prefix_enable=False)
+    expt_root = infer_automl_output_dir(
+        job_context,
+        handler_metadata,
+        job_root,
+        rec_number,
+        exp_job_id=exp_job_id,
+        workspace_prefix_enable=False
+    )
     workspace_id = handler_metadata.get("workspace")
     workspace_metadata = get_handler_metadata(workspace_id, "workspaces")
     files = get_file_list_from_cloud_storage(workspace_metadata, expt_root)

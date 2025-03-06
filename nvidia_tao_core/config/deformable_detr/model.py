@@ -59,8 +59,10 @@ class DDModelConfig:
         value="resnet_50",
         default_value="resnet_50",
         display_name="backbone",
-        description="""The backbone name of the model.
-                    TAO implementation of Deformable DETR support GCViT and ResNet50.""",
+        description=(
+            "The backbone name of the model. "
+            "TAO implementation of Deformable DETR support GCViT and ResNet50."
+        ),
         valid_options=",".join(SUPPORTED_BACKBONES)
     )
     num_queries: int = INT_FIELD(
@@ -93,7 +95,9 @@ class DDModelConfig:
         default_value=5.0,
         valid_min=0.0,
         valid_max="inf",
-        description="The relative weight of the L1 error of the bounding box coordinates in the matching cost.",
+        description=(
+            "The relative weight of the L1 error of the bounding box coordinates in the matching cost."
+        ),
         display_name="BBox loss coefficient",
     )
     giou_loss_coef: float = FLOAT_FIELD(
@@ -108,7 +112,9 @@ class DDModelConfig:
         value=True,
         default_value=True,
         display_name="With box refine",
-        description="""A flag specifying whether to enbable the Iterative Bounding Box Refinement""",
+        description=(
+            "A flag specifying whether to enbable the Iterative Bounding Box Refinement"
+        ),
     )
     num_select: int = INT_FIELD(
         value=300,
@@ -121,7 +127,9 @@ class DDModelConfig:
 
     return_interm_indices: List[int] = LIST_FIELD(
         arrList=[1, 2, 3, 4],
-        description="The index of feature levels to use in the model. The length must match `num_feature_levels`.",
+        description=(
+            "The index of feature levels to use in the model. The length must match `num_feature_levels`."
+        ),
         display_name="return interim indices"
     )
 
@@ -195,21 +203,27 @@ class DDModelConfig:
         value=True,
         default_value=True,
         display_name="Train backbone",
-        description="""A flag specifying whether to use auxiliary
-                    decoding losses (loss at each decoder layer)""",
+        description=(
+            "A flag specifying whether to use auxiliary "
+            "decoding losses (loss at each decoder layer)"
+        ),
     )
     dilation: bool = BOOL_FIELD(
         value=False,
         default_value=False,
         display_name="Dilation enabled.",
-        description="""A flag specifying whether enable dilation or not in the backbone.""",
+        description=(
+            "A flag specifying whether enable dilation or not in the backbone."
+        ),
     )
     train_backbone: bool = BOOL_FIELD(
         value=True,
         default_value=True,
         display_name="Train backbone",
-        description="""Flag to set backbone weights as trainable or frozen.
-                    When set to `False`, the backbone weights will be frozen.""",
+        description=(
+            "Flag to set backbone weights as trainable or frozen. "
+            "When set to `False`, the backbone weights will be frozen."
+        ),
     )
     loss_types: List[str] = LIST_FIELD(
         arrList=['labels', 'boxes'],

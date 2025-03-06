@@ -18,7 +18,12 @@ from typing import Optional, List
 from dataclasses import dataclass
 from omegaconf import MISSING
 
-from nvidia_tao_core.config.common.common_config import EvaluateConfig, CommonExperimentConfig, InferenceConfig, TrainConfig
+from nvidia_tao_core.config.common.common_config import (
+    EvaluateConfig,
+    CommonExperimentConfig,
+    InferenceConfig,
+    TrainConfig
+)
 from nvidia_tao_core.config.utils.types import (
     STR_FIELD,
     INT_FIELD,
@@ -34,7 +39,12 @@ class OptimGenConfig:
     """Optimizer config."""
 
     optim: str = STR_FIELD(value="Adam")
-    lr: float = FLOAT_FIELD(value=0.0025, valid_min=0, valid_max="inf", automl_enabled="TRUE")
+    lr: float = FLOAT_FIELD(
+        value=0.0025,
+        valid_min=0,
+        valid_max="inf",
+        automl_enabled="TRUE"
+    )
     eps: float = FLOAT_FIELD(value=1e-8)
     betas: List[float] = LIST_FIELD(arrList=[0, 0.99])
 
@@ -44,7 +54,12 @@ class OptimDiscConfig:
     """Optimizer config."""
 
     optim: str = STR_FIELD(value="Adam")
-    lr: float = FLOAT_FIELD(value=0.002, valid_min=0, valid_max="inf", automl_enabled="TRUE")
+    lr: float = FLOAT_FIELD(
+        value=0.002,
+        valid_min=0,
+        valid_max="inf",
+        automl_enabled="TRUE"
+    )
     eps: float = FLOAT_FIELD(value=1e-8)
     betas: List[float] = LIST_FIELD(arrList=[0, 0.99])
 
@@ -82,7 +97,11 @@ class AddedHeadSupperresConfig:
 class GeneratorConfig:
     """Configuration parameters for Generator (shared with both StyleGAN and BigDatasetGAN)."""
 
-    backbone: str = STR_FIELD(value="stylegan3-r", display_name="Backbone architectures", valid_options="stylegan3-t,stylegan3-r,stylegan2,fastgan")
+    backbone: str = STR_FIELD(
+        value="stylegan3-r",
+        display_name="Backbone architectures",
+        valid_options="stylegan3-t,stylegan3-r,stylegan2,fastgan"
+    )
     superres: bool = BOOL_FIELD(value=False)
     added_head_superres: AddedHeadSupperresConfig = DATACLASS_FIELD(AddedHeadSupperresConfig())
     stem: StemConfig = DATACLASS_FIELD(StemConfig())
@@ -92,14 +111,23 @@ class GeneratorConfig:
 class DiscriminatorConfig:
     """Configuration parameters for Discriminator (for StyleGAN)."""
 
-    backbones: List[str] = LIST_FIELD(["deit_base_distilled_patch16_224", "tf_efficientnet_lite0"])
+    backbones: List[str] = LIST_FIELD(
+        [
+            "deit_base_distilled_patch16_224",
+            "tf_efficientnet_lite0"
+        ]
+    )
 
 
 @dataclass
 class MetricsConfig:
     """Configuration parameters for Discriminator (for StyleGAN)."""
 
-    num_fake_imgs: int = INT_FIELD(value=50000, valid_min=0, valid_max=50000)
+    num_fake_imgs: int = INT_FIELD(
+        value=50000,
+        valid_min=0,
+        valid_max=50000
+    )
     inception_fid_path: Optional[str] = STR_FIELD(value=None)
 
 
@@ -205,7 +233,11 @@ class TensorBoardLogger:
     """Configuration for the tensorboard logger."""
 
     enabled: bool = BOOL_FIELD(value=False)
-    infrequent_logging_frequency: int = INT_FIELD(value=2, valid_min=0, valid_max="inf")  # Defined per epoch
+    infrequent_logging_frequency: int = INT_FIELD(
+        value=2,
+        valid_min=0,
+        valid_max="inf"
+    )  # Defined per epoch
 
 
 @dataclass

@@ -30,7 +30,10 @@ if os.getenv("BACKEND"):
     mongo_operator_enabled = os.getenv('MONGO_OPERATOR_ENABLED', 'true') == 'true'
     encoded_secret = parse.quote(mongo_secret, safe='')
     mongo_uri_prefix = "mongodb+srv" if mongo_operator_enabled else "mongodb"
-    mongo_connection_string = f"{mongo_uri_prefix}://default-user:{encoded_secret}@mongodb-svc.{mongo_namespace}.svc.cluster.local/tao?replicaSet=mongodb&ssl=false&authSource=admin"
+    mongo_connection_string = (
+        f"{mongo_uri_prefix}://default-user:{encoded_secret}@mongodb-svc.{mongo_namespace}"
+        ".svc.cluster.local/tao?replicaSet=mongodb&ssl=false&authSource=admin"
+    )
     mongo_client = pymongo.MongoClient(mongo_connection_string, tz_aware=True)
 NUM_RETRY = 5
 
@@ -46,7 +49,11 @@ def retry_method(func):
             except AutoReconnect as e:
                 print(f"AutoReconnect exception in {func.__name__}: {e}", file=sys.stderr)
             except WriteError as e:
-                print(f"WriteError exception in {func.__name__}: {e} \n With arguments {args} and {kwargs}", file=sys.stderr)
+                print(
+                    f"WriteError exception in {func.__name__}: {e} \n"
+                    f"With arguments {args} and {kwargs}",
+                    file=sys.stderr
+                )
             except Exception as e:
                 # Log or handle the exception as needed
                 print(f"Exception in {func.__name__}: {e}", file=sys.stderr)

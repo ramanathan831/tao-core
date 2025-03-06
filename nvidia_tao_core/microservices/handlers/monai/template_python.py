@@ -212,8 +212,17 @@ logs_from_toolkit = "{logs_from_toolkit}"
 
 if __name__ == "__main__":
     try:
-        (org_name, experiment_id, cl_job_id, train_spec, round_size, stop_criteria,
-         job_metadata_file, latest_mod_time, latest_record) = load_initial_state(job_context_dict, handler_root, notify_record)
+        (
+            org_name,
+            experiment_id,
+            cl_job_id,
+            train_spec,
+            round_size,
+            stop_criteria,
+            job_metadata_file,
+            latest_mod_time,
+            latest_record
+        ) = load_initial_state(job_context_dict, handler_root, notify_record)
 
         cl_tracker, cl_state = initialize_cl_tracker(stop_criteria)
 
@@ -226,8 +235,18 @@ if __name__ == "__main__":
             check_for_cancelation(metadata, jobs_trigger, jobs_done, job_context_dict)
             update_job_status(experiment_id, cl_job_id, status="Running")
             # Process notification record updates and potentially trigger a new training job
-            latest_mod_time, latest_record = process_notification_record(
-                notify_record, latest_mod_time, latest_record, train_spec, round_size, cl_state, job_context_dict, jobs_trigger
+            (
+                latest_mod_time,
+                latest_record,
+            ) = process_notification_record(
+                notify_record,
+                latest_mod_time,
+                latest_record,
+                train_spec,
+                round_size,
+                cl_state,
+                job_context_dict,
+                jobs_trigger
             )
 
             # Check the status of all training jobs and handle triton model updates

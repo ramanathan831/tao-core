@@ -127,7 +127,11 @@ class MonaiModelHandler:
             if error_msg != "" or not os.path.exists(output_path) or len(os.listdir(output_path)) == 0:
                 if error_msg == "":
                     error_msg = "Cannot find output data"
-                print(f"Run inference on input {input_path} with model {model_name} got error: {error_msg}", file=sys.stderr)
+                print(
+                    f"Run inference on input {input_path} with model {model_name} "
+                    f"got error: {error_msg}",
+                    file=sys.stderr
+                )
                 return Code(400, [], f"Error: {error_msg}")
             res = Code(201, {"pred": output_path}, "Triton Inference Success")
             res.attachment_key = "pred"

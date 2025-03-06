@@ -41,8 +41,14 @@ class TISHandler:
         bundle_requirements_file = os.path.join(model_repo, model_name, "requirements.txt")
         # TODO: can leverage the shared pv to print logs inside the triton server.
         # https://gitlab-master.nvidia.com/dlmed/monai-service/-/merge_requests/71#note_17855255
-        pre_command = f"umask 0 && pip install -r {bundle_requirements_file}" if os.path.exists(bundle_requirements_file) else "umask 0"
-        run_command = f"{pre_command} && /opt/tritonserver/bin/tritonserver --model-repository={model_repo} --model-control-mode=explicit --load-model=*"
+        pre_command = (
+            f"umask 0 && pip install -r {bundle_requirements_file}"
+            if os.path.exists(bundle_requirements_file) else "umask 0"
+        )
+        run_command = (
+            f"{pre_command} && /opt/tritonserver/bin/tritonserver "
+            f"--model-repository={model_repo} --model-control-mode=explicit --load-model=*"
+        )
         # ports for http, grpc and metrics
         ports = (8000, 8001, 8002)
         jobDriver.create_triton_deployment(model_id, image, run_command, replicas=replicas, num_gpu=1, ports=ports)
@@ -59,7 +65,12 @@ class TISHandler:
                 # k8s service naming rule requres to start with an alphabetic character
                 # https://kubernetes.io/docs/concepts/overview/working-with-objects/names/
                 tis_service_id = f"service-{model_id}"
-                return TISHandler.start_tis_service(tis_service_id, deploy_label=model_id, ports=ports, handler_metadata=handler_metadata)
+                return TISHandler.start_tis_service(
+                    tis_service_id,
+                    deploy_label=model_id,
+                    ports=ports,
+                    handler_metadata=handler_metadata
+                )
             if status == "ReplicaNotReady" and not_ready_log is False:
                 print("TIS is deployed but replica not ready.", file=sys.stderr)
                 not_ready_log = True

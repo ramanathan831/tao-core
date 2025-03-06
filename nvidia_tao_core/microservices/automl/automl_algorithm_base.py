@@ -71,8 +71,10 @@ class AutoMLAlgorithmBase:
                 factor = int(math_cond.split(" ")[1])
                 random_int = fix_input_dimension(random_int, factor)
 
-            if not (type(parent_param) is float and math.isnan(parent_param)):  # parent_param is not a float or if it is a float but not a NaN (Not-a-Number) value (because we can use isnan on float numbers only).
-                if (isinstance(parent_param, str) and parent_param != "nan" and parent_param == "TRUE") or (isinstance(parent_param, bool) and parent_param):
+            if not (type(parent_param) is float and math.isnan(parent_param)):
+                if (isinstance(parent_param, str) and parent_param != "nan" and parent_param == "TRUE") or (
+                    isinstance(parent_param, bool) and parent_param
+                ):
                     self.parent_params[parameter_name] = random_int
 
             return random_int
@@ -96,12 +98,27 @@ class AutoMLAlgorithmBase:
 
         if "list_1_" in data_type:
             if data_type == "list_1_backbone":
-                # List needed in the form of consective numbers [1,2,3,4,5], where the continuous numbers are decided by dependent parameters
-                backbone_parameter = network_constants.backbone_mapper.get(self.network, "")  # Get backbone constant name from network_utils
-                backbone = self.parent_params.get(backbone_parameter, self.default_train_spec_flattened.get(backbone_parameter, None))
-                bound_start, bound_end = automl_helper.automl_list_helper.get(self.network, {}).get(data_type, {}).get(parameter_name, {}).get(backbone, {})  # Get the bounds from automl_helper
+                # List needed in the form of consective numbers [1,2,3,4,5],
+                # where the continuous numbers are decided by dependent parameters
+                # Get backbone constant name from network_utils
+                backbone_parameter = network_constants.backbone_mapper.get(self.network, "")
+                backbone = self.parent_params.get(
+                    backbone_parameter,
+                    self.default_train_spec_flattened.get(backbone_parameter, None)
+                )
+                # Get the bounds from automl_helper
+                bound_start, bound_end = (
+                    automl_helper.automl_list_helper.get(self.network, {})
+                    .get(data_type, {})
+                    .get(parameter_name, {})
+                    .get(backbone, {})
+                )
             elif data_type == "list_1_normal":
-                bound_start, bound_end = automl_helper.automl_list_helper.get(self.network, {}).get(data_type, {}).get(parameter_name, {})
+                bound_start, bound_end = (
+                    automl_helper.automl_list_helper.get(self.network, {})
+                    .get(data_type, {})
+                    .get(parameter_name, {})
+                )
             else:
                 return []
             # Generate two random numbers within the bounds
@@ -116,8 +133,15 @@ class AutoMLAlgorithmBase:
 
         if data_type in ("list_2", "list_3"):
             automl_suggested_value = []
-            bound_type, dependent_parameter = automl_helper.automl_list_helper.get(self.network, {}).get(data_type, {}).get(parameter_name, {})
-            bound_value = self.parent_params.get(dependent_parameter, self.default_train_spec_flattened.get(dependent_parameter, None))
+            bound_type, dependent_parameter = (
+                automl_helper.automl_list_helper.get(self.network, {})
+                .get(data_type, {})
+                .get(parameter_name, {})
+            )
+            bound_value = self.parent_params.get(
+                dependent_parameter,
+                self.default_train_spec_flattened.get(dependent_parameter, None)
+            )
             if not bound_value:
                 if bound_type == "img_size":
                     bound_value = 1080  # Default value considering a HD image
@@ -142,7 +166,10 @@ class AutoMLAlgorithmBase:
                     # Calculate the number of valid multiples of 16 within the range
                     num_multiples = ((max_multiple - min_multiple) // 16) + 1
                     # Generate random multiples of 16
-                    automl_suggested_value = [min_multiple + 16 * random.randint(0, num_multiples - 1) for _ in range(num_random_numbers)]  # Change the number as needed
+                    automl_suggested_value = [
+                        min_multiple + 16 * random.randint(0, num_multiples - 1)
+                        for _ in range(num_random_numbers)
+                    ]
                     return sorted(automl_suggested_value)
                 return []
 

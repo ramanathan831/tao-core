@@ -210,8 +210,15 @@ def get_bcp_key():
             secret = client.CoreV1Api().read_namespaced_secret("bcpclustersecret", "default")
         except client.exceptions.ApiException as e:
             if e.status == 404:
-                print("Secret 'bcpclustersecret' not found in 'default' namespace. Falling back to imagepullsecret", file=sys.stderr)
-                secret = client.CoreV1Api().read_namespaced_secret(os.getenv('IMAGEPULLSECRET', default='imagepullsecret'), "default")
+                print(
+                    "Secret 'bcpclustersecret' not found in 'default' namespace. "
+                    "Falling back to imagepullsecret",
+                    file=sys.stderr
+                )
+                secret = client.CoreV1Api().read_namespaced_secret(
+                    os.getenv('IMAGEPULLSECRET', default='imagepullsecret'),
+                    "default"
+                )
             else:
                 print(f"Failed to obtain secret from k8s: {e}", file=sys.stderr)
                 return ""
@@ -431,7 +438,10 @@ def retry_method(response=False):
 
             # After retries, return error response or raise an error based on decorator parameter
             if response:
-                return ErrorResponse(status_code=404, message=f"Failed to execute {func.__name__} after {NUM_OF_RETRY} retries")
+                return ErrorResponse(
+                    status_code=404,
+                    message=f"Failed to execute {func.__name__} after {NUM_OF_RETRY} retries"
+                )
             raise ValueError(f"Failed to execute {func.__name__} after {NUM_OF_RETRY} retries")
         return wrapper
     return decorator
@@ -602,7 +612,10 @@ def log_api_error(user_id, org_name, from_ui, schema_dict, log_type, action):
     """Log the api call error."""
     error_desc = schema_dict.get("error_desc", None)
     error_code = schema_dict.get("error_code", None)
-    log_content = f"user_id:{user_id}, org_name:{org_name}, from_ui:{from_ui}, action:{action}, error_code:{error_code}, error_desc:{error_desc}"
+    log_content = (
+        f"user_id:{user_id}, org_name:{org_name}, from_ui:{from_ui}, "
+        f"action:{action}, error_code:{error_code}, error_desc:{error_desc}"
+    )
     log_monitor(log_type=log_type, log_content=log_content)
 
 

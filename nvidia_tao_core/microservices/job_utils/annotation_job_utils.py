@@ -38,7 +38,15 @@ def update_inference_model(job_context_dict, job_id):
     if not handler_metadata["realtime_infer"]:
         raise ValueError(f"User {org_name} model {model_id} is not enabled for Realtime Inference")
     model_params = handler_metadata["model_params"]
-    success, tis_model, msg, _ = prep_tis_model_repository(model_params, model_id, org_name, user_id, model_id, job_id=job_id, update_model=True)
+    success, tis_model, msg, _ = prep_tis_model_repository(
+        model_params,
+        model_id,
+        org_name,
+        user_id,
+        model_id,
+        job_id=job_id,
+        update_model=True
+    )
     if not success:
         raise RuntimeError(f"Inference job failed with message {msg}")
 
@@ -69,7 +77,16 @@ def trigger_train(train_spec, job_context_dict, current_record, latest_record):
     train_spec_copy["cluster"] = "local"  # For the CL train job to use local cluster resource
     # Start training for all the labeled images
     description = f"Train Job for CL {job_id} with experiment {model_id}"
-    response = AppHandler.job_run(org_name, model_id, job_id, "train", "experiment", specs=train_spec_copy, name="Train Job for CL", description=description)
+    response = AppHandler.job_run(
+        org_name,
+        model_id,
+        job_id,
+        "train",
+        "experiment",
+        specs=train_spec_copy,
+        name="Train Job for CL",
+        description=description
+    )
     if response.code != 201:
         raise RuntimeError(f"Training job failed with status code {response.code}")
     return response.data  # job_id
@@ -135,7 +152,16 @@ def handle_first_round_specifics(cl_state, train_spec_copy):
             train_spec_copy["val_at_start"] = True
 
 
-def process_notification_record(notify_record, latest_mod_time, latest_record, train_spec, round_size, cl_state, job_context_dict, jobs_trigger):
+def process_notification_record(
+    notify_record,
+    latest_mod_time,
+    latest_record,
+    train_spec,
+    round_size,
+    cl_state,
+    job_context_dict,
+    jobs_trigger
+):
     """Process the notification record and trigger training if the round size is met."""
     current_mod_time = safe_get_file_modified_time(notify_record) if os.path.isfile(notify_record) else None
     if current_mod_time != latest_mod_time:
@@ -208,7 +234,8 @@ def update_state_with_metric(cl_state, job_metadata, metric, job_context_dict):
         )
     elif best_epoch == 0 and cl_state["round"] > 0:
         printc(
-            f"Job {job_id} did not perform better than the pre-trained. No model update will be made.",
+            f"Job {job_id} did not perform better than the pre-trained. "
+            f"Saving the pre-trained metric for record. No model update will be made.",
             context=job_context_dict,
             keys="handler_id",
             file=sys.stderr
@@ -216,7 +243,8 @@ def update_state_with_metric(cl_state, job_metadata, metric, job_context_dict):
     elif best_epoch == 0 and cl_state["round"] == 0:
         cl_state["key_metric"] = metric
         printc(
-            f"Job {job_id} did not perform better than the pre-trained. Saving the pre-trained metric for record. No model update will be made.",
+            f"Job {job_id} did not perform better than the pre-trained. "
+            f"Saving the pre-trained metric for record. No model update will be made.",
             context=job_context_dict,
             keys="handler_id",
             file=sys.stderr

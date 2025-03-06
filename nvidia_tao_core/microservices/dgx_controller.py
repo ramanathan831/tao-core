@@ -31,9 +31,18 @@ api_instance = client.CustomObjectsApi()
 job_tracker = {}
 logs_tracker = set([])
 
-BCP_STARTING_STATUS = ("CREATED", "QUEUED", "STARTING", "PENDING_TERMINATION", "PREEMPTED", "PREEMPTED_BY_ADMIN", "PENDING_STORAGE_CREATION", "RESOURCE_CONSUMPTION_REQUEST_IN_PROGRESS", "RESOURCE_GRANTED", "REQUESTING_RESOURCE")
+BCP_STARTING_STATUS = (
+    "CREATED", "QUEUED", "STARTING", "PENDING_TERMINATION", "PREEMPTED",
+    "PREEMPTED_BY_ADMIN", "PENDING_STORAGE_CREATION",
+    "RESOURCE_CONSUMPTION_REQUEST_IN_PROGRESS", "RESOURCE_GRANTED", "REQUESTING_RESOURCE"
+)
 BCP_SUCCESS_TERMINAL_STATUS = ("FINISHED_SUCCESS", "KILLED_BY_USER")
-BCP_FAILURE_TERMINAL_STATUS = ("UNKNOWN", "FAILED_RUN_LIMIT_EXCEEDED", "FAILED", "CANCELED", "TASK_LOST", "KILLED_BY_SYSTEM", "KILLED_BY_ADMIN", "INFINITY_POOL_MISSING", "RESOURCE_RELEASED", "IM_INTERNAL_ERROR", "RESOURCE_GRANT_DENIED", "RESOURCE_LIMIT_EXCEEDED")
+BCP_FAILURE_TERMINAL_STATUS = (
+    "UNKNOWN", "FAILED_RUN_LIMIT_EXCEEDED", "FAILED", "CANCELED", "TASK_LOST",
+    "KILLED_BY_SYSTEM", "KILLED_BY_ADMIN", "INFINITY_POOL_MISSING",
+    "RESOURCE_RELEASED", "IM_INTERNAL_ERROR", "RESOURCE_GRANT_DENIED",
+    "RESOURCE_LIMIT_EXCEEDED"
+)
 
 
 def create_dgx_job(dgx_cr):
@@ -72,7 +81,13 @@ def create_dgx_job(dgx_cr):
                     "reservedLabels": ["_wl___computer_vision"],
                     "resultContainerMountPoint": resultContainerMountPoint}
     endpoint = f"https://api.ngc.nvidia.com/v2/org/{orgName}/team/{teamName}/jobs"
-    job_create_response = send_ngc_api_request(endpoint=endpoint, requests_method="POST", request_body=json.dumps(request_body), json=True, ngc_key=ngc_key)
+    job_create_response = send_ngc_api_request(
+        endpoint=endpoint,
+        requests_method="POST",
+        request_body=json.dumps(request_body),
+        json=True,
+        ngc_key=ngc_key
+    )
     if job_create_response.status_code not in [200, 415]:
         print("Endpoint", endpoint, file=sys.stderr)
         print("user_id", user_id, file=sys.stderr)
@@ -117,7 +132,12 @@ def delete_dgx_job(dgx_cr):
     endpoint = f"https://api.ngc.nvidia.com/v2/org/{orgName}/jobs/{job_id}"
     job_info_response = send_ngc_api_request(endpoint=endpoint, requests_method="GET", request_body={}, ngc_key=ngc_key)
     if job_info_response.status_code == 200:
-        job_delete_response = send_ngc_api_request(endpoint=endpoint, requests_method="DELETE", request_body={}, ngc_key=ngc_key)
+        job_delete_response = send_ngc_api_request(
+            endpoint=endpoint,
+            requests_method="DELETE",
+            request_body={},
+            ngc_key=ngc_key
+        )
         if job_delete_response.status_code not in (200, 422):
             print("job_delete_response", job_delete_response, job_delete_response.json(), file=sys.stderr)
 
@@ -125,7 +145,12 @@ def delete_dgx_job(dgx_cr):
 def get_job_logs(user_id, job_id, orgName, ngc_key):
     """Get job logs from BCP"""
     job_logs_endpoint = f"https://api.ngc.nvidia.com/v2/org/{orgName}/resultsets/{job_id}/file/joblog.log"
-    job_logs_response = send_ngc_api_request(endpoint=job_logs_endpoint, requests_method="GET", request_body={}, ngc_key=ngc_key)
+    job_logs_response = send_ngc_api_request(
+        endpoint=job_logs_endpoint,
+        requests_method="GET",
+        request_body={},
+        ngc_key=ngc_key
+    )
     return job_logs_response
 
 
@@ -150,7 +175,13 @@ def overwrite_job_logs_from_bcp(logfile, job_name):
         crd_version = 'v1alpha1'
         crd_plural = 'dgxjobs'
         name = job_name + "-dgx"
-        dgxjob_api_response = api_instance.get_namespaced_custom_object(crd_group, crd_version, name_space, crd_plural, name)
+        dgxjob_api_response = api_instance.get_namespaced_custom_object(
+            crd_group,
+            crd_version,
+            name_space,
+            crd_plural,
+            name
+        )
         user_id = dgxjob_api_response.get("spec", {}).get("user_id", "")
         job_id = dgxjob_api_response.get("spec", {}).get("job_id", "")
         orgName = dgxjob_api_response.get("spec", {}).get("orgName", "")
@@ -176,7 +207,12 @@ def update_status(job_tracker, logs_tracker):
         job_id = dgx_cr["spec"].get("job_id")
         ngc_key = dgx_cr["spec"].get("ngc_key")
         endpoint = f"https://api.ngc.nvidia.com/v2/org/{orgName}/jobs/{job_id}"
-        job_monitor_response = send_ngc_api_request(endpoint=endpoint, requests_method="GET", request_body={}, ngc_key=ngc_key)
+        job_monitor_response = send_ngc_api_request(
+            endpoint=endpoint,
+            requests_method="GET",
+            request_body={},
+            ngc_key=ngc_key
+        )
         job_monitor_response_json = job_monitor_response.json()
         status = "Pending"
         if job_monitor_response_json.get("jobStatusHistory", []):

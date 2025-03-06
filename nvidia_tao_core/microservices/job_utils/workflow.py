@@ -27,7 +27,13 @@ from datetime import datetime, timezone
 from nvidia_tao_core.microservices.constants import MEDICAL_AUTOML_ARCHITECT, MEDICAL_NETWORK_ARCHITECT
 from nvidia_tao_core.microservices.handlers.utilities import JobContext
 from nvidia_tao_core.microservices.handlers.actions import ACTIONS_TO_FUNCTIONS, AutoMLPipeline
-from nvidia_tao_core.microservices.handlers.stateless_handlers import get_all_pending_jobs, update_job_message, get_handler_type, get_handler_metadata, get_automl_controller_info
+from nvidia_tao_core.microservices.handlers.stateless_handlers import (
+    get_all_pending_jobs,
+    update_job_message,
+    get_handler_type,
+    get_handler_metadata,
+    get_automl_controller_info
+)
 from nvidia_tao_core.microservices.handlers.automl_handler import AutoMLHandler
 from nvidia_tao_core.microservices.handlers.mongo_handler import MongoHandler
 from nvidia_tao_core.microservices.utils import read_network_config
@@ -108,7 +114,12 @@ def execute_job(job_context):
         # Get action, network
         action = job_context.action
         network = job_context.network
-        # Get the correct ActionPipeline - build specs, build run command, launch K8s job, monitor status, run post-job steps
+        # Get the correct ActionPipeline:
+        # - build specs
+        # - build run command
+        # - launch K8s job
+        # - monitor status
+        # - run post-job steps
         network_config = read_network_config(network)
         action_pipeline_name = network_config["api_params"]["actions_pipe"].get(action, "")
         if network in MEDICAL_NETWORK_ARCHITECT:
@@ -119,7 +130,11 @@ def execute_job(job_context):
             action_pipeline = ACTIONS_TO_FUNCTIONS[action_pipeline_name]
             _Actionpipeline = action_pipeline(job_context)
             # Thread this!
-            job_run_thread = threading.Thread(target=_Actionpipeline.run, args=(), name=f'tao-job-thread-{job_context.id}')
+            job_run_thread = threading.Thread(
+                target=_Actionpipeline.run,
+                args=(),
+                name=f'tao-job-thread-{job_context.id}'
+            )
             job_run_thread.start()
     else:
         # AUTOML Job
@@ -234,7 +249,8 @@ class Workflow:
 
     Its use is to be able to perform dependency checks and spawn off K8s jobs
     Currently, jobs are packaged inside the ActionPipeline that runs as a thread.
-    On application restart, it will check if there were any pending job monitoring threads that were interrupted and restart them.
+    On application restart, it will check if there were any pending job
+    monitoring threads that were interrupted and restart them.
     """
 
     @staticmethod
@@ -260,24 +276,49 @@ class Workflow:
                 kind = 'workspace'
                 handler_id = job_dict['workspace_id']
             else:
-                print(f"Warning: Job {job_id} monitoring unable to be restarted, cannot determine handler kind", file=sys.stderr)
+                print(
+                    f"Warning: Job {job_id} monitoring unable to be restarted, "
+                    "cannot determine handler kind",
+                    file=sys.stderr
+                )
                 continue
 
             handler_metadata = get_handler_metadata(handler_id, kind)
             if not handler_metadata:
-                print(f"Warning: Job {job_id} monitoring unable to be restarted, cannot find {kind} {handler_id}", file=sys.stderr)
+                print(
+                    f"Warning: Job {job_id} monitoring unable to be restarted, "
+                    f"cannot find {kind} {handler_id}",
+                    file=sys.stderr
+                )
                 continue
             network = get_handler_type(handler_metadata)
             user_id = handler_metadata.get("user_id")
             if not org_name:
                 if "org_name" not in handler_metadata:
-                    print(f"Warning: Job {job_id} monitoring unable to be restarted, cannot determine org name", file=sys.stderr)
+                    print(
+                        f"Warning: Job {job_id} monitoring unable to be restarted, "
+                        "cannot determine org name",
+                        file=sys.stderr
+                    )
                     continue
                 org_name = handler_metadata.get("org_name")
             num_gpu = handler_metadata.get("num_gpu", -1)
             isautoml = handler_metadata.get("automl_settings", {}).get("automl_enabled", False)
 
-            job_context = JobContext(job_id, parent_job_id, network, action, handler_id, user_id, org_name, kind, name=name, num_gpu=num_gpu, specs=specs, platform_id=platform_id)
+            job_context = JobContext(
+                job_id,
+                parent_job_id,
+                network,
+                action,
+                handler_id,
+                user_id,
+                org_name,
+                kind,
+                name=name,
+                num_gpu=num_gpu,
+                specs=specs,
+                platform_id=platform_id
+            )
             # If job has yet to be executed, skip monitoring
             if still_exists(job_context):
                 continue
@@ -296,7 +337,11 @@ class Workflow:
 
                     _Actionpipeline = action_pipeline(job_context)
                     # Thread this!
-                    job_run_thread = threading.Thread(target=_Actionpipeline.monitor_job, args=(), name=f'tao-monitor-job-thread-{job_context.id}')
+                    job_run_thread = threading.Thread(
+                        target=_Actionpipeline.monitor_job,
+                        args=(),
+                        name=f'tao-monitor-job-thread-{job_context.id}'
+                    )
                     job_run_thread.start()
                     print(f"Monitoring thread for job {job_id} restarted", file=sys.stderr)
                 else:
@@ -310,15 +355,36 @@ class Workflow:
                         AutoMLHandler.resume(user_id, org_name, handler_id, job_id, handler_metadata, name=name)
                         automl_brain_restarted = True
                     for recommendation in recommendations:
-                        if recommendation.get("status", None) in ("pending", "running", "started") and recommendation.get("id", None):
+                        if (recommendation.get("status", None) in ("pending", "running", "started") and
+                                recommendation.get("id", None)):
                             rec_id = recommendation["id"]
                             deps = [Dependency(type="automl", name=str(rec_id))]
-                            automl_context = JobContext(job_id, parent_job_id, network, action, handler_id, user_id, org_name, kind, name=name, num_gpu=num_gpu, platform_id=platform_id)
+                            automl_context = JobContext(
+                                job_id,
+                                parent_job_id,
+                                network,
+                                action,
+                                handler_id,
+                                user_id,
+                                org_name,
+                                kind,
+                                name=name,
+                                num_gpu=num_gpu,
+                                platform_id=platform_id
+                            )
                             automl_context.dependencies = deps
                             _AutoMLPipeline = AutoMLPipeline(automl_context)
-                            job_run_thread = threading.Thread(target=_AutoMLPipeline.monitor_job, args=(), name=f'tao-monitor-job-thread-{automl_context.id}')
+                            job_run_thread = threading.Thread(
+                                target=_AutoMLPipeline.monitor_job,
+                                args=(),
+                                name=f'tao-monitor-job-thread-{automl_context.id}'
+                            )
                             job_run_thread.start()
-                            print(f"Restarted AutoML monitoring thread for job {job_id} and recommendation {rec_id}", file=sys.stderr)
+                            print(
+                                f"Restarted AutoML monitoring thread for job {job_id} "
+                                f"and recommendation {rec_id}",
+                                file=sys.stderr
+                            )
 
     @staticmethod
     def start():

@@ -42,7 +42,14 @@ def apply(args, data):
     filter_search = args.get('search')
 
     if filter_search is not None:
-        data = list(filter(lambda d: filter_search.lower() in d.get('name', '').lower() or filter_search.lower() in d.get('description', '').lower() or filter_search in d.get('id', ''), data))
+        data = list(filter(
+            lambda d: (
+                filter_search.lower() in d.get('name', '').lower() or
+                filter_search.lower() in d.get('description', '').lower() or
+                filter_search in d.get('id', '')
+            ),
+            data
+        ))
 
     if filter_name is not None:
         if filter_name.startswith('!'):

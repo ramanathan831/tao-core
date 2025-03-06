@@ -124,7 +124,11 @@ class ContainerJobHandler:
                                 _, actions = module_utils.get_neural_network_actions(job["neural_network_name"])
                                 is_completed = entrypoint.launch(args, "", actions, network=job["neural_network_name"])
                             else:
-                                is_completed = vlm_entrypoint.vlm_launch(job["neural_network_name"], job["action_name"], specs)
+                                is_completed = vlm_entrypoint.vlm_launch(
+                                    job["neural_network_name"],
+                                    job["action_name"],
+                                    specs
+                                )
 
                         except Exception:
                             print("Traceback", file=sys.stderr)
@@ -149,7 +153,10 @@ class ContainerJobHandler:
                     print(traceback.format_exc(), file=sys.stderr)
                     if status_logger:
                         status_logging.get_status_logger().write(
-                            message=f"{job['action_name']} action couldn't be launched for {job['neural_network_name']}",
+                            message=(
+                                f"{job['action_name']} action couldn't be launched "
+                                f"for {job['neural_network_name']}"
+                            ),
                             status_level=status_logging.Status.FAILURE
                         )
                     ContainerJobHandler._cleanup(exit_event, upload_thread)
@@ -185,7 +192,14 @@ class ContainerJobHandler:
         )
 
     @staticmethod
-    def _cleanup(exit_event=None, upload_thread=None, job=None, is_completed=None, status_logger=None, status_file=None):
+    def _cleanup(
+        exit_event=None,
+        upload_thread=None,
+        job=None,
+        is_completed=None,
+        status_logger=None,
+        status_file=None
+    ):
         """Clean up resources and log final status."""
         if exit_event:
             exit_event.set()

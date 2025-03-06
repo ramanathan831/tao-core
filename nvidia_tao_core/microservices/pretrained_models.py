@@ -33,7 +33,13 @@ from enum import Enum
 from nvidia_tao_core.microservices.handlers.mongo_handler import MongoHandler
 from nvidia_tao_core.microservices.utils import read_network_config, get_admin_key, safe_load_file
 from nvidia_tao_core.microservices.constants import TAO_NETWORKS
-from nvidia_tao_core.microservices.enum_constants import BaseExperimentTask, BaseExperimentDomain, BaseExperimentBackboneClass, BaseExperimentBackboneType, BaseExperimentLicense
+from nvidia_tao_core.microservices.enum_constants import (
+    BaseExperimentTask,
+    BaseExperimentDomain,
+    BaseExperimentBackboneClass,
+    BaseExperimentBackboneType,
+    BaseExperimentLicense
+)
 
 base_exp_uuid = "00000000-0000-0000-0000-000000000000"
 
@@ -131,7 +137,11 @@ class BaseExperimentMetadata:
         # Get the NGC login token
         if self.ngc_key.startswith("nvapi"):
             return self.ngc_key
-        raise ValueError('Credentials error: Invalid NGC_PERSONAL_KEY, NGC_API_KEYs are no longer valid, generate a personal key with Cloud Functions, NGC Catalog and Private registry services https://org.ngc.nvidia.com/setup/personal-keys')
+        raise ValueError(
+            'Credentials error: Invalid NGC_PERSONAL_KEY, NGC_API_KEYs are no longer valid, '
+            'generate a personal key with Cloud Functions, NGC Catalog and Private registry services '
+            'https://org.ngc.nvidia.com/setup/personal-keys'
+        )
 
     def prepare_org_team(self, org_teams: str):
         """Prepare org team list"""
@@ -331,7 +341,11 @@ class BaseExperimentMetadata:
                                                     print(f"{key_value} not loadable by `ast.literal_eval`.")
                                         for network_arch in endpoints:
                                             self.add_experiment(
-                                                base_experiments, model.get("displayName"), ngc_path, network_arch, ngc_token
+                                                base_experiments,
+                                                model.get("displayName"),
+                                                ngc_path,
+                                                network_arch,
+                                                ngc_token
                                             )
         return base_experiments
 
@@ -344,9 +358,15 @@ class BaseExperimentMetadata:
             clt.configure(api_key=ngc_token, org_name=org, team_name=team)
         except Exception as e:
             if not ("Invalid org" in str(e) or "Invalid team" in str(e)):
-                print("Can't configure the passed NGC KEY for Org {}, team {}".format(org, team)) # noqa pylint: disable=C0209
+                print(
+                    "Can't configure the passed NGC KEY "  # noqa pylint: disable=C0209
+                    "for Org {}, team {}".format(org, team)
+                )
                 return False
-            print("Can't validate the passed NGC KEY for Org {}, team {}, going to try download without configuring credentials".format(org, team)) # noqa pylint: disable=C0209
+            print(
+                "Can't validate the passed NGC KEY for Org {}, team {}, "
+                "going to try download without configuring credentials".format(org, team)
+            )  # noqa pylint: disable=C0209
         # Check and download experiment.yaml file
         model_files = list(clt.registry.model.list_files(ngc_path))
         file_paths = list(map(lambda x: x.path, model_files))
@@ -366,7 +386,9 @@ class BaseExperimentMetadata:
         if not string_value:
             return None
         try:
-            enum_type = enum_type(string_value.replace('-', ' ').replace('_', ' ').lower() if string_value is not None else None)
+            enum_type = enum_type(
+                string_value.replace('-', ' ').replace('_', ' ').lower() if string_value is not None else None
+            )
             if enum_type:
                 return enum_type.value
             return None
@@ -441,12 +463,15 @@ class BaseExperimentMetadata:
             "logo": "https://www.nvidia.com",
             "network_arch": network_arch,
             "dataset_type": api_params["dataset_type"],
-            "dataset_formats": api_params.get("formats", read_network_config(api_params["dataset_type"]).get("api_params", {}).get("formats", None)),
+            "dataset_formats": api_params.get(
+                "formats",
+                read_network_config(api_params["dataset_type"]).get("api_params", {}).get("formats", None)
+            ),
             "accepted_dataset_intents": accepted_ds_intents,
             "actions": api_params["actions"],
             "name": experiment_info["name"],
-            "description": model_info["modelVersion"].get("description", "") or
-                    model_info["model"].get("shortDescription", f"Base Experiment for {network_arch}"),
+            "description": (model_info["modelVersion"].get("description", "") or
+                            model_info["model"].get("shortDescription", f"Base Experiment for {network_arch}")),
             "model_description": model_info["model"].get("shortDescription", f"Base Experiment for {network_arch}"),
             "version": model_info["modelVersion"].get("versionId", ""),
             "created_on": model_info["modelVersion"].get("createdDate", datetime.datetime.now().isoformat()),
@@ -457,13 +482,24 @@ class BaseExperimentMetadata:
             "base_experiment_metadata": {
                 "task": self.convert_str_to_enum(attr.get("task", None), BaseExperimentTask),
                 "backbone_type": self.convert_str_to_enum(attr.get("backbone_type", None), BaseExperimentBackboneType),
-                "backbone_class": self.convert_str_to_enum(attr.get("backbone_class", None), BaseExperimentBackboneClass),
+                "backbone_class": self.convert_str_to_enum(
+                    attr.get("backbone_class", None),
+                    BaseExperimentBackboneClass
+                ),
                 "domain": self.convert_str_to_enum(attr.get("domain", None), BaseExperimentDomain),
                 "license": self.convert_str_to_enum(attr.get("license", None), BaseExperimentLicense),
                 "is_backbone":  attr.get("is_backbone", True),
                 "is_trainable": attr.get("trainable", False),
-                "num_parameters": f"{round(random.uniform(1, 150))}M" if attr.get("num_parameters", None) is None or not attr.get("num_parameters").endswith("M") else attr.get("num_parameters"),  # TODO: @bingjiez reverse after ngc models are updated
-                "accuracy": f"{round(random.uniform(60, 100), 2)}%" if attr.get("accuracy", None) is None else attr.get("accuracy"),  # TODO: @bingjiez reverse after ngc models are updated
+                "num_parameters": (
+                    f"{round(random.uniform(1, 150))}M"
+                    if attr.get("num_parameters", None) is None or not attr.get("num_parameters").endswith("M")
+                    else attr.get("num_parameters")
+                ),  # TODO: @bingjiez reverse after ngc models are updated
+                "accuracy": (
+                    f"{round(random.uniform(60, 100), 2)}%"
+                    if attr.get("accuracy", None) is None
+                    else attr.get("accuracy")
+                ),  # TODO: @bingjiez reverse after ngc models are updated
                 "model_card_link": f"https://catalog.ngc.nvidia.com/orgs/nvidia/teams/tao/models/{model_name}",
                 "spec_file_present": experiment_info["base_experiment_metadata"]["spec_file_present"],
                 "specs": experiment_info["base_experiment_metadata"]["specs"]
@@ -554,7 +590,10 @@ if __name__ == "__main__":
     if PTM_PULL == "True":
         parser = argparse.ArgumentParser(description="Generate base experiment metadata file")
         parser.add_argument("--shared-folder-path", help="Root path for base experiments", default="ptms")
-        parser.add_argument("--org-teams", help="Organization and team names. Each pair of org/team separated by a comma.")
+        parser.add_argument(
+            "--org-teams",
+            help="Organization and team names. Each pair of org/team separated by a comma."
+        )
         parser.add_argument("--ngc-key", help="NGC Key", default=get_admin_key())
         parser.add_argument("--dry-run", help="Dry run mode", default=False, action="store_true")
         parser.add_argument("--override", help="Override existing base experiments", action="store_true")

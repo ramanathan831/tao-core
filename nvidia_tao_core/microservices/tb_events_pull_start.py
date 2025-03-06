@@ -26,7 +26,10 @@ from nvidia_tao_core.microservices.handlers.utilities import filter_file_objects
 from nvidia_tao_core.microservices.handlers.cloud_storage import create_cs_instance_with_decrypted_metadata
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(prog='Tensorboard Events Controller', description='Periodically pull tfevents files from cloud storage')
+    parser = argparse.ArgumentParser(
+        prog='Tensorboard Events Controller',
+        description='Periodically pull tfevents files from cloud storage'
+    )
     parser.add_argument(
         '--experiment_id',
         type=str,
@@ -46,7 +49,10 @@ if __name__ == "__main__":
     cs_instance, _ = create_cs_instance_with_decrypted_metadata(decrypted_workspace_metadata)
 
     if not cs_instance:
-        print(f"Unable to create cloud storage instance for Tensorboard Events Pull for experiment {experiment_id}", flush=True)
+        print(
+            f"Unable to create cloud storage instance for Tensorboard Events Pull for experiment {experiment_id}",
+            flush=True
+        )
     else:
         print(f"Starting Tensorboard Events Pull for experiment {experiment_id}", flush=True)
     while cs_instance is not None:
@@ -90,4 +96,7 @@ if __name__ == "__main__":
                                 cs_instance.download_file(file, destination)
                                 print(f"Downloaded tfevents file to {destination}", flush=True)
                 else:
-                    print(f"Path {tf_events_path} does not exist in cloud storage for experiment {experiment_id}", flush=True)
+                    print(
+                        f"Path {tf_events_path} does not exist in cloud storage for experiment {experiment_id}",
+                        flush=True
+                    )

@@ -76,7 +76,10 @@ class MaskGDINOModelConfig(GDINOModelConfig):
         default_value=5.0,
         valid_min=0.0,
         valid_max="inf",
-        description="The relative weight of the dice loss of the segmentation in the final loss.",
+        description=(
+            "The relative weight of the dice loss of the segmentation "
+            "in the final loss."
+        ),
         display_name="GIoU loss coefficient",
     )
 
@@ -87,29 +90,50 @@ class ExperimentConfig(CommonExperimentConfig):
 
     model: MaskGDINOModelConfig = DATACLASS_FIELD(
         MaskGDINOModelConfig(),
-        description="Configurable parameters to construct the model for a Mask Grounding DINO experiment.",
+        description=(
+            "Configurable parameters to construct the model for a "
+            "Mask Grounding DINO experiment."
+        ),
     )
     dataset: MaskGDINODatasetConfig = DATACLASS_FIELD(
         MaskGDINODatasetConfig(),
-        description="Configurable parameters to construct the dataset for a Mask Grounding DINO experiment.",
+        description=(
+            "Configurable parameters to construct the dataset for a "
+            "Mask Grounding DINO experiment."
+        ),
     )
     train: GDINOTrainExpConfig = DATACLASS_FIELD(
         GDINOTrainExpConfig(),
-        description="Configurable parameters to construct the trainer for a Mask Grounding DINO experiment.",
+        description=(
+            "Configurable parameters to construct the trainer for a "
+            "Mask Grounding DINO experiment."
+        ),
     )
     evaluate: GDINOEvalExpConfig = DATACLASS_FIELD(
         GDINOEvalExpConfig(),
-        description="Configurable parameters to construct the evaluator for a Mask Grounding DINO experiment.",
+        description=(
+            "Configurable parameters to construct the evaluator for a "
+            "Mask Grounding DINO experiment."
+        ),
     )
     inference: GDINOInferenceExpConfig = DATACLASS_FIELD(
         GDINOInferenceExpConfig(),
-        description="Configurable parameters to construct the inferencer for a Mask Grounding DINO experiment.",
+        description=(
+            "Configurable parameters to construct the inferencer for a "
+            "Mask Grounding DINO experiment."
+        ),
     )
     export: GDINOExportExpConfig = DATACLASS_FIELD(
         GDINOExportExpConfig(),
-        description="Configurable parameters to construct the exporter for a Mask Grounding DINO experiment.",
+        description=(
+            "Configurable parameters to construct the exporter for a "
+            "Mask Grounding DINO experiment."
+        ),
     )
     gen_trt_engine: GDINOGenTrtEngineExpConfig = DATACLASS_FIELD(
         GDINOGenTrtEngineExpConfig(),
-        description="Configurable parameters to construct the TensorRT engine builder for a Mask Grounding DINO experiment.",
+        description=(
+            "Configurable parameters to construct the TensorRT engine builder "
+            "for a Mask Grounding DINO experiment."
+        ),
     )

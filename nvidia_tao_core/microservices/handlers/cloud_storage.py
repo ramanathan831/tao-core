@@ -57,9 +57,20 @@ def create_cs_instance_with_decrypted_metadata(decrypted_metadata):
     cs_instance = None
     if cloud_specific_details and cloud_bucket_name:
         if cloud_type == "aws" and cloud_region:
-            cs_instance = CloudStorage("aws", cloud_bucket_name, region=cloud_region, access_key=cloud_specific_details.get("access_key"), secret_key=cloud_specific_details.get("secret_key"))
+            cs_instance = CloudStorage(
+                "aws",
+                cloud_bucket_name,
+                region=cloud_region,
+                access_key=cloud_specific_details.get("access_key"),
+                secret_key=cloud_specific_details.get("secret_key")
+            )
         elif cloud_type == "azure":
-            cs_instance = CloudStorage("azure", cloud_bucket_name, access_key=cloud_specific_details.get("account_name"), secret_key=cloud_specific_details.get("access_key"))
+            cs_instance = CloudStorage(
+                "azure",
+                cloud_bucket_name,
+                access_key=cloud_specific_details.get("account_name"),
+                secret_key=cloud_specific_details.get("access_key")
+            )
     return cs_instance, cloud_specific_details
 
 
@@ -83,9 +94,20 @@ def create_cs_instance(handler_metadata):
     cs_instance = None
     if cloud_specific_details:
         if cloud_type == "aws":
-            cs_instance = CloudStorage("aws", cloud_bucket_name, region=cloud_region, access_key=cloud_specific_details.get("access_key"), secret_key=cloud_specific_details.get("secret_key"))
+            cs_instance = CloudStorage(
+                "aws",
+                cloud_bucket_name,
+                region=cloud_region,
+                access_key=cloud_specific_details.get("access_key"),
+                secret_key=cloud_specific_details.get("secret_key")
+            )
         elif cloud_type == "azure":
-            cs_instance = CloudStorage("azure", cloud_bucket_name, access_key=cloud_specific_details.get("account_name"), secret_key=cloud_specific_details.get("access_key"))
+            cs_instance = CloudStorage(
+                "azure",
+                cloud_bucket_name,
+                access_key=cloud_specific_details.get("account_name"),
+                secret_key=cloud_specific_details.get("access_key")
+            )
     return cs_instance, cloud_specific_details
 
 
@@ -127,7 +149,11 @@ class CloudStorage:
             # Upload the file to cloud storage
             if os.path.exists(local_file_path):
                 with open(local_file_path, 'rb') as file_stream:
-                    self.driver.upload_object_via_stream(file_stream, container=self.container, object_name=cloud_file_path)
+                    self.driver.upload_object_via_stream(
+                        file_stream,
+                        container=self.container,
+                        object_name=cloud_file_path
+                    )
                 if self.is_file(cloud_file_path):
                     print("File {} was uploaded successfully".format(cloud_file_path))  # noqa pylint: disable=C0209
                 else:
@@ -156,7 +182,11 @@ class CloudStorage:
 
                     # Upload the file to cloud storage
                     with open(local_file_path, 'rb') as file_stream:
-                        self.driver.upload_object_via_stream(file_stream, container=self.container, object_name=cloud_object_name)
+                        self.driver.upload_object_via_stream(
+                            file_stream,
+                            container=self.container,
+                            object_name=cloud_object_name
+                        )
         except Exception as e:
             raise e
 
@@ -183,7 +213,10 @@ class CloudStorage:
         local_destination: Local path to save the downloaded file.
         """
         if not self.is_file(cloud_file_path):
-            print("Cloud file {} trying to download doesn't exist".format(cloud_file_path), file=sys.stderr)  # noqa pylint: disable=C0209
+            print(
+                "Cloud file {} trying to download doesn't exist".format(cloud_file_path),  # noqa pylint: disable=C0209
+                file=sys.stderr
+            )
             return
         try:
             base_path = os.path.dirname(local_destination)
@@ -325,7 +358,11 @@ class CloudStorage:
 
             # Upload the source object to the destination object path
             try:
-                self.driver.upload_object_via_stream(source_object.as_stream(), container=self.container, object_name=destination_object_name)
+                self.driver.upload_object_via_stream(
+                    source_object.as_stream(),
+                    container=self.container,
+                    object_name=destination_object_name
+                )
                 print(f"Object copied successfully: {source_object_name} -> {destination_object_name}", file=sys.stderr)
             except Exception as e:
                 print(f"Error copying object {source_object_name}: {e}", file=sys.stderr)
