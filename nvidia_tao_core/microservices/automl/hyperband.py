@@ -222,7 +222,7 @@ class HyperBand(AutoMLAlgorithmBase):
         get_flatten_specs(self.default_train_spec, self.default_train_spec_flattened)
         if history == []:
             rec1 = self._generate_one_recommendation(history)
-            assert type(rec1) is dict
+            assert type(rec1) is dict, f"Recommendation must be a dictionary, got {type(rec1)}"
             self.track_id = 0
             return [rec1]
 

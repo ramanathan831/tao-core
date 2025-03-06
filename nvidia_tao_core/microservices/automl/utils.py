@@ -138,10 +138,10 @@ class Recommendation:
             identity: the id of the recommendation
             specs: the specs/config of the recommendation
         """
-        assert type(identifier) is int
+        assert type(identifier) is int, f"Recommendation identifier must be an integer, got {type(identifier)}"
         self.id = identifier
 
-        assert type(specs) is dict
+        assert type(specs) is dict, f"Recommendation specs must be a dictionary, got {type(specs)}"
         self.specs = specs
 
         self.job_id = None
@@ -160,18 +160,18 @@ class Recommendation:
 
     def assign_job_id(self, job_id):
         """Associates provided job id to the class objects job id"""
-        assert type(job_id) is str
+        assert type(job_id) is str, f"Job ID must be a string, got {type(job_id)}"
         self.job_id = job_id
 
     def update_result(self, result):
         """Update the result value"""
         result = float(result)
-        assert type(result) is float
+        assert type(result) is float, f"Result must be a float value, got {type(result)}"
         self.result = result
 
     def update_status(self, status):
         """Update the status value"""
-        assert type(status) is str
+        assert type(status) is str, f"Status must be a string, got {type(status)}"
         self.status = status
 
     def __repr__(self):

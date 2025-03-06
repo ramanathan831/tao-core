@@ -32,7 +32,7 @@ class SimpleHandler:
         self.type = handler_metadata.get("type")
         self.format = handler_metadata.get("format")
         self.intent = handler_metadata.get("use_for", [])
-        assert type(self.intent) is list
+        assert type(self.intent) is list, "Intent must be a list"
         self.cloud_instance = None
         if workspace_metadata:
             self.cloud_instance, _ = create_cs_instance(workspace_metadata)
@@ -161,7 +161,10 @@ def validate_dataset(org_name, handler_metadata, temp_dir="", workspace_metadata
                 assert handler.check_for_file_existence(path, file_type=file_type), error_msg
             if "intent_restriction" in req:
                 if handler.intent:
-                    assert handler.intent == req["intent_restriction"]
+                    assert handler.intent == req["intent_restriction"], (
+                        f"Intent mismatch: handler intent {handler.intent} does not match "
+                        f"required intent {req['intent_restriction']}"
+                    )
 
         return True
 

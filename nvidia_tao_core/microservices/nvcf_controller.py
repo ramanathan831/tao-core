@@ -161,8 +161,8 @@ async def create_nvcf_job(nvcf_cr):
     """Construct requests call for triggering Job on NVCF cloud"""
     config.load_incluster_config()
 
-    assert nvcf_cr.get("metadata", "")
-    assert nvcf_cr.get("spec", "")
+    assert nvcf_cr.get("metadata", ""), "NVCF custom resource metadata is missing"
+    assert nvcf_cr.get("spec", ""), "NVCF custom resource spec is missing"
 
     namespace = nvcf_cr['metadata']['namespace']
     custom_resource_name = nvcf_cr['metadata']['name']

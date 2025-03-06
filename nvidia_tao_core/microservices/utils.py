@@ -492,7 +492,7 @@ def __convert_keys_to_str(data):
 
 def load_file(filepath, attempts=3, file_type="json"):
     """Unsynchronized file load"""
-    assert file_type in ("json", "yaml")
+    assert file_type in ("json", "yaml"), f"Unsupported file type '{file_type}'. Only json and yaml are supported."
     if attempts == 0:
         return {}
 
@@ -523,7 +523,7 @@ def load_file(filepath, attempts=3, file_type="json"):
 
 def safe_load_file(filepath, existing_lock=None, attempts=3, file_type="json"):
     """Loads the json file with synchronization"""
-    assert file_type in ("json", "yaml")
+    assert file_type in ("json", "yaml"), f"Unsupported file type '{file_type}'. Only json and yaml are supported."
     if attempts == 0:
         return {}
 
@@ -559,7 +559,9 @@ def safe_load_file(filepath, existing_lock=None, attempts=3, file_type="json"):
 
 def safe_dump_file(filepath, data, existing_lock=None, file_type="json"):
     """Dumps the json file"""
-    assert file_type in ("json", "yaml", "protobuf")
+    assert file_type in ("json", "yaml", "protobuf"), (
+        f"Unsupported file type '{file_type}'. Only json, yaml, and protobuf are supported."
+    )
     parent_folder = os.path.dirname(filepath)
     if not os.path.exists(parent_folder):
         print(f"Parent folder {parent_folder} doesn't exists yet", file=sys.stderr)

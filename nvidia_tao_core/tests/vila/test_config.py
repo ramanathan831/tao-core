@@ -101,9 +101,7 @@ def test_trainer_jsonschema_config(_test_trainer_spec):
     """Test jsonschema conversion for train spec."""
     json_with_meta_config = dataclass_to_json(_test_trainer_spec)
     json_schema = create_json_schema(json_with_meta_config)
-    assert json.dumps(json_schema, indent=4), (
-        "Json schema generation failed."
-    )
+    assert json.dumps(json_schema, indent=4), "Failed to dump train schema to JSON"
 
 
 @pytest.mark.vila
@@ -113,9 +111,7 @@ def test_system_jsonschema_config(_test_system_spec):
     """Test jsonschema conversion for augmentation spec."""
     json_with_meta_config = dataclass_to_json(_test_system_spec)
     json_schema = create_json_schema(json_with_meta_config)
-    assert json.dumps(json_schema, indent=4), (
-        "Json schema generation failed."
-    )
+    assert json.dumps(json_schema, indent=4), "Failed to dump evaluate schema to JSON"
 
 
 @pytest.mark.vila
@@ -125,9 +121,7 @@ def test_experiment_jsonschema_conversion(_test_experiment_spec):
     """Test jsonschema conversion for augmentation spec."""
     json_with_meta_config = dataclass_to_json(_test_experiment_spec)
     json_schema = create_json_schema(json_with_meta_config)
-    assert json.dumps(json_schema, indent=4), (
-        "Json schema generation failed."
-    )
+    assert json.dumps(json_schema, indent=4), "Failed to dump inference schema to JSON"
 
 
 TEST_CONFIG_BLOCKS = [
@@ -152,11 +146,7 @@ def test_load_experiment_spec(
     """Simple function to load and validate the structure config from a yaml file."""
     schema = OmegaConf.structured(dataclass_class_name)
     config = OmegaConf.create(yaml_string)
-    assert OmegaConf.merge(schema, config), (
-        "Json schema loading failed."
-    )
+    assert OmegaConf.merge(schema, config), "Failed to merge schema with config"
     json_schema = generate_json_schema(dataclass_class_name())
     validation_status = validate_jsonschema(config, json_schema["properties"])
-    assert not (validation_status), (
-        f"Json schema validation failed with error: {validation_status}"
-    )
+    assert not (validation_status), "Validation should have failed for invalid config"

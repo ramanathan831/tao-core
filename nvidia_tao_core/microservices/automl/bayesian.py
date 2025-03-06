@@ -147,7 +147,10 @@ class Bayesian(AutoMLAlgorithmBase):
         # Convert the suggestions to recommendations based on parameter type
         # Assume one:one mapping between self.parameters and suggestions
         recommendations = []
-        assert len(self.parameters) == len(suggestions)
+        assert len(self.parameters) == len(suggestions), (
+            f"Number of parameters ({len(self.parameters)}) does not match "
+            f"number of suggestions ({len(suggestions)})"
+        )
         for param_dict, suggestion in zip(self.parameters, suggestions):
             recommendations.append(self.generate_automl_param_rec_value(param_dict, suggestion))
 

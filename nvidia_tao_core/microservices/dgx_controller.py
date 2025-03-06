@@ -49,8 +49,8 @@ def create_dgx_job(dgx_cr):
     """Construct requests call for triggering Job on DGX cloud"""
     config.load_incluster_config()
 
-    assert dgx_cr.get("metadata", "")
-    assert dgx_cr.get("spec", "")
+    assert dgx_cr.get("metadata", ""), "DGX custom resource metadata is missing"
+    assert dgx_cr.get("spec", ""), "DGX custom resource spec is missing"
 
     namespace = dgx_cr['metadata']['namespace']
     custom_resource_name = dgx_cr['metadata']['name']

@@ -370,7 +370,10 @@ class Controller:
                 self.brain.save_state()
                 # update temp_rec
                 save_automl_current_rec(self.automl_context.id, rec_id)
-                assert (self.recommendations[rec_id].id == rec_id)
+                assert (self.recommendations[rec_id].id == rec_id), (
+                    f"Recommendation ID mismatch: expected {rec_id} but got "
+                    f"{self.recommendations[rec_id].id}"
+                )
                 self.recommendations[rec_id].specs = spec.specs.copy()
                 self.recommendations[rec_id].update_status(JobStates.pending)
 
@@ -767,7 +770,7 @@ class Controller:
          find_trained_hdf5,
          find_trained_pth,
          find_trained_ckzip) = self.get_checkpoint_paths_matching_epoch_number(
-             path, recommendation.id
+            path, recommendation.id
         )
         if find_trained_tlt:
             self.ckpt_path[path]["tlt"] = find_trained_tlt[0]
