@@ -308,8 +308,7 @@ def get_job_id_of_action(handler_id, kind, action):
             break
     if not handler_job_id:
         raise ValueError(
-            f"No job found or no job with status Done found for action:{action}, handler:{handler_id}, kind:{kind}",
-            file=sys.stderr
+            f"No job found or no job with status Done found for action:{action}, handler:{handler_id}, kind:{kind}"
         )
     return handler_job_id
 

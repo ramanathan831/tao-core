@@ -41,7 +41,7 @@ from nvidia_tao_core.microservices.handlers import ngc_handler, stateless_handle
 from nvidia_tao_core.microservices.handlers.nvcf_handler import get_available_nvcf_instances
 from nvidia_tao_core.microservices.handlers.automl_handler import AutoMLHandler
 from nvidia_tao_core.microservices.handlers.cloud_storage import create_cs_instance
-from nvidia_tao_core.microservices.handlers.ds_upload import validate_dataset
+from nvidia_tao_core.microservices.handlers.dataset_handler import validate_dataset
 from nvidia_tao_core.microservices.handlers.encrypt import NVVaultEncryption
 # from nvidia_tao_core.microservices.handlers import nvcf_handler
 from nvidia_tao_core.microservices.handlers.monai.helpers import (
@@ -313,7 +313,7 @@ class AppHandler:
             else:
                 # Something is wrong. The user metadata has a workspace that doesn't exist in the system.
                 contexts = {"user_id": user_id, "org_name": org_name, "handler_id": workspace_id}
-                printc("Workspace not found. Skipping.", contexts, file=sys.stderr)
+                printc("Workspace not found. Skipping.", contexts)
         return metadatas
 
     @staticmethod
@@ -616,7 +616,7 @@ class AppHandler:
             else:
                 # Something is wrong. The user metadata has a dataset that doesn't exist in the system.
                 contexts = {"user_id": user_id, "org_name": org_name, "handler_id": dataset_id}
-                printc("Dataset not found. Skipping.", contexts, file=sys.stderr)
+                printc("Dataset not found. Skipping.", contexts)
         return metadatas
 
     @staticmethod

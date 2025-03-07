@@ -373,7 +373,15 @@ class ActionPipeline:
 
     def detailed_print(self, *args, **kwargs):
         """Print with job context"""
-        logger.info(*args, **kwargs)
+        # Remove 'file' from kwargs since logger.info() doesn't accept it
+        if 'file' in kwargs:
+            del kwargs['file']
+        # Join all args and kwargs into a single string message
+        message = ' '.join(str(arg) for arg in args)
+        kwargs_str = ' '.join(f'{k}={v}' for k,v in kwargs.items())
+        if kwargs_str:
+            message = f'{message} {kwargs_str}'
+        logger.info(message)
 
     def create_microservice_action_job(self, job_id):
         """Call executor function to create microservice pod and then invoke it"""
@@ -428,7 +436,7 @@ class ActionPipeline:
         # Delete job if is canceled/paused during pod creation
         metadata_status = get_handler_job_metadata(self.job_name).get("status", "Error")
         if metadata_status in ("Canceling", "Canceled", "Pausing", "Paused"):
-            self.detailed_print(f"Terminating job {self.job_name}", file=sys.stderr)
+            self.detailed_print(f"Terminating job {self.job_name}")
             jobDriver.delete(self.job_name, use_ngc=self.ngc_runner)
 
         # Monitor job status
@@ -439,7 +447,7 @@ class ActionPipeline:
 
             metadata_status = get_handler_job_metadata(self.job_name).get("status", "Error")
             if metadata_status in ("Canceled", "Paused") and k8s_status == "Running":
-                self.detailed_print(f"Terminating job {self.job_name}", file=sys.stderr)
+                self.detailed_print(f"Terminating job {self.job_name}")
                 jobDriver.delete(self.job_name, use_ngc=self.ngc_runner)
             if k8s_status == "Done":
                 update_job_status(self.handler_id, self.job_name, status="Running", kind=self.handler_kind)
@@ -453,7 +461,7 @@ class ActionPipeline:
                     kind=self.handler_kind
                 )
                 try:
-                    self.detailed_print("Post running", file=sys.stderr)
+                    self.detailed_print("Post running")
                     # If post run is done, make it done
                     self.post_run()
                     if self.job_context.action in ['train', 'retrain']:
@@ -476,7 +484,7 @@ class ActionPipeline:
                 except Exception as e:
                     # If post run fails, call it Error
                     logger.error("Exception thrown in post run after done status %s", str(e))
-                    self.detailed_print(traceback.format_exc(), file=sys.stderr)
+                    self.detailed_print(traceback.format_exc())
                     update_job_status(self.handler_id, self.job_name, status="Error", kind=self.handler_kind)
                     break
             # If running in K8s, update results to job_context
@@ -532,14 +540,14 @@ class ActionPipeline:
         metadata_status = get_handler_job_metadata(self.job_name).get("status", "Error")
 
         toolkit_status = get_toolkit_status(self.job_name)
-        self.detailed_print(f"Toolkit status for {self.job_name} is {toolkit_status}", file=sys.stderr)
+        self.detailed_print(f"Toolkit status for {self.job_name} is {toolkit_status}")
         if (metadata_status not in ("Canceled", "Canceling", "Paused", "Pausing") and
                 toolkit_status != "SUCCESS" and
                 self.job_context.action != "trtexec"):
             update_job_status(self.handler_id, self.job_name, status="Error", kind=self.handler_kind)
             metadata_status = "Error"
 
-        self.detailed_print(f"Job Done: {self.job_name} Final status: {metadata_status}", file=sys.stderr)
+        self.detailed_print(f"Job Done: {self.job_name} Final status: {metadata_status}")
         if self.ngc_runner or (self.network not in MONAI_NETWORKS and BACKEND == "local-k8s"):
             if metadata_status not in ("Canceled", "Canceling", "Paused", "Pausing"):
                 jobDriver.delete(self.job_name)
@@ -570,8 +578,8 @@ class ActionPipeline:
                 outdir = os.path.normpath(outdir) + os.sep  # remove double trailing slashes for filepath
             self.run_command += f"; find {outdir} -type f | xargs chmod 666"
             # Optionally, pipe self.run_command into a log file
-            self.detailed_print(self.run_command, file=sys.stderr)
-            self.detailed_print(self.image, file=sys.stderr)
+            self.detailed_print(self.run_command)
+            self.detailed_print(self.image)
 
             nv_job_metadata = {}
             # Convert self.spec to a backend and post it into a <self.handler_spec_root><job_id>.txt file
@@ -620,14 +628,14 @@ class ActionPipeline:
                     local_cluster=self.local_cluster,
                     automl_exp_job=False
                 )
-            self.detailed_print("Job created", self.job_name, file=sys.stderr)
+            self.detailed_print("Job created", self.job_name)
             self.monitor_job()
             return
 
         except Exception as e:
             # Something went wrong inside...
-            self.detailed_print(traceback.format_exc(), file=sys.stderr)
-            self.detailed_print(f"Job {self.job_name} did not start", file=sys.stderr)
+            self.detailed_print(traceback.format_exc())
+            self.detailed_print(f"Job {self.job_name} did not start")
             update_job_status(self.handler_id, self.job_name, status="Error", kind=self.handler_kind)
             result_dict = {
                 self.job_name: {
@@ -817,11 +825,11 @@ class TrainVal(CLIPipeline):
                 cnd3 = type(spec[field_name]) in [str, float, int, bool]
                 if cnd1 and cnd2 and cnd3:
                     config[field_name] = spec.pop(field_name)
-        self.detailed_print("Loaded specs", file=sys.stderr)
+        self.detailed_print("Loaded specs")
 
         # Infer dataset config
         spec = apply_data_source_config(spec, self.job_context, self.handler_metadata)
-        self.detailed_print("Loaded dataset", file=sys.stderr)
+        self.detailed_print("Loaded dataset")
 
         return spec, config
 
@@ -837,8 +845,7 @@ class TrainVal(CLIPipeline):
             _, file_extension = os.path.splitext(pruned_model_path)
             self.detailed_print(
                 f"Copying pruned model {pruned_model_path} after retrain to "
-                f"/results/{self.job_name}/pruned_model{file_extension}\n",
-                file=sys.stderr
+                f"/results/{self.job_name}/pruned_model{file_extension}\n"
             )
             self.cs_instance.copy_file(pruned_model_path, f"/results/{self.job_name}/pruned_model{file_extension}")
         if self.job_context.action == "annotation_format_convert":
@@ -868,8 +875,7 @@ class TrainVal(CLIPipeline):
             if response.code != 200:
                 self.detailed_print(
                     f"Failed to create dataset from {self.action} job. "
-                    f"Response code: {response.code}",
-                    file=sys.stderr
+                    f"Response code: {response.code}"
                 )
                 update_job_status(self.handler_id, self.job_context.id, status="Error", kind=self.handler_kind)
 
@@ -896,7 +902,7 @@ class AutoMLPipeline:
         self.job_name = self.recs_dict[self.rec_number].get("job_id", None)
         if not self.job_name:
             self.job_name = str(uuid.uuid4())
-            self.detailed_print("New job id being assigned to recommendation", self.job_name, file=sys.stderr)
+            self.detailed_print("New job id being assigned to recommendation", self.job_name)
             self.recs_dict[self.rec_number]["job_id"] = self.job_name
             save_automl_controller_info(self.automl_brain_job_id, self.recs_dict)
 
@@ -959,7 +965,7 @@ class AutoMLPipeline:
                 write_nested_dict(spec, field_name, field_value)
 
         spec = apply_data_source_config(spec, self.job_context, self.handler_metadata)
-        self.detailed_print("Loaded AutoML specs", file=sys.stderr)
+        self.detailed_print("Loaded AutoML specs")
 
         for param_name, param_value in recommended_values.items():
             write_nested_dict(spec, param_name, param_value)
@@ -1041,7 +1047,7 @@ class AutoMLPipeline:
             if "Invalid schema" in detailed_message:
                 break
             if k8s_status == "Error":
-                self.detailed_print(f"Relaunching job {self.job_name}", file=sys.stderr)
+                self.detailed_print(f"Relaunching job {self.job_name}")
                 wait_for_job_completion(self.job_name)
                 if self.network not in MONAI_NETWORKS and BACKEND == "local-k8s":
                     self.create_microservice_action_job(self.automl_brain_job_id)
@@ -1083,7 +1089,7 @@ class AutoMLPipeline:
             self.save_recommendation_specs()
             run_command = self.generate_run_command()
 
-            self.detailed_print(run_command, file=sys.stderr)
+            self.detailed_print(run_command)
 
             # Wait for existing AutoML jobs to complete
             wait_for_job_completion(self.job_name)
@@ -1117,8 +1123,7 @@ class AutoMLPipeline:
                 )
             self.detailed_print(
                 f"AutoML recommendation with experiment id {self.rec_number} "
-                f"and job id {self.job_name} submitted",
-                file=sys.stderr
+                f"and job id {self.job_name} submitted"
             )
             self.monitor_job(nv_job_metadata)
 
@@ -1127,8 +1132,7 @@ class AutoMLPipeline:
         except Exception as e:
             self.detailed_print(
                 f"AutoMLpipeline for network {self.network} failed due to "
-                f"exception {traceback.format_exc()}",
-                file=sys.stderr
+                f"exception {traceback.format_exc()}"
             )
             result_dict = {
                 self.job_name: {
@@ -1147,7 +1151,7 @@ class AutoMLPipeline:
                 data=result_dict,
                 kind=self.handler_kind
             )
-            self.detailed_print(self.job_name, file=sys.stderr)
+            self.detailed_print(self.job_name)
 
             self.recs_dict[self.rec_number]["status"] = "failure"
             save_automl_controller_info(self.automl_brain_job_id, self.recs_dict)
@@ -1208,10 +1212,10 @@ class ContinualLearning(ActionPipeline):
                 automl_exp_job=False,
                 docker_env_vars=self.job_env_variables
             )
-        self.detailed_print(f"Job status: {k8s_status}", file=sys.stderr)
+        self.detailed_print(f"Job status: {k8s_status}")
         if k8s_status == "Error":
             update_job_status(self.handler_id, self.job_context.id, status="Error")
-        self.detailed_print("Continual Learning finished.", file=sys.stderr)
+        self.detailed_print("Continual Learning finished.")
 
     def run(self):
         """Run the continual learning pipeline"""
@@ -1229,14 +1233,14 @@ class ContinualLearning(ActionPipeline):
             cl_script = self.generate_convert_script(notify_record)
 
             outdir = self.job_root
-            self.detailed_print("Continual Learning started", file=sys.stderr)
+            self.detailed_print("Continual Learning started")
             self.run_command = f"python {cl_script} 2>&1 | tee {self.logfile}"
             # After command runs, make sure subdirs permission allows anyone to enter and delete
             self.run_command += f"; find {outdir} -type d | xargs chmod 777"
             # After command runs, make sure artifact files permission allows anyone to delete
             self.run_command += f"; find {outdir} -type f | xargs chmod 666"
             # Optionally, pipe self.run_command into a log file
-            self.detailed_print(self.run_command, file=sys.stderr)
+            self.detailed_print(self.run_command)
             jobDriver.create(
                 self.job_context.org_name,
                 self.job_name,
@@ -1246,13 +1250,12 @@ class ContinualLearning(ActionPipeline):
                 cl_medical=True,
                 automl_exp_job=False
             )
-            self.detailed_print("Job created", self.job_name, file=sys.stderr)
+            self.detailed_print("Job created", self.job_name)
             self.monitor_job()
         except Exception:
             self.detailed_print(
                 f"ContinualLearning for {self.network} failed because "
-                f"{traceback.format_exc()}",
-                file=sys.stderr
+                f"{traceback.format_exc()}"
             )
             update_job_status(self.handler_id, self.job_context.id, status="Error")
 
@@ -1293,8 +1296,8 @@ class BundleTrain(ActionPipeline):
             if isinstance(v, str) and v == "$default_monai_label_mapping":
                 labels = self.handler_metadata.get("model_params", {}).get("labels", None)
                 spec[k] = {"default": [[int(i), int(i)] for i in labels]}
-                self.detailed_print(f"Using default {k}: {spec[k]}", file=sys.stderr)
-        self.detailed_print("Specs are loaded.", file=sys.stderr)
+                self.detailed_print(f"Using default {k}: {spec[k]}")
+        self.detailed_print("Specs are loaded.")
         return spec
 
     def generate_config(self):
@@ -1312,12 +1315,12 @@ class BundleTrain(ActionPipeline):
         spec = self.get_spec()
         success, msg = validate_monai_bundle_params(spec)
         if not success:
-            self.detailed_print(msg, file=sys.stderr)
+            self.detailed_print(msg)
             raise RuntimeError(msg)
         # prepare dataset and update spec
-        self.detailed_print("Loaded specs", file=sys.stderr)
+        self.detailed_print("Loaded specs")
         spec = apply_data_source_config(spec, self.job_context, self.handler_metadata)
-        self.detailed_print("Loaded dataset", file=sys.stderr)
+        self.detailed_print("Loaded dataset")
         return spec, {}
 
     @staticmethod
@@ -1585,7 +1588,7 @@ class Auto3DSegTrain(BundleTrain):
         }
         ret_code = AppHandler.create_experiment(self.job_context.user_id, self.job_context.org_name, request_dict)
         new_model_id = ret_code.data["id"]
-        self.detailed_print(f"New model is generated with id: {new_model_id}", file=sys.stderr)
+        self.detailed_print(f"New model is generated with id: {new_model_id}")
 
         # update the status file to include newly generated model id
         _ = {
@@ -1616,7 +1619,7 @@ class Auto3DSegInfer(BundleTrain):
         if inference_dataset_id:
             self.handler_metadata["inference_dataset"] = inference_dataset_id
         spec = apply_data_source_config(spec, self.job_context, self.handler_metadata)
-        self.detailed_print("Datasets are loaded.", file=sys.stderr)
+        self.detailed_print("Datasets are loaded.")
 
         return spec, {}
 
