@@ -14,6 +14,145 @@
         }
     },
 
+    "dataset_validation": {
+        "required_files": {
+            "default": [
+                {
+                    "all_of": [
+                        {"path": "ImageSets.tar.gz", "type": "file"},
+                        {"path": "training.tar.gz", "type": "file"},
+                        {"path": "testing.tar.gz", "type": "file"}
+                    ]
+                }
+            ]
+        }
+    },
+
+    "data_sources": {
+        "dataset_convert": {
+            "root_dir": {
+                "source": "id",
+                "path": ""
+            }
+        },
+        "train": {
+            "dataset.root_dir": {
+                "source": "train_datasets",
+                "multiple_sources": false,
+                "value": ""
+            },
+            "dataset.train_dataset": {
+                "source": "train_datasets",
+                "multiple_sources": false,
+                "mapping": {
+                    "ann_file": {
+                        "path": "results/{dataset_convert_job_id}/kitti_person_infos_train.pkl",
+                        "transform": "use_dataset_convert_job"
+                    },
+                    "data_prefix": {
+                        "pts": {
+                            "path": "results/{dataset_convert_job_id}/training/velodyne_reduced",
+                            "transform": "use_dataset_convert_job"
+                        },
+                        "img": {
+                            "path": "training/image_2.tar.gz"
+                        }
+                    }
+                }
+            },
+            "dataset.val_dataset": {
+                "source": "train_datasets",
+                "multiple_sources": false,
+                "mapping": {
+                    "ann_file": {
+                        "path": "results/{dataset_convert_job_id}/kitti_person_infos_val.pkl",
+                        "transform": "use_dataset_convert_job"
+                    },
+                    "data_prefix": {
+                        "pts": {
+                            "path": "results/{dataset_convert_job_id}/training/velodyne_reduced",
+                            "transform": "use_dataset_convert_job"
+                        },
+                        "img": {
+                            "path": "training/image_2.tar.gz"
+                        }
+                    }
+                }
+            },
+            "dataset.test_dataset": {
+                "source": "train_datasets",
+                "multiple_sources": false,
+                "mapping": {
+                    "ann_file": {
+                        "path": "results/{dataset_convert_job_id}/kitti_person_infos_val.pkl",
+                        "transform": "use_dataset_convert_job"
+                    },
+                    "data_prefix": {
+                        "pts": {
+                            "path": "results/{dataset_convert_job_id}/training/velodyne_reduced",
+                            "transform": "use_dataset_convert_job"
+                        },
+                        "img": {
+                            "path": "training/image_2.tar.gz"
+                        }
+                    }
+                }
+            }
+        },
+        "evaluate": {
+            "dataset.root_dir": {
+                "source": "train_datasets",
+                "multiple_sources": false,
+                "value": ""
+            },
+            "dataset.test_dataset": {
+                "source": "train_datasets",
+                "multiple_sources": false,
+                "mapping": {
+                    "ann_file": {
+                        "path": "results/{dataset_convert_job_id}/kitti_person_infos_val.pkl",
+                        "transform": "use_dataset_convert_job"
+                    },
+                    "data_prefix": {
+                        "pts": {
+                            "path": "results/{dataset_convert_job_id}/training/velodyne_reduced",
+                            "transform": "use_dataset_convert_job"
+                        },
+                        "img": {
+                            "path": "training/image_2.tar.gz"
+                        }
+                    }
+                }
+            }
+        },
+        "inference": {
+            "dataset.root_dir": {
+                "source": "train_datasets",
+                "multiple_sources": false,
+                "path": ""
+            },
+            "dataset.test_dataset": {
+                "source": "train_datasets",
+                "multiple_sources": false,
+                "mapping": {
+                    "ann_file": {
+                        "path": "results/{dataset_convert_job_id}/kitti_person_infos_val.pkl",
+                        "transform": "use_dataset_convert_job"
+                    },
+                    "data_prefix": {
+                        "pts": {
+                            "path": "results/{dataset_convert_job_id}/training/velodyne_reduced",
+                            "transform": "use_dataset_convert_job"
+                        },
+                        "img": {
+                            "path": "training/image_2.tar.gz"
+                        }
+                    }
+                }
+            }
+        }
+    },
+
     "spec_params":{
         "dataset_convert": {
             "results_dir":"output_dir"
@@ -22,7 +161,6 @@
             "results_dir":"output_dir",
             "encryption_key":"key",
             "train.pretrained_checkpoint": "ptm_if_no_resume_model",
-            "train.gpu_ids": "from_csv",
             "train.resume_training_checkpoint_path": "resume_model"
         },
         "evaluate":{
@@ -43,7 +181,6 @@
         "train.resume_training_checkpoint_path":"automl_resume_model",
         "train.checkpoint_interval":"assign_const_value,train.num_epochs",
         "train.validation_interval":"assign_const_value,train.num_epochs,train.checkpoint_interval",
-        "encryption_key":"key",
-        "train.num_gpus":"from_csv"
+        "encryption_key":"key"
     }
 }

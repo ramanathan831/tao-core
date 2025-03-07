@@ -14,14 +14,70 @@
         }
     },
 
+    "dataset_validation": {
+        "required_files": {
+            "default": [
+                {
+                    "all_of": [
+                        {"path": "sample_train.tar.gz", "type": "file"},
+                        {"path": "sample_test.tar.gz", "type": "file"},
+                        {"path": "sample_query.tar.gz", "type": "file"}
+                    ]
+                }
+            ]
+        }
+    },
+
+    "data_sources": {
+        "train": {
+            "dataset.train_dataset_dir": {
+                "source": "train_datasets",
+                "multiple_sources": false,
+                "path": "sample_train.tar.gz"
+            },
+            "dataset.test_dataset_dir": {
+                "source": "train_datasets",
+                "multiple_sources": false,
+                "path": "sample_test.tar.gz"
+            },
+            "dataset.query_dataset_dir": {
+                "source": "train_datasets",
+                "multiple_sources": false,
+                "path": "sample_query.tar.gz"
+            }
+        },
+        "evaluate": {
+            "evaluate.test_dataset": {
+                "source": "train_datasets",
+                "multiple_sources": false,
+                "path": "sample_test.tar.gz"
+            },
+            "evaluate.query_dataset": {
+                "source": "train_datasets",
+                "multiple_sources": false,
+                "path": "sample_query.tar.gz"
+            }
+        },
+        "inference": {
+            "inference.test_dataset": {
+                "source": "train_datasets",
+                "multiple_sources": false,
+                "path": "sample_test.tar.gz"
+            },
+            "inference.query_dataset": {
+                "source": "train_datasets",
+                "multiple_sources": false,
+                "path": "sample_query.tar.gz"
+            }
+        }
+    },
+
     "spec_params":{
         "train":{
             "results_dir":"output_dir",
             "model.pretrained_model_path":"ptm_if_no_resume_model",
             "train.resume_training_checkpoint_path":"resume_model",
-            "encryption_key":"key",
-            "train.gpu_ids": "from_csv",
-            "train.num_gpus": "from_csv"
+            "encryption_key":"key"
         },
         "evaluate":{
             "results_dir":"output_dir",
@@ -50,8 +106,6 @@
         "train.resume_training_checkpoint_path":"automl_resume_model",
         "train.checkpoint_interval":"assign_const_value,train.num_epochs",
         "train.validation_interval":"assign_const_value,train.num_epochs,train.checkpoint_interval",
-        "encryption_key":"key",
-        "train.gpu_ids": "from_csv",
-        "train.num_gpus": "from_csv"
+        "encryption_key":"key"
     }
 }

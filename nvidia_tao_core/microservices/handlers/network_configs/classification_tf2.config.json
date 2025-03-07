@@ -17,6 +17,62 @@
         }
     },
 
+    "data_sources": {
+        "train": {
+            "dataset.train_dataset_path": {
+                "source": "train_datasets",
+                "multiple_sources": false,
+                "path": "images_train.tar.gz"
+            },
+            "dataset.val_dataset_path": {
+                "source": "eval_dataset",
+                "multiple_sources": false,
+                "path": "images_val.tar.gz"
+            }
+        },
+        "evaluate": {
+            "evaluate.dataset_path": {
+                "source": "eval_dataset",
+                "multiple_sources": false,
+                "path": "images_val.tar.gz"
+            }
+        },
+        "retrain": {
+            "dataset.train_dataset_path": {
+                "source": "train_datasets",
+                "multiple_sources": false,
+                "path": "images_train.tar.gz"
+            },
+            "dataset.val_dataset_path": {
+                "source": "eval_dataset",
+                "multiple_sources": false,
+                "path": "images_val.tar.gz"
+            }
+        },
+        "inference": {
+            "inference.image_dir": {
+                "source": "inference_dataset",
+                "multiple_sources": false,
+                "path": "images_test.tar.gz"
+            },
+            "inference.classmap": {
+                "source": "inference_dataset",
+                "multiple_sources": false,
+                "path": "classmap.json"
+            }
+        },
+        "gen_trt_engine": {
+            "gen_trt_engine.tensorrt.calibration.cal_image_dir": {
+                "source": "calibration_dataset",
+                "multiple_sources": false,
+                "path_from_source": {
+                    "eval_dataset": "images_val.tar.gz",
+                    "*": "images_train.tar.gz"
+                }
+            }
+        }
+    },
+
     "spec_params":{
         "train": {
             "results_dir":"output_dir",

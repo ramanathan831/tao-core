@@ -40,7 +40,7 @@ from nvidia_tao_core.microservices.handlers.cloud_storage import create_cs_insta
 from nvidia_tao_core.microservices.handlers.ngc_handler import get_user_key
 from nvidia_tao_core.microservices.handlers.nvcf_handler import get_available_nvcf_instances
 from nvidia_tao_core.microservices.handlers.docker_images import DOCKER_IMAGE_MAPPER, DOCKER_IMAGE_VERSION
-from nvidia_tao_core.microservices.handlers.infer_data_sources import DS_CONFIG_TO_FUNCTIONS
+from nvidia_tao_core.microservices.handlers.infer_data_sources import apply_data_source_config
 from nvidia_tao_core.microservices.handlers.infer_params import CLI_CONFIG_TO_FUNCTIONS
 from nvidia_tao_core.microservices.handlers.encrypt import NVVaultEncryption
 from nvidia_tao_core.microservices.handlers.monai.helpers import (
@@ -820,7 +820,7 @@ class TrainVal(CLIPipeline):
         self.detailed_print("Loaded specs", file=sys.stderr)
 
         # Infer dataset config
-        spec = DS_CONFIG_TO_FUNCTIONS[self.network](spec, self.job_context, self.handler_metadata)
+        spec = apply_data_source_config(spec, self.job_context, self.handler_metadata)
         self.detailed_print("Loaded dataset", file=sys.stderr)
 
         return spec, config
@@ -958,7 +958,7 @@ class AutoMLPipeline:
             if field_value:
                 write_nested_dict(spec, field_name, field_value)
 
-        spec = DS_CONFIG_TO_FUNCTIONS[self.network](spec, self.job_context, self.handler_metadata)
+        spec = apply_data_source_config(spec, self.job_context, self.handler_metadata)
         self.detailed_print("Loaded AutoML specs", file=sys.stderr)
 
         for param_name, param_value in recommended_values.items():
@@ -1316,7 +1316,7 @@ class BundleTrain(ActionPipeline):
             raise RuntimeError(msg)
         # prepare dataset and update spec
         self.detailed_print("Loaded specs", file=sys.stderr)
-        spec = DS_CONFIG_TO_FUNCTIONS[self.network](spec, self.job_context, self.handler_metadata)
+        spec = apply_data_source_config(spec, self.job_context, self.handler_metadata)
         self.detailed_print("Loaded dataset", file=sys.stderr)
         return spec, {}
 
@@ -1615,7 +1615,7 @@ class Auto3DSegInfer(BundleTrain):
         inference_dataset_id = spec.pop("inference_dataset", None)
         if inference_dataset_id:
             self.handler_metadata["inference_dataset"] = inference_dataset_id
-        spec = DS_CONFIG_TO_FUNCTIONS[self.network](spec, self.job_context, self.handler_metadata)
+        spec = apply_data_source_config(spec, self.job_context, self.handler_metadata)
         self.detailed_print("Datasets are loaded.", file=sys.stderr)
 
         return spec, {}

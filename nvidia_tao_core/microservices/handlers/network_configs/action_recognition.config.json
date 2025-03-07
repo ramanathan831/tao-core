@@ -14,15 +14,95 @@
         }
     },
 
+    "dataset_validation": {
+        "required_files": {
+            "default": [
+                {
+                    "all_of": [
+                        {"path": "train.tar.gz", "type": "file"},
+                        {"path": "test.tar.gz", "type": "file"}
+                    ]
+                }
+            ]
+        }
+    },
+
+    "dynamic_config": {
+        "model_type_key": "model.model_type",
+        "rules": {
+            "rgb": {
+                "remove": [
+                    "model.of_seq_length",
+                    "model.of_pretrained_num_classes",
+                    "dataset.augmentation_config.of_input_mean",
+                    "dataset.augmentation_config.of_input_std",
+                    "model.of_pretrained_model_path"
+                ],
+                "remove_if_action": {
+                    "train": [
+                        "model.of_pretrained_num_classes"
+                    ]
+                }
+            },
+            "of": {
+                "remove": [
+                    "model.rgb_seq_length",
+                    "model.rgb_pretrained_num_classes",
+                    "dataset.augmentation_config.rgb_input_mean",
+                    "dataset.augmentation_config.rgb_input_std",
+                    "model.rgb_pretrained_model_path"
+                ],
+                "remove_if_action": {
+                    "train": [
+                        "model.rgb_pretrained_num_classes"
+                    ]
+                }
+            },
+            "joint": {
+                "transform": "split_pretrained_paths"
+            }
+        },
+        "defaults": {
+            "dataset.label_map": {"catch": 0, "smile": 1}
+        }
+    },
+
+    "data_sources": {
+        "train": {
+            "dataset.train_dataset_dir": {
+                "source": "train_datasets",
+                "multiple_sources": false,
+                "path": "train.tar.gz"
+            },
+            "dataset.val_dataset_dir": {
+                "source": "train_datasets",
+                "multiple_sources": false,
+                "path": "test.tar.gz"
+            }
+        },
+        "evaluate": {
+            "evaluate.test_dataset_dir": {
+                "source": "train_datasets",
+                "multiple_sources": false,
+                "path": "test.tar.gz"
+            }
+        },
+        "inference": {
+            "inference.inference_dataset_dir": {
+                "source": "train_datasets",
+                "multiple_sources": false,
+                "path": "test/smile.tar.gz"
+            }
+        }
+    },
+
     "spec_params":{
         "train":{
             "results_dir":"output_dir",
             "model.rgb_pretrained_model_path":"ptm_if_no_resume_model",
             "model.of_pretrained_model_path":"ptm_if_no_resume_model",
             "train.resume_training_checkpoint_path":"resume_model",
-            "encryption_key":"key",
-            "train.gpu_ids": "from_csv",
-            "train.num_gpus": "from_csv"
+            "encryption_key":"key"
         },
         "evaluate":{
             "results_dir":"output_dir",
@@ -49,8 +129,6 @@
         "train.resume_training_checkpoint_path":"automl_resume_model",
         "train.checkpoint_interval":"assign_const_value,train.num_epochs",
         "train.validation_interval":"assign_const_value,train.num_epochs,train.checkpoint_interval",
-        "train.gpu_ids": "from_csv",
-        "train.num_gpus": "from_csv",
         "encryption_key":"key"
     }
 }

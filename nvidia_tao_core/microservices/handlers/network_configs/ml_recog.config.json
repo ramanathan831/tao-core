@@ -15,12 +15,109 @@
         }
     },
 
+    "dataset_validation": {
+        "required_files": {
+            "default": [
+                {
+                    "all_of": [
+                        {
+                            "path": "metric_learning_recognition/retail-product-checkout-dataset_classification_demo/known_classes/train.tar.gz",
+                            "type": "file"
+                        },
+                        {
+                            "path": "metric_learning_recognition/retail-product-checkout-dataset_classification_demo/known_classes/reference.tar.gz",
+                            "type": "file"
+                        },
+                        {
+                            "path": "metric_learning_recognition/retail-product-checkout-dataset_classification_demo/known_classes/val.tar.gz",
+                            "type": "file"
+                        },
+                        {
+                            "path": "metric_learning_recognition/retail-product-checkout-dataset_classification_demo/unknown_classes/train.tar.gz",
+                            "type": "file"
+                        },
+                        {
+                            "path": "metric_learning_recognition/retail-product-checkout-dataset_classification_demo/unknown_classes/reference.tar.gz",
+                            "type": "file"
+                        },
+                        {
+                            "path": "metric_learning_recognition/retail-product-checkout-dataset_classification_demo/unknown_classes/test.tar.gz",
+                            "type": "file"
+                        }
+                    ]
+                }
+            ]
+        }
+    },
+
+    "data_sources": {
+        "train": {
+            "dataset.train_dataset": {
+                "source": "train_datasets",
+                "multiple_sources": false,
+                "path": "metric_learning_recognition/retail-product-checkout-dataset_classification_demo/known_classes/train.tar.gz"
+            },
+            "dataset.val_dataset": {
+                "source": "train_datasets",
+                "multiple_sources": false,
+                "mapping": {
+                    "reference": {
+                        "path": "metric_learning_recognition/retail-product-checkout-dataset_classification_demo/known_classes/reference.tar.gz"
+                    },
+                    "query": {
+                        "path": "metric_learning_recognition/retail-product-checkout-dataset_classification_demo/known_classes/val.tar.gz"
+                    }
+                }
+            }
+        },
+        "evaluate": {
+            "dataset.val_dataset": {
+                "source": "train_datasets",
+                "multiple_sources": false,
+                "mapping": {
+                    "reference": {
+                        "path": "metric_learning_recognition/retail-product-checkout-dataset_classification_demo/unknown_classes/reference.tar.gz"
+                    },
+                    "query": {
+                        "path": "metric_learning_recognition/retail-product-checkout-dataset_classification_demo/unknown_classes/test.tar.gz"
+                    }
+                }
+            }
+        },
+        "inference": {
+            "dataset.val_dataset": {
+                "source": "train_datasets",
+                "multiple_sources": false,
+                "mapping": {
+                    "reference": {
+                        "path": "metric_learning_recognition/retail-product-checkout-dataset_classification_demo/unknown_classes/reference.tar.gz"
+                    },
+                    "query": {
+                        "path": ""
+                    }
+                }
+            },
+            "inference.input_path": {
+                "source": "train_datasets",
+                "multiple_sources": false,
+                "path": "metric_learning_recognition/retail-product-checkout-dataset_classification_demo/unknown_classes/test.tar.gz"
+            }
+        },
+        "gen_trt_engine": {
+            "gen_trt_engine.tensorrt.calibration.cal_image_dir": {
+                "source": "calibration_dataset",
+                "multiple_sources": false,
+                "path": "metric_learning_recognition/retail-product-checkout-dataset_classification_demo/known_classes/test.tar.gz",
+                "transform": "wrap_in_list"
+            }
+        }
+    },
+
     "spec_params":{
         "train": {
             "results_dir":"output_dir",
             "model.pretrained_model_path": "ptm_if_no_resume_model",
-            "train.resume_training_checkpoint_path": "resume_model",
-            "train.gpu_ids": "from_csv"
+            "train.resume_training_checkpoint_path": "resume_model"
         },
         "evaluate":{
             "results_dir":"output_dir",
@@ -50,7 +147,6 @@
         "model.pretrained_model_path":"automl_assign_ptm",
         "train.resume_training_checkpoint_path":"automl_resume_model",
         "train.checkpoint_interval":"assign_const_value,train.num_epochs",
-        "train.validation_interval":"assign_const_value,train.num_epochs,train.checkpoint_interval",
-        "train.gpu_ids": "from_csv"
+        "train.validation_interval":"assign_const_value,train.num_epochs,train.checkpoint_interval"
     }
 }

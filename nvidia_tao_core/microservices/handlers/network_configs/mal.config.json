@@ -13,19 +13,65 @@
         }
     },
     
+    "data_sources": {
+        "train": {
+            "dataset.train_img_dir": {
+                "source": "train_datasets",
+                "multiple_sources": false,
+                "path": "images.tar.gz"
+            },
+            "dataset.train_ann_path": {
+                "source": "train_datasets",
+                "multiple_sources": false,
+                "path": "annotations.json"
+            },
+            "dataset.val_img_dir": {
+                "source": "eval_dataset",
+                "multiple_sources": false,
+                "path": "images.tar.gz"
+            },
+            "dataset.val_ann_path": {
+                "source": "eval_dataset",
+                "multiple_sources": false,
+                "path": "annotations.json"
+            }
+        },
+        "evaluate": {
+            "dataset.val_img_dir": {
+                "source": "eval_dataset",
+                "multiple_sources": false,
+                "path": "images.tar.gz"
+            },
+            "dataset.val_ann_path": {
+                "source": "eval_dataset",
+                "multiple_sources": false,
+                "path": "annotations.json"
+            }
+        },
+        "inference": {
+            "inference.img_dir": {
+                "source": "inference_dataset",
+                "multiple_sources": false,
+                "path": "images.tar.gz"
+            },
+            "inference.ann_path": {
+                "source": "inference_dataset",
+                "multiple_sources": false,
+                "path": "annotations.json"
+            }
+        }
+    },
+    
     "spec_params":{
         "train":{
-            "results_dir":"output_dir",
-            "gpu_ids":"from_csv"
+            "results_dir":"output_dir"
         },
         "evaluate":{
             "results_dir":"output_dir",
-            "gpu_ids":"from_csv",
             "evaluate.checkpoint":"parent_model"
         },
         "inference":{
             "results_dir":"output_dir",
-            "gpu_ids":"from_csv",
             "inference.label_dump_path":"create_inference_result_file_mal",
             "inference.checkpoint":"parent_model"
         }

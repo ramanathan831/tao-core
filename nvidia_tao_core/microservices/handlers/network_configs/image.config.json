@@ -11,6 +11,16 @@
         }
     },
     
+    "data_sources": {
+        "validate": {
+            "data.image_dir": {
+                "source": "id",
+                "multiple_sources": false,
+                "path": ""
+            }
+        }
+    },
+    
     "spec_params":{
         "validate": {
             "results_dir":"output_dir"

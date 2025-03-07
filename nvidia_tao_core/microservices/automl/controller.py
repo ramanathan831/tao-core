@@ -473,7 +473,7 @@ class Controller:
                 metadata.get("job_details", {})
                 .get(self.automl_context.id, {})
                 .get("detailed_status", {})
-                .get("message")
+                .get("message", "")
             )
             if "Invalid schema" not in detailed_status_message:
                 update_job_metadata(

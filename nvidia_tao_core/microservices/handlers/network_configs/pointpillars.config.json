@@ -17,6 +17,107 @@
         }
     },
 
+    "dataset_validation": {
+        "required_files": {
+            "default": [
+                {
+                    "all_of": [
+                        {"path": "train.tar.gz", "type": "file"},
+                        {"path": "val.tar.gz", "type": "file"}
+                    ]
+                }
+            ]
+        }
+    },
+
+    "data_sources": {
+        "dataset_convert": {
+            "dataset.data_path": {
+                "source": "id",
+                "multiple_sources": false,
+                "path": ""
+            }
+        },
+        "train": {
+            "dataset.data_path": {
+                "source": "train_datasets",
+                "multiple_sources": false,
+                "path": ""
+            },
+            "dataset.data_info_path": {
+                "source": "train_datasets",
+                "multiple_sources": false,
+                "path": "results/{dataset_convert_job_id}/data_info/",
+                "transform": "use_dataset_convert_job"
+            }
+        },
+        "evaluate": {
+            "dataset.data_path": {
+                "source": "train_datasets",
+                "multiple_sources": false,
+                "path": ""
+            },
+            "dataset.data_info_path": {
+                "source": "train_datasets",
+                "multiple_sources": false,
+                "path": "results/{dataset_convert_job_id}/data_info/",
+                "transform": "use_dataset_convert_job"
+            }
+        },
+        "prune": {
+            "dataset.data_path": {
+                "source": "train_datasets",
+                "multiple_sources": false,
+                "path": ""
+            },
+            "dataset.data_info_path": {
+                "source": "train_datasets",
+                "multiple_sources": false,
+                "path": "results/{dataset_convert_job_id}/data_info/",
+                "transform": "use_dataset_convert_job"
+            }
+        },
+        "retrain": {
+            "dataset.data_path": {
+                "source": "train_datasets",
+                "multiple_sources": false,
+                "path": ""
+            },
+            "dataset.data_info_path": {
+                "source": "train_datasets",
+                "multiple_sources": false,
+                "path": "results/{dataset_convert_job_id}/data_info/",
+                "transform": "use_dataset_convert_job"
+            }
+        },
+        "export": {
+            "dataset.data_path": {
+                "source": "train_datasets",
+                "multiple_sources": false,
+                "path": ""
+            },
+            "dataset.data_info_path": {
+                "source": "train_datasets",
+                "multiple_sources": false,
+                "path": "results/{dataset_convert_job_id}/data_info/",
+                "transform": "use_dataset_convert_job"
+            }
+        },
+        "inference": {
+            "dataset.data_path": {
+                "source": "train_datasets",
+                "multiple_sources": false,
+                "path": ""
+            },
+            "dataset.data_info_path": {
+                "source": "train_datasets",
+                "multiple_sources": false,
+                "path": "results/{dataset_convert_job_id}/data_info/",
+                "transform": "use_dataset_convert_job"
+            }
+        }
+    },
+
     "cli_params": {
         "dataset_convert": {
         },
@@ -40,7 +141,6 @@
         },
         "train":{
             "key":"key",
-            "train.num_gpus":"from_csv",
             "results_dir":"output_dir",
             "train.resume_training_checkpoint_path":"resume_model",
             "model.pretrained_model_path":"ptm_if_no_resume_model"
@@ -61,7 +161,6 @@
             "inference.checkpoint":"parent_model"
         },
         "retrain":{
-            "train.num_gpus":"from_csv",
             "key":"key",
             "results_dir":"output_dir",
             "train.pruned_model_path":"parent_model"
@@ -77,7 +176,6 @@
 
     "automl_spec_params":{
         "key":"key",
-        "train.num_gpus":"from_csv",
         "results_dir":"automl_output_dir",
         "train.resume_training_checkpoint_path":"automl_resume_model",
         "model.pretrained_model_path":"automl_assign_ptm",

@@ -41,7 +41,7 @@ from nvidia_tao_core.microservices.handlers import ngc_handler, stateless_handle
 from nvidia_tao_core.microservices.handlers.nvcf_handler import get_available_nvcf_instances
 from nvidia_tao_core.microservices.handlers.automl_handler import AutoMLHandler
 from nvidia_tao_core.microservices.handlers.cloud_storage import create_cs_instance
-from nvidia_tao_core.microservices.handlers.ds_upload import DS_UPLOAD_TO_FUNCTIONS
+from nvidia_tao_core.microservices.handlers.ds_upload import validate_dataset
 from nvidia_tao_core.microservices.handlers.encrypt import NVVaultEncryption
 # from nvidia_tao_core.microservices.handlers import nvcf_handler
 from nvidia_tao_core.microservices.handlers.monai.helpers import (
@@ -379,7 +379,7 @@ class AppHandler:
                 "format": dataset_format,
                 "use_for": dataset_intention
             }
-            is_cloud_dataset_present = DS_UPLOAD_TO_FUNCTIONS[dataset_type](
+            is_cloud_dataset_present = validate_dataset(
                 org_name,
                 dataset_handler_metadata,
                 temp_dir=f"/{cloud_folder}",
@@ -1039,7 +1039,7 @@ class AppHandler:
 
             def validate_dataset_thread():
                 try:
-                    valid_datset_structure = DS_UPLOAD_TO_FUNCTIONS[metadata.get("type")](
+                    valid_datset_structure = validate_dataset(
                         org_name,
                         metadata,
                         temp_dir=temp_dir

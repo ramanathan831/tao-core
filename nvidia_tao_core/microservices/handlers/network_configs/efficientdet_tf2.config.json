@@ -17,6 +17,118 @@
         }
     },
 
+    "data_sources": {
+        "train": {
+            "dataset.train_tfrecords": {
+                "source": "train_datasets",
+                "multiple_sources": false,
+                "path": "results/{dataset_convert_job_id}/dataset_convert",
+                "transform": ["use_dataset_convert_job", "wrap_in_list"]
+            },
+            "dataset.val_tfrecords": {
+                "source": "eval_dataset", 
+                "multiple_sources": false,
+                "path": "results/{dataset_convert_job_id}/dataset_convert", 
+                "transform": ["use_dataset_convert_job", "wrap_in_list"]
+            },
+            "dataset.val_json_file": {
+                "source": "eval_dataset",
+                "multiple_sources": false,
+                "path": "annotations.json"
+            }
+        },
+        "evaluate": {
+            "dataset.train_tfrecords": {
+                "source": "train_datasets",
+                "multiple_sources": false,
+                "path": "results/{dataset_convert_job_id}/dataset_convert",
+                "transform": ["use_dataset_convert_job", "wrap_in_list"]
+            },
+            "dataset.val_tfrecords": {
+                "source": "eval_dataset", 
+                "multiple_sources": false,
+                "path": "results/{dataset_convert_job_id}/dataset_convert", 
+                "transform": ["use_dataset_convert_job", "wrap_in_list"]
+            },
+            "dataset.val_json_file": {
+                "source": "eval_dataset",
+                "multiple_sources": false,
+                "path": "annotations.json"
+            },
+            "inference.label_map": {
+                "source": "inference_dataset",
+                "multiple_sources": false,
+                "path": "label_map.yaml"
+            }
+        },
+        "retrain": {
+            "dataset.train_tfrecords": {
+                "source": "train_datasets",
+                "multiple_sources": false,
+                "path": "results/{dataset_convert_job_id}/dataset_convert",
+                "transform": ["use_dataset_convert_job", "wrap_in_list"]
+            },
+            "dataset.val_tfrecords": {
+                "source": "eval_dataset", 
+                "multiple_sources": false,
+                "path": "results/{dataset_convert_job_id}/dataset_convert", 
+                "transform": ["use_dataset_convert_job", "wrap_in_list"]
+            },
+            "dataset.val_json_file": {
+                "source": "eval_dataset",
+                "multiple_sources": false,
+                "path": "annotations.json"
+            }
+        },
+        "export": {
+            "dataset.train_tfrecords": {
+                "source": "train_datasets",
+                "multiple_sources": false,
+                "path": "results/{dataset_convert_job_id}/dataset_convert",
+                "transform": ["use_dataset_convert_job", "wrap_in_list"]
+            },
+            "dataset.val_tfrecords": {
+                "source": "eval_dataset", 
+                "multiple_sources": false,
+                "path": "results/{dataset_convert_job_id}/dataset_convert", 
+                "transform": ["use_dataset_convert_job", "wrap_in_list"]
+            }
+        },
+        "inference": {
+            "dataset.train_tfrecords": {
+                "source": "train_datasets",
+                "multiple_sources": false,
+                "path": "results/{dataset_convert_job_id}/dataset_convert",
+                "transform": ["use_dataset_convert_job", "wrap_in_list"]
+            },
+            "dataset.val_tfrecords": {
+                "source": "eval_dataset", 
+                "multiple_sources": false,
+                "path": "results/{dataset_convert_job_id}/dataset_convert", 
+                "transform": ["use_dataset_convert_job", "wrap_in_list"]
+            },
+            "inference.image_dir": {
+                "source": "inference_dataset",
+                "multiple_sources": false,
+                "path": "images.tar.gz",
+                "transform": "handle_tar_path"
+            },
+            "inference.label_map": {
+                "source": "inference_dataset",
+                "multiple_sources": false,
+                "path": "label_map.yaml"
+            }
+        },
+        "gen_trt_engine": {
+            "gen_trt_engine.tensorrt.calibration.cal_image_dir": {
+                "source": "calibration_dataset",
+                "multiple_sources": false,
+                "path": "images.tar.gz",
+                "transform": "handle_tar_path"
+            }
+        }
+    },
+
     "spec_params":{
         "train":{
             "results_dir":"output_dir",
@@ -38,7 +150,6 @@
         "retrain":{
             "results_dir":"output_dir",
             "train.checkpoint":"parent_model",
-            "train.init_epoch":"from_csv",
             "train.pruned_model_path":"parent_model",
             "encryption_key":"key"
         },

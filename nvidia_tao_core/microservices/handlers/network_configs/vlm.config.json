@@ -7,5 +7,26 @@
         "spec_backend":"yaml",
         "actions_pipe":{
         }
+    },
+
+    "dataset_validation": {
+        "required_files": {
+            "default": [
+                {"path": "dataset.tar.gz", "type": "file"},
+                {"path": "annotations.json", "type": "file"}
+            ],
+            "raw": [
+                {
+                    "any_of": [
+                        {"path": "**/*.jpg", "type": "glob"},
+                        {"path": "**/*.jpeg", "type": "glob"},
+                        {"path": "**/*.png", "type": "glob"},
+                        {"path": "**/*.mp4", "type": "glob"},
+                        {"path": "**/*.mkv", "type": "glob"},
+                        {"path": "**/*.webm", "type": "glob"}
+                    ]
+                }
+            ]
+        }
     }
 }
