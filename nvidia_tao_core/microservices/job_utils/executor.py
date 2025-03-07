@@ -497,6 +497,7 @@ def create_microservice_and_send_request(
     cloud_metadata={},
     specs={},
     microservice_pod_id="",
+    nvcf_helm="",
     num_gpu=-1,
     microservice_container="",
     org_name="",
@@ -517,13 +518,14 @@ def create_microservice_and_send_request(
                 microservice_container = os.getenv('IMAGE_TAO_DEPLOY')
         create_microservice_pod(microservice_pod_id, microservice_container, num_gpu=num_gpu, accelerator=accelerator)
         if wait_for_service(org_name, handler_id, microservice_pod_id, handler_kind):
-            response = send_microservice_request(
-                api_endpoint="get_job_status",
-                network=network,
-                action=action,
-                job_id=microservice_pod_id,
-                specs=specs
-            )
+            response = send_microservice_request(api_endpoint,
+                                                 network,
+                                                 action,
+                                                 cloud_metadata=cloud_metadata,
+                                                 specs=specs,
+                                                 job_id=microservice_pod_id,
+                                                 nvcf_helm=nvcf_helm,
+                                                 docker_env_vars=docker_env_vars)
             if api_endpoint != "post_action":
                 delete(microservice_pod_id, use_ngc=False)
             return response
