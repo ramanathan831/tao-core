@@ -14,7 +14,6 @@
 
 """Utility functions"""
 import os
-import sys
 import json
 import time
 import ruamel.yaml
@@ -26,9 +25,17 @@ import requests
 import functools
 import subprocess
 import numpy as np
+import logging
 from filelock import FileLock
 from kubernetes import client, config
 from enum import Enum
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 NUM_OF_RETRY = 5
 base_exp_uuid = "00000000-0000-0000-0000-000000000000"
@@ -39,9 +46,9 @@ def run_system_command(command):
     """Run a linux command - similar to os.system(). Waits till process ends."""
     result = subprocess.run(['/bin/bash', '-c', command], stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
     if result.stdout:
-        print("run_system_command stdout", result.stdout.decode("utf-8"), file=sys.stderr)
+        logger.info("run_system_command stdout: %s", result.stdout.decode("utf-8"))
     if result.stderr:
-        print("run_system_command stderr", result.stderr.decode("utf-8"), file=sys.stderr)
+        logger.error("run_system_command stderr: %s", result.stderr.decode("utf-8"))
     return 0
 
 
@@ -80,13 +87,13 @@ def read_network_config(network):
     """Reads the network handler json config file"""
     # CLONE EXISTS AT pretrained_models.py
     _dir_path = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
-    print("_dir_path", _dir_path, file=sys.stderr)
+    logger.debug("_dir_path: %s", _dir_path)
     # If dataset_format is user_custom, return empty dict. TODO: separate dataset format vs. network config reading
     if network == "user_custom":
         return {}
     config_json_path = os.path.join(_dir_path, "microservices", "handlers", "network_configs", f"{network}.config.json")
     if not os.path.exists(config_json_path):
-        print(f"Network config doesn't exist at {config_json_path}", file=sys.stderr)
+        logger.warning("Network config doesn't exist at %s", config_json_path)
         return {}
     cli_config = {}
     with open(config_json_path, mode='r', encoding='utf-8-sig') as f:
@@ -166,7 +173,7 @@ def get_admin_key():
                     secrets = json.load(secret_file)
                 if secrets and "ngc_api_key" in secrets:
                     return secrets["ngc_api_key"]
-                print("Failed to obtain ngc_api_key from NVCF secret", file=sys.stderr)
+                logger.error("Failed to obtain ngc_api_key from NVCF secret")
                 return ""
             if os.getenv("DEV_MODE", "False").lower() in ("true", "1"):
                 # DEV_MODE, get api key from env. It's used to avoid creating a secret in local dev env
@@ -181,15 +188,15 @@ def get_admin_key():
                 secret = client.CoreV1Api().read_namespaced_secret("adminclustersecret", "default")
         except client.exceptions.ApiException as e:
             if e.status == 404:
-                print("Secret 'adminclustersecret' not found in 'default' namespace.", file=sys.stderr)
+                logger.warning("Secret 'adminclustersecret' not found in 'default' namespace.")
                 if os.getenv("DEPLOYMENT_MODE", "PROD") == "PROD":
-                    print("Falling back to bcpclustersecret", file=sys.stderr)
+                    logger.info("Falling back to bcpclustersecret")
                     secret = get_bcp_key()
                     if not secret:
                         return ""
                     return secret
             else:
-                print(f"Failed to obtain secret from k8s: {e}", file=sys.stderr)
+                logger.error("Failed to obtain secret from k8s: %s", e)
             return ""
 
         encoded_key = base64.b64decode(next(iter(secret.data.values())))
@@ -197,7 +204,7 @@ def get_admin_key():
 
         return key
     except Exception as e:
-        print(f"Failed to obtain api key from k8s: {e}", file=sys.stderr)
+        logger.error("Failed to obtain api key from k8s: %s", e)
         return ""
 
 
@@ -210,17 +217,16 @@ def get_bcp_key():
             secret = client.CoreV1Api().read_namespaced_secret("bcpclustersecret", "default")
         except client.exceptions.ApiException as e:
             if e.status == 404:
-                print(
+                logger.info(
                     "Secret 'bcpclustersecret' not found in 'default' namespace. "
-                    "Falling back to imagepullsecret",
-                    file=sys.stderr
+                    "Falling back to imagepullsecret"
                 )
                 secret = client.CoreV1Api().read_namespaced_secret(
                     os.getenv('IMAGEPULLSECRET', default='imagepullsecret'),
                     "default"
                 )
             else:
-                print(f"Failed to obtain secret from k8s: {e}", file=sys.stderr)
+                logger.error(f"Failed to obtain secret from k8s: {e}")
                 return ""
 
         encoded_key = base64.b64decode(next(iter(secret.data.values())))
@@ -228,7 +234,7 @@ def get_bcp_key():
 
         return key
     except Exception as e:
-        print(f"Failed to obtain api key from k8s: {e}", file=sys.stderr)
+        logger.error(f"Failed to obtain api key from k8s: {e}")
         return ""
 
 
@@ -353,13 +359,13 @@ def send_get_request_with_retry(endpoint, headers, retry=0):
     try:
         r = requests.get(endpoint, headers=headers, timeout=120)
     except Exception as e:
-        print("Exception caught during sending get request in utils", e, file=sys.stderr)
+        logger.error("Exception caught during sending get request in utils: %s", e)
         raise e
     if not r.ok:
         if retry < NUM_OF_RETRY:
-            print(f"Retrying {retry} time(s) to GET {endpoint}.", file=sys.stderr)
+            logger.info("Retrying %d time(s) to GET %s.", retry, endpoint)
             return send_get_request_with_retry(endpoint, headers, retry + 1)
-        print(f"Request to GET {endpoint} failed after {retry} retries.", file=sys.stderr)
+        logger.error("Request to GET %s failed after %d retries.", endpoint, retry)
     return r
 
 
@@ -368,13 +374,13 @@ def send_delete_request_with_retry(endpoint, headers, retry=0):
     try:
         r = requests.delete(endpoint, headers=headers, timeout=120)
     except Exception as e:
-        print("Exception caught during sending delete request in retry", e, file=sys.stderr)
+        logger.error("Exception caught during sending delete request in retry: %s", e)
         raise e
     if not r.ok:
         if retry < NUM_OF_RETRY:
-            print(f"Retrying {retry} time(s) to DELETE {endpoint}.", file=sys.stderr)
+            logger.info("Retrying %d time(s) to DELETE %s.", retry, endpoint)
             return send_delete_request_with_retry(endpoint, headers, retry + 1)
-        print(f"Request to DELETE {endpoint} failed after {retry} retries.", file=sys.stderr)
+        logger.error("Request to DELETE %s failed after %d retries.", endpoint, retry)
     return r
 
 
@@ -426,14 +432,14 @@ def retry_method(response=False):
                     if response:
                         if result.ok:
                             return result
-                        print(f"Response not OK (attempt {attempt + 1}): {result.status_code}", file=sys.stderr)
+                        logger.error("Response not OK (attempt %d): %s", attempt + 1, result.status_code)
                         time.sleep(30)  # Wait between retries
                     else:
                         # If no response-based retry, just return the result
                         return result
                 except Exception as e:
                     # Log or handle the exception
-                    print(f"Exception in {func.__name__} on attempt {attempt + 1}: {e}", file=sys.stderr)
+                    logger.error("Exception in %s on attempt %d: %s", func.__name__, attempt + 1, e)
                     time.sleep(30)  # Wait between retries
 
             # After retries, return error response or raise an error based on decorator parameter
@@ -497,7 +503,7 @@ def load_file(filepath, attempts=3, file_type="json"):
         return {}
 
     if not os.path.exists(filepath):
-        print("File trying to read doesn't exists", filepath, file=sys.stderr)
+        logger.warning("File trying to read doesn't exists: %s", filepath)
         return {}
 
     try:
@@ -512,12 +518,12 @@ def load_file(filepath, attempts=3, file_type="json"):
                 data = yaml.load(f)
         return data
     except Exception as e:
-        print(f"Exception thrown in load_file is {str(e)}", file=sys.stderr)
+        logger.error("Exception thrown in load_file: %s", str(e))
         data = {}
-        print(f"Data not in {file_type} loadable format", filepath, file=sys.stderr)
+        logger.warning("Data not in %s loadable format: %s", file_type, filepath)
         with open(filepath, "r", encoding='utf-8') as f:
             file_lines = f.readlines()
-            print("Data: \n", file_lines, file=sys.stderr)
+            logger.warning("Data: \n%s", file_lines)
         return load_file(filepath, attempts - 1, file_type=file_type)
 
 
@@ -528,7 +534,7 @@ def safe_load_file(filepath, existing_lock=None, attempts=3, file_type="json"):
         return {}
 
     if not os.path.exists(filepath):
-        print("File trying to read doesn't exists", filepath, file=sys.stderr)
+        logger.warning("File trying to read doesn't exists: %s", filepath)
         return {}
 
     lock = create_lock(filepath, existing_lock=existing_lock)
@@ -545,15 +551,15 @@ def safe_load_file(filepath, existing_lock=None, attempts=3, file_type="json"):
                     data = yaml.load(f)
             return data
     except Exception as e:
-        print(f"Exception thrown in safe_load_file is {str(e)}", file=sys.stderr)
+        logger.error("Exception thrown in safe_load_file: %s", str(e))
         data = {}
-        print(f"Data not in {file_type} loadable format", filepath, file=sys.stderr)
+        logger.warning("Data not in %s loadable format: %s", file_type, filepath)
         if not os.path.exists(filepath):
-            print("File trying to read doesn't exists", filepath, file=sys.stderr)
+            logger.warning("File trying to read doesn't exists: %s", filepath)
             return {}
         with open(filepath, "r", encoding='utf-8') as f:
             file_lines = f.readlines()
-            print("Data: \n", file_lines, file=sys.stderr)
+            logger.warning("Data: \n%s", file_lines)
         return safe_load_file(filepath, lock, attempts - 1, file_type=file_type)
 
 
@@ -564,7 +570,7 @@ def safe_dump_file(filepath, data, existing_lock=None, file_type="json"):
     )
     parent_folder = os.path.dirname(filepath)
     if not os.path.exists(parent_folder):
-        print(f"Parent folder {parent_folder} doesn't exists yet", file=sys.stderr)
+        logger.warning("Parent folder %s doesn't exists yet", parent_folder)
         return
 
     lock = create_lock(filepath, existing_lock=existing_lock)
@@ -607,7 +613,7 @@ def log_monitor(log_type, log_content):
     """
     monitor_type = os.getenv("SERVER_MONITOR_TYPE", "DATA_COLLECTION")
     print_string = f"[{monitor_type}][{log_type}] {log_content}"
-    print(print_string, file=sys.stderr)
+    logger.info(print_string)
 
 
 def log_api_error(user_id, org_name, from_ui, schema_dict, log_type, action):

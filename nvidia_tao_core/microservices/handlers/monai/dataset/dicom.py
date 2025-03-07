@@ -15,7 +15,6 @@
 """DICOM API module"""
 import copy
 import os
-import sys
 import time
 from typing import Any, Dict, Optional, Tuple
 from urllib.parse import parse_qsl
@@ -25,7 +24,14 @@ from dicomweb_client import DICOMwebClient
 from dicomweb_client.session_utils import create_session_from_user_pass
 from pydicom import Dataset
 from json import JSONDecodeError
+import logging
 
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 DICOM_FIELDS = [
     "StudyDate",
@@ -96,10 +102,10 @@ class DicomEndpoint:
         """Check if the status of the DICOMweb endpoint is healthy"""
         try:
             studies = self._studies(max_limit=1)
-            print(f"Total Studies Found: {len(studies)}", file=sys.stderr)
+            logger.info("Total Studies Found: %d", len(studies))
             return True, None
         except Exception as e:
-            print(e, file=sys.stderr)
+            logger.error(str(e))
             return False, str(e)
 
     @cached(cache=TTLCache(maxsize=16, ttl=180))
@@ -122,10 +128,10 @@ class DicomEndpoint:
                 series = str(d["SeriesInstanceUID"].value)
                 images[series] = self._meta_info(series, d)
             except JSONDecodeError as e:
-                print(f"JSON decode error for dataset: {datasets} - {ds} - {e}", file=sys.stderr)
+                logger.error("JSON decode error for dataset: %s - %s - %s", datasets, ds, e)
                 continue  # Skip this dataset and continue with the next
 
-        print(f"Total Images: {len(images)}", file=sys.stderr)
+        logger.info("Total Images: %d", len(images))
         return images
 
     @cached(cache=TTLCache(maxsize=16, ttl=180))
@@ -141,9 +147,9 @@ class DicomEndpoint:
                 labels.append(k)
                 all_images[series]["labels"] = labels
 
-        print(
-            f"All Images+Label: {len(all_images)}; All Labels: {len(all_labels)}",
-            file=sys.stderr,
+        logger.info(
+            "All Images+Label: %d; All Labels: %d",
+            len(all_images), len(all_labels)
         )
         return all_images
 
@@ -181,12 +187,11 @@ class DicomEndpoint:
                     "ReferencedSeriesUID": referenced_series_instance_uid,
                 }
             else:
-                print(
-                    f"Label Ignored:: ReferencedSeriesSequence is NOT found: {series}",
-                    file=sys.stderr,
+                logger.warning(
+                    "Label Ignored:: ReferencedSeriesSequence is NOT found: %s", series
                 )
 
-        print(f"Total Labels: {len(labels)}", file=sys.stderr)
+        logger.info("Total Labels: %d", len(labels))
         return labels
 
     @cached(cache=TTLCache(maxsize=16, ttl=180))
@@ -227,7 +232,7 @@ class DicomEndpoint:
             file_name = os.path.join(save_dir, f"{instance_id}.dcm")
             instance.save_as(file_name)
 
-        print(
-            f"Time to download {uid}: {time.time() - start:.3f} (sec)", file=sys.stderr
+        logger.info(
+            "Time to download %s: %.3f (sec)", uid, time.time() - start
         )
         return save_dir

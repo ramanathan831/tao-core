@@ -25,6 +25,7 @@ import threading
 import time
 import traceback
 import uuid
+import logging
 
 from nvidia_tao_core.microservices.constants import (
     AUTOML_DISABLED_NETWORKS,
@@ -107,6 +108,13 @@ from nvidia_tao_core.microservices.utils import (
 
 from nvidia_tao_core.scripts.generate_schema import generate_schema
 
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
+
 # Identify if workflow is on NGC
 BACKEND = os.getenv("BACKEND", "local-k8s")
 # Identify if nginx-ingress is enabled (should be disabled for NVCF deployments)
@@ -132,7 +140,7 @@ def delete_jobs_for_handler(handler_id, kind):
 def resolve_metadata_with_jobs(user_id, org_name, kind, handler_id):
     """Reads job_id.json in jobs_metadata folder and return it's contents"""
     if not user_id:
-        print("Can't resolve job metadata without user information", file=sys.stderr)
+        logger.error("Can't resolve job metadata without user information")
         return {}
     handler_id = "*" if handler_id in ("*", "all") else handler_id
     metadata = {} if handler_id == "*" else resolve_metadata(kind, handler_id)
@@ -433,8 +441,8 @@ class AppHandler:
             if encrypted_metadata["cloud_type"] in ("aws", "azure"):
                 create_cs_instance(encrypted_metadata)
         except Exception as e:
-            print(f"Exception thrown in create workspace is {str(e)}", file=sys.stderr)
-            print(traceback.format_exc, file=sys.stderr)
+            logger.error("Exception thrown in create workspace is %s", str(e))
+            logger.error(traceback.format_exc())
             return Code(400, {}, "Provided cloud credentials are invalid")
 
         write_handler_metadata(workspace_id, encrypted_metadata, "workspace")
@@ -504,7 +512,8 @@ class AppHandler:
                     if encrypted_metadata["cloud_type"] in ("aws", "azure"):
                         create_cs_instance(encrypted_metadata)
             except Exception as e:
-                print(f"Exception thrown in update_workspace is {str(e)}", file=sys.stderr)
+                logger.error("Exception thrown in update_workspace is %s", str(e))
+                logger.error(traceback.format_exc())
                 return Code(400, {}, "Provided cloud credentials are invalid")
 
         write_handler_metadata(workspace_id, encrypted_metadata, "workspace")
@@ -638,7 +647,7 @@ class AppHandler:
                 ""
             )
         except Exception:
-            print(traceback.format_exc(), file=sys.stderr)
+            logger.error("Exception caught during getting dataset formats: %s", traceback.format_exc())
             return Code(404, [], "Exception caught during getting dataset formats")
 
     # Create dataset
@@ -1038,23 +1047,23 @@ class AppHandler:
                     shutil.rmtree(temp_dir)
                     metadata["status"] = "pull_complete"
                     if not valid_datset_structure:
-                        print("Dataset structure validation failed", metadata, file=sys.stderr)
+                        logger.error("Dataset structure validation failed: %s", metadata)
                         metadata["status"] = "invalid_pull"
                     write_handler_metadata(dataset_id, metadata, "dataset")
                 except Exception as e:
-                    print(f"Exception thrown in validate_dataset_thread is {str(e)}", file=sys.stderr)
+                    logger.error("Exception thrown in validate_dataset_thread is %s", str(e))
+                    logger.error(traceback.format_exc())
                     metadata["status"] = "invalid_pull"
                     write_handler_metadata(dataset_id, metadata, "dataset")
-                    print(traceback.format_exc(), file=sys.stderr)
 
             thread = threading.Thread(target=validate_dataset_thread)
             thread.start()
             return Code(200, {}, "Server recieved file and upload process started")
         except Exception as e:
-            print(f"Exception thrown in validate_dataset is {str(e)}", file=sys.stderr)
+            logger.error("Exception thrown in validate_dataset is %s", str(e))
+            logger.error(traceback.format_exc())
             metadata["status"] = "invalid_pull"
             write_handler_metadata(dataset_id, metadata, "dataset")
-            print(traceback.format_exc(), file=sys.stderr)
             return Code(404, [], "Exception caught during upload")
 
     @staticmethod
@@ -1074,11 +1083,11 @@ class AppHandler:
             temp_dir, file_path = download_dataset(dataset_id)
             AppHandler.validate_dataset(user_id, org_name, dataset_id, temp_dir=temp_dir, file_path=file_path)
         except Exception as e:
-            print(f"Exception thrown in pull_dataset is {str(e)}", file=sys.stderr)
+            logger.error("Exception thrown in pull_dataset is %s", str(e))
+            logger.error(traceback.format_exc())
             metadata = resolve_metadata("dataset", dataset_id)
             metadata["status"] = "invalid_pull"
             write_handler_metadata(dataset_id, metadata, "dataset")
-            print(traceback.format_exc(), file=sys.stderr)
 
     # Spec API
 
@@ -1158,8 +1167,8 @@ class AppHandler:
         try:
             json_schema = generate_schema(microservices_network, action)
         except Exception as e:
-            print(f"Exception thrown in get_spec_schema is {str(e)}", file=sys.stderr)
-            print("Unable to fetch schema from tao_core", file=sys.stderr)
+            logger.error("Exception thrown in get_spec_schema is %s", str(e))
+            logger.error("Unable to fetch schema from tao_core")
 
         if not json_schema:
             DIR_PATH = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
@@ -1253,8 +1262,8 @@ class AppHandler:
         try:
             json_schema = generate_schema(microservices_network, microservices_action)
         except Exception as e:
-            print(f"Exception thrown in get_spec_schema_for_job is {str(e)}", file=sys.stderr)
-            print("Unable to fetch schema from tao_core", file=sys.stderr)
+            logger.error("Exception thrown in get_spec_schema_for_job is %s", str(e))
+            logger.error("Unable to fetch schema from tao_core")
 
         if not json_schema:
             DIR_PATH = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
@@ -1338,8 +1347,8 @@ class AppHandler:
             try:
                 json_schema = generate_schema(base_experiment_network, action)
             except Exception as e:
-                print(f"Exception thrown in get_base_experiment_spec_schema is {str(e)}", file=sys.stderr)
-                print("Unable to fetch schema from tao_core", file=sys.stderr)
+                logger.error("Exception thrown in get_base_experiment_spec_schema is %s", str(e))
+                logger.error("Unable to fetch schema from tao_core")
 
         if not json_schema:
             DIR_PATH = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
@@ -1397,8 +1406,8 @@ class AppHandler:
             try:
                 json_schema = generate_schema(network, action)
             except Exception as e:
-                print(f"Exception thrown in get_spec_schema_without_handler_id is {str(e)}", file=sys.stderr)
-                print("Unable to fetch schema from tao_core", file=sys.stderr)
+                logger.error("Exception thrown in get_spec_schema_without_handler_id is %s", str(e))
+                logger.error("Unable to fetch schema from tao_core")
 
         if not json_schema:
             DIR_PATH = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
@@ -1672,8 +1681,8 @@ class AppHandler:
                 on_new_job(job_context)
             return Code(200, job_id, f"{msg}Job scheduled")
         except Exception as e:
-            print(f"Exception thrown in job_run is {str(e)}", file=sys.stderr)
-            print(traceback.format_exc(), file=sys.stderr)
+            logger.error("Exception thrown in job_run is %s", str(e))
+            logger.error(traceback.format_exc())
             return Code(500, [], "Exception in job_run fn")
 
     @staticmethod
@@ -1750,7 +1759,7 @@ class AppHandler:
                     epoch_numbers.append(match.group(1))
             return Code(200, {"data": epoch_numbers}, "Job status updated")
         except Exception:
-            print(traceback.format_exc(), file=sys.stderr)
+            logger.error(traceback.format_exc())
             return Code(404, [], "Exception caught during getting epoch numbers")
 
     @staticmethod
@@ -1894,7 +1903,7 @@ class AppHandler:
             try:
                 on_delete_automl_job(org_name, handler_id, job_id)
             except Exception as e:
-                print(f"Exception thrown in automl_job_cancel is {str(e)}", file=sys.stderr)
+                logger.error("Exception thrown in automl_job_cancel is %s", str(e))
                 return Code(200, {"message": f"job {job_id} cancelled, and no pending recommendations"})
             stateless_handlers.update_job_status(handler_id, job_id, status="Canceled", kind=kind + "s")
             return automl_response
@@ -1947,8 +1956,8 @@ class AppHandler:
                 stateless_handlers.update_job_status(handler_id, job_id, status="Canceled", kind=kind + "s")
                 return Code(200, {"message": f"Running job {job_id} cancelled"})
             except Exception as e:
-                print(f"Exception thrown in job_cancel is {str(e)}", file=sys.stderr)
-                print("Cancel traceback", traceback.format_exc(), file=sys.stderr)
+                logger.error("Exception thrown in job_cancel is %s", str(e))
+                logger.error("Cancel traceback: %s", traceback.format_exc())
                 return Code(404, [], "job not found in platform")
         else:
             return Code(404, [], "job status not found")
@@ -1988,7 +1997,7 @@ class AppHandler:
             try:
                 on_delete_automl_job(org_name, handler_id, job_id)
             except Exception as e:
-                print(f"Exception thrown in automl job_pause is {str(e)}", file=sys.stderr)
+                logger.error("Exception thrown in automl job_pause is %s", str(e))
                 return Code(200, {"message": f"job {job_id} cancelled, and no pending recommendations"})
             stateless_handlers.update_job_status(handler_id, job_id, status="Paused", kind=kind + "s")
             return automl_response
@@ -2044,8 +2053,8 @@ class AppHandler:
                 stateless_handlers.update_job_status(handler_id, job_id, status="Paused", kind=kind + "s")
                 return Code(200, {"message": f"Running job {job_id} paused"})
             except Exception as e:
-                print(f"Exception thrown in job_pause is {str(e)}", file=sys.stderr)
-                print("Pause traceback", traceback.format_exc(), file=sys.stderr)
+                logger.error("Exception thrown in job_pause is %s", str(e))
+                logger.error("Pause traceback: %s", traceback.format_exc())
                 return Code(404, [], "job not found in platform")
 
         else:
@@ -2123,7 +2132,8 @@ class AppHandler:
             write_handler_metadata(handler_id, handler_metadata, kind)
             return Code(404, [], appended_message)
         except Exception as e:
-            print(f"Exception thrown in all_job_cancel is {str(e)}", file=sys.stderr)
+            logger.error("Exception thrown in all_job_cancel is %s", str(e))
+            logger.error(traceback.format_exc())
             handler_metadata["all_jobs_cancel_status"] = "Error"
             write_handler_metadata(handler_id, handler_metadata, kind)
             return Code(404, [], "Runtime exception caught during deleting a job")
@@ -2216,7 +2226,7 @@ class AppHandler:
                 org_name, team_name, handler_metadata, source_file, ngc_key, use_cookie, display_name, description
             )
             if code not in [200, 200]:
-                print("Error while creating NGC model", file=sys.stderr)
+                logger.error("Error while creating NGC model")
                 return Code(code, {}, message)
 
             # Upload model version
@@ -2229,8 +2239,8 @@ class AppHandler:
                 )
             return Code(response_code, {}, response_message)
         except Exception as e:
-            print(f"Exception thrown in publish_model is {str(e)}", file=sys.stderr)
-            print(traceback.format_exc(), file=sys.stderr)
+            logger.error("Exception thrown in publish_model is %s", str(e))
+            logger.error(traceback.format_exc())
             return Code(404, {}, "Unable to publish model")
 
     @staticmethod
@@ -2283,8 +2293,8 @@ class AppHandler:
                 return Code(response.status_code, {}, "Sucessfully deleted model")
             return Code(response.status_code, {}, "Unable to delete published model")
         except Exception as e:
-            print(f"Exception thrown in remove_published_model is {str(e)}", file=sys.stderr)
-            print(traceback.format_exc(), file=sys.stderr)
+            logger.error("Exception thrown in remove_published_model is %s", str(e))
+            logger.error(traceback.format_exc())
             return Code(404, {}, "Unable to delete published model")
 
     # Delete job
@@ -2338,8 +2348,8 @@ class AppHandler:
                 os.remove(job_log_path)
             return Code(200, [job_id], "job deleted")
         except Exception as e:
-            print(f"Exception thrown in job_delete is {str(e)}", file=sys.stderr)
-            print(traceback.format_exc(), file=sys.stderr)
+            logger.error("Exception thrown in job_delete is %s", str(e))
+            logger.error(traceback.format_exc())
             return Code(400, [], "job cannot be deleted")
 
     # Download experiment job
@@ -2487,8 +2497,8 @@ class AppHandler:
             return Code(404, None, "job output not found")
 
         except Exception as e:
-            print(f"Exception thrown in job_download is {str(e)}", file=sys.stderr)
-            print(traceback.format_exc(), file=sys.stderr)
+            logger.error("Exception thrown in job_download is %s", str(e))
+            logger.error(traceback.format_exc())
             return Code(404, None, "job output not found")
 
     @staticmethod
@@ -2987,7 +2997,7 @@ class AppHandler:
             job_id = job.get('id')
             job_action = job.get('action')
             if job_id and job_action:
-                print(f"Loading existing specs from job {job_id}", file=sys.stderr)
+                logger.info("Loading existing specs from job %s", job_id)
                 specs = get_job_specs(job_id)
                 name = job.get('name')
                 description = job.get('description')
@@ -3011,9 +3021,8 @@ class AppHandler:
                 if response.code == 200:
                     job_id = response.data
                     job_map[job_action] = job_id
-                    print(
-                        f"Created {job_action} job with id {job_id} for experiment {new_experiment_id}",
-                        file=sys.stderr
+                    logger.info(
+                        f"Created {job_action} job with id {job_id} for experiment {new_experiment_id}"
                     )
                 else:
                     return response
@@ -3077,7 +3086,7 @@ class AppHandler:
                         if specs_response.code == 200:
                             spec_schema = specs_response.data
                             specs = spec_schema["default"]
-                            print("Retrieved specs from DNN: ", specs, file=sys.stderr)
+                            logger.info("Retrieved specs from DNN: %s", specs)
                         else:
                             return specs_response
                     else:
@@ -3102,9 +3111,8 @@ class AppHandler:
                     )
                     if response.code == 200:
                         job_id = response.data
-                        print(
-                            f"Created {child_action} job with id {job_id} for experiment {experiment_id}",
-                            file=sys.stderr
+                        logger.info(
+                            f"Created {child_action} job with id {job_id} for experiment {experiment_id}"
                         )
                         job_action_to_id[child_action] = job_id
                     else:
@@ -3414,7 +3422,7 @@ class AppHandler:
             if not name:
                 name = job_metadata.get("name", "")
             if not platform_id:
-                print("Loading existing platform_id from paused job", file=sys.stderr)
+                logger.info("Loading existing platform_id from paused job")
                 platform_id = job_metadata.get("platform_id", "")
             if is_request_automl(experiment_id, action, kind):
                 msg = "AutoML "
@@ -3430,10 +3438,10 @@ class AppHandler:
             else:
                 # Create a job and run it
                 if not specs:
-                    print("Loading existing specs from paused job", file=sys.stderr)
+                    logger.info("Loading existing specs from paused job")
                     specs = get_job_specs(job_id)
                 if not parent_job_id:
-                    print("Loading existing parent_job_id from paused job", file=sys.stderr)
+                    logger.info("Loading existing parent_job_id from paused job")
                     parent_job_id = handler_metadata.get('parent_job_id', None)
                 if not description:
                     description = job_metadata.get("description", "")
@@ -3457,8 +3465,8 @@ class AppHandler:
                 on_new_job(job_context)
             return Code(200, {"message": f"{msg}Action for job {job_id} resumed"})
         except Exception as e:
-            print(f"Exception thrown in resume_experiment_job is {str(e)}", file=sys.stderr)
-            print(traceback.format_exc(), file=sys.stderr)
+            logger.error("Exception thrown in resume_experiment_job is %s", str(e))
+            logger.error(traceback.format_exc())
             return Code(400, [], "Action cannot be resumed")
 
     @staticmethod
@@ -3508,6 +3516,6 @@ class AppHandler:
                     automl_interpretable_result["best_experiment_id"] = int(experiment_id)
             return Code(200, automl_interpretable_result, "AutoML results compiled")
         except Exception as e:
-            print(f"Exception thrown in automl_details fetch is {str(e)}", file=sys.stderr)
-            print(traceback.format_exc(), file=sys.stderr)
+            logger.error("Exception thrown in automl_details fetch is %s", str(e))
+            logger.error(traceback.format_exc())
             return Code(400, [], "Error in constructing AutoML results")

@@ -14,10 +14,18 @@
 
 """Json spec schema hardening modules"""
 import copy
+import logging
 
 from nvidia_tao_core.microservices.specs_utils import csv_to_json_schema
 
 from jsonschema import validate as validationDriver, exceptions
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 
 def __merge(d1, d2):
@@ -42,7 +50,12 @@ def __merge(d1, d2):
 
 def harden(data, schema):
     """Harden the schema provided"""
-    return __merge(copy.deepcopy(schema['default']), data)
+    try:
+        return __merge(copy.deepcopy(schema['default']), data)
+    except Exception as e:
+        err = f"Exception thrown in harden is {str(e)}"
+        logger.error(err)
+        return False
 
 
 def validate(data, schema):
@@ -62,9 +75,9 @@ if __name__ == '__main__':
     hardened_data = harden(data={'random_seed': 99}, schema=schema)
     err = validate(data=hardened_data, schema=schema)
     if err:
-        print(err)
+        logger.error(err)
 
     # negative test
     err = validate(data={'random_seed': 99}, schema=schema)
     if err:
-        print(err)
+        logger.error(err)

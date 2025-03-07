@@ -14,10 +14,10 @@
 
 """AutoML main handler"""
 import ast
-import sys
 import argparse
 import traceback
 import json
+import logging
 
 from nvidia_tao_core.microservices.automl.controller import Controller
 from nvidia_tao_core.microservices.automl.bayesian import Bayesian
@@ -29,6 +29,13 @@ from nvidia_tao_core.microservices.handlers.stateless_handlers import (
     update_job_metadata,
     get_job_specs
 )
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 
 def automl_start(
@@ -255,5 +262,5 @@ if __name__ == "__main__":
             decrypted_workspace_metadata=decrypted_workspace_metadata)
 
     except Exception:
-        print(f"AutoML start for network {network} failed due to exception {traceback.format_exc()}", file=sys.stderr)
+        logger.error("AutoML start for network %s failed due to exception %s", network, traceback.format_exc())
         update_job_status(handler_id, automl_job_id, status="Error", kind="experiments")

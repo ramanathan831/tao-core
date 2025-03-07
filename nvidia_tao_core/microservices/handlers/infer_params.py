@@ -20,7 +20,7 @@ Each function takes as input:
 - job_context
 """
 import os
-import sys
+import logging
 
 from nvidia_tao_core.microservices.constants import MONAI_NETWORKS
 from nvidia_tao_core.microservices.handlers.utilities import (
@@ -34,6 +34,13 @@ from nvidia_tao_core.microservices.handlers.stateless_handlers import (
 )
 from nvidia_tao_core.microservices.handlers.monai.helpers import find_matching_bundle_dir
 
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
+
 
 def infer_verbose(job_context, handler_metadata):
     """Return True to enable verbose commands"""
@@ -45,7 +52,7 @@ def infer_key(job_context, handler_metadata):
     try:
         return handler_metadata.get("encryption_key", "tlt_encode")
     except Exception as e:
-        print(f"Exception thrown in infer_key is {str(e)}", file=sys.stderr)
+        logger.error("Exception thrown in infer_key is %s", str(e))
         return None
 
 

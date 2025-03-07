@@ -16,9 +16,16 @@
 
 import requests
 import json
-import sys
+import logging
 
 from nvidia_tao_core.microservices.handlers.utilities import Code, TAOResponse
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 
 class DicomWebClient:
@@ -60,7 +67,7 @@ class DicomWebClient:
                     return Code(response.status_code, {}, msg)
                 return Code(201, response.json(), "Got the content.")
             except Exception as e:
-                print("Exception caught during getting Dicom web content", e, file=sys.stderr)
+                logger.error("Exception caught during getting Dicom web content: %s", e)
                 return Code(500, {}, "Exception caught during getting Dicom web content")
         return Code(404, {}, "Issue in getting Dicom web content")
 
@@ -184,7 +191,7 @@ class DicomWebClient:
             with open(manifest_path, "w", encoding='utf-8') as f:
                 f.write(json.dumps(manifest_dict, indent=4))
         except Exception as e:
-            print(f"Exception thrown in create_dataset_manifest_file is {str(e)}", file=sys.stderr)
+            logger.error("Exception thrown in create_dataset_manifest_file is %s", str(e))
             return Code(400, {}, f"Cannot write the {manifest_path}.")
 
         return Code(201, {}, "Saved the manifest file.")

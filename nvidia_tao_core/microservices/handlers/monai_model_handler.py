@@ -15,7 +15,6 @@
 """MONAI Model Handler module."""
 import base64
 import os
-import sys
 from time import sleep
 from uuid import uuid4
 
@@ -28,6 +27,14 @@ from nvidia_tao_core.microservices.handlers.monai.dataset.cache import CacheInfo
 from nvidia_tao_core.microservices.handlers.monai_dataset_handler import MonaiDatasetHandler
 from nvidia_tao_core.microservices.handlers.utilities import Code
 from nvidia_tao_core.microservices.job_utils import executor as jobDriver
+import logging
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 
 class MonaiModelHandler:
@@ -127,10 +134,9 @@ class MonaiModelHandler:
             if error_msg != "" or not os.path.exists(output_path) or len(os.listdir(output_path)) == 0:
                 if error_msg == "":
                     error_msg = "Cannot find output data"
-                print(
+                logger.error(
                     f"Run inference on input {input_path} with model {model_name} "
-                    f"got error: {error_msg}",
-                    file=sys.stderr
+                    f"got error: {error_msg}"
                 )
                 return Code(400, [], f"Error: {error_msg}")
             res = Code(201, {"pred": output_path}, "Triton Inference Success")

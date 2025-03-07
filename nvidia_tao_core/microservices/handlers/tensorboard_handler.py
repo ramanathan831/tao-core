@@ -15,10 +15,10 @@
 """Tensorboard handler."""
 
 import json
-import sys
 import os
 from time import sleep
 from copy import deepcopy
+import logging
 
 from nvidia_tao_core.microservices.constants import TENSORBOARD_EXPERIMENT_LIMIT
 from nvidia_tao_core.microservices.handlers.mongo_handler import MongoHandler
@@ -28,6 +28,13 @@ from nvidia_tao_core.microservices.handlers.docker_images import DOCKER_IMAGE_MA
 from nvidia_tao_core.microservices.job_utils import executor as jobDriver
 
 release_name = os.getenv("RELEASE_NAME", 'tao-api')
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 
 class TensorboardHandler:
@@ -47,7 +54,7 @@ class TensorboardHandler:
     @staticmethod
     def start(org, experiment_id, user_id, workspace_id, replicas=1):
         """Start Tensorboard service for a given experiment."""
-        print(f'Starting Tensorboard Service for experiment {experiment_id}', file=sys.stderr)
+        logger.info(f'Starting Tensorboard Service for experiment {experiment_id}')
         tb_deployment_name = f'{release_name}-tb-deployment-{experiment_id}'
         tb_service_name = f"{release_name}-tb-service-{experiment_id}"
         tb_ingress_name = f'{release_name}-tb-ingress-{experiment_id}'
@@ -75,12 +82,12 @@ class TensorboardHandler:
         )
         timeout = 120
         not_ready_log = False
-        print("Check deployment status", file=sys.stderr)
+        logger.info("Check deployment status")
         while (timeout > 0):
             stat_dict = jobDriver.status_tensorboard_deployment(tb_deployment_name, replicas=replicas)
             status = stat_dict.get("status", "Unknown")
             if status == "Running":
-                print(f"Deployed Tensorboard for {experiment_id}", file=sys.stderr)
+                logger.info(f"Deployed Tensorboard for {experiment_id}")
                 TensorboardHandler.add_to_user_metadata(user_id)
                 return TensorboardHandler.start_tb_service(
                     tb_service_name,
@@ -89,17 +96,17 @@ class TensorboardHandler:
                     tb_ingress_path=tb_ingress_path
                 )
             if status == "ReplicaNotReady" and not_ready_log is False:
-                print("TensorboardService is deployed but replica not ready.", file=sys.stderr)
+                logger.warning("TensorboardService is deployed but replica not ready.")
                 not_ready_log = True
             sleep(1)
             timeout -= 1
-        print(f"Failed to deploy Tensorboard {experiment_id}", file=sys.stderr)
+        logger.error(f"Failed to deploy Tensorboard {experiment_id}")
         return Code(500, {}, f"Timeout Error: Tensorboard status: {status} after {timeout} seconds")
 
     @staticmethod
     def stop(experiment_id, user_id):
         """Stop a running Tensorboard service for a given experiment."""
-        print(f"Stopping Tensorboard job for {experiment_id}", file=sys.stderr)
+        logger.info(f"Stopping Tensorboard job for {experiment_id}")
         deployment_name = f'{release_name}-tb-deployment-{experiment_id}'
         tb_service_name = f"{release_name}-tb-service-{experiment_id}"
         tb_ingress_name = f'{release_name}-tb-ingress-{experiment_id}'
@@ -114,7 +121,7 @@ class TensorboardHandler:
         """Start the Tensorboard service component."""
         jobDriver.create_tensorboard_service(tb_service_name, deploy_label)
         timeout = 60
-        print("Check TB Service status", file=sys.stderr)
+        logger.info("Check TB Service status")
         not_ready_log = False
         while (timeout > 0):
             service_stat_dict = jobDriver.status_tb_service(tb_service_name)
@@ -122,14 +129,14 @@ class TensorboardHandler:
             if service_status == "Running":
                 jobDriver.create_tensorboard_ingress(tb_service_name, tb_ingress_name, tb_ingress_path)
                 tb_service_ip = service_stat_dict.get("tb_service_ip", None)
-                print(f"Created Tensorboard service {tb_service_name} at {tb_service_ip}", file=sys.stderr)
+                logger.info(f"Created Tensorboard service {tb_service_name} at {tb_service_ip}")
                 return Code(200, "Created Tensorboard Service")
             if service_status == "NotReady" and not_ready_log is False:
-                print("TB Service is started but not ready.", file=sys.stderr)
+                logger.warning("TB Service is started but not ready.")
                 not_ready_log = True
             sleep(1)
             timeout -= 1
-        print(f"Failed to create Tensorboard service {tb_service_name}", file=sys.stderr)
+        logger.error(f"Failed to create Tensorboard service {tb_service_name}")
         return Code(500, {}, f"Error: Tensorboard service status: {service_status}")
 
     @staticmethod
@@ -141,9 +148,8 @@ class TensorboardHandler:
         tensorboard_experiment_count += 1
         user_metadata["tensorboard_experiment_count"] = tensorboard_experiment_count
         mongo_users.upsert({'id': user_id}, user_metadata)
-        print(
-            f"Number of Tensorboard Experiments for user {user_id} is {tensorboard_experiment_count}",
-            file=sys.stderr
+        logger.info(
+            f"Number of Tensorboard Experiments for user {user_id} is {tensorboard_experiment_count}"
         )
 
     @staticmethod
@@ -156,9 +162,8 @@ class TensorboardHandler:
             tensorboard_experiment_count -= 1
             user_metadata["tensorboard_experiment_count"] = tensorboard_experiment_count
             mongo_users.upsert({'id': user_id}, user_metadata)
-            print(
-                f"Number of Tensorboard Experiments for user {user_id} is {tensorboard_experiment_count}",
-                file=sys.stderr
+            logger.info(
+                f"Number of Tensorboard Experiments for user {user_id} is {tensorboard_experiment_count}"
             )
 
     @staticmethod

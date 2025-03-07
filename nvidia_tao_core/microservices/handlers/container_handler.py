@@ -17,7 +17,6 @@
 """Job queue handling."""
 
 
-import sys
 import json
 import glob
 import importlib
@@ -25,12 +24,20 @@ import os
 import threading
 import traceback
 import yaml
+import logging
 
 from nvidia_tao_core.api_utils import module_utils
 from nvidia_tao_core.api_utils.entrypoint_mimicker import vlm_entrypoint
 from nvidia_tao_core.cloud_handlers.utils import download_files_from_spec, get_results_cloud_data, monitor_and_upload
 import nvidia_tao_core.loggers.logging as status_logging
 from nvidia_tao_core.api_utils.module_utils import entrypoint_paths, entry_points
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 module = entry_points[0].module_name.split('.')[0] if entry_points else None
 entrypoint = importlib.import_module(entrypoint_paths[module]) if module else None
@@ -131,8 +138,8 @@ class ContainerJobHandler:
                                 )
 
                         except Exception:
-                            print("Traceback", file=sys.stderr)
-                            print(traceback.format_exc(), file=sys.stderr)
+                            logger.error("Traceback")
+                            logger.error(traceback.format_exc())
                             ContainerJobHandler._handle_failure(job, status_logger, status_file)
                         finally:
                             ContainerJobHandler._cleanup(
@@ -149,8 +156,8 @@ class ContainerJobHandler:
                     entrypoint_thread.start()
 
                 except Exception:
-                    print("Traceback", file=sys.stderr)
-                    print(traceback.format_exc(), file=sys.stderr)
+                    logger.error("Traceback")
+                    logger.error(traceback.format_exc())
                     if status_logger:
                         status_logging.get_status_logger().write(
                             message=(
@@ -168,8 +175,8 @@ class ContainerJobHandler:
             return job["job_id"]
 
         except Exception:
-            print("Traceback", file=sys.stderr)
-            print(traceback.format_exc(), file=sys.stderr)
+            logger.error("Traceback")
+            logger.error(traceback.format_exc())
             return None
 
     @staticmethod
@@ -185,7 +192,7 @@ class ContainerJobHandler:
                 )
                 status_logging.set_status_logger(status_logger)
             except Exception:
-                print("Failed to create status logger", file=sys.stderr)
+                logger.error("Failed to create status logger")
         status_logging.get_status_logger().write(
             message=f"{job['action_name']} action failed for {job['neural_network_name']}",
             status_level=status_logging.Status.FAILURE
@@ -220,7 +227,7 @@ class ContainerJobHandler:
                     )
                     status_logging.set_status_logger(status_logger)
                 except Exception:
-                    print("Failed to create status logger", file=sys.stderr)
+                    logger.error("Failed to create status logger")
 
             status_logging.get_status_logger().write(
                 message=f"{job['action_name']} action {result} for {job['neural_network_name']}",
@@ -253,7 +260,7 @@ class ContainerJobHandler:
         if not results_dir:
             raise ValueError("Empty 'results_dir' in specs.")
         if not os.path.isdir(results_dir):
-            print(f"results_dir directory {results_dir} does not exist", file=sys.stderr)
+            logger.error("results_dir directory %s does not exist", results_dir)
             return "Pending"
 
         file_path = ContainerJobHandler.get_status_file(results_dir)

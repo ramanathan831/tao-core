@@ -14,6 +14,14 @@
 
 """Templates for Python files."""
 
+import logging
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 TEMPLATE_TIS_MODEL = """
 import json
@@ -63,7 +71,7 @@ class TritonPythonModel:
         override = {override}
         self.workflow.parser.update(override)
         self.workflow.initialize()
-        print("model initialized!!!")
+        logger.info("model initialized!!!")
 
     def execute(self, requests):
         responses = []
@@ -86,7 +94,7 @@ class TritonPythonModel:
             input_data = {{"{image_key}": input_path}}
             input_data.update(prompts)
             self.workflow.parser.ref_resolver.items["dataset"].config["data"][0] = input_data
-            print("model version: ", self.model_version)
+            logger.info("model version: %s", self.model_version)
 
             # remove existing files/dirs in output_dir
             dir_contents = os.listdir(output_dir)
@@ -108,7 +116,7 @@ class TritonPythonModel:
             except Exception as e:
                 error_msg = str(e)
                 torch.cuda.empty_cache()
-                print(f"Got an unexcepted error: {{error_msg}}")
+                logger.error(f"Got an unexcepted error: {error_msg}")
                 # reinitialize if meet exceptions
                 self.workflow.initialize()
             output1_tensor = pb_utils.Tensor("ERROR_MESSAGE", np.array([error_msg], dtype=np.object_))
@@ -254,7 +262,7 @@ if __name__ == "__main__":
             sleep(15)  # Check every 15 seconds
     except Exception as e:
         # Something went wrong inside...
-        print(traceback.format_exc(), file=sys.stderr)
+        logger.error(traceback.format_exc())
         shutil.copy(logfile, logs_from_toolkit)
         update_job_status(experiment_id, cl_job_id, status="Error")
         sys.exit(1)

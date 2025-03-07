@@ -13,11 +13,11 @@
 # limitations under the License.
 
 """Job Workflow modules"""
-import sys
 import threading
 import functools
 import time
 import uuid
+import logging
 
 from queue import PriorityQueue
 
@@ -38,6 +38,13 @@ from nvidia_tao_core.microservices.handlers.automl_handler import AutoMLHandler
 from nvidia_tao_core.microservices.handlers.mongo_handler import MongoHandler
 from nvidia_tao_core.microservices.utils import read_network_config
 from nvidia_tao_core.microservices.job_utils.dependencies import dependency_type_map, dependency_check_default
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 
 def synchronized(wrapped):
@@ -276,29 +283,31 @@ class Workflow:
                 kind = 'workspace'
                 handler_id = job_dict['workspace_id']
             else:
-                print(
-                    f"Warning: Job {job_id} monitoring unable to be restarted, "
+                logger.error(
+                    "Warning: Job %s monitoring unable to be restarted, "
                     "cannot determine handler kind",
-                    file=sys.stderr
+                    job_id
                 )
                 continue
 
             handler_metadata = get_handler_metadata(handler_id, kind)
             if not handler_metadata:
-                print(
-                    f"Warning: Job {job_id} monitoring unable to be restarted, "
-                    f"cannot find {kind} {handler_id}",
-                    file=sys.stderr
+                logger.error(
+                    "Warning: Job %s monitoring unable to be restarted, "
+                    "cannot find %s %s",
+                    job_id,
+                    kind,
+                    handler_id
                 )
                 continue
             network = get_handler_type(handler_metadata)
             user_id = handler_metadata.get("user_id")
             if not org_name:
                 if "org_name" not in handler_metadata:
-                    print(
-                        f"Warning: Job {job_id} monitoring unable to be restarted, "
+                    logger.error(
+                        "Warning: Job %s monitoring unable to be restarted, "
                         "cannot determine org name",
-                        file=sys.stderr
+                        job_id
                     )
                     continue
                 org_name = handler_metadata.get("org_name")
@@ -322,7 +331,10 @@ class Workflow:
             # If job has yet to be executed, skip monitoring
             if still_exists(job_context):
                 continue
-            print(f"Found unfinished monitoring thread for job {job_id}, restarting job thread now", file=sys.stderr)
+            logger.error(
+                "Found unfinished monitoring thread for job %s, restarting job thread now",
+                job_id
+            )
 
             if not isautoml:
                 # Get the correct ActionPipeline and monitor status
@@ -343,9 +355,9 @@ class Workflow:
                         name=f'tao-monitor-job-thread-{job_context.id}'
                     )
                     job_run_thread.start()
-                    print(f"Monitoring thread for job {job_id} restarted", file=sys.stderr)
+                    logger.info("Monitoring thread for job %s restarted", job_id)
                 else:
-                    print("Action pipeline couldnt be found", network_config, network, job_dict, file=sys.stderr)
+                    logger.error("Action pipeline couldn't be found: %s %s %s", network_config, network, job_dict)
             else:
                 # Restart AutoML job monitoring threads
                 recommendations = get_automl_controller_info(job_id)
@@ -380,10 +392,9 @@ class Workflow:
                                 name=f'tao-monitor-job-thread-{automl_context.id}'
                             )
                             job_run_thread.start()
-                            print(
+                            logger.info(
                                 f"Restarted AutoML monitoring thread for job {job_id} "
-                                f"and recommendation {rec_id}",
-                                file=sys.stderr
+                                f"and recommendation {rec_id}"
                             )
 
     @staticmethod
@@ -427,8 +438,8 @@ class Workflow:
             last_updated_time = datetime.now(tz=timezone.utc) - health_record.get("created_on")
             total_seconds = last_updated_time.total_seconds()
             if total_seconds > 3600:
-                print(f"Health file was updated {total_seconds} ago which is > 3600", file=sys.stderr)
+                logger.error("Health file was updated %s ago which is > 3600", total_seconds)
             return total_seconds <= 3600
         except Exception as e:
-            print(str(e), file=sys.stderr)
+            logger.error(str(e))
             return False

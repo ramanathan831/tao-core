@@ -15,9 +15,17 @@
 """Functions to infer data sources"""
 import os
 import re
+import logging
 
 from handlers.stateless_handlers import get_handler_metadata, get_workspace_string_identifier, get_handler_job_metadata
 from utils import read_network_config
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 
 def contains_results_uuid(data_path):
@@ -41,7 +49,7 @@ def get_datasets_from_metadata(metadata, source_key):
         list: List of dataset IDs, or empty list if not found
     """
     dataset = metadata.get(source_key)
-    print("get datasets from metadata", dataset)
+    logger.info("get datasets from metadata: %s", dataset)
     if dataset:
         if isinstance(dataset, list):
             return dataset

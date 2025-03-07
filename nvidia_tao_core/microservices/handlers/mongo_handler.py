@@ -18,9 +18,16 @@ import functools
 import time
 import pymongo
 import os
-import sys
 from urllib import parse
 from pymongo.errors import WriteError, AutoReconnect
+import logging
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 # MongoDB connection setup
 
@@ -47,16 +54,16 @@ def retry_method(func):
             try:
                 return func(*args, **kwargs)
             except AutoReconnect as e:
-                print(f"AutoReconnect exception in {func.__name__}: {e}", file=sys.stderr)
+                logger.error("AutoReconnect exception in %s: %s", func.__name__, e)
             except WriteError as e:
-                print(
-                    f"WriteError exception in {func.__name__}: {e} \n"
-                    f"With arguments {args} and {kwargs}",
-                    file=sys.stderr
+                logger.error(
+                    "WriteError exception in %s: %s \n"
+                    "With arguments %s and %s",
+                    func.__name__, e, args, kwargs
                 )
             except Exception as e:
                 # Log or handle the exception as needed
-                print(f"Exception in {func.__name__}: {e}", file=sys.stderr)
+                logger.error("Exception in %s: %s", func.__name__, e)
             if i != retries - 1:
                 time.sleep(30)
         # If all retries fail, raise an exception or handle it accordingly

@@ -14,11 +14,11 @@
 
 """AutoML handler modules"""
 import os
-import sys
 import json
 import time
 from copy import deepcopy
 from datetime import datetime, timezone
+import logging
 
 from nvidia_tao_core.microservices.handlers.stateless_handlers import (
     get_handler_metadata,
@@ -36,6 +36,8 @@ from nvidia_tao_core.microservices.job_utils import executor as jobDriver
 
 # TODO Make sure the image name is current docker tag of the API
 image = DOCKER_IMAGE_MAPPER["API"]
+
+logger = logging.getLogger(__name__)
 
 
 class AutoMLHandler:
@@ -102,7 +104,7 @@ class AutoMLHandler:
         decrypted_workspace_metadata.pop('_id', None)
 
         # Call the script
-        print("Starting automl", job_id, file=sys.stderr)
+        logger.info("Starting automl %s", job_id)
 
         run_command = (
             f"umask 0 && python3 automl_start.py "
@@ -151,7 +153,7 @@ class AutoMLHandler:
         Returns:
             Code: Status code and message indicating job cancellation success or failure.
         """
-        print("Stopping automl", file=sys.stderr)
+        logger.info("Stopping automl")
 
         try:
             jobDriver.delete(job_id, use_ngc=False)
@@ -205,7 +207,7 @@ class AutoMLHandler:
                         recommendation["status"] = "canceled"
                         save_automl_controller_info(job_id, recommendations)
         except Exception as e:
-            print(f"Exception thrown in AutomlHandler stop is {str(e)}", file=sys.stderr)
+            logger.error("Exception thrown in AutomlHandler stop is %s", str(e))
             return Code(404, [], "job cannot be stopped in platform")
 
         return Code(200, {"message": f"job {job_id} cancelled"})
@@ -223,7 +225,7 @@ class AutoMLHandler:
             name (str, optional): Name of the job. Defaults to "automl train job".
             platform_id (str, optional): Platform identifier for execution. Defaults to "".
         """
-        print("Resuming automl", job_id, file=sys.stderr)
+        logger.info("Resuming automl %s", job_id)
 
         root = os.path.join(get_jobs_root(user_id, org_name), job_id)
         if not os.path.exists(root):

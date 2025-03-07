@@ -17,7 +17,7 @@
 import json
 import os
 import re
-import sys
+import logging
 import tarfile
 import zipfile
 import ruamel.yaml
@@ -31,6 +31,13 @@ from nvidia_tao_core.microservices.utils import get_default_lock_file_path
 CUSTOMIZED_BUNDLE_URL_FILE = "url.json"
 CUSTOMIZED_BUNDLE_URL_KEY = "bundle_url"
 MEDICAL_SERVICE_SCRIPTS = "/medical_service_scripts"
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 
 class DynamicSorter:
@@ -236,7 +243,7 @@ class CapGpuUsage:
                 with open(user_config_file, "w", encoding="utf-8") as fp:
                     json.dump(user_config, fp, indent=4)
 
-            print(f"Organization User {org_name} config (pre-schedule) is {user_config}", file=sys.stderr)
+            logger.info("Organization User %s config (pre-schedule) is %s", org_name, user_config)
             if user_config["current_used"] + num_gpus > user_config["max_gpu_realtime_infer"]:
                 used = user_config["current_used"]
                 max_allowed = user_config["max_gpu_realtime_infer"]
@@ -245,13 +252,13 @@ class CapGpuUsage:
                     f"(GPUs in used) will exceed the maximum number of GPUs allowed ({max_allowed}). "
                     "Please consider list th"
                 )
-                print(msg, file=sys.stderr)
+                logger.warning(msg)
                 return False, msg
 
             user_config["current_used"] += num_gpus
             with open(user_config_file, "w", encoding="utf-8") as fp:
                 json.dump(user_config, fp, indent=4)
-            print(f"Organization User {org_name} config (post-schedule) is {user_config}", file=sys.stderr)
+            logger.info("Organization User %s config (post-schedule) is %s", org_name, user_config)
             return True, ""
 
     @staticmethod
@@ -267,28 +274,27 @@ class CapGpuUsage:
 
         user_config_file = get_root() + f"{org_name}/user_config.json"
         if not os.path.exists(user_config_file):
-            print(
-                f"Organization User config file does not exist when release_used is call for {org_name}",
-                file=sys.stderr
+            logger.warning(
+                "Organization User config file does not exist when release_used is call for %s", org_name
             )
             return False, "Internal Error"
 
         lock_file = get_default_lock_file_path(user_config_file)
         if not os.path.exists(lock_file):
-            print(f"Lock file does not exist when release_used is call for {org_name}", file=sys.stderr)
+            logger.warning("Lock file does not exist when release_used is call for %s", org_name)
             return False, "Internal Error"
 
         with FileLock(lock_file):
             with open(user_config_file, "r", encoding="utf-8") as f:
                 user_config = json.load(f)
-            print(f"Organization User {org_name} config (pre-released) is {user_config}", file=sys.stderr)
+            logger.info("Organization User %s config (pre-released) is %s", org_name, user_config)
             user_config["current_used"] -= num_gpus
             if user_config["current_used"] < 0:
-                print(f"Organization User {org_name} current_used GPU is less than 0. Resetting to 0", file=sys.stderr)
+                logger.warning("Organization User %s current_used GPU is less than 0. Resetting to 0", org_name)
                 user_config["current_used"] = 0
             with open(user_config_file, "w", encoding="utf-8") as fp:
                 json.dump(user_config, fp, indent=4)
-            print(f"Organization User {org_name} config (post-released) is {user_config}", file=sys.stderr)
+            logger.info("Organization User %s config (post-released) is %s", org_name, user_config)
             return True, ""
 
 
@@ -298,7 +304,7 @@ def download_from_url(url, handler_ptm):
     try:
         response = requests.get(url, timeout=120)
     except Exception as e:
-        print("Exception caught during dowload of MONAI file", e, file=sys.stderr)
+        logger.error("Exception caught during download of MONAI file: %s", str(e))
         raise e
     ptm_root = get_handler_root(handler_id=handler_ptm)
     parsed_url = urlparse(url)

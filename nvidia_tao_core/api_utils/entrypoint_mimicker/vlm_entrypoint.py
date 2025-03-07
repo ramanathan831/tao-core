@@ -29,6 +29,13 @@ import logging
 from nvidia_tao_core.telemetry.nvml import get_device_details
 from nvidia_tao_core.telemetry.telemetry import send_telemetry_data
 
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
+
 
 def convert_dict_to_cli_args(data, parent_key=""):
     """Convert a dictionary to CLI arguments.
@@ -101,7 +108,7 @@ def vlm_launch(neural_network_name, action, specs):
         progress_bar_pattern = re.compile(r"Epoch \d+: \s*\d+%|\[.*\]")
         call = f"{neural_network_name}-{action} {cli_args}"
         start = time()
-        print("call", call)
+        logger.info("call: %s", call)
         with dual_output(log_file) as (stdout_target, log_target):
             proc = subprocess.Popen(  # pylint: disable=R1732
                 shlex.split(call),
@@ -141,11 +148,11 @@ def vlm_launch(neural_network_name, action, specs):
                 process_passed = True
 
     except (KeyboardInterrupt, SystemExit):
-        print("Command was interrupted")
+        logger.warning("Command was interrupted")
         process_passed = True
     except subprocess.CalledProcessError as e:
         if e.output is not None:
-            print(e.output)
+            logger.error(e.output)
         process_passed = False
 
     end = time()
@@ -168,8 +175,8 @@ def vlm_launch(neural_network_name, action, specs):
         logging.warning(f"[Error]: {e}")
 
     if not process_passed:
-        print("Execution status: FAIL")
+        logger.error("Execution status: FAIL")
         return False
 
-    print("Execution status: PASS")
+    logger.info("Execution status: PASS")
     return True

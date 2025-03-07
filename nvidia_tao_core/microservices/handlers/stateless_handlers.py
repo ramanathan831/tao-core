@@ -25,6 +25,7 @@ import subprocess
 from pathlib import Path
 from collections import OrderedDict
 from datetime import datetime, timezone
+import logging
 
 from nvidia_tao_core.microservices.constants import CV_ACTION_CHAINED_ONLY, CV_ACTION_RULES
 from nvidia_tao_core.microservices.handlers.encrypt import NVVaultEncryption
@@ -34,6 +35,13 @@ from nvidia_tao_core.microservices.utils import safe_load_file
 BACKEND = os.getenv("BACKEND", "local-k8s")
 tao_root = os.environ.get("TAO_ROOT", "/tmp/shared/orgs/")
 base_exp_uuid = "00000000-0000-0000-0000-000000000000"
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 
 def get_root():
@@ -48,8 +56,8 @@ def __pathlib_glob(rootdir, handler_id, job_id):
                 return str(entry.resolve())
         return ""
     except Exception as e:
-        print(f"Exception thrown in pathlob glob is {str(e)}", file=sys.stderr)
-        print("Issue during finding handler_root", traceback.format_exc(), file=sys.stderr)
+        logger.error("Exception thrown in pathlob glob is %s", str(e))
+        logger.error("Issue during finding handler_root: %s", traceback.format_exc())
         return ""
 
 
@@ -223,7 +231,7 @@ def json_serializable(response):
         orjson.dumps(response.json())
         return True
     except Exception as e:
-        print(f"Exception thrown in json serializable is {str(e)}", file=sys.stderr)
+        logger.error("Exception thrown in json serializable is %s", str(e))
         return False
 
 
@@ -748,7 +756,7 @@ def decrypt_handler_metadata(workspace_metadata):
                 if encryption.check_config()[0]:
                     workspace_metadata["cloud_specific_details"][key] = encryption.decrypt(value)
                 else:
-                    print("deencryption not possible", file=sys.stderr)
+                    logger.warning("deencryption not possible")
 
 
 def get_workspace_string_identifier(workspace_id, workspace_cache):
@@ -834,7 +842,7 @@ def check_checkpoint_epoch_number_match(epoch_number_dictionary):
         for key in epoch_number_dictionary.keys():
             _ = int(epoch_number_dictionary[key])
     except Exception as e:
-        print(f"Exception thrown in check checkpoint epoch number match is {str(e)}", file=sys.stderr)
+        logger.error("Exception thrown in check checkpoint epoch number match is %s", str(e))
         return False
     return True
 
@@ -950,10 +958,10 @@ def is_valid_uuid4(uuid_string):
 
 
 def printc(*args, **kwargs):
-    """Print the contexts (uuid/handler_id/job_id) with the message"""
+    """Print the contexts (uuid/handler_id/job_id) with the message."""
     context = kwargs.pop("context", {})
     if not isinstance(context, dict):
-        print(*args, **kwargs)
+        logger.info(*args, **kwargs)
         return
     keys = kwargs.pop("keys", ["user_id", "handler_id", "id"])
     keys = keys if isinstance(keys, list) else [keys]
@@ -961,7 +969,7 @@ def printc(*args, **kwargs):
     for key, value in context.items():
         if key in keys:
             context_str += f"[{key}:{value}]"
-    print(context_str, *args, **kwargs)
+    logger.info(context_str, *args, **kwargs)
 
 
 def sanitize_handler_metadata(handler_metadata):

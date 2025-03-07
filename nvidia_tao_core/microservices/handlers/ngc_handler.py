@@ -16,7 +16,6 @@
 import json
 import os
 import requests
-import sys
 import logging
 from ngcbpc import errors
 
@@ -34,6 +33,12 @@ from nvidia_tao_core.microservices.utils import (
 DEPLOYMENT_MODE = os.getenv("DEPLOYMENT_MODE", "PROD")
 NUM_OF_RETRY = 3
 TIMEOUT = 120
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
 logger = logging.getLogger(__name__)
 
 
@@ -103,7 +108,7 @@ def create_user_personal_key(org_name, cookie):
     try:
         response = requests.post(url, json=data, headers=headers, timeout=TIMEOUT)
     except Exception as e:
-        print("Exception caught during creating personal key", e, file=sys.stderr)
+        logger.error("Exception caught during creating personal key: %s", e)
         raise e
     if not response.ok:
         raise ValueError("Couldn't create personal key")
@@ -180,7 +185,7 @@ def get_model(org_name, team_name, model_name, ngc_key, use_cookie):
         try:
             response = requests.get(url=endpoint, headers=headers, timeout=TIMEOUT)
         except Exception as e:
-            print(f"Exception caught during getting NGC model {model_name}", e, file=sys.stderr)
+            logger.error("Exception caught during getting NGC model %s: %s", model_name, e)
             raise e
     else:
         response = send_ngc_api_request(
@@ -192,7 +197,7 @@ def get_model(org_name, team_name, model_name, ngc_key, use_cookie):
         )
 
     status_code = response.status_code
-    print(f"get_model {model_name} status code is", status_code, file=sys.stderr)
+    logger.info("get_model %s status code is %s", model_name, status_code)
     if status_code == 200:
         return response.json()
     return None
@@ -234,7 +239,7 @@ def create_model(org_name, team_name, handler_metadata, source_file, ngc_key, us
         try:
             response = requests.post(url=endpoint, data=data, headers=headers, timeout=TIMEOUT)
         except Exception as e:
-            print("Exception caught during creating NGC model", e, file=sys.stderr)
+            logger.error("Exception caught during creating NGC model: %s", e)
             raise e
     else:
         response = send_ngc_api_request(
@@ -254,7 +259,7 @@ def create_model(org_name, team_name, handler_metadata, source_file, ngc_key, us
 
 def upload_model(org_name, team_name, handler_metadata, source_file, ngc_key, job_id, job_action):
     """Upload model to ngc private registry"""
-    print("Publishing ", source_file, file=sys.stderr)
+    logger.info("Publishing %s", source_file)
     network = handler_metadata.get("network_arch")
 
     checkpoint_choose_method = handler_metadata.get("checkpoint_choose_method", "best_model")
@@ -282,7 +287,7 @@ def upload_model(org_name, team_name, handler_metadata, source_file, ngc_key, jo
         clt.clear_config()
     except Exception as e:
         os.remove(local_path)
-        print("Exception in model_upload", str(e), type(e), file=sys.stderr)
+        logger.error("Exception in model_upload: %s, %s", str(e), type(e))
         return 404, str(e)
     os.remove(local_path)
     return 200, "Published model into requested org"
@@ -299,10 +304,10 @@ def download_ngc_model(ngc_path, ptm_root, key, is_cookie_set, use_ngc_staging):
         bool: True if the download is successful, False otherwise.
     """
     if ngc_path == "":
-        logging.info("Invalid ngc path.")
+        logger.info("Invalid ngc path.")
         return False
     if not key.startswith("nvapi"):
-        logging.info(
+        logger.info(
             'Credentials error: Invalid NGC_PERSONAL_KEY, NGC_keys are no longer valid, '
             'generate a personal key with Cloud Functions, NGC Catalog and Private registry services '
             'https://org.ngc.nvidia.com/setup/personal-keys'
@@ -316,7 +321,7 @@ def download_ngc_model(ngc_path, ptm_root, key, is_cookie_set, use_ngc_staging):
 
     # Get access token using k8s admin secret
     if not key:
-        logging.info("Personal key/Cookie is None")
+        logger.info("Personal key/Cookie is None")
         return False
 
     # Download model with ngc sdk
@@ -327,7 +332,7 @@ def download_ngc_model(ngc_path, ptm_root, key, is_cookie_set, use_ngc_staging):
         clt.configure(api_key=key, org_name=org, team_name=team)
     except Exception as e:
         if not ("Invalid org" in str(e) or "Invalid team" in str(e)):
-            logging.error(
+            logger.error(
                 "Can't configure the passed NGC KEY for Org {}, team {}".format(org, team)  # noqa pylint: disable=C0209
             )
             return False
@@ -335,20 +340,20 @@ def download_ngc_model(ngc_path, ptm_root, key, is_cookie_set, use_ngc_staging):
             "Can't validate the passed NGC KEY for Org {}, team {}, "
             "going to try download without configuring credentials"
         ).format(org, team)
-        logging.info(msg)  # noqa pylint: disable=C0209
+        logger.info(msg)  # noqa pylint: disable=C0209
 
     try:
         if not os.path.exists(ptm_root):
             os.makedirs(ptm_root, exist_ok=True)
             clt.registry.model.download_version(ngc_path, destination=ptm_root)
-            logging.info("Saving base_experiment file to {}".format(ptm_root)) # noqa pylint: disable=C0209
+            logger.info("Saving base_experiment file to {}".format(ptm_root)) # noqa pylint: disable=C0209
         else:
-            logging.info("Base_experiment already present in {}".format(ptm_root)) # noqa pylint: disable=C0209
+            logger.info("Base_experiment already present in {}".format(ptm_root)) # noqa pylint: disable=C0209
     except errors.ResourceNotFoundException as e:
-        logging.error("Model {} not found. Error: {}".format(ngc_path, e))  # noqa pylint: disable=C0209
+        logger.error("Model {} not found. Error: {}".format(ngc_path, e))  # noqa pylint: disable=C0209
         return False
     except errors.NgcException as e:
-        logging.error("Failed to download {}. Error: {}".format(ngc_path, e))  # noqa pylint: disable=C0209
+        logger.error("Failed to download {}. Error: {}".format(ngc_path, e))  # noqa pylint: disable=C0209
         return False
 
     return True
@@ -369,7 +374,7 @@ def delete_model(org_name, team_name, handler_metadata, ngc_key, use_cookie, job
     if team_name:
         endpoint += f"/team/{team_name}"
     endpoint += f"/models/{network}/versions/{job_action}_{job_id}_{epoch_number}"
-    print(f"Deleting: {org_name}/{team_name}/{network}:{job_action}_{job_id}_{epoch_number}", file=sys.stderr)
+    logger.info("Deleting: %s/%s/%s:%s_%s_%s", org_name, team_name, network, job_action, job_id, epoch_number)
 
     if use_cookie:
         headers = {"Cookie": ngc_key}
@@ -377,8 +382,8 @@ def delete_model(org_name, team_name, handler_metadata, ngc_key, use_cookie, job
     else:
         response = send_ngc_api_request(endpoint=endpoint, requests_method="DELETE", request_body={}, ngc_key=ngc_key)
 
-    print("Delete model response", response, file=sys.stderr)
-    print("Delete model response.text", response.text, file=sys.stderr)
+    logger.info("Delete model response: %s", response)
+    logger.info("Delete model response.text: %s", response.text)
     return response
 
 
@@ -392,11 +397,10 @@ def validate_ptm_download(base_experiment_folder, sha256_digest):
                     if sha256_digest.get(filename):
                         downloaded_file_checksum = sha256_checksum(file_path)
                         if sha256_digest[filename] != downloaded_file_checksum:
-                            print(
+                            logger.error(
                                 f"{filename} sha256 checksum not matched. "
                                 f"Expected checksum is {sha256_digest.get(filename)}"
-                                f"wheras downloaded file checksum is {downloaded_file_checksum}",
-                                file=sys.stderr
+                                f"wheras downloaded file checksum is {downloaded_file_checksum}"
                             )
                         return sha256_digest[filename] == downloaded_file_checksum
     return True

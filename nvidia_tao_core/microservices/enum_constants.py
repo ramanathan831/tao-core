@@ -17,6 +17,14 @@ import enum
 import json
 import pathlib
 from typing import Set
+import logging
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 
 def _scan_config_files() -> tuple[Set[str], Set[str]]:
@@ -55,7 +63,7 @@ def _get_all_dataset_types():
     # Add not_restricted and user_custom as they might be special cases
     dataset_types.update({"not_restricted", "user_custom"})
     result = {dtype.upper(): dtype for dtype in dataset_types}
-    print("Debug - Found dataset types:", result)  # Debug print
+    logger.debug("Found dataset types: %s", result)  # Debug print
     return result
 
 

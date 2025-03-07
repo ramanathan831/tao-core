@@ -15,13 +15,20 @@
 """Authentication utils validation modules"""
 import os
 import requests
-import sys
 import uuid
+import logging
 
 from nvidia_tao_core.microservices.auth_utils.credentials import decode_jwt_token
 from nvidia_tao_core.microservices.auth_utils import session
 
 DEPLOYMENT_MODE = os.getenv("DEPLOYMENT_MODE", "PROD")
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 #
 # class AuthenticationError(Exception):
@@ -75,7 +82,7 @@ def validate(url, token):
     if user:
         user_id = user.get('id')
     if user_id and org_name:
-        print(f'Found session for user: {str(user_id)} in org {org_name}',  file=sys.stderr)
+        logger.info("Found session for user: %s in org %s", str(user_id), org_name)
         return str(user_id), org_name, err
     # Fall back on NGC to validate
     headers = {'Accept': 'application/json'}
@@ -95,7 +102,7 @@ def validate(url, token):
     try:
         r = requests.get(f'{ngc_api_base_url}/users/me', headers=headers, timeout=120)
     except Exception as e:
-        print("Exception caught during getting NGC user info", e, file=sys.stderr)
+        logger.error("Exception caught during getting NGC user info: %s", e)
         raise e
     if r.status_code != 200:
         if err:  # JWT Decode Error
@@ -107,7 +114,7 @@ def validate(url, token):
         err = 'Authentication error: Unknown NGC user ID'
         return user_id, org_name, err
     user_id = str(uuid.uuid5(uuid.UUID(int=0), str(ngc_user_id)))
-    print('New session for user: ' + str(user_id), file=sys.stderr)
+    logger.info("New session for user: %s", str(user_id))
     # Create a new or update an expired session
     member_of = []
     roles = r.json().get('user', {}).get('roles', [])

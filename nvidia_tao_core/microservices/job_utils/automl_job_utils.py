@@ -13,7 +13,7 @@
 # limitations under the License.
 
 """Util functions for AutoML jobs"""
-import sys
+import logging
 
 from nvidia_tao_core.microservices.handlers.stateless_handlers import (
     get_public_experiments,
@@ -24,6 +24,13 @@ from nvidia_tao_core.microservices.handlers.stateless_handlers import (
 )
 from nvidia_tao_core.microservices.job_utils.workflow import Workflow, Job, Dependency
 from nvidia_tao_core.microservices.job_utils import executor as jobDriver
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 
 def get_base_experiment_id_from_recommendation(specs, network_arch):
@@ -82,7 +89,7 @@ def on_new_automl_job(automl_context, recommendation):
     }
     j = Job(**job)
     Workflow.enqueue(j)
-    print(f"Recommendation submitted to workflow with {recommendation.job_id}", file=sys.stderr)
+    logger.info("Recommendation submitted to workflow with %s", recommendation.job_id)
     metadata = get_handler_job_metadata(automl_context.id)
     job_details = metadata.get("job_details", {}).get(recommendation.job_id, {})
     if job_details:

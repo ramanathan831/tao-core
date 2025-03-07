@@ -19,8 +19,16 @@ import glob
 import datetime
 import time
 from kubernetes import client, config
+import logging
 
 from nvidia_tao_core.microservices.handlers.stateless_handlers import BACKEND
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 
 def fix_input_dimension(dimension_value, factor=32):

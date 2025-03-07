@@ -14,12 +14,12 @@
 
 """NVCF handlers modules"""
 import os
-import sys
 import json
 import time
 import uuid
 import requests
 import traceback
+import logging
 
 from nvidia_tao_core.microservices.handlers.ngc_handler import send_ngc_api_request, get_user_key
 from nvidia_tao_core.microservices.handlers.stateless_handlers import (
@@ -33,6 +33,13 @@ from nvidia_tao_core.microservices.utils import retry_method
 
 
 NUM_OF_RETRY = 3
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 
 def get_available_nvcf_instances(user_id, org_name):
@@ -137,13 +144,13 @@ def invoke_function(
     try:
         response = requests.post(url, headers=headers, json=request_metadata, timeout=120)
     except Exception as e:
-        print("Exception caught during invoking NVCF function", deployment_string, e, file=sys.stderr)
+        logger.error("Exception caught during invoking NVCF function %s: %s", deployment_string, e)
         raise e
 
     if not response.ok:
-        print("Invocation failed.", file=sys.stderr)
-        print("Response status code:", response.status_code, file=sys.stderr)
-        print("Response content:", response.text, file=sys.stderr)
+        logger.error("Invocation failed.")
+        logger.error("Response status code: %s", response.status_code)
+        logger.error("Response content: %s", response.text)
     return response
 
 
@@ -160,9 +167,9 @@ def get_status_of_invoked_function(request_id, ngc_key):
     response = requests.get(url, headers=headers, timeout=120)
 
     if not response.ok:
-        print("Request failed.")
-        print("Response status code:", response.status_code)
-        print("Response content:", response.text)
+        logger.error("Request failed.")
+        logger.error("Response status code: %s", response.status_code)
+        logger.error("Response content: %s", response.text)
     return response
 
 
@@ -205,7 +212,7 @@ def create_function(org_name, team_name, job_id, container, ngc_key):
         f"{team_string}nvcf/functions"
     )
     requests_method = "POST"
-    print("create endpoint", endpoint, payload, file=sys.stderr)
+    logger.debug("create endpoint %s %s", endpoint, payload)
     return send_ngc_api_request(endpoint, requests_method, request_body=json.dumps(payload), json=True, ngc_key=ngc_key)
 
 
@@ -233,7 +240,7 @@ def deploy_function(org_name, team_name, function_details, nvcf_backend_details,
         f"{team_string}nvcf/deployments/functions/{function_id}/versions/{version_id}"
     )
     requests_method = "POST"
-    print("deploy endpoint", endpoint, payload, file=sys.stderr)
+    logger.debug("deploy endpoint %s %s", endpoint, payload)
     return send_ngc_api_request(endpoint, requests_method, request_body=json.dumps(payload), json=True, ngc_key=ngc_key)
 
 
@@ -349,21 +356,21 @@ def create_microservice_job_on_nvcf(job_metadata, docker_env_vars={}):
 
     if job_create_response.status_code not in [200, 202]:
         job_create_response_json = job_create_response.json()
-        print("Invocation error response code", job_create_response.status_code, file=sys.stderr)
-        print("Invocation error response json", job_create_response_json, file=sys.stderr)
+        logger.error("Invocation error response code %s", job_create_response.status_code)
+        logger.error("Invocation error response json %s", job_create_response_json)
         update_job_details_with_microservices_response(
             job_create_response_json.get('detail', ""),
             job_message_job_id,
             automl_expt_job_id=tao_api_job_id
         )
-        print(
-            f"Setting status of job {tao_api_job_id} to Error as microservices job couldn't be created",
-            file=sys.stderr
+        logger.error(
+            "Setting status of job %s to Error as microservices job couldn't be created",
+            tao_api_job_id
         )
         return "Error", "Microservice job couldn't be created"
 
     job_create_response_json = job_create_response.json()
-    print(f"Microservice job successfully created for {tao_api_job_id}", job_create_response_json, file=sys.stderr)
+    logger.info("Microservice job successfully created for %s: %s", tao_api_job_id, job_create_response_json)
     job_id = job_create_response_json.get("job_id")
 
     if job_create_response.status_code == 202:
@@ -372,11 +379,11 @@ def create_microservice_job_on_nvcf(job_metadata, docker_env_vars={}):
             polling_response = get_status_of_invoked_function(req_id, ngc_key)
             if polling_response.status_code == 404:
                 if polling_response.json().get("title") != "Not Found":
-                    print("Polling(job_create) response failed", polling_response.status_code, file=sys.stderr)
-                    print(
-                        f"Setting status of job {job_id} to Error as job create polling "
+                    logger.error("Polling(job_create) response failed %s", polling_response.status_code)
+                    logger.error(
+                        "Setting status of job %s to Error as job create polling "
                         "failed with a non 200 response",
-                        file=sys.stderr
+                        job_id
                     )
                     return "Error", "NVCF Polling failed"
             if polling_response.status_code != 202:
@@ -384,22 +391,21 @@ def create_microservice_job_on_nvcf(job_metadata, docker_env_vars={}):
             time.sleep(10)
 
         if polling_response.status_code != 200:
-            print(
-                "Polling(job_create) response status code is not 200",
-                polling_response.status_code,
-                file=sys.stderr
+            logger.error(
+                "Polling(job_create) response status code is not 200 %s",
+                polling_response.status_code
             )
-            print(
-                f"Setting status of job {job_id} to Error as job create polling "
+            logger.error(
+                "Setting status of job %s to Error as job create polling "
                 "failed with a non 200 response",
-                file=sys.stderr
+                job_id
             )
             return "Error", "NVCF Polling failed"
         job_id = polling_response.json().get("job_id")
 
     if not job_id:
-        print("Job ID couldn't be fetched", file=sys.stderr)
-        print(f"Setting status of job {job_id} to Error as job id can't be fetched from microservices", file=sys.stderr)
+        logger.error("Job ID couldn't be fetched")
+        logger.error("Setting status of job %s to Error as job id can't be fetched from microservices", job_id)
         return "Error", "Job_id from microservices job created couldn't be fetched"
 
     return "Running", "Job submitted to NVCF"
@@ -427,9 +433,9 @@ def get_nvcf_microservices_job_status(job_metadata, status="", docker_env_vars={
         if deployment_string.find(":") == -1:
             if job_status == "Error":
                 return "Error"
-            print(
-                f"Deployment not active yet for job {job_id} {deployment_string} (in get status function)",
-                file=sys.stderr
+            logger.debug(
+                "Deployment not active yet for job %s %s (in get status function)",
+                job_id, deployment_string
             )
             status = "Pending"
             return status
@@ -448,7 +454,7 @@ def get_nvcf_microservices_job_status(job_metadata, status="", docker_env_vars={
         if job_monitor_response.status_code == 404:
             status = "Error"
             if job_monitor_response.json().get("title") == "Not Found":
-                print("NVCF function was deleted, setting status as done", file=sys.stderr)
+                logger.info("NVCF function was deleted, setting status as done")
                 status = "Done"
 
         if job_monitor_response.status_code == 202:
@@ -457,17 +463,16 @@ def get_nvcf_microservices_job_status(job_metadata, status="", docker_env_vars={
                 job_monitor_response = get_status_of_invoked_function(req_id, ngc_key)
                 if job_monitor_response.status_code == 404:
                     if job_monitor_response.json().get("title") != "Not Found":
-                        print("Polling(job_monitor) response failed", job_monitor_response.status_code, file=sys.stderr)
+                        logger.error("Polling(job_monitor) response failed %s", job_monitor_response.status_code)
                         status = "Error"
                 if job_monitor_response.status_code != 202:
                     break
                 time.sleep(10)
 
             if job_monitor_response.status_code != 200:
-                print(
-                    "Polling(job_monitor) response status code is not 200",
-                    job_monitor_response.status_code,
-                    file=sys.stderr
+                logger.error(
+                    "Polling(job_monitor) response status code is not 200 %s",
+                    job_monitor_response.status_code
                 )
                 status = "Error"
 
@@ -497,19 +502,18 @@ def get_nvcf_microservices_job_status(job_metadata, status="", docker_env_vars={
                 else:
                     status = "Pending"
                     if "Job ID Not Present" in error_message:
-                        print(f"Job ID Not Present in {deployment_string} for job {job_id}", file=sys.stderr)
+                        logger.error("Job ID Not Present in %s for job %s", deployment_string, job_id)
                         status = "Error"
             except Exception as e:
-                print(f"Exception thrown in get_nvcf_microservices_job_status is {str(e)}", file=sys.stderr)
-                print(traceback.format_exc(), file=sys.stderr)
-                print(
-                    f"Exception while calling job fetch microservices in {deployment_string} for job {job_id}, "
-                    f"{job_monitor_response.text}",
-                    file=sys.stderr
+                logger.error("Exception thrown in get_nvcf_microservices_job_status: %s", str(e))
+                logger.error(traceback.format_exc())
+                logger.error(
+                    "Exception while calling job fetch microservices in %s for job %s, %s",
+                    deployment_string, job_id, job_monitor_response.text
                 )
                 status = "Error"
 
     if not status:
-        print("Status couldn't be inferred", file=sys.stderr)
+        logger.error("Status couldn't be inferred")
         status = "Pending"
     return status

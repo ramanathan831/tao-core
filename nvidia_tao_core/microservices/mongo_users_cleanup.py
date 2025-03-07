@@ -13,10 +13,18 @@
 # limitations under the License.
 """Script to periodically cleanup expired session tokens"""
 from datetime import datetime, timezone
+import logging
 
 from nvidia_tao_core.microservices.handlers.mongo_handler import MongoHandler
 
 __SESSION_EXPIRY_SECONDS__ = 86400  # Equal to 24 hours
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 
 def run():
@@ -31,9 +39,9 @@ def run():
                 dt_delta = datetime.now(tz=timezone.utc) - token_info['last_modified']
                 if dt_delta.total_seconds() < __SESSION_EXPIRY_SECONDS__:  # replace expired token
                     new_tokens.append(token_info)
-        print(f"Length of tokens before {len(user.get('token_info', []))} for user {user_id}")
+        logger.info("Length of tokens before %d for user %s", len(user.get('token_info', [])), user_id)
         user["token_info"] = new_tokens
-        print(f"Length of tokens after {len(user.get('token_info', []))} for user {user_id}")
+        logger.info("Length of tokens after %d for user %s", len(user.get('token_info', [])), user_id)
         mongo_users.upsert({'id': user_id}, user)
 
 

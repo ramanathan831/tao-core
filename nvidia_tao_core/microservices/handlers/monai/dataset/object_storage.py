@@ -15,15 +15,22 @@
 """Object storage client"""
 import json
 import os
-import sys
 import tempfile
 import time
 from urllib.parse import urlparse
+import logging
 
 from libcloud.storage.providers import get_driver
 from libcloud.storage.types import Provider
 
 from .base import BaseEndpoint
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 
 def get_manifest_name(url):
@@ -263,7 +270,7 @@ class ObjectStorageEndpoint(BaseEndpoint):
         try:
             self._get_client()
         except Exception as e:
-            print(f"Exception thrown in check_url is {str(e)}", file=sys.stderr)
+            logger.error("Exception thrown in check_url is %s", str(e))
             return False
         return True
 
@@ -299,6 +306,7 @@ class ObjectStorageEndpoint(BaseEndpoint):
         savepath = os.path.dirname(filename)
         os.makedirs(savepath, exist_ok=True)
         driver.download_object(obj, filename, overwrite_existing=True)
+        logger.info("Downloading %s to %s", url, filename)
 
     def download(self, uid, filepath):
         """Download an image to local path according to the `id` parameter."""
@@ -350,9 +358,9 @@ class ObjectStorageEndpoint(BaseEndpoint):
                 try:
                     driver.download_object(obj, file_name, overwrite_existing=True)
                 except Exception as e:
-                    print(
+                    logger.error(
                         f"#{i}: Cannot download file {file_name} from {container_name} in {self.url}.",
-                        file=sys.stderr
+                        exc_info=True
                     )
                     if i == self.download_retry_times - 1:
                         raise TimeoutError(
@@ -361,10 +369,10 @@ class ObjectStorageEndpoint(BaseEndpoint):
                     continue
                 break
 
-        print(
-            f"Time to download object storage container {self.url}: "
-            f"{time.time() - start_time:.3f} (sec)",
-            file=sys.stderr
+        logger.info(
+            "Time to download object storage container %s: %0.3f (sec)",
+            self.url,
+            time.time() - start_time
         )
         return filepath
 

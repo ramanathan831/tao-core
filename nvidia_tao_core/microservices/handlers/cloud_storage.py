@@ -15,10 +15,10 @@
 """Cloud storage Apache client"""
 import os
 import io
-import sys
 import copy
 import time
 import functools
+import logging
 
 from nvidia_tao_core.microservices.handlers.encrypt import NVVaultEncryption
 
@@ -28,6 +28,13 @@ from libcloud.common.types import LibcloudError
 from libcloud.storage.types import ObjectDoesNotExistError
 
 NUM_RETRY = 5
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 
 def retry_method(func):
@@ -39,7 +46,7 @@ def retry_method(func):
                 return func(*args, **kwargs)
             except Exception as e:
                 # Log or handle the exception as needed
-                print(f"Exception in {func.__name__}: {e}", file=sys.stderr)
+                logger.error("Exception in %s: %s", func.__name__, e)
             time.sleep(30)
         # If all retries fail, raise an exception or handle it accordingly
         raise ValueError(f"Failed to execute {func.__name__} after multiple retries")
@@ -155,7 +162,7 @@ class CloudStorage:
                         object_name=cloud_file_path
                     )
                 if self.is_file(cloud_file_path):
-                    print("File {} was uploaded successfully".format(cloud_file_path))  # noqa pylint: disable=C0209
+                    logger.info("File %s was uploaded successfully", cloud_file_path)
                 else:
                     raise ValueError(f"File {cloud_file_path} was not uploaded successfully")
         except Exception as e:
@@ -213,10 +220,7 @@ class CloudStorage:
         local_destination: Local path to save the downloaded file.
         """
         if not self.is_file(cloud_file_path):
-            print(
-                "Cloud file {} trying to download doesn't exist".format(cloud_file_path),  # noqa pylint: disable=C0209
-                file=sys.stderr
-            )
+            logger.error("Cloud file %s trying to download doesn't exist", cloud_file_path)
             return
         try:
             base_path = os.path.dirname(local_destination)
@@ -272,7 +276,7 @@ class CloudStorage:
                 obj = self.driver.get_object(container_name=self.bucket_name, object_name=file_path)
                 self.driver.delete_object(obj)
             else:
-                print("File {} doesn't exist".format(file_path))  # noqa pylint: disable=C0209
+                logger.info("File %s doesn't exist", file_path)
         except Exception as e:
             raise e
 
@@ -286,10 +290,10 @@ class CloudStorage:
         try:
             self.driver.get_object(container_name=self.bucket_name, object_name=cloud_path)
         except (LibcloudError, ObjectDoesNotExistError):
-            print(f"File {cloud_path} doesn't exist in cloud storage", file=sys.stderr)
+            logger.error("File %s doesn't exist in cloud storage", cloud_path)
             return False
         except Exception as e:
-            print(f"Error checking cloud path: {e}", file=sys.stderr)
+            logger.error("Error checking cloud path: %s", e)
             return False
         return True
 
@@ -363,9 +367,9 @@ class CloudStorage:
                     container=self.container,
                     object_name=destination_object_name
                 )
-                print(f"Object copied successfully: {source_object_name} -> {destination_object_name}", file=sys.stderr)
+                logger.info("Object copied successfully: %s -> %s", source_object_name, destination_object_name)
             except Exception as e:
-                print(f"Error copying object {source_object_name}: {e}", file=sys.stderr)
+                logger.error("Error copying object %s: %s", source_object_name, e)
                 raise ValueError(f"Error copying object {source_object_name}") from e
 
     @retry_method

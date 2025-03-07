@@ -13,15 +13,22 @@
 # limitations under the License.
 
 """Authentication utils session modules"""
-import sys
 import functools
 import threading
 from datetime import datetime, timezone
+import logging
 
 from nvidia_tao_core.microservices.handlers.mongo_handler import MongoHandler
 
 __SESSION_EXPIRY_SECONDS__ = 86400  # Equal to 24 hours
 _SESSION_REFRESH_SECONDS__ = 43200   # Equal to 12 hours
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 
 def synchronized(wrapped):
@@ -87,6 +94,6 @@ def get_session(token, org_name):
                         session = user
                         break
         except Exception as e:
-            print("Warning, error while retrieving user token: ", str(e), file=sys.stderr)
+            logger.warning("Error while retrieving user token: %s", str(e))
 
     return session

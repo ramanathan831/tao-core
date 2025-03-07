@@ -14,15 +14,22 @@
 
 """Triton Inference Service handler modules"""
 import os
-import sys
 import tritonclient.grpc as grpcclient
 from time import sleep
+import logging
 
 from nvidia_tao_core.microservices.handlers.docker_images import DOCKER_IMAGE_MAPPER
 from nvidia_tao_core.microservices.handlers.utilities import Code, get_model_bundle_root
 from nvidia_tao_core.microservices.job_utils import executor as jobDriver
 
 image = DOCKER_IMAGE_MAPPER.get("MONAI_TIS")
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 
 class TISHandler:
@@ -36,7 +43,7 @@ class TISHandler:
     @staticmethod
     def start(org_name, model_id, handler_metadata, model_name, replicas=1):
         """Starts a Triton Inference Service job by running tis_start.py file"""
-        print(f"Starting deploy triton inference server {model_id}", file=sys.stderr)
+        logger.info("Starting deploy triton inference server %s", model_id)
         model_repo = get_model_bundle_root(org_name, model_id)
         bundle_requirements_file = os.path.join(model_repo, model_name, "requirements.txt")
         # TODO: can leverage the shared pv to print logs inside the triton server.
@@ -56,12 +63,12 @@ class TISHandler:
         # we also use this number. We can enhance it in the future.
         timeout = handler_metadata.get("realtime_infer_request_timeout", 60)
         not_ready_log = False
-        print("Check deployment status", file=sys.stderr)
+        logger.info("Check deployment status")
         while (timeout > 0):
             stat_dict = jobDriver.status_triton_deployment(model_id, replicas=replicas)
             status = stat_dict.get("status", "Unknown")
             if status == "Running":
-                print(f"Deployed triton inference server {model_id}", file=sys.stderr)
+                logger.info("Deployed triton inference server %s", model_id)
                 # k8s service naming rule requres to start with an alphabetic character
                 # https://kubernetes.io/docs/concepts/overview/working-with-objects/names/
                 tis_service_id = f"service-{model_id}"
@@ -72,17 +79,17 @@ class TISHandler:
                     handler_metadata=handler_metadata
                 )
             if status == "ReplicaNotReady" and not_ready_log is False:
-                print("TIS is deployed but replica not ready.", file=sys.stderr)
+                logger.warning("TIS is deployed but replica not ready.")
                 not_ready_log = True
             sleep(1)
             timeout -= 1
-        print(f"Failed to deploy triton inference server {model_id}", file=sys.stderr)
+        logger.error("Failed to deploy triton inference server %s", model_id)
         return Code(400, {}, f"Timeout Error: Triton Inference Server status: {status} after {timeout} seconds")
 
     @staticmethod
     def update(model_id, model_name):
         """Updates a Triton Inference Service deployment by reloading the model"""
-        print(f"Updating {model_id}", file=sys.stderr)
+        logger.info("Updating %s", model_id)
         pods_ip = jobDriver.get_triton_deployment_pods(model_id)
         if len(pods_ip) == 0:
             return Code(400, [], f"Cannot find pods for {model_id}.")
@@ -92,10 +99,10 @@ class TISHandler:
                 url = f"{pod_ip}:8001"
                 client = grpcclient.InferenceServerClient(url=url, verbose=False)
                 client.load_model(model_name)
-                print(f"Updated deployment {model_id} replica {pod_ip}", file=sys.stderr)
+                logger.info("Updated deployment %s replica %s", model_id, pod_ip)
             return Code(201, [], f"Updated deployment {model_id}")
         except Exception as e:
-            print(f"Failed to update deployment {model_id}", file=sys.stderr)
+            logger.error("Failed to update deployment %s", model_id)
             return Code(400, [], f"Failed to update deployment {model_id} with error {e}")
 
     @staticmethod
@@ -111,39 +118,39 @@ class TISHandler:
         jobDriver.create_tis_service(tis_service_id, deploy_label, ports=ports)
         tis_timeout = handler_metadata.get("realtime_infer_request_timeout", 60)
         not_ready_log = False
-        print("Check TIS Service status", file=sys.stderr)
+        logger.info("Check TIS Service status")
         while (tis_timeout > 0):
             service_stat_dict = jobDriver.status_tis_service(tis_service_id, ports=ports)
             service_status = service_stat_dict.get("status", "Unknown")
             if service_status == "Running":
-                print(f"Created TIS service {tis_service_id}", file=sys.stderr)
+                logger.info("Created TIS service %s", tis_service_id)
                 tis_service_ip = service_stat_dict.get("tis_service_ip", None)
                 return Code(201, {"pod_ip": tis_service_ip}, "TIS Service Running")
             if service_status == "NotReady" and not_ready_log is False:
-                print("TIS Service is started but not ready.", file=sys.stderr)
+                logger.warning("TIS Service is started but not ready.")
                 not_ready_log = True
             sleep(1)
             tis_timeout -= 1
-        print(f"Failed to create TIS service {tis_service_id}", file=sys.stderr)
+        logger.error("Failed to create TIS service %s", tis_service_id)
         return Code(400, {}, f"Error: TIS service status: {service_status}")
 
     @staticmethod
     def stop(model_id, handler_metadata):
         """Stops a Triton Inference Service job"""
-        print("Stopping triton inference server", file=sys.stderr)
+        logger.info("Stopping triton inference server")
         timeout = handler_metadata.get("realtime_infer_request_timeout", 60)
         jobDriver.delete_triton_deployment(model_id)
         while (timeout > 0):
             stat_dict = jobDriver.status_triton_deployment(model_id)
             status = stat_dict.get("status", "Unknown")
             if status == "NotFound":
-                print(f"Stopped triton deployment {model_id}", file=sys.stderr)
+                logger.info("Stopped triton deployment %s", model_id)
                 tis_service_id = f"service-{model_id}"
                 return TISHandler.stop_tis_service(tis_service_id, handler_metadata)
             sleep(1)
             timeout -= 1
 
-        print(f"Failed to delete triton inference server {model_id}", file=sys.stderr)
+        logger.error("Failed to delete triton inference server %s", model_id)
         return Code(400, [], f"TIS model {model_id} cannot be stopped in platform")
 
     @staticmethod
@@ -162,9 +169,9 @@ class TISHandler:
             service_stat_dict = jobDriver.status_tis_service(tis_service_id)
             service_status = service_stat_dict.get("status", "Unknown")
             if service_status == "NotFound":
-                print(f"Stopped TIS service {tis_service_id}", file=sys.stderr)
+                logger.info("Stopped TIS service %s", tis_service_id)
                 return Code(201, {}, "Triton Inference Server Stopped")
             sleep(1)
             tis_timeout -= 1
-        print(f"Failed to delete TIS Service {tis_service_id}", file=sys.stderr)
+        logger.error("Failed to delete TIS Service %s", tis_service_id)
         return Code(400, [], f"TIS Service {tis_service_id} cannot be stopped in platform")

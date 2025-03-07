@@ -15,6 +15,7 @@
 """Hyperband AutoML algorithm modules"""
 import numpy as np
 import math
+import logging
 
 from nvidia_tao_core.microservices.automl.utils import ResumeRecommendation, JobStates, get_valid_range, clamp_value
 from nvidia_tao_core.microservices.automl.automl_algorithm_base import AutoMLAlgorithmBase
@@ -25,6 +26,13 @@ from nvidia_tao_core.microservices.handlers.stateless_handlers import (
     save_automl_brain_info,
     get_automl_brain_info
 )
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 np.random.seed(95051)
 

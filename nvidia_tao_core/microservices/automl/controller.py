@@ -14,11 +14,11 @@
 
 """AutoML controller modules"""
 import os
-import sys
 import glob
 import time
 import uuid
 import traceback
+import logging
 from copy import deepcopy
 from datetime import timedelta
 
@@ -62,6 +62,13 @@ from nvidia_tao_core.microservices.job_utils.automl_job_utils import (
     on_delete_automl_job,
     on_cancel_automl_job
 )
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 time_per_epoch = 0
 time_per_epoch_counter = 0
@@ -155,7 +162,7 @@ class Controller:
         """Cleanup recommendation jobs"""
         for rec in self.recommendations:
             job_name = rec.job_id
-            print("\nDeleting", job_name, file=sys.stderr)
+            logger.info("Deleting %s", job_name)
             if not job_name:
                 continue
             if not os.getenv("CI_PROJECT_DIR", None):
@@ -205,9 +212,9 @@ class Controller:
             }
             write_job_metadata(self.automl_context.id, result_metadata)
             self.cancel_recommendation_jobs()
-            print(
-                f"AutoMLpipeline loop for network {self.network} failed due to exception {traceback.format_exc()}",
-                file=sys.stderr
+            logger.error(
+                "AutoMLpipeline loop for network %s failed due to exception %s",
+                self.network, traceback.format_exc()
             )
             update_job_status(
                 self.automl_context.handler_id,
@@ -271,7 +278,7 @@ class Controller:
         #     ctrl.recommendations[temp_rec].update_status(JobStates.success)
         ctrl.save_state()
         if ctrl.recommendations[temp_rec].status == JobStates.canceled:
-            print("Resuming stopped automl sub-experiment", temp_rec, file=sys.stderr)
+            logger.info("Resuming stopped automl sub-experiment %s", temp_rec)
             if ctrl.automl_algorithm == "hyperband":
                 ctrl.brain.track_id = temp_rec
             ctrl.on_new_automl_job(ctrl.recommendations[temp_rec])
@@ -302,9 +309,9 @@ class Controller:
                     self.automl_algorithm in ("hyperband", "h") and self.brain.done()
                 ):
                     # Find best model based on mAP
-                    print("Finding best model", file=sys.stderr)
+                    logger.info("Finding best model")
                     self.best_rec_id = self.find_best_model()
-                    print("best_model_copied result", self.best_model_copied, file=sys.stderr)
+                    logger.info("best_model_copied result %s", self.best_model_copied)
 
                     if self.best_model_copied:
                         # Delete final extra checkpoints after finish training
@@ -344,7 +351,7 @@ class Controller:
         recommended_specs = self.brain.generate_recommendations(history)
         assert len(recommended_specs) in [0, 1], "At most one recommendation"
         for spec in recommended_specs:
-            print(f"Recommendation recieved for {self.network}", file=sys.stderr)
+            logger.info("Recommendation received for %s", self.network)
             if type(spec) is dict:
                 # Save brain state and update current recommendation
                 self.hyperband_cancel_condition_seen = False
@@ -387,7 +394,7 @@ class Controller:
                         self.cs_instance.delete_file(file_name)
                     if os.path.exists(local_expt_path):
                         expt_file_name = glob.glob(local_expt_path + "/**/*.txt", recursive=True)
-                        print("Removing log files", expt_file_name, file=sys.stderr)
+                        logger.info("Removing log files: %s", expt_file_name)
                         for file_name in expt_file_name:
                             if os.path.isfile(file_name):
                                 os.remove(file_name)
@@ -674,7 +681,7 @@ class Controller:
                 result_dict[f"best_{self.metric_key}"] = self.min_max(
                     self.recommendations, key=lambda rec: rec.result).result
         except Exception as e:
-            print(f"Exception thrown in write_results is {str(e)}", file=sys.stderr)
+            logger.error("Exception thrown in write_results is %s", str(e))
             result_dict[f"best_{self.metric_key}"] = 0.0
 
         if type(self.eta) is float:
@@ -696,17 +703,17 @@ class Controller:
 
     def find_best_model(self):
         """Find best model based on metric value chosen and move those artifacts to best_model folder"""
-        print("Finding best recommendation config", file=sys.stderr)
+        logger.info("Finding best recommendation config")
         try:
             best_mAP = self.min_max(self.recommendations, key=lambda rec: rec.result).result
         except Exception as e:
-            print(f"Exception thrown in find_best_model is {str(e)}", file=sys.stderr)
+            logger.error("Exception thrown in find_best_model is %s", str(e))
             best_mAP = 0.0
             return -1
 
-        print("Best metric value", best_mAP, file=sys.stderr)
+        logger.info("Best metric value %s", best_mAP)
         for rec in self.recommendations:
-            print("\nRecommendation in function find_best_model", rec, file=sys.stderr)
+            logger.info("\nRecommendation in function find_best_model %s", rec)
             job_name = rec.job_id
             if not job_name:
                 continue
@@ -714,12 +721,12 @@ class Controller:
             checkpoint_files = get_file_list_from_cloud_storage(self.decrypted_workspace_metadata, expt_folder)
             regex_pattern = r'^(?!.*lightning_logs).*\.(pth|tlt|hdf5)$'
             checkpoint_files = filter_files(checkpoint_files, regex_pattern)
-            print("Experiment folder", expt_folder, file=sys.stderr)
-            print("Checkpoints in find best_model", checkpoint_files, file=sys.stderr)
+            logger.info("Experiment folder %s", expt_folder)
+            logger.info("Checkpoints in find best_model %s", checkpoint_files)
 
             if checkpoint_files and (rec.status == JobStates.success and rec.result == best_mAP):
                 cloud_best_model_folder = f"/results/{self.automl_context.id}"
-                print("cloud_best_model_folder", cloud_best_model_folder, file=sys.stderr)
+                logger.info("cloud_best_model_folder %s", cloud_best_model_folder)
 
                 self.cs_instance.move_folder(expt_folder[1:], cloud_best_model_folder)
                 best_specs = get_job_specs(job_name, automl=True, automl_experiment_id=str(rec.id))
@@ -733,7 +740,7 @@ class Controller:
                 if find_trained_tlt or find_trained_hdf5 or find_trained_pth:
                     self.best_model_copied = True
                     return rec.id
-                print("Best model checkpoints couldn't be moved", file=sys.stderr)
+                logger.info("Best model checkpoints couldn't be moved")
                 return -1
         return -1
 
@@ -765,7 +772,7 @@ class Controller:
         format_epoch_number = format_epoch(self.network, self.best_epoch_number[recommendation.id])
         recommendation.best_epoch_number = format_epoch_number
         self.save_state()
-        print("Best epoch number", recommendation.best_epoch_number, path, file=sys.stderr)
+        logger.info("Best epoch number %s %s", recommendation.best_epoch_number, path)
         (find_trained_tlt,
          find_trained_hdf5,
          find_trained_pth,
@@ -788,16 +795,16 @@ class Controller:
         trained_files = get_file_list_from_cloud_storage(self.decrypted_workspace_metadata, path)
         regex_pattern = r'.*\.(tlt|hdf5|pth|ckzip|resume|lightning_logs)$'
         trained_files = filter_files(trained_files, regex_pattern)
-        print("Available checkpoints in delete_checkpoint_files function", trained_files, file=sys.stderr)
+        logger.info("Available checkpoints in delete_checkpoint_files function %s", trained_files)
         self.get_best_checkpoint_path(path, rec)
-        print("self.ckpt_path in delete_checkpoint_files function", self.ckpt_path, file=sys.stderr)
+        logger.info("self.ckpt_path in delete_checkpoint_files function %s", self.ckpt_path)
         for files in trained_files:
             if files not in self.ckpt_path[path].values():
                 if self.cs_instance.is_file(files):
-                    print("Removing files in delete_checkpoint_files function", files, file=sys.stderr)
+                    logger.info("Removing files in delete_checkpoint_files function %s", files)
                     self.cs_instance.delete_file(files)
                 elif ".tlt" in files and self.network == "unet":
-                    print("Removing folder in delete_checkpoint_files function", files, file=sys.stderr)
+                    logger.info("Removing folder in delete_checkpoint_files function %s", files)
                     self.cs_instance.delete_folder(files[1:])
 
     def delete_not_best_model_checkpoints(self, path, rec, flag):
@@ -808,21 +815,21 @@ class Controller:
             else:
                 best_mAP = self.min_max(self.recommendations, key=lambda rec: rec.result).result
         except Exception as e:
-            print(f"Exception thrown in delete_not_best_model_checkpoints is {str(e)}", file=sys.stderr)
+            logger.error("Exception thrown in delete_not_best_model_checkpoints is %s", str(e))
             best_mAP = 0.0
 
-        print("delete_not_best_model_checkpoints function arguments", path, rec, flag, file=sys.stderr)
+        logger.info("delete_not_best_model_checkpoints function arguments %s %s %s", path, rec, flag)
         if rec.result != best_mAP or bool(flag):
             trained_files = get_file_list_from_cloud_storage(self.decrypted_workspace_metadata, path)
             regex_pattern = r'.*(?:lightning_logs|events).*$|.*\.(tlt|hdf5|pth|ckzip|resume)$'
             trained_files = filter_files(trained_files, regex_pattern)
-            print("Available checkpoints in delete_not_best_model_checkpoints function", trained_files, file=sys.stderr)
+            logger.info("Available checkpoints in delete_not_best_model_checkpoints function %s", trained_files)
             for files in trained_files:
                 if self.cs_instance.is_file(files):
-                    print("Removing files in delete_not_best_model_checkpoints function", files, file=sys.stderr)
+                    logger.info("Removing files in delete_not_best_model_checkpoints function %s", files)
                     self.cs_instance.delete_file(files)
                 elif ".tlt" in files and self.network == "unet":
-                    print("Removing folder in delete_not_best_model_checkpoints function", files, file=sys.stderr)
+                    logger.info("Removing folder in delete_not_best_model_checkpoints function %s", files)
                     self.cs_instance.delete_folder(files[1:])
         else:
             flag = True

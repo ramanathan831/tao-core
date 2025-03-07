@@ -17,6 +17,14 @@
 import ast
 import json
 import requests
+import logging
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 MODEL_CACHE = None
 TIMEOUT = 120
@@ -132,9 +140,9 @@ def get_model_info_from_ngc(ngc_token: str, org: str, team: str):
                                             try:
                                                 endpoints = ast.literal_eval(key_value["value"])
                                             except (SyntaxError, ValueError):
-                                                print(
-                                                    f"{key_value} not loadable by "
-                                                    "`ast.literal_eval`."
+                                                logger.warning(
+                                                    "%s not loadable by `ast.literal_eval`.",
+                                                    key_value
                                                 )
                                     for endpoint in endpoints:
                                         if endpoint in model_info:
@@ -142,7 +150,7 @@ def get_model_info_from_ngc(ngc_token: str, org: str, team: str):
                                         else:
                                             model_info[endpoint] = [ngc_path]
                 except ValueError as e:
-                    print(e)
+                    logger.error(str(e))
 
     # Returning the list of models
     return model_info

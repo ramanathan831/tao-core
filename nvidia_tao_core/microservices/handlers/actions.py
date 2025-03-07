@@ -22,6 +22,7 @@ import threading
 import time
 import traceback
 import uuid
+import logging
 
 from nvidia_tao_core.microservices.automl.utils import delete_lingering_checkpoints, wait_for_job_completion
 from nvidia_tao_core.microservices.constants import (
@@ -57,7 +58,6 @@ from nvidia_tao_core.microservices.handlers.stateless_handlers import (
     get_jobs_root,
     get_handler_root,
     get_toolkit_status,
-    printc,
     resolve_metadata,
     get_job_specs,
     save_job_specs,
@@ -96,6 +96,13 @@ from nvidia_tao_core.microservices.specs_utils import json_to_kitti, json_to_yam
 
 SPEC_BACKEND_TO_FUNCTIONS = {"protobuf": json_to_kitti.kitti, "yaml": json_to_yaml.yml}
 HOST_PLATFORM = os.getenv("HOST_PLATFORM", "local-k8s")
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 
 class ActionPipeline:
@@ -365,12 +372,12 @@ class ActionPipeline:
                 remove_key_by_flattened_string(self.config, parameter_to_remove)
 
     def detailed_print(self, *args, **kwargs):
-        """Prints the details of the job to the console"""
-        printc(*args, context=vars(self.job_context), **kwargs)
+        """Print with job context"""
+        logger.info(*args, **kwargs)
 
     def create_microservice_action_job(self, job_id):
         """Call executor function to create microservice pod and then invoke it"""
-        print("Creating microservices job_action ms pod", file=sys.stderr)
+        logger.info("Creating microservices job_action ms pod")
         response = jobDriver.create_microservice_and_send_request(api_endpoint="post_action",
                                                                   network=self.network,
                                                                   action=self.action,
@@ -468,7 +475,7 @@ class ActionPipeline:
                     break
                 except Exception as e:
                     # If post run fails, call it Error
-                    print(f"Exception thrown in post run after done status {str(e)}", file=sys.stderr)
+                    logger.error("Exception thrown in post run after done status %s", str(e))
                     self.detailed_print(traceback.format_exc(), file=sys.stderr)
                     update_job_status(self.handler_id, self.job_name, status="Error", kind=self.handler_kind)
                     break

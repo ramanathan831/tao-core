@@ -19,11 +19,19 @@ import argparse
 import json
 from time import sleep
 import os
+import logging
 from datetime import datetime, timezone
 
 from nvidia_tao_core.microservices.handlers.stateless_handlers import get_handler_metadata_with_jobs
 from nvidia_tao_core.microservices.handlers.utilities import filter_file_objects
 from nvidia_tao_core.microservices.handlers.cloud_storage import create_cs_instance_with_decrypted_metadata
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(
@@ -49,12 +57,12 @@ if __name__ == "__main__":
     cs_instance, _ = create_cs_instance_with_decrypted_metadata(decrypted_workspace_metadata)
 
     if not cs_instance:
-        print(
-            f"Unable to create cloud storage instance for Tensorboard Events Pull for experiment {experiment_id}",
-            flush=True
+        logger.error(
+            "Unable to create cloud storage instance for Tensorboard Events Pull for experiment %s",
+            experiment_id
         )
     else:
-        print(f"Starting Tensorboard Events Pull for experiment {experiment_id}", flush=True)
+        logger.info("Starting Tensorboard Events Pull for experiment %s", experiment_id)
     while cs_instance is not None:
         sleep(30)
         handler_metadata = get_handler_metadata_with_jobs(experiment_id, "experiment")
@@ -62,7 +70,7 @@ if __name__ == "__main__":
 
         jobs = handler_metadata.get("jobs", [])
         if len(jobs) == 0:
-            print(f"No jobs found for experiment {experiment_id}", flush=True)
+            logger.info("No jobs found for experiment %s", experiment_id)
             continue
         for job in jobs:
             action = job.get('action', None)
@@ -75,14 +83,14 @@ if __name__ == "__main__":
                     _, objects = cs_instance.list_files_in_folder(tf_events_path)
                     tf_events_objects = filter_file_objects(objects, regex_pattern=r'.*\.tfevents.+$')
                     if len(tf_events_objects) == 0:
-                        print(f"No tfevents files present in {tf_events_path}", flush=True)
+                        logger.info("No tfevents files present in %s", tf_events_path)
                     for obj in tf_events_objects:
                         file = obj.name
                         basename = os.path.basename(file)
                         destination = f'/tfevents/{action}/{basename}'
                         if not os.path.exists(destination):
                             cs_instance.download_file(file, destination)
-                            print(f"Downloaded tfevents file to {destination}", flush=True)
+                            logger.info("Downloaded tfevents file to %s", destination)
                         else:
                             current_last_modified = os.path.getmtime(destination)
                             if hasattr(obj, 'last_modified'):
@@ -92,11 +100,12 @@ if __name__ == "__main__":
                             date_obj = datetime.strptime(obj_last_modified, '%Y-%m-%dT%H:%M:%S.%fZ')
                             timestamp_float = date_obj.replace(tzinfo=timezone.utc).timestamp()
                             if timestamp_float > current_last_modified:
-                                print("File has been modified, downloading file now", flush=True)
+                                logger.info("File has been modified, downloading file now")
                                 cs_instance.download_file(file, destination)
-                                print(f"Downloaded tfevents file to {destination}", flush=True)
+                                logger.info("Downloaded tfevents file to %s", destination)
                 else:
-                    print(
-                        f"Path {tf_events_path} does not exist in cloud storage for experiment {experiment_id}",
-                        flush=True
+                    logger.warning(
+                        "Path %s does not exist in cloud storage for experiment %s",
+                        tf_events_path,
+                        experiment_id
                     )

@@ -16,6 +16,7 @@
 import os
 import sys
 import numpy as np
+import logging
 
 from nvidia_tao_core.microservices.handlers.app_handler import AppHandler
 from nvidia_tao_core.microservices.handlers.monai.helpers import ImageLabelRecord
@@ -26,6 +27,13 @@ from nvidia_tao_core.microservices.handlers.stateless_handlers import (get_handl
 from nvidia_tao_core.microservices.handlers.tis_handler import TISHandler
 from nvidia_tao_core.microservices.handlers.utilities import prep_tis_model_repository
 from nvidia_tao_core.microservices.utils import safe_get_file_modified_time
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 
 def update_inference_model(job_context_dict, job_id):
@@ -69,7 +77,8 @@ def trigger_train(train_spec, job_context_dict, current_record, latest_record):
     org_name = job_context_dict.get("org_name")
     job_id = job_context_dict.get("id")
 
-    print("Starting training with all the labeled image from DICOM endpoint", file=sys.stderr)
+    if not os.getenv("CI_PROJECT_DIR", None):
+        logger.info("Starting training with all the labeled image from DICOM endpoint")
     train_spec_copy = train_spec.copy()
     if "finetune" not in train_spec_copy:
         # By default, use the model.pt as the pretrained weight
@@ -94,7 +103,7 @@ def trigger_train(train_spec, job_context_dict, current_record, latest_record):
 
 def load_initial_state(job_context_dict, handler_root, notify_record):
     """Load Initial State for the Continual Learning Job."""
-    printc("Continual Learning started", context=job_context_dict, keys="handler_id", file=sys.stderr)
+    printc("Continual Learning started", context=job_context_dict, keys="handler_id")
     org_name = job_context_dict.get("org_name")
     experiment_id = job_context_dict.get("handler_id")
     cl_job_id = job_context_dict.get("id")
@@ -109,7 +118,7 @@ def load_initial_state(job_context_dict, handler_root, notify_record):
         latest_mod_time = safe_get_file_modified_time(notify_record)
         latest_record = safe_load_file(notify_record)
 
-    printc(f"Initial record: {latest_record}", context=job_context_dict, keys="handler_id", file=sys.stderr)
+    printc(f"Initial record: {latest_record}", context=job_context_dict, keys="handler_id")
 
     return (org_name, experiment_id, cl_job_id, train_spec, round_size, stop_criteria,
             job_metadata_file, latest_mod_time, latest_record)
@@ -141,7 +150,7 @@ def check_for_cancelation(metadata, jobs_trigger, jobs_done, job_context_dict):
     metadata_status = metadata.get("status", "Error")
     if metadata_status == "Canceled":
         cancel_trigger_jobs(org_name, experiment_id, jobs_trigger, jobs_done)
-        printc("Continual Learning job cancelled", context=job_context_dict, keys="handler_id", file=sys.stderr)
+        printc("Continual Learning job cancelled", context=job_context_dict, keys="handler_id")
         sys.exit(0)
 
 
@@ -168,7 +177,7 @@ def process_notification_record(
         # If notify record file is modified, load the current record
         latest_mod_time = current_mod_time
         current_record = safe_load_file(notify_record)
-        printc(f"Current record: {current_record}", context=job_context_dict, keys="handler_id", file=sys.stderr)
+        printc(f"Current record: {current_record}", context=job_context_dict, keys="handler_id")
 
         # Start training if the number of updated labels is greater than the round size
         num_updated = ImageLabelRecord.count_added_labels(current_record, latest_record)
@@ -177,13 +186,12 @@ def process_notification_record(
                 f"Number of updated labels {num_updated} is greater than round size {round_size}",
                 context=job_context_dict,
                 keys="handler_id",
-                file=sys.stderr
             )
             train_spec_copy = train_spec.copy()
             handle_first_round_specifics(cl_state, train_spec_copy)
             job_id = trigger_train(train_spec_copy, job_context_dict, current_record, latest_record)
             jobs_trigger.append(job_id)
-            printc(f"Triggered training job {job_id}", context=job_context_dict, keys="handler_id", file=sys.stderr)
+            printc(f"Triggered training job {job_id}", context=job_context_dict, keys="handler_id")
             # Update the notify record file only when training is successfully submitted
             latest_record = current_record
 
@@ -207,7 +215,7 @@ def handle_single_job_update(job_metadata, cl_state, jobs_done, metric_sorter, j
     if job_status == "Done":
         handle_successful_job(job_metadata, cl_state, jobs_done, metric_sorter, job_context_dict)
     elif job_status == "Error":
-        printc(f"Training job {job_id} failed", context=job_context_dict, keys="handler_id", file=sys.stderr)
+        printc(f"Training job {job_id} failed", context=job_context_dict, keys="handler_id")
         jobs_done.append(job_id)
 
 
@@ -230,7 +238,6 @@ def update_state_with_metric(cl_state, job_metadata, metric, job_context_dict):
             f"Job {job_id} did not provide a valid result. No model update will be made.",
             context=job_context_dict,
             keys="handler_id",
-            file=sys.stderr
         )
     elif best_epoch == 0 and cl_state["round"] > 0:
         printc(
@@ -238,7 +245,6 @@ def update_state_with_metric(cl_state, job_metadata, metric, job_context_dict):
             f"Saving the pre-trained metric for record. No model update will be made.",
             context=job_context_dict,
             keys="handler_id",
-            file=sys.stderr
         )
     elif best_epoch == 0 and cl_state["round"] == 0:
         cl_state["key_metric"] = metric
@@ -247,18 +253,16 @@ def update_state_with_metric(cl_state, job_metadata, metric, job_context_dict):
             f"Saving the pre-trained metric for record. No model update will be made.",
             context=job_context_dict,
             keys="handler_id",
-            file=sys.stderr
         )
     elif metric > cl_state["key_metric"]:
         printc(
             f"Job {job_id} with {metric} is being used to update inference model",
             context=job_context_dict,
             keys="handler_id",
-            file=sys.stderr
         )
         cl_state["key_metric"] = metric
         update_inference_model(job_context_dict, job_metadata["id"])
-    printc(f"Continual Learning state {cl_state}", context=job_context_dict, keys="handler_id", file=sys.stderr)
+    printc(f"Continual Learning state {cl_state}", context=job_context_dict, keys="handler_id")
 
 
 class CLCriteriaTracker:
@@ -307,11 +311,11 @@ class CLCriteriaTracker:
     def should_stop(self, current_state):
         """Check if the criteria are met."""
         if self.check_max_rounds(current_state):
-            print(f"Max rounds reached with {current_state}. Stopping Continual Learning Job.", file=sys.stderr)
+            logger.info("Max rounds reached with %s. Stopping Continual Learning Job.", current_state)
             return True
 
         if self.check_key_metric(current_state):
-            print(f"Key metric reached with {current_state}. Stopping Continual Learning Job.", file=sys.stderr)
+            logger.info("Key metric reached with %s. Stopping Continual Learning Job.", current_state)
             return True
 
         # Other criteria can be added similarly

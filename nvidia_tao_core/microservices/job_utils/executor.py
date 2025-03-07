@@ -14,13 +14,13 @@
 
 """Kubernetes job manager modules"""
 import os
-import sys
 import time
 import uuid
 import requests
 import traceback
 from kubernetes import client, config
 from kubernetes.client.rest import ApiException
+import logging
 
 from nvidia_tao_core.microservices.constants import MONAI_NETWORKS, NETWORK_CONTAINER_MAPPING
 from nvidia_tao_core.microservices.handlers.stateless_handlers import (
@@ -46,6 +46,13 @@ from nvidia_tao_core.microservices.handlers.nvcf_handler import (
 if os.getenv("BACKEND"):  # To see if the container is going to be used for Service pods or network jobs
     from nvidia_tao_core.microservices.handlers.mongo_handler import mongo_secret
 release_name = os.getenv("RELEASE_NAME", 'tao-api')
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 
 def _get_name_space():
@@ -122,14 +129,14 @@ def create(
         if not deployment_string:
             create_response = create_function(org_name, team_name, job_name, docker_image_name, ngc_key)
             if create_response.ok:
-                print(f"Function created successfully for job {job_name}", file=sys.stderr)
+                logger.info(f"Function created successfully for job {job_name}")
                 function_metadata = create_response.json()
                 function_id = function_metadata["function"]["id"]
                 version_id = function_metadata["function"]["versionId"]
                 deploy_response = deploy_function(org_name, team_name, function_metadata, nvcf_backend_details, ngc_key)
                 if deploy_response.ok:
                     deployment_string = f"{function_id}:{version_id}"
-                    print(f"Function deployment initiated successfully for job {job_name}", file=sys.stderr)
+                    logger.info(f"Function deployment initiated successfully for job {job_name}")
                 else:
                     internal_job_status_update(
                         job_name,
@@ -137,7 +144,7 @@ def create(
                         automl_experiment_number=nv_job_metadata.get("AUTOML_EXPERIMENT_NUMBER", "0"),
                         message="NVCF deployment intitiation error"
                     )
-                    print(f"Function deployment request failed for job {job_name}", file=sys.stderr)
+                    logger.error(f"Function deployment request failed for job {job_name}")
                     return
             else:
                 internal_job_status_update(
@@ -146,7 +153,7 @@ def create(
                     automl_experiment_number=nv_job_metadata.get("AUTOML_EXPERIMENT_NUMBER", "0"),
                     message="NVCF function couldn't be created, retry job again"
                 )
-                print(f"Function creation request failed for job {job_name}", file=sys.stderr)
+                logger.error(f"Function creation request failed for job {job_name}")
                 return
 
         job_metadata = get_handler_job_metadata(job_name)
@@ -264,8 +271,8 @@ def create(
             namespace=name_space)
         return
     except Exception as e:
-        print(f"Exception thrown in executor create is {str(e)}", file=sys.stderr)
-        print(traceback.format_exc(), file=sys.stderr)
+        logger.error(f"Exception thrown in executor create is {str(e)}")
+        logger.error(traceback.format_exc())
         return
 
 
@@ -289,8 +296,8 @@ def create_flask_service(job_id):
         )
         core_v1.create_namespaced_service(namespace=name_space, body=service)
     except Exception as e:
-        print(f"Exception thrown in create_flask_service is {str(e)}", file=sys.stderr)
-        print(traceback.format_exc(), file=sys.stderr)
+        logger.error(f"Exception thrown in create_flask_service is {str(e)}")
+        logger.error(traceback.format_exc())
 
 
 def delete_service(job_id):
@@ -301,8 +308,8 @@ def delete_service(job_id):
         core_v1 = client.CoreV1Api()
         core_v1.delete_namespaced_service(name=service_name, namespace=name_space)
     except Exception as e:
-        print(f"Exception thrown in delete_service is {str(e)}", file=sys.stderr)
-        print(traceback.format_exc(), file=sys.stderr)
+        logger.error(f"Exception thrown in delete_service is {str(e)}")
+        logger.error(traceback.format_exc())
 
 
 def create_microservice_pod(job_name, image, num_gpu=-1, accelerator=None):
@@ -390,7 +397,7 @@ def create_microservice_pod(job_name, image, num_gpu=-1, accelerator=None):
                 pod_name = pods.items[0].metadata.name
             time.sleep(10)
 
-        print(f"Pod {pod_name} is running. Waiting for it to be ready", file=sys.stderr)
+        logger.info(f"Pod {pod_name} is running. Waiting for it to be ready")
 
         # Ensure the pod is ready
         pod_ip = None
@@ -405,11 +412,11 @@ def create_microservice_pod(job_name, image, num_gpu=-1, accelerator=None):
             pod_ip = pod.status.pod_ip
             time.sleep(10)
 
-        print(f"Pod {pod_name} is ready with IP {pod_ip}.", file=sys.stderr)
+        logger.info(f"Pod {pod_name} is ready with IP {pod_ip}.")
         time.sleep(10)
     except Exception as e:
-        print(f"Exception thrown in create_microservice_pod is {str(e)}", file=sys.stderr)
-        print(traceback.format_exc(), file=sys.stderr)
+        logger.error(f"Exception thrown in create_microservice_pod is {str(e)}")
+        logger.error(traceback.format_exc())
 
 
 def check_service_ready(service_name, namespace):
@@ -475,11 +482,11 @@ def wait_for_service(org_name, handler_id, job_id, handler_kind):
         if metadata_status in ("Canceled", "Canceling", "Paused", "Pausing"):
             return metadata_status
         if check_service_ready(service_name, namespace) and check_endpoints_ready(service_name, namespace):
-            print(f"Service '{service_name}' is ready.", file=sys.stderr)
+            logger.info(f"Service '{service_name}' is ready.")
             return "Running"
-        print(f"Waiting for service '{service_name}' to be ready...", file=sys.stderr)
+        logger.info(f"Waiting for service '{service_name}' to be ready...")
         time.sleep(10)
-    print(f"Timed out waiting for service '{service_name}' to be ready.", file=sys.stderr)
+    logger.error(f"Timed out waiting for service '{service_name}' to be ready.")
     return "Error"
 
 
@@ -522,9 +529,9 @@ def create_microservice_and_send_request(
             return response
         return None
     except Exception as e:
-        print(f"Exception thrown in create_microservice_and_send_request is {str(e)}", file=sys.stderr)
-        print("Exception in create ms pod and send request", file=sys.stderr)
-        print(traceback.format_exc(), file=sys.stderr)
+        logger.error(f"Exception thrown in create_microservice_and_send_request is {str(e)}")
+        logger.error("Exception in create ms pod and send request")
+        logger.error(traceback.format_exc())
         delete(microservice_pod_id, use_ngc=False)
         return None
 
@@ -587,15 +594,15 @@ def create_triton_deployment(deployment_name, image, command, replicas, num_gpu=
         kind="Deployment",
         metadata=client.V1ObjectMeta(name=deployment_name),
         spec=spec)
-    print("Prepared deployment configs", file=sys.stderr)
+    logger.info("Prepared deployment configs")
     try:
         api_instance.create_namespaced_deployment(
             body=deployment,
             namespace=name_space)
-        print("Start create deployment", file=sys.stderr)
+        logger.info("Start create deployment")
         return
     except Exception as e:
-        print(f"Create deployment got error: {e}", file=sys.stderr)
+        logger.error(f"Create deployment got error: {e}")
         return
 
 
@@ -619,15 +626,15 @@ def create_tis_service(tis_service_name, deploy_label, ports=(8000, 8001, 8002))
         spec=spec,
     )
     api_instance = client.CoreV1Api()
-    print("Prepared TIS Service configs", file=sys.stderr)
+    logger.info("Prepared TIS Service configs")
     try:
         api_instance.create_namespaced_service(
             body=service,
             namespace=name_space)
-        print("Start create TIS Service", file=sys.stderr)
+        logger.info("Start create TIS Service")
         return
     except Exception as e:
-        print(f"Create TIS Service got error: {e}", file=sys.stderr)
+        logger.error(f"Create TIS Service got error: {e}")
         return
 
 
@@ -645,7 +652,7 @@ def get_triton_deployment_pods(deployment_name):
             pods_ip.append(pod.status.pod_ip)
         return pods_ip
     except Exception as e:
-        print(f"Got {type(e)} error: {e}", file=sys.stderr)
+        logger.error(f"Got {type(e)} error: {e}")
         return []
 
 
@@ -670,14 +677,14 @@ def status_triton_deployment(deployment_name, replicas=1):
         return {"status": "Running"}
     except ApiException as e:
         if e.status == 404:
-            print("Trion Deployment not found.", file=sys.stderr)
+            logger.info("Trion Deployment not found.")
             # TODO: here defined a new status to find the situation that the deployment does not exists
             # This status is useful to check if the deployment is deleted or not created
             return {"status": "NotFound"}
-        print(f"Got other ApiException error: {e}", file=sys.stderr)
+        logger.error(f"Got other ApiException error: {e}")
         return {"status": "Error"}
     except Exception as e:
-        print(f"Got {type(e)} error: {e}", file=sys.stderr)
+        logger.error(f"Got {type(e)} error: {e}")
         return {"status": "Error"}
 
 
@@ -703,18 +710,18 @@ def status_tis_service(tis_service_name, ports=(8000, 8001, 8002)):
             # the TIS Service is started but not ready.
             return {"status": "NotReady"}
         except Exception as e:
-            print(f"Exception thrown in status_tis_service is {str(e)}", file=sys.stderr)
+            logger.error(f"Exception thrown in status_tis_service is {str(e)}")
             return {"status": "NotReady"}
     except ApiException as e:
         if e.status == 404:
-            print("TIS Service not found.", file=sys.stderr)
+            logger.info("TIS Service not found.")
             # TODO: here defined a new status, in order to find the situation that the TIS Service not exists
             # This status is useful to check if the TIS Service is deleted or not created
             return {"status": "NotFound"}
-        print(f"Got other ApiException error: {e}", file=sys.stderr)
+        logger.error(f"Got other ApiException error: {e}")
         return {"status": "Error"}
     except Exception as e:
-        print(f"Got {type(e)} error: {e}", file=sys.stderr)
+        logger.error(f"Got {type(e)} error: {e}")
         return {"status": "Error"}
 
 
@@ -799,10 +806,8 @@ def status(
                             job_metadata["job_details"][job_name]["detailed_status"]["message"] = message
                         write_job_metadata(job_name, job_metadata)
                         if authorized_party_nca_id:
-                            print(
-                                f"Adding authorized party {authorized_party_nca_id} for job {job_name}",
-                                file=sys.stderr
-                            )
+                            logger.info(
+                                f"Adding authorized party {authorized_party_nca_id} for job {job_name}")
                             add_authorized_party(
                                 org_name,
                                 team_name,
@@ -813,7 +818,7 @@ def status(
                             )
 
                     if nvcf_function_metadata.get("function", {}).get("status") == "ERROR":
-                        print(f"Get function deployment status for job {job_name} returned error", file=sys.stderr)
+                        logger.error(f"Get function deployment status for job {job_name} returned error")
                         internal_job_status_update(
                             job_name,
                             automl=automl_exp_job,
@@ -830,15 +835,13 @@ def status(
             )
             if override_status and override_status != job_status:
                 job_status = override_status
-                print(
-                    f"job metadata status is {job_status}, Toolkit Status is {override_status}, so overwriting",
-                    file=sys.stderr
-                )
-                print(f"Microservices job status via NVCF is {job_status}", file=sys.stderr)
+                logger.warning(
+                    f"job metadata status is {job_status}, Toolkit Status is {override_status}, so overwriting")
+                logger.warning(f"Microservices job status via NVCF is {job_status}")
             return job_status
         except Exception as e:
-            print(f"Exception caught for {job_name}", e, file=sys.stderr)
-            print(traceback.format_exc(), file=sys.stderr)
+            logger.error(f"Exception caught for {job_name} {e}")
+            logger.error(traceback.format_exc())
             return "Error"
 
     # For local cluster jobs
@@ -873,13 +876,13 @@ def status(
             return "Error"
         return "Running"
     except ApiException as e:
-        print(traceback.format_exc(), file=sys.stderr)
+        logger.error(traceback.format_exc())
         if e.status == 404:
-            print("Job not found.", file=sys.stderr)
+            logger.info("Job not found.")
             return "NotFound"
         return "Error"
     except Exception:
-        print(traceback.format_exc(), file=sys.stderr)
+        logger.error(traceback.format_exc())
         return "Error"
 
 
@@ -894,10 +897,10 @@ def delete_triton_deployment(deployment_name):
             body=client.V1DeleteOptions(
                 propagation_policy='Foreground',
                 grace_period_seconds=5))
-        print(f"Triton Deployment deleted. status='{str(api_response.status)}'", file=sys.stderr)
+        logger.info(f"Triton Deployment deleted. status='{str(api_response.status)}'")
         return
     except Exception as e:
-        print(f"Triton Deployment failed to delete, got error: {e}", file=sys.stderr)
+        logger.error(f"Triton Deployment failed to delete, got error: {e}")
         return
 
 
@@ -910,10 +913,10 @@ def delete_tis_service(tis_service_name):
             name=tis_service_name,
             namespace=name_space,
         )
-        print(f"TIS Service deleted. status='{str(api_response.status)}'", file=sys.stderr)
+        logger.info(f"TIS Service deleted. status='{str(api_response.status)}'")
         return
     except Exception as e:
-        print(f"TIS Service failed to delete, got error: {e}", file=sys.stderr)
+        logger.error(f"TIS Service failed to delete, got error: {e}")
         return
 
 
@@ -933,7 +936,7 @@ def delete(job_name, use_ngc=True):
         ngc_key = nv_job_metadata["TAO_USER_KEY"]
         deployment_string = nv_job_metadata.get("deployment_string", "")
         if deployment_string.find(":") == -1:
-            print(f"Deployment not active yet {job_name}", file=sys.stderr)
+            logger.warning(f"Deployment not active yet {job_name}")
             return
         function_id, version_id = deployment_string.split(":")
         if org_name not in ["0544357712065245"]:
@@ -949,11 +952,11 @@ def delete(job_name, use_ngc=True):
             body=client.V1DeleteOptions(
                 propagation_policy='Foreground',
                 grace_period_seconds=5))
-        print(f"Job deleted. status='{str(api_response.status)}'", file=sys.stderr)
+        logger.info(f"Job deleted. status='{str(api_response.status)}'")
         return
     except Exception as e:
-        print(f"Exception caught in delete_job {str(e)}", file=sys.stderr)
-        print("Job failed to delete.", file=sys.stderr)
+        logger.error(f"Exception caught in delete_job {str(e)}")
+        logger.error("Job failed to delete.")
         return
 
 
@@ -970,7 +973,7 @@ def list_namespace_jobs():
             limit=1000
         )
     except Exception as e:
-        print(f"Exception thrown in list_namespace_jobs is {str(e)}", file=sys.stderr)
+        logger.error(f"Exception thrown in list_namespace_jobs is {str(e)}")
         pass
     return api_response
 
@@ -1106,15 +1109,15 @@ def create_tensorboard_deployment(deployment_name, image, command, logs_image, l
         }),
         spec=spec)
 
-    print("Prepared deployment configs", file=sys.stderr)
+    logger.info("Prepared deployment configs")
     try:
         api_instance.create_namespaced_deployment(
             body=deployment,
             namespace=name_space)
-        print("Start create deployment", file=sys.stderr)
+        logger.info("Start create deployment")
         return
     except Exception as e:
-        print(f"Create deployment got error: {e}", file=sys.stderr)
+        logger.error(f"Create deployment got error: {e}")
         return
 
 
@@ -1140,15 +1143,15 @@ def create_tensorboard_service(tb_service_name, deploy_label):
     )
     api_instance = client.CoreV1Api()
 
-    print("Prepared Tensorboard Service configs", file=sys.stderr)
+    logger.info("Prepared Tensorboard Service configs")
     try:
         api_instance.create_namespaced_service(
             body=service,
             namespace=name_space)
-        print("Start create Tensorboard Service", file=sys.stderr)
+        logger.info("Start create Tensorboard Service")
         return
     except Exception as e:
-        print(f"Create Tensorboard Service got error: {e}", file=sys.stderr)
+        logger.error(f"Create Tensorboard Service got error: {e}")
         return
 
 
@@ -1201,10 +1204,10 @@ def create_tensorboard_ingress(tb_service_name, tb_ingress_name, tb_ingress_path
             body=ingress,
             namespace=name_space
         )
-        print("Created Tensorboard Ingress", file=sys.stderr)
+        logger.info("Created Tensorboard Ingress")
         return
     except Exception as e:
-        print(f"Create Tensorboard Ingress got error: {e}", file=sys.stderr)
+        logger.error(f"Create Tensorboard Ingress got error: {e}")
         return
 
 
@@ -1229,14 +1232,14 @@ def status_tensorboard_deployment(deployment_name, replicas=1):
         return {"status": "Running"}
     except ApiException as e:
         if e.status == 404:
-            print("Tensorboard Deployment not found.", file=sys.stderr)
+            logger.info("Tensorboard Deployment not found.")
             # TODO: here defined a new status to find the situation that the deployment does not exists
             # This status is useful to check if the deployment is deleted or not created
             return {"status": "NotFound"}
-        print(f"Got other ApiException error: {e}", file=sys.stderr)
+        logger.error(f"Got other ApiException error: {e}")
         return {"status": "Error"}
     except Exception as e:
-        print(f"Got {type(e)} error: {e}", file=sys.stderr)
+        logger.error(f"Got {type(e)} error: {e}")
         return {"status": "Error"}
 
 
@@ -1257,19 +1260,19 @@ def status_tb_service(tb_service_name, port=6006):
             name=tb_service_name,
             namespace=name_space,
         )
-        print(f'TB Service API Response: {api_response}')
+        logger.info(f'TB Service API Response: {api_response}')
         tb_service_ip = api_response.spec.cluster_ip
         return {"status": "Running", "tb_service_ip": tb_service_ip}
     except ApiException as e:
         if e.status == 404:
-            print("TIS Service not found.", file=sys.stderr)
+            logger.info("TIS Service not found.")
             # TODO: here defined a new status, in order to find the situation that the TIS Service not exists
             # This status is useful to check if the TIS Service is deleted or not created
             return {"status": "NotFound"}
-        print(f"Got other ApiException error: {e}", file=sys.stderr)
+        logger.error(f"Got other ApiException error: {e}")
         return {"status": "Error"}
     except Exception as e:
-        print(f"Got {type(e)} error: {e}", file=sys.stderr)
+        logger.error(f"Got {type(e)} error: {e}")
         return {"status": "Error"}
 
 
@@ -1284,10 +1287,10 @@ def delete_tensorboard_deployment(deployment_name):
             body=client.V1DeleteOptions(
                 propagation_policy='Foreground',
                 grace_period_seconds=5))
-        print(f"Tensorboard Deployment deleted. status='{str(api_response.status)}'", file=sys.stderr)
+        logger.info(f"Tensorboard Deployment deleted. status='{str(api_response.status)}'")
         return
     except Exception as e:
-        print(f"Tensorboard Deployment failed to delete, got error: {e}", file=sys.stderr)
+        logger.error(f"Tensorboard Deployment failed to delete, got error: {e}")
         return
 
 
@@ -1300,10 +1303,10 @@ def delete_tensorboard_service(tb_service_name):
             name=tb_service_name,
             namespace=name_space,
         )
-        print(f"Tensorboard Service deleted. status='{str(api_response.status)}'", file=sys.stderr)
+        logger.info(f"Tensorboard Service deleted. status='{str(api_response.status)}'")
         return
     except Exception as e:
-        print(f"Tensorboard Service failed to delete, got error: {e}", file=sys.stderr)
+        logger.error(f"Tensorboard Service failed to delete, got error: {e}")
         return
 
 
@@ -1316,10 +1319,10 @@ def delete_tensorboard_ingress(tb_ingress_name):
             name=tb_ingress_name,
             namespace=name_space
         )
-        print(f"Tensorboard Ingress deleted. status='{str(api_response.status)}'", file=sys.stderr)
+        logger.info(f"Tensorboard Ingress deleted. status='{str(api_response.status)}'")
         return
     except Exception as e:
-        print(f"Tensorboard Ingress failed to delete, got error: {e}", file=sys.stderr)
+        logger.error(f"Tensorboard Ingress failed to delete, got error: {e}")
         return
 
 
@@ -1340,5 +1343,5 @@ def get_cluster_ip(namespace='default'):
                 cluster_port = port.port
         return cluster_ip, cluster_port
     except Exception as e:
-        print(f"Error fetching ClusterIP: {e}", file=sys.stderr)
+        logger.error(f"Error fetching ClusterIP: {e}")
         return None, None

@@ -30,7 +30,6 @@ Functions:
 """
 import os
 import re
-import sys
 import copy
 import glob
 import json
@@ -42,6 +41,7 @@ import tempfile
 import traceback
 import subprocess
 from datetime import datetime, timezone, timedelta
+import logging
 
 from nvidia_tao_core.microservices.constants import (
     _ITER_MODELS,
@@ -84,6 +84,13 @@ from nvidia_tao_core.microservices.handlers.monai.template_python import (
 from nvidia_tao_core.microservices.handlers.ngc_handler import validate_ptm_download
 from nvidia_tao_core.microservices.handlers.monai.helpers import find_matching_bundle_dir
 from nvidia_tao_core.microservices.utils import create_folder_with_permissions
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 
 # Helper Classes
@@ -371,7 +378,7 @@ class StatusParser:
                     return None
             return float(value)
         except Exception as e:
-            print(f"Exception thrown in force_float is {str(e)}", file=sys.stderr)
+            logger.error("Exception thrown in force_float is %s", str(e))
             return None
 
     @staticmethod
@@ -479,7 +486,7 @@ class StatusParser:
             try:
                 good_statuses.append(status_dict)
             except Exception as e:
-                print(f"Exception thrown in while adding good statuses in update_results is {str(e)}", file=sys.stderr)
+                logger.error("Exception thrown in while adding good statuses in update_results is %s", str(e))
                 continue
             self.cur_line += 1
 
@@ -592,8 +599,8 @@ class StatusParser:
                             break
         except Exception:
             # Something went wrong inside...
-            print(traceback.format_exc(), file=sys.stderr)
-            print("Requested metric not found, defaulting to 0.0", file=sys.stderr)
+            logger.error(traceback.format_exc())
+            logger.warning("Requested metric not found, defaulting to 0.0")
             if (
                 (metric == "kpi" and NETWORK_METRIC_MAPPING[self.network] in ("loss", "evaluation_cost ")) or
                 (metric in ("loss", "evaluation_cost "))
@@ -605,10 +612,9 @@ class StatusParser:
         if self.network in STATUS_CALLBACK_MISMATCH_WITH_CHECKPOINT_EPOCH:
             self.best_epoch_number += 1
             self.latest_epoch_number += 1
-        print(
+        logger.info(
             f"Metric returned is {metric_value} at best epoch/iter {self.best_epoch_number} "
             f"while latest epoch/iter is {self.latest_epoch_number}",
-            file=sys.stderr
         )
         return metric_value + 1e-07, self.best_epoch_number, self.latest_epoch_number
 
@@ -675,7 +681,7 @@ def get_dataset_download_command(dataset_metadata):
     elif cloud_type in ("aws", "azure"):
         if cloud_file_path.startswith("/"):
             cloud_file_path = cloud_file_path[1:]
-        print("Downloading to", os.path.join(temp_dir, cloud_file_path), file=sys.stderr)
+        logger.info("Downloading to %s", os.path.join(temp_dir, cloud_file_path))
         if cloud_specific_details:
             cs_instance.download_folder(cloud_file_path, temp_dir)
     elif cloud_type == "huggingface":
@@ -690,7 +696,7 @@ def get_dataset_download_command(dataset_metadata):
             cmnd = f"git clone {cloud_download_url} {temp_dir}"
     # run and wait till it finishes / run in background
     if cmnd:
-        print(f"Executing command: {cmnd}", file=sys.stderr)
+        logger.info("Executing command: %s", cmnd)
     return cmnd, temp_dir
 
 
@@ -726,9 +732,9 @@ def download_dataset(handler_dataset):
                     check=False
                 )
             if result.stdout:
-                print("Dataset pull stdout", result.stdout.decode("utf-8"), file=sys.stderr)
+                logger.info("Dataset pull stdout: %s", result.stdout.decode("utf-8"))
             if result.stderr:
-                print("Dataset pull stderr", result.stderr.decode("utf-8"), file=sys.stderr)
+                logger.info("Dataset pull stderr: %s", result.stderr.decode("utf-8"))
 
         tar_file_path = search_for_dataset(temp_dir)
         if not tar_file_path:  # If dataset downloaded is of folder type
@@ -772,10 +778,10 @@ def validate_and_update_experiment_metadata(user_id, org_name, request_dict, met
 def validate_and_update_base_experiment_metadata(base_experiment_file, base_experiment_id, meta_data):
     """Checks downloaded file hash and updates status in metadata"""
     sha256_digest = meta_data.get("sha256_digest", "")
-    print(f"File {base_experiment_file} already exists, validating", file=sys.stderr)
+    logger.info(f"File {base_experiment_file} already exists, validating")
     sha256_digest_matched = validate_ptm_download(base_experiment_file, sha256_digest)
     msg = "complete" if sha256_digest_matched else "in-complete"
-    print(f"Download of {base_experiment_id} is {msg}", file=sys.stderr)
+    logger.info(f"Download of {base_experiment_id} is {msg}")
     meta_data["base_experiment_pull_complete"] = "pull_complete" if sha256_digest_matched else "starting"
     update_base_experiment_metadata(base_experiment_id, meta_data)
 
@@ -966,25 +972,25 @@ def validate_uuid(dataset_id=None, job_id=None, experiment_id=None, workspace_id
         try:
             uuid.UUID(dataset_id)
         except Exception as e:
-            print(f"Exception thrown in validate_uuid for dataset_id is {str(e)}", file=sys.stderr)
+            logger.error("Exception thrown in validate_uuid for dataset_id is %s", str(e))
             return "Dataset ID passed is not a valid UUID"
     if job_id:
         try:
             uuid.UUID(job_id)
         except Exception as e:
-            print(f"Exception thrown in validate_uuid for job_id is {str(e)}", file=sys.stderr)
+            logger.error("Exception thrown in validate_uuid for job_id is %s", str(e))
             return "Job ID passed is not a valid UUID"
     if experiment_id:
         try:
             uuid.UUID(experiment_id)
         except Exception as e:
-            print(f"Exception thrown in validate_uuid for experiment_id is {str(e)}", file=sys.stderr)
+            logger.error("Exception thrown in validate_uuid for experiment_id is %s", str(e))
             return "Experiment ID passed is not a valid UUID"
     if workspace_id:
         try:
             uuid.UUID(workspace_id)
         except Exception as e:
-            print(f"Exception thrown in validate_uuid for workspace_id is {str(e)}", file=sys.stderr)
+            logger.error("Exception thrown in validate_uuid for workspace_id is %s", str(e))
             return "Workspace ID passed is not a valid UUID"
     return ""
 
@@ -999,7 +1005,7 @@ def decrypt_handler_metadata(workspace_metadata):
             if encryption.check_config()[0]:
                 workspace_metadata["cloud_specific_details"][key] = encryption.decrypt(value)
             else:
-                print("deencryption not possible", file=sys.stderr)
+                logger.info("deencryption not possible")
 
 
 def add_workspace_to_cloud_metadata(workspace_metadata, cloud_metadata):
@@ -1094,7 +1100,7 @@ def send_microservice_request(
             data = json.dumps(request_metadata)
             response = requests.post(endpoint, data=data, timeout=120)
     except Exception as e:
-        print("Exception caught during sending a microservice request", e, file=sys.stderr)
+        logger.error("Exception caught during sending a microservice request %s", e)
         raise e
 
     return response
@@ -1141,7 +1147,7 @@ def latest_model(files, delimiters="_", epoch_number="000", extensions=[".tlt", 
         try:
             epoch_num = int(epoch_num)
         except Exception as e:
-            print(f"Exception thrown in latest_model is {str(e)}", file=sys.stderr)
+            logger.error("Exception thrown in latest_model is %s", str(e))
             epoch_num = 0
         if epoch_num >= cur_best:
             cur_best = epoch_num
@@ -1269,10 +1275,9 @@ def search_for_checkpoint(handler_metadata, job_id, res_root, files, checkpoint_
             format_epoch_number=format_epoch_number
         )
         if (not result_file) and (checkpoint_choose_method in ("best_model", "from_epoch_number")):
-            print(
+            logger.warning(
                 "Couldn't find the epoch number requested or the checkpointed "
-                "associated with the best metric value, defaulting to latest_model",
-                file=sys.stderr
+                "associated with the best metric value, defaulting to latest_model"
             )
             checkpoint_function = latest_model
             result_file = _get_result_file_path(
@@ -1343,7 +1348,7 @@ def resolve_checkpoint_root_and_search(handler_metadata, job_id):
 
 def get_model_results_path(handler_metadata, job_id):
     """Return the model file for the job context and handler metadata passes"""
-    print("\nget_model_results_path\n", file=sys.stderr)
+    logger.info("\nget_model_results_path\n")
     return resolve_checkpoint_root_and_search(handler_metadata, job_id)
 
 

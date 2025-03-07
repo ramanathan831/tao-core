@@ -15,11 +15,18 @@
 """NV Vault encryption."""
 
 import os
-import sys
 import json
+import logging
 
 from Crypto.Cipher import AES
 from base64 import b64encode, b64decode
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 
 class NVVaultEncryption:
@@ -55,7 +62,7 @@ class NVVaultEncryption:
                 config_content = json.load(fp)
             return config_content
         except Exception as e:
-            print(f"Exception thrown in get_config_content is {str(e)}", file=sys.stderr)
+            logger.error("Exception thrown in get_config_content is %s", str(e))
             return None
 
     def _get_k8s_keys(self):

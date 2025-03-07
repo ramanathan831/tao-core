@@ -25,6 +25,7 @@ import os
 import re
 import requests
 import traceback
+import logging
 
 from apispec import APISpec
 from apispec.ext.marshmallow import MarshmallowPlugin
@@ -80,6 +81,13 @@ flask_plugin = FlaskPlugin()
 marshmallow_plugin = MarshmallowPlugin()
 
 TIMEOUT = 240
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 
 #
@@ -740,7 +748,7 @@ def super_endpoint(org_name):
         request_metadata = schema.dump(schema.load(request.get_json(force=True)))
 
         api_endpoint = request_metadata.get("api_endpoint")
-        print("Internal api endpoint to be called is", api_endpoint, file=sys.stderr)
+        logger.info("Internal api endpoint to be called is %s", api_endpoint)
         kind = request_metadata.get("kind")
         handler_id = request_metadata.get("handler_id")
         is_base_experiment = request_metadata.get("is_base_experiment", False)
@@ -925,12 +933,10 @@ def super_endpoint(org_name):
                 return jsonify(response.json()), response.status_code
             return jsonify({"error": "Unsupported request type"}), 400
         except requests.exceptions.RequestException as e:
-            print("traceback i", traceback.format_exc(), file=sys.stderr)
-            print(f"Error in internal request: {e}", file=sys.stderr)
+            logger.error("Error in internal request: %s", e)
             return jsonify({"error": "Failed to process the request"}), 500
     except Exception as e:
-        print(f"Error in processing request with error message {str(e)}", file=sys.stderr)
-        print("traceback", traceback.format_exc(), file=sys.stderr)
+        logger.error("Error in processing request: %s", e)
         return jsonify({"error": "Error in processing request"}), 500
 
 
@@ -987,7 +993,7 @@ def login():
     org_name = request_dict.get('ngc_org_name', '')
     creds, err = credentials.get_from_ngc(key, org_name)
     if err:
-        print("Unauthorized: " + err, flush=True)
+        logger.warning("Unauthorized: %s", err)
         metadata = {"error_desc": "Unauthorized: " + err, "error_code": 1}
         schema = ErrorRspSchema()
         return make_response(jsonify(schema.dump(schema.load(metadata))), 401)
@@ -1007,9 +1013,9 @@ def auth():
     # retrieve jwt from headers
     token = ''
     url = request.headers.get('X-Original-Url', '') if ingress_enabled else request.path
-    print('URL: ' + str(url), flush=True)
+    logger.info('URL: %s', url)
     method = request.headers.get('X-Original-Method', '') if ingress_enabled else request.method
-    print('Method: ' + str(method), flush=True)
+    logger.info('Method: %s', method)
     # bypass authentication for http OPTIONS requests
     if method == 'OPTIONS':
         return make_response(jsonify({}), 200)
@@ -1023,7 +1029,7 @@ def auth():
         try:
             request_metadata = schema.dump(schema.load(request.get_json(force=True)))
         except Exception:
-            print("Validation of schema failed", file=sys.stderr)
+            logger.error("Validation of schema failed")
             metadata = {"error_desc": "Validation of schema failed", "error_code": 2}
             schema = ErrorRspSchema()
             response = make_response(jsonify(schema.dump(schema.load(metadata))), 400)
@@ -1031,7 +1037,7 @@ def auth():
         token = request_metadata.get("ngc_key", "")
 
     if not token:
-        print("token cannot be obtained", file=sys.stderr)
+        logger.warning("token cannot be obtained")
         if len(authorization_parts) == 2 and authorization_parts[0].lower() == 'basic':
             basic_auth = request.authorization
             if basic_auth:
@@ -1039,7 +1045,7 @@ def auth():
                     try:
                         org_name, key = basic_auth.password.split(",")
                     except Exception as e:
-                        print(f"Exception thrown in auth is {str(e)}", file=sys.stderr)
+                        logger.error("Exception thrown in auth: %s", str(e))
                         metadata = {
                             "error_desc": "Basic auth password not in the format of org_name,ngc_personal_key",
                             "error_code": 1
@@ -1067,25 +1073,23 @@ def auth():
     if not token:
         if ssid_cookie:
             token = 'SSID=' + ssid_cookie
-    print('Token: ...' + str(token)[-10:], flush=True)
+    logger.info('Token: ...%s', token[-10:])
     # authentication
     user_id, org_name, err = authentication.validate(url, token)
     from_ui = is_cookie_request(request)
     log_content = f"user_id:{user_id}, org_name:{org_name}, from_ui:{from_ui}, method:{method}, url:{url}"
     log_monitor(log_type=DataMonitorLogTypeEnum.api, log_content=log_content)
     credentials.save_cookie(user_id, sid_cookie, ssid_cookie)
-    print('Authentication error', err, file=sys.stderr)
     if err:
-        print("Unauthorized: " + str(err), flush=True)
+        logger.warning("Unauthorized: %s", err)
         metadata = {"error_desc": str(err), "error_code": 1}
         schema = ErrorRspSchema()
         response = make_response(jsonify(schema.dump(schema.load(metadata))), 401)
         return response
     # access control
     err = access_control.validate(user_id, org_name, url)
-    print('Access control error', err, file=sys.stderr)
     if err:
-        print("Forbidden: " + str(err), flush=True)
+        logger.warning("Forbidden: %s", err)
         metadata = {"error_desc": str(err), "error_code": 2}
         schema = ErrorRspSchema()
         response = make_response(jsonify(schema.dump(schema.load(metadata))), 403)
@@ -1198,7 +1202,7 @@ def container_job_run():
         schema = ErrorRspSchema()
         return make_response(jsonify(schema.dump(schema.load(metadata))), 400)
     except Exception as err:
-        print(traceback.format_exc())
+        logger.error("Error in container_job_run: %s", str(traceback.format_exc()))
         metadata = {"error": str(err), "error_code": 1}
         schema = ErrorRspSchema()
         return make_response(jsonify(schema.dump(schema.load(metadata))), 400)
@@ -1294,7 +1298,7 @@ def container_job_status():
         schema_dict = schema.dump(schema.load({"status": status}))
         return make_response(jsonify(schema_dict), response_code)
     except Exception as err:
-        print(traceback.format_exc())
+        logger.error("Error in container_job_status: %s", str(traceback.format_exc()))
         metadata = {"error": str(err), "error_code": 1}
         schema = ErrorRspSchema()
         return make_response(jsonify(schema.dump(schema.load(metadata))), 400)
@@ -1308,13 +1312,13 @@ def authenticate_without_ingress():
     if "super_endpoint" in request.path:
         request_body = request.get_json(force=True)
         if "container_job" in request_body.get("api_endpoint") or "status_update" in request_body.get("api_endpoint"):
-            print("skipping authentication", file=sys.stderr)
+            logger.info("skipping authentication")
             return None
-    print(f"authenticate without ingress, auth being called now for {request.path}", file=sys.stderr)
+    logger.info("authenticate without ingress, auth being called now for %s", request.path)
     auth_response = auth()
     if auth_response.status_code == 200:
         return None
-    print("authenticate failed", file=sys.stderr)
+    logger.warning("authenticate failed")
     return auth_response
 
 #
@@ -1446,7 +1450,7 @@ def metrics_upsert():
     try:
         data = TelemetryReqSchema().load(request.get_json(force=True))
     except Exception as e:
-        print(f"Exception thrown in metrics_upsert is {str(e)}", file=sys.stderr)
+        logger.error("Exception thrown in metrics_upsert: %s", str(e))
         return make_response(jsonify({}), 400)
 
     # update metrics.json
@@ -6536,10 +6540,9 @@ def experiment_job_run(org_name, experiment_id):
                 # get user_id for more information
                 handler_metadata = resolve_metadata("experiment", experiment_id)
                 user_id = handler_metadata.get("user_id")
-                print(
+                logger.error(
                     f"respond attached data for org: {org_name} experiment: {experiment_id} "
-                    f"user: {user_id} failed, got error: {e}",
-                    file=sys.stderr
+                    f"user: {user_id} failed, got error: {e}"
                 )
                 metadata = {"error_desc": "respond attached data failed", "error_code": 2}
                 schema = ErrorRspSchema()
@@ -6563,7 +6566,7 @@ def experiment_job_run(org_name, experiment_id):
                 log_type = DataMonitorLogTypeEnum.medical_job if is_medical else DataMonitorLogTypeEnum.tao_job
                 log_api_error(user_id, org_name, from_ui, schema_dict, log_type, action="creation")
         except Exception as e:
-            print(f"Exception thrown in experiment_job_run is {str(e)}", file=sys.stderr)
+            logger.error(f"Exception thrown in experiment_job_run is {str(e)}")
             log_monitor(DataMonitorLogTypeEnum.api, "Cannot parse experiment info for job.")
 
     return make_response(jsonify(schema_dict), response.code)
@@ -6677,7 +6680,7 @@ def experiment_job_retry(org_name, experiment_id, job_id):
                 log_type = DataMonitorLogTypeEnum.medical_job if is_medical else DataMonitorLogTypeEnum.tao_job
                 log_api_error(user_id, org_name, from_ui, schema_dict, log_type, action="creation")
         except Exception as e:
-            print(f"Exception thrown in experiment_job_retry is {str(e)}", file=sys.stderr)
+            logger.error(f"Exception thrown in experiment_job_retry is {str(e)}")
             log_monitor(DataMonitorLogTypeEnum.api, "Cannot parse experiment info for job.")
 
     return make_response(jsonify(schema_dict), response.code)
@@ -6790,7 +6793,7 @@ def experiment_model_publish(org_name, experiment_id, job_id):
 
     if response.code == 200:
         schema = MessageOnlySchema()
-        print("Returning success response", response.data, file=sys.stderr)
+        logger.info("Returning success response: %s", response.data)
         schema_dict = schema.dump({"message": "Published model into requested org"})
     else:
         schema = ErrorRspSchema()
@@ -6993,7 +6996,7 @@ def experiment_remove_published_model(org_name, experiment_id, job_id):
 
     if response.code == 200:
         schema = MessageOnlySchema()
-        print("Returning success response", file=sys.stderr)
+        logger.info("Returning success response")
         schema_dict = schema.dump({"message": "Removed model"})
     else:
         schema = ErrorRspSchema()
@@ -8739,8 +8742,8 @@ def liveness():
         if live_state:
             return make_response(jsonify("OK"), 200)
     except Exception as e:
-        print(f"Exception thrown in liveness is {str(e)}", file=sys.stderr)
-        print("liveness error", traceback.format_exc(), file=sys.stderr)
+        logger.error("Exception thrown in liveness: %s", str(e))
+        logger.error("liveness error: %s", traceback.format_exc())
     return make_response(jsonify("Error"), 400)
 
 
@@ -8757,8 +8760,8 @@ def readiness():
             if ready_state:
                 return make_response(jsonify("OK"), 200)
     except Exception as e:
-        print(f"Exception thrown in readiness is {str(e)}", file=sys.stderr)
-        print("readiness error", traceback.format_exc(), file=sys.stderr)
+        logger.error("Exception thrown in readiness: %s", str(e))
+        logger.error("readiness error: %s", traceback.format_exc())
     return make_response(jsonify("Error"), 400)
 
 

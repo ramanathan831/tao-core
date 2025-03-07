@@ -18,9 +18,16 @@
 - Readiness
 """
 import os
-import sys
 import tempfile
 from kubernetes import client, config
+import logging
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 
 def check_logging():
@@ -32,7 +39,7 @@ def check_logging():
         os.remove(path)
         return True
     except Exception as e:
-        print(f"Exception thrown in check_logging is {str(e)}", file=sys.stderr)
+        logger.error("Exception thrown in check_logging is %s", str(e))
         return False
 
 
@@ -50,5 +57,5 @@ def check_k8s():
         client.BatchV1Api()
         return True
     except Exception as e:
-        print(f"Exception thrown in check_k8s is {str(e)}", file=sys.stderr)
+        logger.error("Exception thrown in check_k8s is %s", str(e))
         return False

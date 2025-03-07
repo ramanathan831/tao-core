@@ -14,23 +14,30 @@
 
 """MongoDB backup script"""
 import argparse
-import sys
+import logging
 
 from nvidia_tao_core.microservices.utils import run_system_command
 from nvidia_tao_core.microservices.handlers.cloud_storage import CloudStorage
 from nvidia_tao_core.microservices.handlers.mongo_handler import mongo_connection_string
 
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
+
 
 def backup(access_key, secret_key, s3_bucket_name, s3_bucket_region):
     """Script to backup mongodump file to S3 bucket"""
     if not access_key or not secret_key or not s3_bucket_name or not s3_bucket_region:
-        print("Invalid arguments. Check script arguments and try again.", file=sys.stderr)
+        logger.error("Invalid arguments. Check script arguments and try again.")
         return
 
     try:
         cs_instance = CloudStorage('aws', s3_bucket_name, s3_bucket_region, access_key, secret_key)
     except Exception as e:
-        print("Invalid cloud credentials. Check cloud credentials and try again.", str(e), file=sys.stderr)
+        logger.error("Invalid cloud credentials. Check cloud credentials and try again: %s", str(e))
         return
 
     backup_file = "mongodb_backup.gz"
@@ -39,7 +46,7 @@ def backup(access_key, secret_key, s3_bucket_name, s3_bucket_region):
 
     cs_instance.upload_file(backup_file, f"dump/archive/{backup_file}")
 
-    print("Successfully backed up MongoDB to S3", file=sys.stderr)
+    logger.info("Successfully backed up MongoDB to S3")
 
 
 if __name__ == '__main__':

@@ -14,8 +14,15 @@
 
 """Utility function to convert spec csv to json schema"""
 import csv
-import sys
 import json
+import logging
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 __type_mapping = {
     'collection': 'object',
@@ -120,7 +127,7 @@ def harden_numerical_value(value):
             float(value)
             return value
         except Exception as e:
-            print(f"Exception thrown in harden_numerical_value is {str(e)}", file=sys.stderr)
+            logger.error("Exception thrown in harden_numerical_value: %s", str(e))
             return None
     else:
         return None

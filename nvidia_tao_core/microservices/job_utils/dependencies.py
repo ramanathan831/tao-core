@@ -23,7 +23,7 @@
 
 """
 import os
-import sys
+import logging
 
 from nvidia_tao_core.microservices.constants import NO_PTM_MODELS, MONAI_NETWORKS
 from nvidia_tao_core.microservices.handlers.utilities import get_num_gpus_from_spec
@@ -41,6 +41,13 @@ from nvidia_tao_core.microservices.handlers.stateless_handlers import (
     get_automl_controller_info
 )
 from nvidia_tao_core.microservices.job_utils import executor
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 
 def dependency_check_parent(job_context, dependency):
@@ -193,7 +200,7 @@ def dependency_check_model(job_context, dependency):
             return False, f"Base experiment ID {base_experiment_id} is not found"
 
         if base_experiment_metadata.get("base_experiment_pull_complete") != "pull_complete":
-            print("base_experiment_metadata", base_experiment_metadata, file=sys.stderr)
+            logger.info("base_experiment_metadata: %s", base_experiment_metadata)
             return False, (
                 f"Base Experiment file for ID {base_experiment_id} is being downloaded "
                 "or downloaded file is corrupt"
@@ -231,7 +238,7 @@ def dependency_check_automl(job_context, dependency):
         recs_dict[rec_number]
         return True, ""
     except Exception as e:
-        print(f"Exception thrown in dependency_check_automl is {str(e)}", file=sys.stderr)
+        logger.error("Exception thrown in dependency_check_automl: %s", str(e))
         return False, f"Recommendation number {rec_number} requested is not available yet"
 
 

@@ -16,10 +16,17 @@
 import tarfile
 import os
 import glob
-import sys
+import logging
 
 from handlers.cloud_storage import create_cs_instance
 from utils import read_network_config
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 
 # Simple helper class for ease of code migration
@@ -74,14 +81,14 @@ def _extract_images(tar_path, dest):
                 strip_components = name.split("/").index("images")
                 break
     # Build shell command for untarring
-    print("Untarring data started", file=sys.stderr)
+    logger.info("Untarring data started")
     _untar_file(tar_path, dest, strip_components)
-    print("Untarring data complete", file=sys.stderr)
+    logger.info("Untarring data complete")
 
     # Remove .tar.gz file
-    print("Removing data tar file", file=sys.stderr)
+    logger.info("Removing data tar file")
     os.remove(tar_path)
-    print("Deleted data tar file", file=sys.stderr)
+    logger.info("Deleted data tar file")
 
 
 def write_dir_contents(directory, file):
@@ -97,9 +104,9 @@ def validate_dataset(org_name, handler_metadata, temp_dir="", workspace_metadata
 
     try:
         # Load network config
-        print("handler.type", handler.type, file=sys.stderr)
+        logger.debug("handler.type: %s", handler.type)
         network_config = read_network_config(handler.type)
-        print("network_config", network_config, file=sys.stderr)
+        logger.debug("network_config: %s", network_config)
         validation_config = network_config.get("dataset_validation", {})
 
         # Get format-specific requirements, fallback to default
@@ -169,5 +176,5 @@ def validate_dataset(org_name, handler_metadata, temp_dir="", workspace_metadata
         return True
 
     except Exception as e:
-        print(f"Error occurred: {str(e)}", file=sys.stderr)
+        logger.error("Error occurred: %s", str(e))
         return False

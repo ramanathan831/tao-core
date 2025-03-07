@@ -17,14 +17,21 @@ import datetime
 import os
 import requests
 import uuid
-import sys
 import traceback
 import jwt
+import logging
 
 from nvidia_tao_core.microservices.auth_utils.session import __SESSION_EXPIRY_SECONDS__, _SESSION_REFRESH_SECONDS__
 from nvidia_tao_core.microservices.handlers.ngc_handler import get_user_key
 from nvidia_tao_core.microservices.handlers.encrypt import NVVaultEncryption
 from nvidia_tao_core.microservices.handlers.mongo_handler import MongoHandler
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 BACKEND = os.getenv("BACKEND", "local-k8s")
 DEPLOYMENT_MODE = os.getenv("DEPLOYMENT_MODE", "PROD")
@@ -44,7 +51,7 @@ def get_from_ngc(key, org_name):
             err = f'Org Name {org_name} not valid'
             return creds, err
         if key.startswith("nvapi"):
-            print("Scoped key passed", file=sys.stderr)
+            logger.info("Scoped key passed")
             token = key
             url = f'https://api.{stg_prefix}ngc.nvidia.com/v3/keys/get-caller-info'
             try:
@@ -55,7 +62,7 @@ def get_from_ngc(key, org_name):
                     timeout=5
                 )
             except Exception as e:
-                print("Exception caught during getting user info with personal key", e, file=sys.stderr)
+                logger.error("Exception caught during getting user info with personal key: %s", e)
                 raise e
         else:
             err = ('Credentials error: Invalid NGC_PERSONAL_KEY, NGC_API_KEYs are no longer valid, '
@@ -90,17 +97,17 @@ def get_from_ngc(key, org_name):
         if 'key' not in user or encrypted_key != user['key'].get(org_name, ""):
             user_metadata['key'] = {org_name: encrypted_key}
         if 'jwt_token' not in user or not is_token_valid(user['jwt_token']):
-            print("Creating new JWT Token", file=sys.stderr)
+            logger.info("Creating new JWT Token")
             token = create_jwt_token(user_id, org_name, key)
             user_metadata['jwt_token'] = token
             creds['token'] = token
         else:
-            print("Using old JWT Token", file=sys.stderr)
+            logger.info("Using old JWT Token")
             creds['token'] = user['jwt_token']
         mongo.upsert(user_query, user_metadata)
 
     except Exception as e:
-        print(traceback.format_exc(), file=sys.stderr)
+        logger.error(traceback.format_exc())
         err = 'Credentials error: ' + str(e)
     return creds, err
 
@@ -147,7 +154,7 @@ def is_token_valid(token):
             return True
         return False
     except Exception as e:
-        print(f"Exception thrown in is_token_valid is {str(e)}", file=sys.stderr)
+        logger.error("Exception thrown in is_token_valid is %s", str(e))
         return False
 
 

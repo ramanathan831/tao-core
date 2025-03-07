@@ -17,12 +17,12 @@ import os
 import pathlib
 import random
 import re
-import sys
 from threading import Thread
 import requests
 import validators
 from filelock import FileLock
 from uuid import uuid5, NAMESPACE_URL
+import logging
 
 from nvidia_tao_core.microservices.handlers import stateless_handlers
 from nvidia_tao_core.microservices.handlers.encrypt import NVVaultEncryption
@@ -33,6 +33,13 @@ from nvidia_tao_core.microservices.handlers.utilities import Code
 from nvidia_tao_core.microservices.handlers.stateless_handlers import resolve_existence, resolve_root, resolve_metadata
 from nvidia_tao_core.microservices.handlers.monai.helpers import ImageLabelRecord
 from nvidia_tao_core.microservices.utils import get_default_lock_file_path
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 MONAI_DATASET_ACTIONS = [
     "nextimage",
@@ -99,7 +106,7 @@ class MonaiDatasetHandler:
         cache_info = cache_store.get_cache(cache_id)
         if cache_info is None:
             def download_image():
-                print(f'Downloading [{image}] in Background ({background})', file=sys.stderr)
+                logger.info("Downloading [%s] in Background (%s)", image, background)
                 ep = MonaiDatasetHandler.endpoint(dataset_metadata)
                 image_file = os.path.join(cache_path, cache_id, "image")
                 save_file = ep.download(image, image_file)
@@ -111,7 +118,7 @@ class MonaiDatasetHandler:
                 else:
                     cache_info = download_image()
             except Exception as e:
-                print(f"Exception thrown in Monaidatasethandler action_cache_image is {str(e)}", file=sys.stderr)
+                logger.error("Exception thrown in Monaidatasethandler action_cache_image is %s", str(e))
                 return Code(400, {}, f"Cannot cache the image with id {image}. Please check the id and url.")
 
         return Code(201, cache_info.to_json() if cache_info else None, f"Caching Image: {image}")
@@ -173,11 +180,11 @@ class MonaiDatasetHandler:
             try:
                 r = requests.get(image_url, allow_redirects=True, timeout=120)
             except Exception as e:
-                print("Exception caught during monai caching  requests call", e, file=sys.stderr)
+                logger.error("Exception caught during monai caching requests call: %s", e)
                 raise e
             image_file = get_filename_from_cd(image_url, r.headers.get('content-disposition'))
             if not image_file:
-                print(f"Failed to cache {image_url};  Can't determine filename", file=sys.stderr)
+                logger.error("Failed to cache %s; Can't determine filename", image_url)
                 return Code(400, cache_info, f"Failed to determine Caching Image type: {image}")
 
             image_file = os.path.join(
@@ -237,7 +244,6 @@ class MonaiDatasetHandler:
                 cache_paths.append(path)
 
         for path in cache_paths:
-            # print(f"Trying to remove Expired Cache from: {path}")  # redundant, only show org_name + dataset_id
             cache_store = LocalCache(store_path=path)
             cache_store.remove_expired()
 

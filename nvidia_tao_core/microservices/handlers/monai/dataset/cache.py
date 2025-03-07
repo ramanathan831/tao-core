@@ -16,7 +16,6 @@
 import json
 import logging
 import os
-import sys
 import shutil
 import tempfile
 import time
@@ -118,10 +117,10 @@ class LocalCache(dict):
                                 self[cache_id] = cache_info
                             else:
                                 # Handle empty file case
-                                print("The meta file is empty.", file=sys.stderr)
+                                logger.error("The meta file is empty.")
                     except json.JSONDecodeError as e:
                         # Handle invalid JSON
-                        print(f"Error parsing JSON: {e}", file=sys.stderr)
+                        logger.error("Error parsing JSON: %s", e)
         if cache_info:
             cache_info_image_path = cache_info.image[0] if isinstance(cache_info.image, list) else cache_info.image
             if not os.path.exists(cache_info_image_path):

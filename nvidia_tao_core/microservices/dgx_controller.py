@@ -14,16 +14,23 @@
 
 """DGX job's kubernetes controller"""
 import os
-import sys
 import json
 import time
 import asyncio
 import traceback
+import logging
 from datetime import datetime
 from kubernetes import client, config
 
 from nvidia_tao_core.microservices.handlers.ngc_handler import send_ngc_api_request
 from nvidia_tao_core.microservices.job_utils.executor import _get_name_space
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 if not os.getenv("CI_PROJECT_DIR", None) and os.getenv("DEV_MODE", "False").lower() not in ("true", "1"):
     config.load_incluster_config()
@@ -89,11 +96,9 @@ def create_dgx_job(dgx_cr):
         ngc_key=ngc_key
     )
     if job_create_response.status_code not in [200, 415]:
-        print("Endpoint", endpoint, file=sys.stderr)
-        print("user_id", user_id, file=sys.stderr)
-        # print("Custom resource values", request_body, file=sys.stderr)
-        print("Response code", job_create_response.status_code, file=sys.stderr)
-        # print("Error while creating DGX job", job_create_response.text, file=sys.stderr)
+        logger.error("Endpoint: %s", endpoint)
+        logger.error("user_id: %s", user_id)
+        logger.error("Response code: %s", job_create_response.status_code)
         updated_cr_error = api_instance.patch_namespaced_custom_object(
             group="dgx-job-manager.nvidia.io",
             version="v1alpha1",
@@ -104,7 +109,7 @@ def create_dgx_job(dgx_cr):
         )
         return updated_cr_error
     if job_create_response.status_code in [415]:
-        print("Retrying NGC job submit request", file=sys.stderr)
+        logger.info("Retrying NGC job submit request")
         time.sleep(5)
         return create_dgx_job(dgx_cr)
     if job_create_response.status_code == 200:
@@ -139,7 +144,7 @@ def delete_dgx_job(dgx_cr):
             ngc_key=ngc_key
         )
         if job_delete_response.status_code not in (200, 422):
-            print("job_delete_response", job_delete_response, job_delete_response.json(), file=sys.stderr)
+            logger.error("job_delete_response: %s, %s", job_delete_response, job_delete_response.json())
 
 
 def get_job_logs(user_id, job_id, orgName, ngc_key):
@@ -163,12 +168,12 @@ def print_job_logs(user_id, job_id, orgName, ngc_key, custom_resource_name):
         formatted_time = current_time.strftime('%d/%b/%Y:%H:%M:%S')
         for line in job_logs.split("\n"):
             if line:
-                print(f"{formatted_time},{job_id},{custom_resource_name}: {line}", file=sys.stderr)
+                logger.info("%s,%s,%s: %s", formatted_time, job_id, custom_resource_name, line)
 
 
 def overwrite_job_logs_from_bcp(logfile, job_name):
     """Get job logs from BCP and overwrite it with existing logs"""
-    print("Over-writing job logs from BCP to local", file=sys.stderr)
+    logger.info("Over-writing job logs from BCP to local")
     try:
         name_space = _get_name_space()
         crd_group = 'dgx-job-manager.nvidia.io'
@@ -188,14 +193,14 @@ def overwrite_job_logs_from_bcp(logfile, job_name):
         ngc_key = dgxjob_api_response.get("spec", {}).get("ngc_key", "")
         job_logs_response = get_job_logs(user_id, job_id, orgName, ngc_key)
         if job_logs_response.status_code == 200:
-            print("Over-writing response successfull", file=sys.stderr)
+            logger.info("Over-writing response successful")
             job_logs = job_logs_response.text
             with open(logfile, "w", encoding='utf-8') as f:
                 f.write(job_logs)
         else:
-            print("Unable to over-write job logs", job_logs_response.status_code, file=sys.stderr)
+            logger.error("Unable to over-write job logs: %s", job_logs_response.status_code)
     except Exception as e:
-        print("Unable to over-write job logs", e, file=sys.stderr)
+        logger.error("Unable to over-write job logs: %s", e)
 
 
 def update_status(job_tracker, logs_tracker):
@@ -269,7 +274,7 @@ async def process_events():
 
                 if custom_resource_name not in job_tracker:
                     # Handle added event
-                    print(f"DGX CR added: {custom_resource_name}", file=sys.stderr)
+                    logger.info("DGX CR added: %s", custom_resource_name)
                     updated_item = create_dgx_job(item)
                     job_tracker[custom_resource_name] = updated_item
 
@@ -279,15 +284,15 @@ async def process_events():
             deleted_jobs = existing_jobs - current_jobs
 
             for deleted_job in deleted_jobs:
-                print(f"DGX CR deleted: {deleted_job}")
+                logger.info("DGX CR deleted: %s", deleted_job)
                 delete_dgx_job(job_tracker[deleted_job])
                 update_status(job_tracker, logs_tracker)
                 del job_tracker[deleted_job]
             await asyncio.sleep(10)
 
         except Exception as e:
-            print(traceback.format_exc(), file=sys.stderr)
-            print(f"Error in the event processing loop: {str(e)}", file=sys.stderr)
+            logger.error(traceback.format_exc())
+            logger.error("Error in the event processing loop: %s", str(e))
 
 
 async def main():

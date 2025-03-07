@@ -15,11 +15,18 @@
 """MongoDB init script"""
 import time
 from kubernetes import client, config
-import sys
 import os
 from time import sleep
 from pymongo import MongoClient
 from urllib import parse
+import logging
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 mongodb_crd_group = 'mongodbcommunity.mongodb.com'
 mongodb_crd_version = 'v1'
@@ -163,9 +170,9 @@ def create_mongodb_replicaset():
             mongodb_crd_plural,
             mongodb_body
         )
-        print("MongoDB replicaset created successfully.", file=sys.stderr)
+        logger.info("MongoDB replicaset created successfully.")
     except Exception as e:
-        print(f"Failed to create MongoDB replicaset': {e}", file=sys.stderr)
+        logger.error("Failed to create MongoDB replicaset: %s", e)
         raise e
 
 
@@ -191,14 +198,14 @@ def patch_mongodb_replicaset():
             name=mongodb_crd_name,
             body=updated_spec
         )
-        print("MongoDB replicaset patched successfully.", file=sys.stderr)
+        logger.info("MongoDB replicaset patched successfully.")
     except Exception as e:
-        print(f"Failed to patch MongoDB replicaset': {e}", file=sys.stderr)
+        logger.error("Failed to patch MongoDB replicaset: %s", e)
         raise e
 
 
 if __name__ == "__main__":
-    print(f"Mongo Operator Enabled: {mongo_operator_enabled}", file=sys.stderr)
+    logger.info("Mongo Operator Enabled: %s", mongo_operator_enabled)
     if not mongo_operator_enabled:
         try:
             from handlers.mongo_handler import MongoHandler
@@ -209,11 +216,11 @@ if __name__ == "__main__":
                 retries=1
             )
         except Exception as e:  # if error, initialize replicaset
-            print(f"Exception caught in mongodb start with message {str(e)}", file=sys.stderr)
+            logger.error("Exception caught in mongodb start with message %s", str(e))
             retry = 0
             while retry <= 10:
                 try:
-                    print("Retrying attempt: ", retry, file=sys.stderr)
+                    logger.info("Retrying attempt: %s", retry)
                     init_time = 20 * mongodb_desired_replica_count
                     time.sleep(init_time)
                     connection_string = (
@@ -232,20 +239,20 @@ if __name__ == "__main__":
                         '_id': 'mongodb',
                         'members': rs_members
                     }
-                    print("Going to run replSetInitiate command", file=sys.stderr)
+                    logger.info("Going to run replSetInitiate command")
                     out = c.admin.command("replSetInitiate", mongo_config)
-                    print("replSetInitiate output", out, file=sys.stderr)
-                    print("Breaking while", file=sys.stderr)
-                    print(out, file=sys.stderr)
+                    logger.info("replSetInitiate output: %s", out)
+                    logger.debug("Breaking while")
+                    logger.debug("Output: %s", out)
                     break
                 except Exception as e:
-                    print(f"Error initializing replicaset! {e}", file=sys.stderr)
+                    logger.error("Error initializing replicaset! %s", e)
                     retry += 1
-                    print(f"Retrying {retry}", file=sys.stderr)
+                    logger.info("Retrying %s", retry)
                     if retry > 10:
                         import traceback
-                        print("traceback", traceback.format_exc(), file=sys.stderr)
-                        print("Raise exception", file=sys.stderr)
+                        logger.error("Traceback: %s", traceback.format_exc())
+                        logger.error("Raising exception")
                         raise e
     else:
         config.load_incluster_config()
@@ -259,7 +266,7 @@ if __name__ == "__main__":
                 namespace=mongodb_namespace,
                 plural=mongodb_crd_plural
             )
-            print("MongoDB response: ", api_response, file=sys.stderr)
+            logger.info("MongoDB response: %s", api_response)
             items = api_response['items']
             if len(items) == 0:
                 create_mongodb_replicaset()
@@ -269,7 +276,7 @@ if __name__ == "__main__":
                 if phase == 'Running' and mongodb_desired_replica_count != status.get('currentStatefulSetReplicas', 0):
                     patch_mongodb_replicaset()
                 elif phase != 'Running':
-                    print("Unknown MongoDB Replicaset status: ", status, file=sys.stderr)
+                    logger.warning("Unknown MongoDB Replicaset status: %s", status)
                     raise Exception("Unknown MongoDB Replicaset status")
 
             # Wait for all replicas to be ready
@@ -282,20 +289,18 @@ if __name__ == "__main__":
                     namespace=mongodb_namespace,
                     plural=mongodb_crd_plural
                 )
-                print("MongoDB response: ", api_response, file=sys.stderr)
+                logger.info("MongoDB response: %s", api_response)
                 items = api_response.get('items', [])
                 if items:
                     status = items[0].get('status', {})
                     phase = status.get('phase', 'Pending')
                     replica_count = status.get('currentStatefulSetReplicas', 0)
-                    print(
+                    logger.info(
                         f"Current Replica Count: {replica_count}, waiting for "
-                        f"{mongodb_desired_replica_count - replica_count} more replicas to be ready",
-                        file=sys.stderr
-                    )
-                    print(f"Current ReplicaSet Phase {phase}", file=sys.stderr)
+                        f"{mongodb_desired_replica_count - replica_count} more replicas to be ready")
+                    logger.info(f"Current ReplicaSet Phase {phase}")
                 sleep(20)
 
         except Exception as e:
-            print("Exception when calling CustomObjectsApi: ", str(e), file=sys.stderr)
+            logger.error("Exception when calling CustomObjectsApi: %s", str(e))
             raise e

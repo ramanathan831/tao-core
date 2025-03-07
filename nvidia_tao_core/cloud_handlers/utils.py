@@ -319,7 +319,7 @@ def upload_files(local_path, cloud_storage, file_last_modified):
                     # Update the last modification time for the file
                     file_last_modified[file_path] = current_last_modified
             else:
-                print("File could not be uploaded", file_path, flush=True)
+                logger.error("File could not be uploaded: %s", file_path)
 
 
 def get_log_file_name():
@@ -452,7 +452,7 @@ def monitor_and_upload(local_path, cloud_storage, exit_event, seek_position=0):
     Returns:
         None
     """
-    print("monitor_and_upload :: Entering")
+    logger.info("monitor_and_upload :: Entering")
     file_last_modified = {}
 
     # Initialize file_last_modified with files that are already part of results dir
@@ -472,7 +472,7 @@ def monitor_and_upload(local_path, cloud_storage, exit_event, seek_position=0):
             time.sleep(30)  # Adjust the sleep interval as needed
 
     except (KeyboardInterrupt, SystemExit, Exception):
-        print("traceback", traceback.format_exc(), flush=True)
+        logger.error("traceback: %s", traceback.format_exc())
         exit_event.set()
 
 

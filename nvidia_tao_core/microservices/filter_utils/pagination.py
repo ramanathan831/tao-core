@@ -13,7 +13,14 @@
 # limitations under the License.
 
 """API response pagination modules"""
-import sys
+import logging
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 
 def apply(args, data):
@@ -25,13 +32,13 @@ def apply(args, data):
         try:
             data = data[int(pagination_skip):]
         except Exception as e:
-            print(f"Exception thrown in pagination_skip  is {str(e)}", file=sys.stderr)
+            logger.error("Exception thrown in pagination_skip: %s", str(e))
             pass
     if pagination_size is not None:
         try:
             data = data[:int(pagination_size)]
         except Exception as e:
-            print(f"Exception thrown in pagination_size is {str(e)}", file=sys.stderr)
+            logger.error("Exception thrown in pagination_size: %s", str(e))
             pass
 
     return data

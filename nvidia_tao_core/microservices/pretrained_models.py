@@ -18,7 +18,6 @@
 import argparse
 import ast
 import csv
-import sys
 import datetime
 import json
 import operator
@@ -29,6 +28,7 @@ import requests
 import traceback
 from packaging import version
 from enum import Enum
+import logging
 
 from nvidia_tao_core.microservices.handlers.mongo_handler import MongoHandler
 from nvidia_tao_core.microservices.utils import read_network_config, get_admin_key, safe_load_file
@@ -40,6 +40,13 @@ from nvidia_tao_core.microservices.enum_constants import (
     BaseExperimentBackboneType,
     BaseExperimentLicense
 )
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 base_exp_uuid = "00000000-0000-0000-0000-000000000000"
 
@@ -114,12 +121,12 @@ class BaseExperimentMetadata:
         return version_locals["__version__"]
 
     def check_version_compatibility(self, version_list: list):
-        """Check if the current NVTL version is compatible with the provided version list"""
+        """Check if the current TAO version is compatible with the provided version list"""
         if self.tao_version is None:
             try:
                 self.tao_version = version.Version(self.get_tao_version())
             except FileNotFoundError as e:
-                print("Skipping NVTL Version Check!!! Failed to get current NVTL version! >>>", e)
+                logger.warning("Skipping TAO Version Check!!! Failed to get current NVTL version! >>> %s", e)
                 return True
         version_ok = True
         for version_str in version_list:
@@ -155,22 +162,22 @@ class BaseExperimentMetadata:
                     org, team = org_team.split("/")
                 org_team_list.append((org, team))
         else:
-            print("> No org/team is provided by `--org-team`.")
+            logger.warning("> No org/team is provided by `--org-team`.")
             org_team_list = self.get_org_teams()
         return org_team_list
 
     def get_org_teams(self):
         """Get all orgs and teams for the user"""
-        print("--------------------------------------------------------")
-        print("Getting accessible org/team for the provided NGC Personal key")
-        print("--------------------------------------------------------")
+        logger.info("--------------------------------------------------------")
+        logger.info("Getting accessible org/team for the provided NGC Personal key")
+        logger.info("--------------------------------------------------------")
         ngc_token = self.get_ngc_token()
         headers = {"Accept": "application/json", "Authorization": f"Bearer {ngc_token}"}
         url = f"{ngc_api_base_url}/orgs"
         try:
             response = requests.get(url, headers=headers, params={"page-size": 1000}, timeout=TIMEOUT)
         except Exception as e:
-            print("Exception caught during getting orgs info", e, file=sys.stderr)
+            logger.error("Exception caught during getting orgs info: %s", e)
             raise e
         if response.status_code != 200:
             raise ValueError(response.json())
@@ -182,20 +189,20 @@ class BaseExperimentMetadata:
             try:
                 response = requests.get(url, headers=headers, params={"page-size": 1000}, timeout=TIMEOUT)
             except Exception as e:
-                print("Exception caught during getting teams info", e, file=sys.stderr)
+                logger.error("Exception caught during getting teams info: %s", e)
                 raise e
             if response.status_code != 200:
-                print(response.json())
+                logger.error(response.json())
                 continue
             teams = [team["name"] for team in response.json()["teams"]]
-            print(f"{org}:", teams)
+            logger.info(f"{org}:", teams)
             org_teams.extend([(org, team) for team in teams])
             org_teams.append((org, ""))
-        print("nvidia: ['tao']")
+        logger.info("nvidia: ['tao']")
         org_teams.append(("nvidia", "tao"))
 
-        print(f"Created {len(org_teams)} org/team pairs for the provided NGC Personal key ")
-        print("--------------------------------------------------------")
+        logger.info(f"Created {len(org_teams)} org/team pairs for the provided NGC Personal key ")
+        logger.info("--------------------------------------------------------")
         return org_teams
 
     @staticmethod
@@ -239,7 +246,7 @@ class BaseExperimentMetadata:
         try:
             response = requests.get(url, headers=headers, params={"page-size": 1000}, timeout=TIMEOUT)
         except Exception as e:
-            print("Exception caught during getting model info", e, file=sys.stderr)
+            logger.error("Exception caught during getting model info: %s", e)
             raise e
         if response.status_code != 200:
             raise ValueError(
@@ -280,7 +287,7 @@ class BaseExperimentMetadata:
         """Get base experiments from NGC"""
         base_experiments: dict[str, dict] = {}
         for org, team in self.org_team_list:
-            print(f"Querying base experiments from '{org}{'/' + team if team else ''}'")
+            logger.info(f"Querying base experiments from '{org}{'/' + team if team else ''}'")
             ngc_token = self.get_ngc_token(org, team)
             headers = {"Accept": "application/json", "Authorization": f"Bearer {ngc_token}"}
             url = f"{ngc_api_base_url}/search/resources/MODEL"
@@ -293,7 +300,7 @@ class BaseExperimentMetadata:
             try:
                 response = requests.get(url, headers=headers, params=params, timeout=TIMEOUT)
             except Exception as e:
-                print("Exception caught during model search", e, file=sys.stderr)
+                logger.error("Exception caught during model search: %s", e)
                 raise e
 
             n_pages = response.json()["resultPageTotal"]
@@ -313,7 +320,7 @@ class BaseExperimentMetadata:
                 try:
                     response = requests.get(url, headers=headers, params=params, timeout=TIMEOUT)
                 except Exception as e:
-                    print("Exception caught during model search in a page", e, file=sys.stderr)
+                    logger.error("Exception caught during model search in a page: %s", e)
                     raise e
                 results = response.json()["results"]
 
@@ -325,7 +332,7 @@ class BaseExperimentMetadata:
                                 ngc_token, model["orgName"], model.get("teamName", ""), model["name"], ""
                             )
                         except ValueError as e:
-                            print(e)
+                            logger.error(e)
                             continue
                         if "modelVersions" in model_meta:
                             for model_version in model_meta["modelVersions"]:
@@ -338,7 +345,7 @@ class BaseExperimentMetadata:
                                                 try:
                                                     endpoints = ast.literal_eval(key_value["value"])
                                                 except (SyntaxError, ValueError):
-                                                    print(f"{key_value} not loadable by `ast.literal_eval`.")
+                                                    logger.error(f"{key_value} not loadable by `ast.literal_eval`.")
                                         for network_arch in endpoints:
                                             self.add_experiment(
                                                 base_experiments,
@@ -358,12 +365,12 @@ class BaseExperimentMetadata:
             clt.configure(api_key=ngc_token, org_name=org, team_name=team)
         except Exception as e:
             if not ("Invalid org" in str(e) or "Invalid team" in str(e)):
-                print(
+                logger.error(
                     "Can't configure the passed NGC KEY "  # noqa pylint: disable=C0209
                     "for Org {}, team {}".format(org, team)
                 )
                 return False
-            print(
+            logger.warning(
                 "Can't validate the passed NGC KEY for Org {}, team {}, "
                 "going to try download without configuring credentials".format(org, team)
             )  # noqa pylint: disable=C0209
@@ -376,9 +383,9 @@ class BaseExperimentMetadata:
             os.makedirs(dest_path, exist_ok=True)
             clt.registry.model.download_version(ngc_path, destination=dest_path, file_patterns=[spec_file])
             spec_data = safe_load_file(dest_path + "/experiment.yaml", file_type="yaml")
-            print(f"Successfully got spec data for {ngc_path}", file=sys.stderr)
+            logger.info("Successfully got spec data for %s", ngc_path)
             return spec_data
-        print(f"Unable to get spec data for {ngc_path}", file=sys.stderr)
+        logger.error("Unable to get spec data for %s", ngc_path)
         return {}
 
     def convert_str_to_enum(self, string_value: str, enum_type: Enum):
@@ -427,7 +434,7 @@ class BaseExperimentMetadata:
                 raise ValueError(f"Model {experiment_info['ngc_path']} is not trainable!")
             for endpoint in attr.get("endpoints", []):
                 if endpoint not in self.supported_network_archs:
-                    print(
+                    logger.warning(
                         f"Skipping the 'endpoint' metadata for {experiment_info['ngc_path']}. "
                         f"'endpoint' metadata [{endpoint}] is not supported by API!"
                         "This may prevent base experiment creation in the future releases."
@@ -524,12 +531,12 @@ class BaseExperimentMetadata:
         model_info = {}
         valid_base_experiments = {}
         ngc_base_experiments = self.load_base_experiments_from_ngc()
-        print("Loaded base experiments from NGC:", len(ngc_base_experiments))
-        print("--------------------------------------------------------")
+        logger.info("Loaded base experiments from NGC: %s", len(ngc_base_experiments))
+        logger.info("--------------------------------------------------------")
         if DEPLOYMENT_MODE == "PROD":
-            print("--------------------------------------------------------")
+            logger.info("--------------------------------------------------------")
             experiments_form_csv = self.load_base_experiments_from_csv()
-            print("Loaded base experiments from CSV", len(experiments_form_csv))
+            logger.info("Loaded base experiments from CSV: %s", len(experiments_form_csv))
             ngc_base_experiments = {**ngc_base_experiments, **experiments_form_csv}
 
         for exp_id, base_experiment in ngc_base_experiments.items():
@@ -553,10 +560,13 @@ class BaseExperimentMetadata:
                     valid_base_experiments[exp_id] = self.extract_metadata(
                         model_info[ngc_path], base_experiment, monai_metadata, model_name
                     )
-                    print(f"Successfully created a base experiment for {ngc_path},{base_experiment['network_arch']}")
+                    logger.info(
+                        f"Successfully created a base experiment for {ngc_path},"
+                        f"{base_experiment['network_arch']}"
+                    )
                 except ValueError as e:
-                    print(traceback.format_exc())
-                    print(f"Failed to create a base experiment for for {ngc_path} >>> {e}")
+                    logger.error(traceback.format_exc())
+                    logger.error(f"Failed to create a base experiment for for {ngc_path} >>> {e}")
                     continue
         return valid_base_experiments
 
@@ -577,13 +587,13 @@ class BaseExperimentMetadata:
             for base_exp_id in self.metadata:
                 base_exp_metadata = self.metadata[base_exp_id]
                 mongo_experiments.upsert({'id': base_exp_id}, base_exp_metadata)
-            print("Base experiments metadata written to database")
+            logger.info("Base experiments metadata written to database")
         else:
-            print("Skipping NGC metadata edit in dry run mode!")
-        print("--------------------------------------------------------")
-        print("Existing base experiments:", len(existing_base_experiments))
-        print("New base experiments:", len(ngc_hosted_base_experiments))
-        print("Total base experiments:", len(self.metadata))
+            logger.info("Skipping NGC metadata edit in dry run mode!")
+        logger.info("--------------------------------------------------------")
+        logger.info("Existing base experiments: %s", len(existing_base_experiments))
+        logger.info("New base experiments: %s", len(ngc_hosted_base_experiments))
+        logger.info("Total base experiments: %s", len(self.metadata))
 
 
 if __name__ == "__main__":

@@ -14,7 +14,6 @@
 
 """NVCF job's kubernetes controller"""
 import os
-import sys
 import json
 import time
 import asyncio
@@ -22,6 +21,7 @@ import traceback
 from datetime import datetime
 from kubernetes import client, config
 from concurrent.futures import ThreadPoolExecutor
+import logging
 
 from nvidia_tao_core.microservices.handlers.nvcf_handler import (
     invoke_function,
@@ -48,6 +48,8 @@ executor = ThreadPoolExecutor(max_workers=10)
 job_tracker = {}
 logs_tracker = set([])
 active_tasks = set([])
+
+logger = logging.getLogger(__name__)
 
 
 def internal_job_status_update(user_id, org_name, job_id, automl_experiment_number, message, logfile=""):
@@ -103,11 +105,11 @@ def create_and_deploy_function_sync(org_name, team_name, job_id, container, nvcf
     try:
         create_response = create_function(org_name, team_name, job_id, container, ngc_key)
         if create_response.ok:
-            print(f"Function created successfully for job {job_id}", file=sys.stderr)
+            logger.info("Function created successfully for job %s", job_id)
             function_metadata = create_response.json()
             deploy_response = deploy_function(org_name, team_name, function_metadata, nvcf_backend_details, ngc_key)
             if deploy_response.ok:
-                print(f"Function deployment initiated successfully for job {job_id}", file=sys.stderr)
+                logger.info("Function deployment initiated successfully for job %s", job_id)
                 while True:
                     function_id = function_metadata["function"]["id"]
                     version_id = function_metadata["function"]["versionId"]
@@ -119,29 +121,30 @@ def create_and_deploy_function_sync(org_name, team_name, job_id, container, nvcf
                                 f"{function_metadata['function']['id']}:"
                                 f"{function_metadata['function']['versionId']}"
                             )
-                            print(f"Function {deployment_string} for {job_id} deployed successfully", file=sys.stderr)
+                            logger.info("Function %s for %s deployed successfully", deployment_string, job_id)
                             return deployment_string, f"Function {deployment_string} for {job_id} deployed successfully"
                         if current_function_metadata.get("function", {}).get("status") == "ERROR":
-                            print(f"Get function deployment status for job {job_id} returned error", file=sys.stderr)
+                            logger.error("Get function deployment status for job %s returned error", job_id)
                             return "False", f"Get function deployment status for job {job_id} returned error"
-                        print(
-                            f"Function id {function_id} for job {job_id} status: "
-                            f"{current_function_metadata.get('function', {}).get('status')}",
-                            file=sys.stderr
+                        logger.info(
+                            "Function id %s for job %s status: %s",
+                            function_id,
+                            job_id,
+                            current_function_metadata.get('function', {}).get('status')
                         )
                     else:
-                        print(f"Get function deployment status for job {job_id} failed", file=sys.stderr)
+                        logger.error("Get function deployment status for job %s failed", job_id)
                         return "False", f"Get function deployment status for job {job_id} failed"
                     time.sleep(10)
             else:
-                print(f"Function deployment request failed for job {job_id}", file=sys.stderr)
+                logger.error("Function deployment request failed for job %s", job_id)
                 return "False", f"Function deployment request failed for job {job_id}"
         else:
-            print(f"Function creation request failed for job {job_id}", file=sys.stderr)
+            logger.error("Function creation request failed for job %s", job_id)
             return "False", f"Function creation request failed for job {job_id}"
     except Exception as e:
-        print(traceback.format_exc(), file=sys.stderr)
-        print(f"Error in create_and_deploy_function: {str(e)} for job {job_id}", file=sys.stderr)
+        logger.error(traceback.format_exc())
+        logger.error("Error in create_and_deploy_function: %s for job %s", str(e), job_id)
         raise Exception(e) from e
 
 
@@ -214,11 +217,11 @@ async def create_nvcf_job(nvcf_cr):
                 f"{message}\nNVCF deployment errored out, retry job again",
                 logfile
             )
-            print(
-                f"Setting customer resource {custom_resource_name} to Error as NVCF function can't be deployed",
-                file=sys.stderr
+            logger.error(
+                "Setting customer resource %s to Error as NVCF function can't be deployed",
+                custom_resource_name
             )
-            print("Unable to deploy NVCF function, Retry TAO job", file=sys.stderr)
+            logger.error("Unable to deploy NVCF function, Retry TAO job")
             return update_cr_status(namespace, custom_resource_name, "Error")
 
     updated_spec = {"deployment_string": deployment_string}
@@ -237,7 +240,7 @@ async def create_nvcf_job(nvcf_cr):
 
     spec_file_path = nvcf_cr["spec"].get("spec_file_path")
     if not spec_file_path:
-        print("spec_file_path not set", file=sys.stderr)
+        logger.error("spec_file_path not set")
         internal_job_status_update(
             user_id,
             org_name,
@@ -246,9 +249,9 @@ async def create_nvcf_job(nvcf_cr):
             "Spec file couldn't be found during deployment of NVCF function",
             logfile
         )
-        print(
-            f"Setting customer resource {custom_resource_name} to Error as spec file can't be found",
-            file=sys.stderr
+        logger.error(
+            "Setting customer resource %s to Error as spec file can't be found",
+            custom_resource_name
         )
         return update_cr_status(namespace, custom_resource_name, "Error")
     specs = safe_load_file(spec_file_path, file_type="yaml")
@@ -270,24 +273,28 @@ async def create_nvcf_job(nvcf_cr):
 
     if job_create_response.status_code not in [200, 202]:
         job_create_response_json = job_create_response.json()
-        print("Invocation error response code", job_create_response.status_code, file=sys.stderr)
-        print("Invocation error response json", job_create_response_json, file=sys.stderr)
+        logger.error("Invocation error response code: %s", job_create_response.status_code)
+        logger.error("Invocation error response json: %s", job_create_response_json)
         update_job_details_with_microservices_response(
             job_create_response_json.get('detail', ""),
             job_message_job_id,
             automl_expt_job_id=job_id
         )
-        print(
-            f"Setting customer resource {custom_resource_name} to Error as microservices job couldn't be created",
-            file=sys.stderr
+        logger.error(
+            "Setting customer resource %s to Error as microservices job couldn't be created",
+            custom_resource_name
         )
         return update_cr_status(namespace, custom_resource_name, "Error")
 
     job_create_response_json = job_create_response.json()
-    print(
-        f"Microservice job successfully created for {custom_resource_name}",
-        job_create_response_json,
-        file=sys.stderr
+    logger.info(
+        "Microservice job successfully created for %s",
+        custom_resource_name
+    )
+    logger.info(
+        "Microservice job successfully created for %s: %s",
+        custom_resource_name,
+        job_create_response_json
     )
     req_id = job_create_response_json.get("reqId", "")
     job_id = job_create_response_json.get("response", {}).get("job_id")
@@ -297,7 +304,7 @@ async def create_nvcf_job(nvcf_cr):
             polling_response = get_status_of_invoked_function(req_id, ngc_key)
             if polling_response.status_code == 404:
                 if polling_response.json().get("title") != "Not Found":
-                    print("Polling(job_create) response failed", polling_response.status_code, file=sys.stderr)
+                    logger.error("Polling(job_create) response failed: %s", polling_response.status_code)
                     internal_job_status_update(
                         user_id,
                         org_name,
@@ -306,9 +313,9 @@ async def create_nvcf_job(nvcf_cr):
                         "NVCF Polling failed",
                         logfile
                     )
-                    print(
-                        f"Setting customer resource {custom_resource_name} to Error as job create polling failed",
-                        file=sys.stderr
+                    logger.error(
+                        "Setting customer resource %s to Error as job create polling failed",
+                        custom_resource_name
                     )
                     return update_cr_status(namespace, custom_resource_name, "Error")
             if polling_response.status_code != 202:
@@ -316,7 +323,7 @@ async def create_nvcf_job(nvcf_cr):
             time.sleep(10)
 
         if polling_response.status_code != 200:
-            print("Polling(job_create) response status code is not 200", polling_response.status_code, file=sys.stderr)
+            logger.error("Polling(job_create) response status code is not 200: %s", polling_response.status_code)
             internal_job_status_update(
                 user_id,
                 org_name,
@@ -329,12 +336,12 @@ async def create_nvcf_job(nvcf_cr):
                 f"Setting customer resource {custom_resource_name} "
                 "to Error as job create polling failed with a non 200 response"
             )
-            print(error_msg, file=sys.stderr)
+            logger.error(error_msg)
             return update_cr_status(namespace, custom_resource_name, "Error")
         job_id = polling_response.json().get("response", {}).get("job_id")
 
     if not job_id:
-        print("Job ID couldn't be fetched", file=sys.stderr)
+        logger.error("Job ID couldn't be fetched")
         internal_job_status_update(
             user_id,
             org_name,
@@ -343,9 +350,9 @@ async def create_nvcf_job(nvcf_cr):
             "Job_id from microservices job created couldn't be fetched",
             logfile
         )
-        print(
-            f"Setting customer resource {custom_resource_name} to Error as job id can't be fetched from microservices",
-            file=sys.stderr
+        logger.error(
+            "Setting customer resource %s to Error as job id can't be fetched from microservices",
+            custom_resource_name
         )
         return update_cr_status(namespace, custom_resource_name, "Error")
 
@@ -359,7 +366,7 @@ def delete_nvcf_job(nvcf_cr):
     team_name = nvcf_cr["spec"].get("team_name")
     ngc_key = nvcf_cr["spec"].get("ngc_key")
     if deployment_string.find(":") == -1:
-        print(f"Deployment not active yet for custom resource {nvcf_cr['metadata']['name']}", file=sys.stderr)
+        logger.info("Deployment not active yet for custom resource %s", nvcf_cr['metadata']['name'])
         return
     function_id, version_id = deployment_string.split(":")
     if org_name not in ["0544357712065245"]:
@@ -403,30 +410,31 @@ def get_nvcf_job_status(nvcf_cr, status="", function_id="", version_id=""):
         deployment_string = nvcf_cr["spec"].get("deployment_string")
         if deployment_string.find(":") == -1:
             if nvcf_cr.get("status", {}).get("phase", "") == "Error":
-                print(
-                    f"Returning NVCF job status as error for {custom_resource_name} "
+                logger.error(
+                    "Returning NVCF job status as error for %s "
                     "because phase is error and deployment string is not valid",
-                    file=sys.stderr
+                    custom_resource_name
                 )
                 return "Error"
-            print(
-                f"Deployment not active yet for job {job_id} {deployment_string} (in get status function)",
-                file=sys.stderr
+            logger.info(
+                "Deployment not active yet for job %s %s (in get status function)",
+                job_id,
+                deployment_string
             )
             status = "Pending"
             return status
 
         if nvcf_cr.get("status", {}).get("phase", "") in ("Done", "Error"):
             if nvcf_cr.get("status", {}).get("phase", "") == "Error":
-                print(
-                    f"Returning NVCF job status as error for {custom_resource_name} because phase is error",
-                    file=sys.stderr
+                logger.error(
+                    "Returning NVCF job status as error for %s because phase is error",
+                    custom_resource_name
                 )
             return nvcf_cr.get("status", {}).get("phase", "")
 
         function_id, version_id = deployment_string.split(":")
 
-        print("update status", deployment_string, job_tracker.keys(), file=sys.stderr)
+        logger.debug("update status %s %s", deployment_string, job_tracker.keys())
         job_monitor_response = invoke_function(
             deployment_string,
             network,
@@ -438,7 +446,7 @@ def get_nvcf_job_status(nvcf_cr, status="", function_id="", version_id=""):
         if job_monitor_response.status_code == 404:
             status = "Error"
             if job_monitor_response.json().get("title") == "Not Found":
-                print(f"NVCF function was deleted, setting status as done for {custom_resource_name}", file=sys.stderr)
+                logger.info("NVCF function was deleted, setting status as done for %s", custom_resource_name)
                 status = "Done"
 
         if job_monitor_response.status_code == 202:
@@ -447,27 +455,24 @@ def get_nvcf_job_status(nvcf_cr, status="", function_id="", version_id=""):
                 job_monitor_response = get_status_of_invoked_function(req_id, ngc_key)
                 if job_monitor_response.status_code == 404:
                     if job_monitor_response.json().get("title") != "Not Found":
-                        print("Polling(job_monitor) response failed", job_monitor_response.status_code, file=sys.stderr)
+                        logger.error("Polling(job_monitor) response failed: %s", job_monitor_response.status_code)
                         status = "Error"
-                        print(
-                            f"Setting NVCF job status as error for {custom_resource_name} "
-                            "because status polling failed",
-                            file=sys.stderr
+                        logger.error(
+                            "Setting NVCF job status as error for %s because status polling failed",
+                            custom_resource_name
                         )
                 if job_monitor_response.status_code != 202:
                     break
                 time.sleep(10)
 
             if job_monitor_response.status_code != 200:
-                print(
-                    "Polling(job_monitor) response status code is not 200",
-                    job_monitor_response.status_code,
-                    file=sys.stderr
+                logger.error(
+                    "Polling(job_monitor) response status code is not 200: %s",
+                    job_monitor_response.status_code
                 )
-                print(
-                    f"Setting NVCF job status as error for {custom_resource_name} "
-                    "because status polling failed with non 200 response",
-                    file=sys.stderr
+                logger.error(
+                    "Setting NVCF job status as error for %s because status polling failed with non 200 response",
+                    custom_resource_name
                 )
                 status = "Error"
 
@@ -496,51 +501,54 @@ def get_nvcf_job_status(nvcf_cr, status="", function_id="", version_id=""):
                             "Container microservices reported an error, more logs to be found on NVCF UI",
                             logfile
                         )
-                        print(
-                            f"Setting NVCF job status as error for {custom_resource_name} "
-                            f"because status from microservices is {status}",
-                            file=sys.stderr
+                        logger.error(
+                            "Setting NVCF job status as error for %s because status from microservices is %s",
+                            custom_resource_name,
+                            status
                         )
                         status = "Error"
                 else:
                     status = "Pending"
                     if "Job ID Not Present" in error_message:
-                        print(
-                            f"Job ID Not Present in {deployment_string} for job {job_id}",
-                            file=sys.stderr
+                        logger.error(
+                            "Job ID Not Present in %s for job %s",
+                            deployment_string,
+                            job_id
                         )
-                        print(
-                            f"Setting NVCF job status as error for {custom_resource_name} "
-                            "because Job is not present in microservices",
-                            file=sys.stderr
+                        logger.error(
+                            "Setting NVCF job status as error for %s because Job is not present in microservices",
+                            custom_resource_name
                         )
                         status = "Error"
             except Exception as e:
-                print(f"Exception thrown in get_nvcf_job_status is {str(e)}", file=sys.stderr)
-                print(traceback.format_exc(), file=sys.stderr)
-                print(
-                    f"Exception while calling job fetch microservices in {deployment_string} for job {job_id}, "
-                    f"{job_monitor_response.text}",
-                    file=sys.stderr
+                logger.error("Exception thrown in get_nvcf_job_status: %s", str(e))
+                logger.error(traceback.format_exc())
+                logger.error(
+                    "Exception while calling job fetch microservices in %s for job %s, %s",
+                    deployment_string,
+                    job_id,
+                    job_monitor_response.text
                 )
-                print(
-                    f"Setting NVCF job status as error for {custom_resource_name} because of run time exception",
-                    file=sys.stderr
+                logger.error(
+                    "Setting NVCF job status as error for %s because of run time exception",
+                    custom_resource_name
                 )
                 status = "Error"
 
     if status in ("Done", "Error"):
-        print(
-            f"Status is {status}. Hence, deleting the function {function_id} with version {version_id} "
-            f"for {custom_resource_name}",
-            file=sys.stderr
+        logger.error(
+            "Status is %s. Hence, deleting the function %s with version %s for %s",
+            status,
+            function_id,
+            version_id,
+            custom_resource_name
         )
         if function_id and version_id:
             if org_name not in ["0544357712065245"]:
                 delete_function_version(org_name, team_name, function_id, version_id, ngc_key)
 
     if not status:
-        print(f"Status couldn't be inferred for {custom_resource_name}", file=sys.stderr)
+        logger.error("Status couldn't be inferred for %s", custom_resource_name)
         status = "Pending"
     try:
         namespace = nvcf_cr['metadata']['namespace']
@@ -558,14 +566,15 @@ def update_status(job_tracker, logs_tracker):
 
         if status in ("Done", "Error"):
             logs_tracker.add(custom_resource_name)
-            print(f"Status is {status} for {custom_resource_name}. Hence, deleting the function", file=sys.stderr)
+            logger.info("Status is %s for %s. Hence, deleting the function", status, custom_resource_name)
             continue
         job_id = nvcf_cr["spec"].get("job_id")
         deployment_string = nvcf_cr["spec"].get("deployment_string")
         if deployment_string.find(":") == -1:
-            print(
-                f"Deployment not active yet for job {job_id} {deployment_string} (in update status function)",
-                file=sys.stderr
+            logger.info(
+                "Deployment not active yet for job %s %s (in update status function)",
+                job_id,
+                deployment_string
             )
             continue
 
@@ -585,13 +594,13 @@ def remove_deleted_custom_resources(job_tracker, logs_tracker):
         deleted_jobs = existing_jobs - current_jobs
 
         for deleted_job in deleted_jobs:
-            print(f"NVCF CR deleted: {deleted_job}")
+            logger.info("NVCF CR deleted: %s", deleted_job)
             delete_nvcf_job(job_tracker[deleted_job])
             del job_tracker[deleted_job]
 
     except Exception as e:
-        print(traceback.format_exc(), file=sys.stderr)
-        print(f"Error in removing custom resource from tracker: {str(e)}", file=sys.stderr)
+        logger.error(traceback.format_exc())
+        logger.error("Error in removing custom resource from tracker: %s", str(e))
 
 
 async def handle_new_nvcf_job(custom_resource_name, item):
@@ -602,7 +611,7 @@ async def handle_new_nvcf_job(custom_resource_name, item):
     active_tasks = active_tasks if 'active_tasks' in globals() else set()
     # Check if the job is already being processed
     if custom_resource_name not in job_tracker:
-        print(f"Job {custom_resource_name} is already being processed", file=sys.stderr)
+        logger.info("Job %s is already being processed", custom_resource_name)
         return
     updated_item = await create_nvcf_job(item)
     if updated_item is not None:
@@ -633,7 +642,7 @@ async def process_events():
 
                 if custom_resource_name not in job_tracker:
                     # Handle added event
-                    print(f"NVCF CR added: {custom_resource_name}", file=sys.stderr)
+                    logger.info("NVCF CR added: %s", custom_resource_name)
                     task = asyncio.create_task(handle_new_nvcf_job(custom_resource_name, item))
                     job_tracker[custom_resource_name] = item
                     active_tasks.add(task)
@@ -643,8 +652,8 @@ async def process_events():
             await asyncio.sleep(10)
 
         except Exception as e:
-            print(traceback.format_exc(), file=sys.stderr)
-            print(f"Error in the event processing loop: {str(e)}", file=sys.stderr)
+            logger.error(traceback.format_exc())
+            logger.error("Error in the event processing loop: %s", str(e))
 
 
 async def main():
