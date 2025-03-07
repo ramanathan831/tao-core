@@ -125,11 +125,15 @@ class ContainerJobHandler:
                             status_logging.set_status_logger(status_logger)
 
                             # Launch entrypoint
-                            _, actions = module_utils.get_neural_network_actions(job["neural_network_name"])
-
                             if entrypoint:
-                                _, actions = module_utils.get_neural_network_actions(job["neural_network_name"])
-                                is_completed = entrypoint.launch(args, "", actions, network=job["neural_network_name"])
+                                try:
+                                    _, actions = module_utils.get_neural_network_actions(job["neural_network_name"])
+                                    entrypoint.launch(args, "", actions, network=job["neural_network_name"])
+                                    # If we get here, it means the process exited with 0
+                                    is_completed = True
+                                except SystemExit as e:
+                                    # Capture the exit code from the SystemExit exception
+                                    is_completed = e.code == 0
                             else:
                                 is_completed = vlm_entrypoint.vlm_launch(
                                     job["neural_network_name"],
