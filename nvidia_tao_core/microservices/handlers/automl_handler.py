@@ -18,6 +18,7 @@ import json
 import time
 from copy import deepcopy
 from datetime import datetime, timezone
+import sysconfig
 import logging
 
 from nvidia_tao_core.microservices.handlers.stateless_handlers import (
@@ -105,9 +106,11 @@ class AutoMLHandler:
 
         # Call the script
         logger.info("Starting automl %s", job_id)
+        python_lib_path = sysconfig.get_path("purelib")
+        automl_script = os.path.join(python_lib_path, "nvidia_tao_core/microservices/automl_start.py")
 
         run_command = (
-            f"umask 0 && python3 automl_start.py "
+            f"umask 0 && python3 {automl_script} "
             f"--user_id={user_id} "
             f"--org_name={org_name} "
             f"--name='{name}' "
@@ -252,8 +255,10 @@ class AutoMLHandler:
         decrypted_workspace_metadata.pop('_id', None)
 
         # Call the script
+        python_lib_path = sysconfig.get_path("purelib")
+        automl_script = os.path.join(python_lib_path, "nvidia_tao_core/microservices/automl_start.py")
         run_command = (
-            f"python3 automl_start.py "
+            f"umask 0 && python3 {automl_script} "
             f"--user_id={user_id} "
             f"--org_name={org_name} "
             f"--name='{name}' "
