@@ -19,7 +19,6 @@ from datetime import datetime, timezone
 import glob
 import os
 import shutil
-import sys
 import tarfile
 import threading
 import time

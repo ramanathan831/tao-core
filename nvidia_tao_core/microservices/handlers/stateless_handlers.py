@@ -14,7 +14,6 @@
 
 """API Stateless handlers modules"""
 import os
-import sys
 import copy
 import json
 import glob

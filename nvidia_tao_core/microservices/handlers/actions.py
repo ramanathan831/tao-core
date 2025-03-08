@@ -17,7 +17,6 @@ import copy
 import datetime
 import json
 import os
-import sys
 import threading
 import time
 import traceback
@@ -378,7 +377,7 @@ class ActionPipeline:
             del kwargs['file']
         # Join all args and kwargs into a single string message
         message = ' '.join(str(arg) for arg in args)
-        kwargs_str = ' '.join(f'{k}={v}' for k,v in kwargs.items())
+        kwargs_str = ' '.join(f'{k}={v}' for k, v in kwargs.items())
         if kwargs_str:
             message = f'{message} {kwargs_str}'
         logger.info(message)
