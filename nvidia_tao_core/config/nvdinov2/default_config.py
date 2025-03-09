@@ -76,7 +76,6 @@ map_params = {
 }
 
 
-
 @dataclass
 class DataPathFormat:
     """Dataset Path experiment config."""
