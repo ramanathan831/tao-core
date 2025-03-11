@@ -38,24 +38,40 @@ SUPPORTED_BACKBONES = [
     *["vit_l"]
 ]
 
+SUPPORTED_BACKBONES = [
+    *["vit_l", "vit_b", "vit_s"]
+]
+
 map_params = {
     'embed_dim': {
-        'vit_l': 1024
+        'vit_l': 1024,
+        'vit_b': 768,
+        'vit_s': 384
     },
     'depth': {
-        'vit_l': 24
+        'vit_l': 24,
+        'vit_b': 12,
+        'vit_s': 12
     },
     'num_heads': {
-        'vit_l': 16
+        'vit_l': 16,
+        'vit_b': 12,
+        'vit_s': 6
     },
     'init_values': {
-        'vit_l': 1e-5
+        'vit_l': 1e-5,
+        'vit_b': 1e-5,
+        'vit_s': 1e-5
     },
     'drop_path_schedule': {
-        'vit_l': 'linear'
+        'vit_l': 'linear',
+        'vit_b': 'linear',
+        'vit_s': 'linear'
     },
     'num_classes': {
-        'vit_l': 0
+        'vit_l': 0,
+        'vit_b': 0,
+        'vit_s': 0
     },
 }
 
@@ -181,12 +197,22 @@ class NVDINOv2DatasetConfig:
 class BackboneConfig:
     """Configuration parameters for Backbone."""
 
-    type: str = STR_FIELD(
+    teacher_type: str = STR_FIELD(
         value="vit_l",
         default_value="vit_l",
         display_name="backbone",
-        description="""The backbone name of the model.
-                    TAO implementation of NVDINOv2 support vit_l
+        description="""The teacher backbone name of the model.
+                    TAO implementation of NVDINOv2 support vit_l and vit_s
+                    """,
+        valid_options=",".join(SUPPORTED_BACKBONES),
+        popular="no"
+    )
+    student_type: str = STR_FIELD(
+        value="vit_l",
+        default_value="vit_l",
+        display_name="backbone",
+        description="""The student backbone name of the model.
+                    TAO implementation of NVDINOv2 support vit_l and vit_s
                     """,
         valid_options=",".join(SUPPORTED_BACKBONES),
         popular="no"
@@ -259,9 +285,38 @@ class NVDINOv2HeadConfig:
 
 
 @dataclass
+class NVDINOv2ModelDistillConfig:
+    """NVDINOv2 Model config."""
+
+    enable: bool = BOOL_FIELD(
+        value=False,
+        default_value=False,
+        description="Whether to run distillation",
+        display_name="distillation",
+        popular="yes"
+    )
+    disable_masking: bool = BOOL_FIELD(
+        value=False,
+        default_value=False,
+        description="Whether to disable masking when distillation",
+        display_name="disable_masking",
+        popular="yes"
+    )
+    pretrained_non_distill_pl_model_path: Optional[str] = STR_FIELD(
+        value=None,
+        default_type=None,
+        description="Path to a pre-trained pl model from non-distillation DINOv2 SSL pipe for initializing teacher in distillation."
+    )
+
+
+@dataclass
 class NVDINOv2ModelConfig:
     """NVDINOv2 Model config."""
 
+    distill: NVDINOv2ModelDistillConfig = DATACLASS_FIELD(
+        NVDINOv2ModelDistillConfig(),
+        description="Configuration for the NVDINOv2 distillation"
+    )
     backbone: BackboneConfig = DATACLASS_FIELD(
         BackboneConfig(),
         description="Configuration for the NVDINOv2 backbone"
