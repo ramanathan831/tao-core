@@ -94,9 +94,9 @@ spec:
           // Run the helper script to download third party wheels from requirements.txt
           sh "bash scripts/download_third_party_wheels.sh"
           
-          // Upload the wheels as GitLab release artifacts instead of archiving in Jenkins
+          // Upload the wheels as GitLab release artifacts.
           withCredentials([string(credentialsId: 'gitlab-api-token', variable: 'GITLAB_TOKEN')]) {
-            // Get project ID from environment or hardcode it if known
+            // Get project ID from environment.
             def GITLAB_PROJECT_ID = sh(script: 'echo $CI_PROJECT_ID', returnStdout: true).trim()
             def TAG_NAME = "v${VER}"
             
