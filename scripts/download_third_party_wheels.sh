@@ -29,7 +29,7 @@ download_with_retry() {
   return 1
 }
 
-# Try to download binary wheels first (preferred)
+# Try to download binary wheels
 if ! download_with_retry; then
   echo "Falling back to downloading packages individually..."
   
@@ -70,6 +70,6 @@ fi
 echo "Summary of downloaded wheels:"
 ls -la third_party_wheels/
 
-# Always return success
+# Return 
 echo "Third-party wheel download process completed."
 exit 0 
