@@ -88,6 +88,37 @@ spec:
           }
         }
       }
+
+      stage ('publish_third_party_wheels') {
+        gitlabCommitStatus(name: "publish_third_party_wheels", connection: gitLabConnection('git-lab-master')) {
+          // Run the helper script to download third party wheels from requirements.txt
+          sh "bash scripts/download_third_party_wheels.sh"
+          
+          // Upload the wheels as GitLab release artifacts instead of archiving in Jenkins
+          withCredentials([string(credentialsId: 'gitlab-api-token', variable: 'GITLAB_TOKEN')]) {
+            // Get project ID from environment or hardcode it if known
+            def GITLAB_PROJECT_ID = sh(script: 'echo $CI_PROJECT_ID', returnStdout: true).trim()
+            def TAG_NAME = "v${VER}"
+            
+            // Use the dedicated script to upload wheels as GitLab release artifacts
+            sh """
+            export GITLAB_PROJECT_ID=${GITLAB_PROJECT_ID}
+            export TAG_NAME=${TAG_NAME}
+            export RELEASE_NAME="Release ${VER}"
+            export RELEASE_DESCRIPTION="Release ${VER} with third-party wheels"
+            export WHEELS_DIR="third_party_wheels"
+            bash scripts/upload_gitlab_release_artifacts.sh
+            """
+          }
+        }
+      }
+
+      stage ('cleanup_third_party_wheels') {
+        gitlabCommitStatus(name: "cleanup_third_party_wheels", connection: gitLabConnection('git-lab-master')) {
+          // Clean up the third_party_wheels directory after archiving the wheels
+          sh "rm -rf third_party_wheels"
+        }
+      }
     }
     
     // container('docker') {
