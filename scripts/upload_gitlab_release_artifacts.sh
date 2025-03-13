@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-# Script to upload third-party wheels as GitLab release artifacts
+# Script to upload third-party wheels to GitLab package registry and link them in a GitLab release
 # Expected environment variables:
 # - GITLAB_TOKEN: API token for GitLab
 # - GITLAB_PROJECT_ID: GitLab project ID
@@ -102,6 +102,15 @@ curl_with_retry() {
     elif [[ $method == "POST" && $http_code -eq 409 && $url == *"/releases" ]]; then
       echo "Note: Release already exists. Continuing. (HTTP $http_code)"
       return 0
+    # Package already exists is often 400 or 409
+    elif [[ $url == *"/packages/pypi"* && ($http_code -eq 400 || $http_code -eq 409) ]]; then
+      echo "Note: Package might already exist. Continuing. (HTTP $http_code)"
+      if [ -f /tmp/curl_response.txt ]; then
+        echo "Response:"
+        cat /tmp/curl_response.txt
+        rm /tmp/curl_response.txt
+      fi
+      return 0
     else
       echo "Attempt $attempt failed: $method request to $url (HTTP $http_code)"
       if [ -f /tmp/curl_response.txt ]; then
@@ -142,8 +151,24 @@ check_wheels() {
   fi
 }
 
+# Extract package information from wheel filename
+extract_package_info() {
+  local wheel_file="$1"
+  local filename=$(basename "$wheel_file")
+  
+  # Parse wheel filename: {dist}-{version}(-{build tag})?-{python tag}-{abi tag}-{platform tag}.whl
+  # Example: numpy-1.19.5-cp38-cp38-manylinux1_x86_64.whl
+  
+  # Extract the package name and version
+  local package_version=$(echo "$filename" | sed -E 's/^([^-]+-[^-]+)-.+\.whl$/\1/')
+  local package_name=$(echo "$package_version" | sed -E 's/^([^-]+)-.+$/\1/')
+  local version=$(echo "$package_version" | sed -E 's/^[^-]+-(.+)$/\1/')
+  
+  echo "$package_name $version"
+}
+
 # Main execution
-echo "Starting GitLab release artifact upload process..."
+echo "Starting GitLab package and release artifact upload process..."
 
 # Validate required environment variables
 check_required_vars
@@ -155,10 +180,10 @@ check_wheels
 echo "Creating/updating GitLab release ${TAG_NAME}..."
 release_data="tag_name=${TAG_NAME}&name=${RELEASE_NAME}&description=${RELEASE_DESCRIPTION}"
 if ! curl_with_retry "https://gitlab-master.nvidia.com/api/v4/projects/${GITLAB_PROJECT_ID}/releases" "POST" "$release_data"; then
-  echo "WARNING: Failed to create release, but will try to upload assets anyway"
+  echo "WARNING: Failed to create release, but will try to upload packages anyway"
 fi
 
-# Upload each wheel file as a release artifact
+# Upload each wheel file to GitLab package registry and link it in the release
 upload_count=0
 failed_count=0
 for wheel in ${WHEELS_DIR}/*.whl; do
@@ -167,29 +192,51 @@ for wheel in ${WHEELS_DIR}/*.whl; do
   fi
   
   filename=$(basename "$wheel")
-  echo "Uploading $filename as release artifact to GitLab release ${TAG_NAME}..."
+  echo "Processing $filename..."
   
-  upload_url="https://gitlab-master.nvidia.com/api/v4/projects/${GITLAB_PROJECT_ID}/releases/${TAG_NAME}/assets/links"
-  upload_data="name=${filename}&url=${filename}&link_type=package"
+  # Extract package info
+  package_info=$(extract_package_info "$wheel")
+  package_name=$(echo "$package_info" | cut -d' ' -f1)
+  package_version=$(echo "$package_info" | cut -d' ' -f2)
   
-  if curl_with_retry "${upload_url}?${upload_data}" "POST" "" "$wheel"; then
-    echo "Successfully uploaded $filename"
-    upload_count=$((upload_count + 1))
+  echo "Uploading $package_name version $package_version to GitLab package registry..."
+  
+  # Upload to PyPI package registry
+  # Reference: https://docs.gitlab.com/ee/api/packages/pypi.html
+  upload_url="https://gitlab-master.nvidia.com/api/v4/projects/${GITLAB_PROJECT_ID}/packages/pypi"
+  
+  if curl_with_retry "$upload_url" "POST" "" "$wheel"; then
+    echo "Successfully uploaded $filename to package registry"
+    
+    # Create a link in the release to the package
+    echo "Creating link in release ${TAG_NAME} to package $package_name..."
+    
+    # Link directly to the GitLab package page
+    package_url="https://gitlab-master.nvidia.com/projects/${GITLAB_PROJECT_ID}/packages/${package_name}"
+    link_data="name=${filename}&url=${package_url}&link_type=package"
+    
+    if curl_with_retry "https://gitlab-master.nvidia.com/api/v4/projects/${GITLAB_PROJECT_ID}/releases/${TAG_NAME}/assets/links" "POST" "$link_data"; then
+      echo "Successfully linked $filename in release"
+      upload_count=$((upload_count + 1))
+    else
+      echo "WARNING: Uploaded package but failed to link it in the release"
+      failed_count=$((failed_count + 1))
+    fi
   else
-    echo "ERROR: Failed to upload $filename"
+    echo "ERROR: Failed to upload $filename to package registry"
     failed_count=$((failed_count + 1))
   fi
 done
 
 # Report results
 echo "Upload summary:"
-echo "- Total wheels uploaded: $upload_count"
+echo "- Total wheels uploaded and linked: $upload_count"
 echo "- Total wheels failed: $failed_count"
 
 if [ $failed_count -gt 0 ]; then
-  echo "WARNING: Some wheels failed to upload. Check the logs for details."
+  echo "WARNING: Some wheels failed to upload or link. Check the logs for details."
   exit 1
 else
-  echo "All wheels have been successfully uploaded as GitLab release artifacts"
+  echo "All wheels have been successfully uploaded to GitLab package registry and linked in the release"
   exit 0
 fi 
