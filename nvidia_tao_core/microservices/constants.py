@@ -55,7 +55,7 @@ NO_SPEC_ACTIONS_MODEL = (
     "evaluate", "retrain", "inference", "inference_seq", "inference_trt"
 )  # Actions with **optional** specs
 NO_PTM_MODELS = set([])  # These networks don't have a pretrained model that can be downloaded from ngc model registry
-_ITER_MODELS = set(["segformer"])  # These networks operate on iterations instead of epochs
+_ITER_MODELS = set([])  # These networks operate on iterations instead of epochs
 
 # These networks have fields in their config file which has both backbone only loading weights
 # as well as full architecture loading;
@@ -66,14 +66,14 @@ BACKBONE_AND_FULL_MODEL_PTM_SUPPORTING_NETWORKS = set([
 
 AUTOML_DISABLED_NETWORKS = ["mal", "maxine_eye_contact"]  # These networks can't support AutoML
 TENSORBOARD_DISABLED_NETWORKS = [
-    'classification_pyt', 'segformer'
+    'classification_pyt',
 ]  # These networks currently don't produce tfevents logs as they are third party models
 TENSORBOARD_EXPERIMENT_LIMIT = 10  # Maximum number of Tensorboard enabled experiments per user
 # These networks can't support writing validation metrics at regular intervals during training,
 # only at end of training they run evaluation
 NO_VAL_METRICS_DURING_TRAINING_NETWORKS = set(["unet"])
 MISSING_EPOCH_FORMAT_NETWORKS = set([
-    "classification_pyt", "pointpillars", "segformer", "bevfusion"
+    "classification_pyt", "pointpillars", "bevfusion"
 ])  # These networks have the epoch/iter number not following a format; ex: 1.pth instead of 001.pth
 STATUS_CALLBACK_MISMATCH_WITH_CHECKPOINT_EPOCH = set([
     "pointpillars", "detectnet_v2"

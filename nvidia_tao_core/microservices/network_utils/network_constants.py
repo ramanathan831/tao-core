@@ -34,7 +34,7 @@ epochs_mapper = {
     "pointpillars": "train.num_epochs",
     "pose_classification": "train.num_epochs",
     "re_identification": "train.num_epochs",
-    "segformer": "train.max_iters",
+    "segformer": "train.num_epochs",
     "unet": "training_config.epochs",
 }
 
@@ -85,7 +85,7 @@ image_size_mapper = {
     "pointpillars": "",
     "pose_classification": "",
     "re_identification": "model.input_height,model.input_width",
-    "segformer": "model.input_height,model.input_width",
+    "segformer": "dataset.segment.img_size",
     "unet": "model_config.model_input_height,model_config.model_input_width",
 }
 

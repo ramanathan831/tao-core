@@ -67,6 +67,7 @@ from nvidia_tao_core.microservices.handlers.stateless_handlers import (
     get_handler_log_root,
     get_handler_job_metadata,
     get_jobs_root,
+    save_job_specs,
     sanitize_handler_metadata,
     write_handler_metadata,
     is_request_automl,
@@ -1678,6 +1679,8 @@ class AppHandler:
                     platform_id=platform_id
                 )
                 on_new_job(job_context)
+            if specs:
+                save_job_specs(job_id, specs)
             return Code(200, job_id, f"{msg}Job scheduled")
         except Exception as e:
             logger.error("Exception thrown in job_run is %s", str(e))
@@ -2428,7 +2431,7 @@ class AppHandler:
                 if (not best_model) and latest_model:
                     best_checkpoint_epoch_number = latest_checkpoint_epoch_number
                 network = handler_metadata.get("network_arch", "")
-                if network in ("classification_pyt", "detectnet_v2", "pointpillars", "segformer", "unet"):
+                if network in ("classification_pyt", "detectnet_v2", "pointpillars", "unet"):
                     format_epoch_number = str(best_checkpoint_epoch_number)
                 else:
                     format_epoch_number = f"{best_checkpoint_epoch_number:03}"
