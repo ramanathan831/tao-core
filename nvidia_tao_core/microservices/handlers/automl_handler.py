@@ -110,29 +110,31 @@ class AutoMLHandler:
         automl_script = os.path.join(python_lib_path, "nvidia_tao_core/microservices/automl_start.py")
 
         run_command = (
-            f"umask 0 && python3 {automl_script} "
-            f"--user_id={user_id} "
-            f"--org_name={org_name} "
-            f"--name='{name}' "
-            f"--root={root} "
-            f"--automl_job_id={job_id} "
-            f"--network={network} "
-            f"--experiment_id={experiment_id} "
-            f"--resume=False "
-            f"--automl_algorithm={automl_algorithm} "
-            f"--automl_max_recommendations={automl_max_recommendations} "
-            f"--automl_delete_intermediate_ckpt={automl_delete_intermediate_ckpt} "
-            f"--automl_R={automl_R} "
-            f"--automl_nu={automl_nu} "
-            f"--metric={metric} "
-            f"--epoch_multiplier={epoch_multiplier} "
-            f"--automl_hyperparameters='{automl_hyperparameters}' "
-            f"--override_automl_disabled_params={override_automl_disabled_params} "
+            f'umask 0 && python3 {automl_script} '
+            f'--user_id={user_id} '
+            f'--org_name={org_name} '
+            f'--name="{name}" '
+            f'--root={root} '
+            f'--automl_job_id={job_id} '
+            f'--network={network} '
+            f'--experiment_id={experiment_id} '
+            f'--resume=False '
+            f'--automl_algorithm={automl_algorithm} '
+            f'--automl_max_recommendations={automl_max_recommendations} '
+            f'--automl_delete_intermediate_ckpt={automl_delete_intermediate_ckpt} '
+            f'--automl_R={automl_R} '
+            f'--automl_nu={automl_nu} '
+            f'--metric={metric} '
+            f'--epoch_multiplier={epoch_multiplier} '
+            f'--automl_hyperparameters="{automl_hyperparameters}" '
+            f'--override_automl_disabled_params={override_automl_disabled_params} '
             f"--decrypted_workspace_metadata='{json.dumps(decrypted_workspace_metadata, default=str)}'"
         )
         if platform_id:
             run_command = f"{run_command} --platform_id={platform_id}"
 
+        import sys
+        print(f"run_command: {run_command}", file=sys.stderr)
         jobDriver.create(
             org_name,
             job_id,
@@ -141,7 +143,7 @@ class AutoMLHandler:
             num_gpu=0,
             automl_brain=True,
             automl_exp_job=False
-        )  # TODO: Commented for testing only
+        )
 
     @staticmethod
     def stop(user_id, org_name, experiment_id, job_id):
@@ -259,23 +261,23 @@ class AutoMLHandler:
         automl_script = os.path.join(python_lib_path, "nvidia_tao_core/microservices/automl_start.py")
         run_command = (
             f"umask 0 && python3 {automl_script} "
-            f"--user_id={user_id} "
-            f"--org_name={org_name} "
-            f"--name='{name}' "
-            f"--root={root} "
-            f"--automl_job_id={job_id} "
-            f"--network={network} "
-            f"--experiment_id={experiment_id} "
-            f"--resume=True "
-            f"--automl_algorithm={automl_algorithm} "
-            f"--automl_max_recommendations={automl_max_recommendations} "
-            f"--automl_delete_intermediate_ckpt={automl_delete_intermediate_ckpt} "
-            f"--automl_R={automl_R} "
-            f"--automl_nu={automl_nu} "
-            f"--metric={metric} "
-            f"--epoch_multiplier={epoch_multiplier} "
+            f'--user_id={user_id} '
+            f'--org_name={org_name} '
+            f'--name="{name}" '
+            f'--root={root} '
+            f'--automl_job_id={job_id} '
+            f'--network={network} '
+            f'--experiment_id={experiment_id} '
+            f'--resume=True '
+            f'--automl_algorithm={automl_algorithm} '
+            f'--automl_max_recommendations={automl_max_recommendations} '
+            f'--automl_delete_intermediate_ckpt={automl_delete_intermediate_ckpt} '
+            f'--automl_R={automl_R} '
+            f'--automl_nu={automl_nu} '
+            f'--metric={metric} '
+            f'--epoch_multiplier={epoch_multiplier} '
             f'--automl_hyperparameters="{automl_hyperparameters}" '
-            f"--override_automl_disabled_params={override_automl_disabled_params} "
+            f'--override_automl_disabled_params={override_automl_disabled_params} '
             f"--decrypted_workspace_metadata='{json.dumps(decrypted_workspace_metadata, default=serialize_object)}'"
         )
         if platform_id:
