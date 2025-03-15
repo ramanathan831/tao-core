@@ -294,7 +294,7 @@ class ActionPipeline:
         if self.job_env_variables["DEPLOYMENT_MODE"] == "PROD":
             self.job_env_variables["USE_NGC_STAGING"] = "False"
 
-    def generate_nv_job_metadata(self, container_run_command, nv_job_metadata):
+    def generate_nv_job_metadata(self, nv_job_metadata):
         """Convert run command generated into format that"""
         nv_job_metadata["teamName"] = os.getenv("NVCF_DEPLOYMENT_TEAM_NAME", "no_team")
         nv_job_metadata["dockerImageName"] = self.image
@@ -310,6 +310,7 @@ class ActionPipeline:
                 "instance_type": "gl40s_1x2.br25_4xlarge"
             }
             nv_job_metadata["nvcf_backend_details"] = {
+                "cluster": available_nvcf_instances[self.platform_id]["cluster"],
                 "gpu_type": available_nvcf_instances[self.platform_id]["gpu_type"],
                 "instance_type": available_nvcf_instances[self.platform_id]["instance_type"]
             }
@@ -429,7 +430,8 @@ class ActionPipeline:
             use_ngc=self.ngc_runner,
             network=self.network,
             action=self.action,
-            automl_exp_job=False
+            automl_exp_job=False,
+            docker_env_vars=self.job_env_variables
         )
 
         # Delete job if is canceled/paused during pod creation
@@ -509,7 +511,8 @@ class ActionPipeline:
                     use_ngc=self.ngc_runner,
                     network=self.network,
                     action=self.action,
-                    automl_exp_job=False
+                    automl_exp_job=False,
+                    docker_env_vars=self.job_env_variables
                 )
                 continue
 
@@ -533,7 +536,8 @@ class ActionPipeline:
                 use_ngc=self.ngc_runner,
                 network=self.network,
                 action=self.action,
-                automl_exp_job=False
+                automl_exp_job=False,
+                docker_env_vars=self.job_env_variables
             )
 
         metadata_status = get_handler_job_metadata(self.job_name).get("status", "Error")
@@ -608,7 +612,7 @@ class ActionPipeline:
 
             # The monai local jobs like training for cl jobs are designed to run on cluster local GPUs.
             if self.ngc_runner:
-                self.generate_nv_job_metadata(self.run_command, nv_job_metadata)
+                self.generate_nv_job_metadata(nv_job_metadata)
             else:
                 nv_job_metadata = None
 
@@ -879,7 +883,7 @@ class TrainVal(CLIPipeline):
                 update_job_status(self.handler_id, self.job_context.id, status="Error", kind=self.handler_kind)
 
 
-class AutoMLPipeline:
+class AutoMLPipeline(ActionPipeline):
     """Class for handling AutoML pipeline operations.
 
     This class contains methods for managing and executing AutoML pipeline tasks.
@@ -956,8 +960,6 @@ class AutoMLPipeline:
                         elif len(dependent_parameter_names) == 3:
                             field_value = int(read_nested_dict(spec, dependent_parameter_names[2]))
 
-                if self.network == "segformer" and "logging_interval" in field_name:
-                    field_value -= 1
             else:
                 field_value = CLI_CONFIG_TO_FUNCTIONS[inference_fn](self.job_context, self.handler_metadata)
             if field_value:
@@ -1016,7 +1018,7 @@ class AutoMLPipeline:
         if not nv_job_metadata:
             nv_job_metadata = {}
             if self.ngc_runner:
-                self.generate_nv_job_metadata(run_command, nv_job_metadata)
+                self.generate_nv_job_metadata(nv_job_metadata)
 
         k8s_status = jobDriver.status(
             self.job_context.org_name,
@@ -1026,7 +1028,8 @@ class AutoMLPipeline:
             use_ngc=self.ngc_runner,
             network=self.network,
             action=self.action,
-            automl_exp_job=True
+            automl_exp_job=True,
+            docker_env_vars=self.job_env_variables
         )
         while k8s_status in ["Done", "Error", "Running", "Pending", "Creating"]:
             time.sleep(5)
@@ -1069,7 +1072,8 @@ class AutoMLPipeline:
                 use_ngc=self.ngc_runner,
                 network=self.network,
                 action=self.action,
-                automl_exp_job=True
+                automl_exp_job=True,
+                docker_env_vars=self.job_env_variables
             )
         if k8s_status == "Error":
             self.recs_dict[self.rec_number]["status"] = "failure"
@@ -1105,7 +1109,7 @@ class AutoMLPipeline:
 
             nv_job_metadata = {}
             if self.ngc_runner:
-                self.generate_nv_job_metadata(run_command, nv_job_metadata)
+                self.generate_nv_job_metadata(nv_job_metadata)
 
             if self.network not in MONAI_NETWORKS and BACKEND == "local-k8s":
                 self.create_microservice_action_job(self.automl_brain_job_id)
