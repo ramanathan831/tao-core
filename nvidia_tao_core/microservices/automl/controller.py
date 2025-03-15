@@ -639,16 +639,16 @@ class Controller:
                 elif self.automl_algorithm in ("hyperband", "h"):
                     # Calculate completed epochs for completed sh sessions
                     completed_epochs = 0
-                    for bracket in range(0, self.brain.bracket + 1):
-                        local_sh_iter = len(self.brain.ni[bracket])
-                        if bracket == self.brain.bracket:
+                    for bracket in range(0, int(self.brain.bracket) + 1):
+                        local_sh_iter = len(self.brain.ni[str(bracket)])
+                        if bracket == int(self.brain.bracket):
                             local_sh_iter = self.brain.sh_iter
                         for sh in range(0, local_sh_iter):
                             if (sh == 0):
-                                completed_epochs += self.brain.ni[bracket][sh] * self.brain.ri[bracket][sh]
+                                completed_epochs += self.brain.ni[str(bracket)][sh] * self.brain.ri[str(bracket)][sh]
                             else:
-                                completed_epochs += (self.brain.ni[bracket][sh] *
-                                                     (self.brain.ri[bracket][sh] - self.brain.ri[bracket][sh - 1]))
+                                completed_epochs += (self.brain.ni[str(bracket)][sh] *
+                                                     (self.brain.ri[str(bracket)][sh] - self.brain.ri[str(bracket)][sh - 1]))
 
                     # Calculate completed epochs for current sh session
                     current_sh_allowed_epochs = (
