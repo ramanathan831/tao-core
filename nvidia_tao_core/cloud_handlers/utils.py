@@ -302,13 +302,21 @@ def upload_files(local_path, cloud_storage, file_last_modified):
                                 file_path, str(e)
                             )
                         )
-                    # Remove file after successful upload
+                    # Remove file after successful upload only if size > 50MB
                     try:
                         if cloud_storage.is_file(file_path):
-                            os.remove(file_path)
-                            logger.info(
-                                "File successfully uploaded and removed: {}".format(file_path)  # noqa pylint: disable=C0209
-                            )
+                            file_size_mb = os.path.getsize(file_path) / (1024 * 1024)  # Convert to MB
+                            if file_size_mb > 50:
+                                os.remove(file_path)
+                                logger.info(
+                                    "Large file (%.2f MB) successfully uploaded and removed: %s",
+                                    file_size_mb, file_path
+                                )
+                            else:
+                                logger.info(
+                                    "File (%.2f MB) successfully uploaded but retained (under 50MB): %s",
+                                    file_size_mb, file_path
+                                )
                     except Exception as e:  # pylint: disable=broad-except
                         logger.error(
                             "Failed to remove file after upload: {} - Error: {}".format(  # noqa pylint: disable=C0209
