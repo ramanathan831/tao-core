@@ -135,8 +135,7 @@ class BackboneConfig:
             "vit_giant_nvdinov2",
             "vit_base_nvclip_16_siglip",
             "vit_huge_nvclip_14_siglip"
-        ]),
-        automl_enabled="TRUE"
+        ])
     )
     feat_downsample: bool = BOOL_FIELD(
         value=False,

@@ -1029,7 +1029,8 @@ class AutoMLPipeline(ActionPipeline):
             network=self.network,
             action=self.action,
             automl_exp_job=True,
-            docker_env_vars=self.job_env_variables
+            docker_env_vars=self.job_env_variables,
+            automl_experiment_id=str(self.rec_number),
         )
         while k8s_status in ["Done", "Error", "Running", "Pending", "Creating"]:
             time.sleep(5)
@@ -1073,7 +1074,8 @@ class AutoMLPipeline(ActionPipeline):
                 network=self.network,
                 action=self.action,
                 automl_exp_job=True,
-                docker_env_vars=self.job_env_variables
+                docker_env_vars=self.job_env_variables,
+                automl_experiment_id=str(self.rec_number),
             )
         if k8s_status == "Error":
             self.recs_dict[self.rec_number]["status"] = "failure"

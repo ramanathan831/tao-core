@@ -753,7 +753,8 @@ def status(
     action="",
     automl_exp_job=False,
     docker_env_vars={},
-    authorized_party_nca_id=""
+    authorized_party_nca_id="",
+    automl_experiment_id="0"
 ):
     """Returns status of kubernetes job"""
     name_space = _get_name_space()
@@ -850,7 +851,7 @@ def status(
     if network not in MONAI_NETWORKS:
         service_status = wait_for_service(org_name, handler_id, job_name, handler_kind)
         if service_status == "Running":
-            specs = get_job_specs(job_name)
+            specs = get_job_specs(job_name, automl=automl_exp_job, automl_experiment_id=automl_experiment_id)
             if specs:
                 response = send_microservice_request(
                     api_endpoint="get_job_status",
