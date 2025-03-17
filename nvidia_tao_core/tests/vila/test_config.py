@@ -21,7 +21,7 @@ from omegaconf import OmegaConf
 
 from nvidia_tao_core.api_utils.dataclass2json_converter import create_json_schema, dataclass_to_json
 from nvidia_tao_core.api_utils.json_schema_validation import validate_jsonschema
-from nvidia_tao_core.config.vila.default_config import TrainerConfig, SystemConfig, ExperimentConfig
+from nvidia_tao_core.config.vila.default_config import TrainConfig, SystemConfig, ExperimentConfig
 
 sample_system_config = """
 num_gpus: 8
@@ -38,12 +38,15 @@ learning_rate: 0.001
 weight_decay: 0.0001
 warmup_ratio: 0.03
 gradient_accumulation_steps: 2
+lora_r: 16
+max_tiles: 12
+video_max_tiles: 6
 """
 
 simple_experiment_config = """
 model_path: /path/to/model
-output_dir: /path/to/result
-trainer:
+results_dir: /path/to/result/lora
+train:
     num_epochs: 10
     batch_size: 8
     learning_rate: 0.001
@@ -54,17 +57,18 @@ trainer:
 
 sample_experiment_config = """
 model_path: /path/to/model
-output_dir: /path/to/result
-dataset_name: scienceqa
-llm_mode: lora
-vision_mode: ft
-trainer:
+results_dir: /path/to/result/lora
+train:
     num_epochs: 1
     batch_size: 32
     learning_rate: 0.001
     weight_decay: 0.0001
     warmup_ratio: 0.03
     gradient_accumulation_steps: 2
+    dataset:
+        dataset_name: scienceqa
+    llm_mode: lora
+    vision_mode: ft
 system:
     num_gpus: 8
 """
@@ -78,7 +82,7 @@ def generate_json_schema(dataclass_instance):
 
 @pytest.fixture
 def _test_trainer_spec():
-    trainer_config = TrainerConfig()
+    trainer_config = TrainConfig()
     yield trainer_config
 
 
@@ -125,7 +129,7 @@ def test_experiment_jsonschema_conversion(_test_experiment_spec):
 
 
 TEST_CONFIG_BLOCKS = [
-    (sample_trainer_config, TrainerConfig),
+    (sample_trainer_config, TrainConfig),
     (sample_system_config, SystemConfig),
     (sample_experiment_config, ExperimentConfig),
     (simple_experiment_config, ExperimentConfig)]
