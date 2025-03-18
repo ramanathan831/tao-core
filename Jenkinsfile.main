@@ -89,11 +89,23 @@ spec:
         }
       }
 
+      stage ('download_third_party_wheels') {
+        gitlabCommitStatus(name: "download_third_party_wheels", connection: gitLabConnection('git-lab-master')) {
+          // Create a default requirements.txt if it doesn't exist yet
+          sh """
+          if [ ! -f requirements.txt ]; then
+            echo "# Python packages required for TAO" > requirements.txt
+            # Add specific dependencies to the file as needed
+          fi
+          """
+          
+          // Run the helper script to download third party wheels from requirements.txt
+          sh "python3 scripts/download_third_party_wheels.py --requirements requirements.txt"
+        }
+      }
+
       stage ('publish_third_party_wheels') {
         gitlabCommitStatus(name: "publish_third_party_wheels", connection: gitLabConnection('git-lab-master')) {
-          // Run the helper script to download third party wheels from requirements.txt
-          sh "bash scripts/download_third_party_wheels.sh"
-          
           // Upload the wheels as GitLab release artifacts.
           withCredentials([string(credentialsId: 'gitlab-api-token', variable: 'GITLAB_TOKEN')]) {
             // Get project ID from environment.
@@ -105,18 +117,88 @@ spec:
             export GITLAB_PROJECT_ID=${GITLAB_PROJECT_ID}
             export TAG_NAME=${TAG_NAME}
             export RELEASE_NAME="Release ${VER}"
-            export RELEASE_DESCRIPTION="Release ${VER} with third-party wheels"
+            export RELEASE_DESCRIPTION="Release ${VER} with third-party packages"
             export WHEELS_DIR="third_party_wheels"
-            bash scripts/upload_gitlab_release_artifacts.sh
+            python3 scripts/upload_gitlab_release_artifacts.py
+            """
+          }
+        }
+      }
+      
+      stage ('download_third_party_apt') {
+        gitlabCommitStatus(name: "download_third_party_apt", connection: gitLabConnection('git-lab-master')) {
+          // Create apt-requirements.txt if it doesn't exist yet with default packages
+          sh """
+          if [ ! -f apt-requirements.txt ]; then
+            echo "# APT packages required for TAO" > apt-requirements.txt
+            # No default packages, add specific dependencies in the file as needed
+          fi
+          """
+          
+          // Run the helper script to download third party apt packages
+          sh "python3 scripts/download_apt_packages.py --requirements apt-requirements.txt --download-sources"
+        }
+      }
+      
+      stage ('publish_third_party_apt') {
+        gitlabCommitStatus(name: "publish_third_party_apt", connection: gitLabConnection('git-lab-master')) {
+          // Upload the apt packages as GitLab release artifacts
+          withCredentials([string(credentialsId: 'gitlab-api-token', variable: 'GITLAB_TOKEN')]) {
+            // Get project ID from environment
+            def GITLAB_PROJECT_ID = sh(script: 'echo $CI_PROJECT_ID', returnStdout: true).trim()
+            def TAG_NAME = "v${VER}"
+            
+            // Use the dedicated script to upload apt packages as GitLab release artifacts
+            sh """
+            export GITLAB_PROJECT_ID=${GITLAB_PROJECT_ID}
+            export TAG_NAME=${TAG_NAME}
+            export RELEASE_NAME="Release ${VER}"
+            export RELEASE_DESCRIPTION="Release ${VER} with third-party packages"
+            export APT_DIR="third_party_apt"
+            python3 scripts/upload_gitlab_release_artifacts.py
             """
           }
         }
       }
 
-      stage ('cleanup_third_party_wheels') {
-        gitlabCommitStatus(name: "cleanup_third_party_wheels", connection: gitLabConnection('git-lab-master')) {
-          // Clean up the third_party_wheels directory after archiving the wheels
-          sh "rm -rf third_party_wheels"
+      stage ('generate_license_acknowledgements') {
+        gitlabCommitStatus(name: "generate_license_acknowledgements", connection: gitLabConnection('git-lab-master')) {
+          // Generate license acknowledgements from downloaded packages
+          sh "python3 scripts/generate_license_acknowledgements.py --include-apt --output acknowledgements.md"
+          
+          // Archive the generated acknowledgements file as a build artifact
+          archiveArtifacts artifacts: 'acknowledgements.md', onlyIfSuccessful: true
+          
+          // Upload acknowledgements.md to the GitLab release as well
+          withCredentials([string(credentialsId: 'gitlab-api-token', variable: 'GITLAB_TOKEN')]) {
+            def GITLAB_PROJECT_ID = sh(script: 'echo $CI_PROJECT_ID', returnStdout: true).trim()
+            def TAG_NAME = "v${VER}"
+            
+            // Upload acknowledgements.md as a link in the release
+            sh """
+            curl --header "PRIVATE-TOKEN: ${GITLAB_TOKEN}" \
+                 --form "name=Third Party Licenses" \
+                 --form "url=https://gitlab-master.nvidia.com/-/ide/project/${GITLAB_PROJECT_ID}/blob/${TAG_NAME}/-/acknowledgements.md" \
+                 --form "link_type=other" \
+                 "https://gitlab-master.nvidia.com/api/v4/projects/${GITLAB_PROJECT_ID}/releases/${TAG_NAME}/assets/links"
+            """
+            
+            // Also update the file in the repository for future reference
+            sh """
+            git config --global user.email "ci-bot@nvidia.com"
+            git config --global user.name "TAO CI Bot"
+            git add acknowledgements.md
+            git commit -m "Update third-party license acknowledgements [CI SKIP]" || true
+            git push origin HEAD:main || true
+            """
+          }
+        }
+      }
+
+      stage ('cleanup_third_party_packages') {
+        gitlabCommitStatus(name: "cleanup_third_party_packages", connection: gitLabConnection('git-lab-master')) {
+          // Clean up the third_party_wheels, third_party_apt, and third_party_apt_sources directories
+          sh "rm -rf third_party_wheels third_party_apt third_party_apt_sources"
         }
       }
     }
