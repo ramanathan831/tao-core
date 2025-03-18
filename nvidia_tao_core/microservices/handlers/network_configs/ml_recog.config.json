@@ -148,5 +148,10 @@
         "train.resume_training_checkpoint_path":"automl_resume_model",
         "train.checkpoint_interval":"assign_const_value,train.num_epochs",
         "train.validation_interval":"assign_const_value,train.num_epochs,train.checkpoint_interval"
+    },
+
+    "metrics": {
+        "available_metrics": ["val Precision at Rank 1"],
+        "monitoring_metric": "val Precision at Rank 1"
     }
 }

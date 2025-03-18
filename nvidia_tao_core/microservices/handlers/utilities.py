@@ -48,7 +48,6 @@ from nvidia_tao_core.microservices.constants import (
     CONTINUOUS_STATUS_KEYS,
     _PYT_TAO_NETWORKS,
     STATUS_CALLBACK_MISMATCH_WITH_CHECKPOINT_EPOCH,
-    NETWORK_METRIC_MAPPING,
     _TF2_NETWORKS,
     MISSING_EPOCH_FORMAT_NETWORKS,
     MONAI_NETWORKS
@@ -83,7 +82,7 @@ from nvidia_tao_core.microservices.handlers.monai.template_python import (
 )
 from nvidia_tao_core.microservices.handlers.ngc_handler import validate_ptm_download
 from nvidia_tao_core.microservices.handlers.monai.helpers import find_matching_bundle_dir
-from nvidia_tao_core.microservices.utils import create_folder_with_permissions
+from nvidia_tao_core.microservices.utils import create_folder_with_permissions, get_monitoring_metric
 
 # Configure logging
 logging.basicConfig(
@@ -561,7 +560,7 @@ class StatusParser:
             for result_type in ("graphical", "kpi"):
                 for log in results[result_type]:
                     if metric == "kpi":
-                        criterion = NETWORK_METRIC_MAPPING[self.network]
+                        criterion = get_monitoring_metric(self.network)
                     else:
                         criterion = metric
                     reverse_sort = True
@@ -602,7 +601,7 @@ class StatusParser:
             logger.error(traceback.format_exc())
             logger.warning("Requested metric not found, defaulting to 0.0")
             if (
-                (metric == "kpi" and NETWORK_METRIC_MAPPING[self.network] in ("loss", "evaluation_cost ")) or
+                (metric == "kpi" and get_monitoring_metric(self.network) in ("loss", "evaluation_cost ")) or
                 (metric in ("loss", "evaluation_cost "))
             ):
                 metric_value = 0.0

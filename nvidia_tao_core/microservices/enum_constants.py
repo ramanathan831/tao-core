@@ -106,21 +106,31 @@ def _get_network_architectures() -> list[str]:
     return architectures
 
 
-# Create Enums
-dataset_types, _ = _scan_config_files()
-DatasetType = enum.Enum('DatasetType', {name: name for name in dataset_types}, type=str)
+def _get_all_metrics() -> set[str]:
+    """Scan all config files to collect available metrics.
 
-_, dataset_formats = _scan_config_files()
-DatasetFormat = enum.Enum('DatasetFormat', {name: name for name in dataset_formats}, type=str)
+    Returns:
+        set[str]: Set of all available metrics
+    """
+    config_dir = pathlib.Path(__file__).parent / "handlers" / "network_configs"
+    all_metrics = set()
 
-actions = _get_valid_actions()
-ActionEnum = enum.Enum('ActionEnum', {name: name for name in actions}, type=str)
+    if config_dir.exists():
+        for config_file in config_dir.glob("*.config.json"):
+            try:
+                with open(config_file, 'r', encoding='utf-8') as f:
+                    config = json.load(f)
+                    metrics = config.get("metrics", {}).get("available_metrics", [])
+                    all_metrics.update(metrics)
+            except (json.JSONDecodeError, IOError) as e:
+                logger.warning("Error reading metrics from %s: %s", config_file, e)
+                continue
+    # Add all BaseMetrics values
+    all_metrics.update(m.value for m in BaseMetrics)
+    return all_metrics
 
-network_architectures = _get_network_architectures()
-ExperimentNetworkArch = enum.Enum('ExperimentNetworkArch', {name: name for name in network_architectures}, type=str)
 
-
-class Metrics(str, enum.Enum):
+class BaseMetrics(str, enum.Enum):
     """Class defining metric types in enum"""
 
     three_d_mAP = '3d mAP'
@@ -296,3 +306,20 @@ class BaseExperimentLicense(enum.Enum):
     nvaie_eula = "nvaie eula"
     nvidia_model_eula = "nvidia model eula"
     cc_by_nc_sa_4 = "cc by nc sa 4.0"
+
+
+# Create Enums
+dataset_types, _ = _scan_config_files()
+DatasetType = enum.Enum('DatasetType', {name: name for name in dataset_types}, type=str)
+
+_, dataset_formats = _scan_config_files()
+DatasetFormat = enum.Enum('DatasetFormat', {name: name for name in dataset_formats}, type=str)
+
+actions = _get_valid_actions()
+ActionEnum = enum.Enum('ActionEnum', {name: name for name in actions}, type=str)
+
+network_architectures = _get_network_architectures()
+ExperimentNetworkArch = enum.Enum('ExperimentNetworkArch', {name: name for name in network_architectures}, type=str)
+
+metrics = _get_all_metrics()
+Metrics = enum.Enum('Metrics', {name: name for name in metrics}, type=str)

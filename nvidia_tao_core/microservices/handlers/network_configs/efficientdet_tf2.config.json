@@ -181,5 +181,10 @@
         "train.checkpoint":"automl_assign_ptm",
         "train.resume_training_checkpoint_path": "automl_resume_model",
         "encryption_key":"key"
+    },
+
+    "metrics": {
+        "available_metrics": ["AP50"],
+        "monitoring_metric": "AP50"
     }
 }

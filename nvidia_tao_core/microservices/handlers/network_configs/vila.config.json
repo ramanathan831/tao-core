@@ -55,5 +55,10 @@
     "automl_spec_params":{
         "results_dir":"automl_output_dir",
         "model_path":"automl_assign_ptm"
+    },
+
+    "metrics": {
+        "available_metrics": ["val_acc"],
+        "monitoring_metric": "val_acc"
     }
 }

@@ -141,5 +141,10 @@
         "train.train_config.checkpoint_config.interval":"assign_const_value,train.train_config.runner.max_epochs",
         "train.train_config.evaluation.interval":"assign_const_value,train.train_config.runner.max_epochs,train.train_config.checkpoint_config.interval",
         "train.train_config.logging.interval":"assign_const_value"
-    }    
+    },
+
+    "metrics": {
+        "available_metrics": ["accuracy_top-1"],
+        "monitoring_metric": "accuracy_top-1"
+    }
 }

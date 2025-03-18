@@ -107,5 +107,10 @@
         "train.checkpoint_interval":"assign_const_value,train.num_epochs",
         "train.validation_interval":"assign_const_value,train.num_epochs,train.checkpoint_interval",
         "encryption_key":"key"
+    },
+
+    "metrics": {
+        "available_metrics": ["cmc_rank_1"],
+        "monitoring_metric": "cmc_rank_1"
     }
 }

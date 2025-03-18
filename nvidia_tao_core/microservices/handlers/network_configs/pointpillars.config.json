@@ -180,5 +180,10 @@
         "train.resume_training_checkpoint_path":"automl_resume_model",
         "model.pretrained_model_path":"automl_assign_ptm",
         "train.checkpoint_interval":"assign_const_value,train.num_epochs"
+    },
+
+    "metrics": {
+        "available_metrics": ["loss"],
+        "monitoring_metric": "loss"
     }
 }

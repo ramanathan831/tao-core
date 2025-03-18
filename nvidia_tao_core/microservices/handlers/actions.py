@@ -31,7 +31,6 @@ from nvidia_tao_core.microservices.constants import (
     MEDICAL_AUTOML_ARCHITECT,
     MEDICAL_NETWORK_ARCHITECT,
     MEDICAL_CUSTOM_ARCHITECT,
-    NETWORK_METRIC_MAPPING,
     NETWORK_CONTAINER_MAPPING,
     COPY_MODEL_PARAMS_FROM_TRAIN_NETWORKS
 )
@@ -87,7 +86,8 @@ from nvidia_tao_core.microservices.utils import (
     get_admin_key,
     safe_load_file,
     find_differences,
-    merge_nested_dicts
+    merge_nested_dicts,
+    get_monitoring_metric
 )
 from nvidia_tao_core.microservices.job_utils import executor as jobDriver
 from nvidia_tao_core.microservices.network_utils.network_constants import ptm_mapper
@@ -420,7 +420,7 @@ class ActionPipeline:
 
         metric = self.handler_metadata.get("metric", "")
         if not metric:
-            metric = NETWORK_METRIC_MAPPING.get(self.network, "loss")
+            metric = get_monitoring_metric(self.network)
 
         k8s_status = jobDriver.status(
             self.job_context.org_name,

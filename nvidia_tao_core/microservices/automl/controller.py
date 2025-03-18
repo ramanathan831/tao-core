@@ -23,11 +23,11 @@ from copy import deepcopy
 from datetime import timedelta
 
 from nvidia_tao_core.microservices.automl.utils import Recommendation, ResumeRecommendation, JobStates
+from nvidia_tao_core.microservices.utils import get_monitoring_metric
 from nvidia_tao_core.microservices.constants import (
     _ITER_MODELS,
     _TF2_NETWORKS,
     NO_VAL_METRICS_DURING_TRAINING_NETWORKS,
-    NETWORK_METRIC_MAPPING,
     MISSING_EPOCH_FORMAT_NETWORKS
 )
 from nvidia_tao_core.microservices.dgx_controller import overwrite_job_logs_from_bcp
@@ -129,7 +129,7 @@ class Controller:
             self.metric_key = "loss"
             self.metric = "loss"
         elif self.metric == "kpi":
-            self.metric_key = NETWORK_METRIC_MAPPING[self.network]
+            self.metric_key = get_monitoring_metric(self.network)
         else:
             self.metric_key = self.metric
 

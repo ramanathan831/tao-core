@@ -135,5 +135,10 @@
         "train.checkpoint_interval":"assign_const_value,train.num_epochs",
         "train.validation_interval":"assign_const_value,train.num_epochs,train.checkpoint_interval",
         "encryption_key":"key"
+    },
+
+    "metrics": {
+        "available_metrics": ["val_acc"],
+        "monitoring_metric": "val_acc"
     }
 }

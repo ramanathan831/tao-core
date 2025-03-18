@@ -101,6 +101,30 @@ def read_network_config(network):
     return cli_config
 
 
+def get_monitoring_metric(network):
+    """Get the monitoring metric for a specific network.
+
+    Args:
+        network (str): Name of the network
+
+    Returns:
+        str: The monitoring metric for the network
+        None: If network not found or has no monitoring metric defined
+    """
+    _dir_path = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
+    config_json_path = os.path.join(_dir_path, "microservices", "handlers", "network_configs", f"{network}.config.json")
+
+    try:
+        with open(config_json_path, 'r', encoding='utf-8') as f:
+            config = json.load(f)
+            if "metrics" in config and "monitoring_metric" in config["metrics"]:
+                return config["metrics"]["monitoring_metric"]
+    except (json.JSONDecodeError, IOError) as e:
+        logger.warning(f"Error reading config file for network {network}: {e}")
+
+    return None
+
+
 def find_closest_number(x, arr):
     """Find the closest number to x in arr"""
     return arr[min(range(len(arr)), key=lambda i: abs(arr[i] - x))]

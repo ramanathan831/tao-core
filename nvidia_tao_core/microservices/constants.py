@@ -100,32 +100,6 @@ LAST_ACCESS_TIME_OUT = 60  # last access timeout period in second
 
 CONTINUOUS_STATUS_KEYS = ["cur_iter", "epoch", "max_epoch", "eta", "time_per_epoch", "time_per_iter", "key_metric"]
 
-NETWORK_METRIC_MAPPING = {"action_recognition": "val_acc",
-                          "bevfusion": "AP11",
-                          "centerpose": "val_3DIoU",
-                          "classification_pyt": "accuracy_top-1",
-                          "classification_tf2": "val_accuracy",
-                          "deformable_detr": "val_mAP50",
-                          "detectnet_v2": "mean average precision",
-                          "dino": "val_mAP50",
-                          "efficientdet_tf2": "AP50",
-                          "grounding_dino": "val_mAP50",
-                          "mal": "mIoU",
-                          "mask2former": "mIoU",
-                          "mask_grounding_dino": "bbox_val_mAP50",
-                          "ml_recog": "val Precision at Rank 1",
-                          "ocdnet": "hmean",
-                          "ocrnet": "val_acc",
-                          "optical_inspection": "val_acc",
-                          "pointpillars": "loss",
-                          "pose_classification": "val_acc",
-                          "re_identification": "cmc_rank_1",
-                          "rtdetr": "val_mAP50",
-                          "segformer": "Mean IOU",
-                          "unet": "loss",
-                          "visual_changenet": "val_acc",
-                          "vila": "val_acc"}
-
 NETWORK_CONTAINER_MAPPING = {"action_recognition": "TAO_PYTORCH",
                              "annotations": "TAO_DS",
                              "auto_label": "TAO_DS",

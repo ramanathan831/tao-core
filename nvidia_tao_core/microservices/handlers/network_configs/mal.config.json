@@ -75,5 +75,10 @@
             "inference.label_dump_path":"create_inference_result_file_mal",
             "inference.checkpoint":"parent_model"
         }
+    },
+
+    "metrics": {
+        "available_metrics": ["mIoU"],
+        "monitoring_metric": "mIoU"
     }
 }
