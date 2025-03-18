@@ -83,8 +83,8 @@
         "results_dir":"automl_output_dir",
         "train.pretrained_model_path":"automl_assign_ptm",
         "train.resume_training_checkpoint_path":"automl_resume_model",
-        "train.checkpoint_interval":"assign_const_value,train.max_iters",
-        "train.validation_interval":"assign_const_value,train.max_iters,train.checkpoint_interval",
+        "train.checkpoint_interval":"assign_const_value,train.num_epochs",
+        "train.validation_interval":"assign_const_value,train.num_epochs,train.checkpoint_interval",
         "encryption_key":"key"
     }
 }
