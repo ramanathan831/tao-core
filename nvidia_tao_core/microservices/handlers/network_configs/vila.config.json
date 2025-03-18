@@ -1,0 +1,64 @@
+{
+    "api_params": {
+        "dataset_type":"vlm",
+        "actions": ["train","evaluate","inference"],
+        "formats":["default", "raw"],
+        "accepted_ds_intents": ["training", "evaluation", "testing"],
+        "image":"VILA",
+        "spec_backend":"yaml",
+        "actions_pipe":{
+            "train":"train",
+            "evaluate":"evaluate",
+            "inference":"inference"
+        }
+    },
+
+    "data_sources": {
+        "train": {
+            "train.dataset.media_dir": {
+                "source": "train_datasets",
+                "multiple_sources": false,
+                "path": "dataset.tar.gz"
+            },
+            "train.dataset.data_path": {
+                "source": "train_datasets",
+                "multiple_sources": false,
+                "path": "annotations.json"
+            }
+        },
+        "inference": {
+            "inference.media": {
+                "source": "inference_dataset",
+                "multiple_sources": false,
+                "path": ""
+            }
+        }
+    },
+
+    "spec_params":{
+        "train": {
+            "results_dir":"output_dir",
+            "model_path":"ptm_if_no_resume_model"
+        },
+        "evaluate":{
+            "results_dir":"output_dir",
+            "model_path":"parent_model",
+            "model_base":"ptm_if_no_resume_model"
+        },
+        "inference":{
+            "results_dir":"output_dir",
+            "model_path":"parent_model",
+            "model_base":"ptm_if_no_resume_model"
+        }
+    },
+
+    "automl_spec_params":{
+        "results_dir":"automl_output_dir",
+        "model_path":"automl_assign_ptm"
+    },
+
+    "metrics": {
+        "available_metrics": ["val_acc"],
+        "monitoring_metric": "val_acc"
+    }
+}

@@ -28,7 +28,10 @@ def validate_schema(_value, _properties, hierarchy):
 
             if _value_key not in _properties["properties"]:
                 hierarchy_str = ".".join(hierarchy)
-                return f"Invalid schema : key = {_value_key} not present in the {hierarchy_str} config specs. "
+                return (
+                    f"Invalid schema : key = {_value_key} not present in the "
+                    f"{hierarchy_str} config specs. "
+                )
 
             hierarchy.append(_value_key)
             status = validate_schema(_value_obj, _properties["properties"][_value_key], hierarchy)
@@ -42,32 +45,49 @@ def validate_schema(_value, _properties, hierarchy):
         # type check
         if "type" in _properties:
             if _properties["type"] in ("integer", "ordered_int") and not isinstance(_value, int):
-                return f"Type Error : {hierarchy_str} should be of type integer. "
+                return (
+                    f"Type Error : {hierarchy_str} should be of type integer. "
+                )
 
             if _properties["type"] == "number" and not (isinstance(_value, (float, int))):
-                return f"Type Error : {hierarchy_str} should be of type float. "
+                return (
+                    f"Type Error : {hierarchy_str} should be of type float. "
+                )
 
             if _properties["type"] == "boolean" and not isinstance(_value, int):
-                return f"Type Error : {hierarchy_str} should be of type boolean. "
+                return (
+                    f"Type Error : {hierarchy_str} should be of type boolean. "
+                )
 
             if _properties["type"] == ("string", "categorical") and not isinstance(_value, str):
-                return f"Type Error : {hierarchy_str} should be of type string. "
+                return (
+                    f"Type Error : {hierarchy_str} should be of type string. "
+                )
 
             # valid_min range check
             if _properties["type"] == "number" and "minimum" in _properties:
                 if float(_value) < float(_properties["minimum"]):
-                    return f"Invalid schema : {hierarchy_str} should be >= {str(_properties['minimum'])}, current value is {_value} "
+                    return (
+                        f"Invalid schema : {hierarchy_str} should be >= "
+                        f"{str(_properties['minimum'])}, current value is {_value}"
+                    )
 
             # valid_max range check
             if _properties["type"] == "number" and "maximum" in _properties:
                 if float(_value) > float(_properties["maximum"]):
-                    return f"Invalid schema : {hierarchy_str} should be <= {str(_properties['maximum'])}, current value is '{_value} "
+                    return (
+                        f"Invalid schema : {hierarchy_str} should be <= "
+                        f"{str(_properties['maximum'])}, current value is '{_value}'"
+                    )
 
         # valid_options check
         if "enum" in _properties and _value not in _properties["enum"]:
             if 'None' in _properties["enum"] and _value in (None, ''):
                 return None
-            return f"Invalid schema : Allowed values for the {hierarchy_str} are {_properties['enum']}, current value is \'{_value}\' "
+            return (
+                f"Invalid schema : Allowed values for the {hierarchy_str} "
+                f"are {_properties['enum']}, current value is '{_value}'"
+            )
 
     return None
 

@@ -85,9 +85,11 @@ class OptimConfig:
     )
     lr_scheduler: str = STR_FIELD(
         value="MultiStep",
-        description="""The learning scheduler:
-                    * MultiStep : Decrease the lr by lr_decay from lr_steps
-                    * StepLR : Decrease the lr by lr_decay at every lr_step_size.""",
+        description=(
+            "The learning scheduler: "
+            "* MultiStep : Decrease the lr by lr_decay from lr_steps "
+            "* StepLR : Decrease the lr by lr_decay at every lr_step_size."
+        ),
         display_name="learning rate scheduler",
         valid_options=",".join(
             ["MultiStep", "StepLR"]
@@ -95,8 +97,10 @@ class OptimConfig:
     )
     lr_steps: List[int] = LIST_FIELD(
         arrList=[40],
-        description="""The steps at which the learning rate must be decreased.
-                    This is applicable only with the MultiStep LR.""",
+        description=(
+            "The steps at which the learning rate must be decreased. "
+            "This is applicable only with the MultiStep LR."
+        ),
         display_name="learning rate decay steps",
         value_type="list_2",
     )
@@ -136,17 +140,19 @@ class DDTrainExpConfig(TrainConfig):
         value=0.1,
         math_cond="> 0.0",
         display_name="clip gradient norm",
-        description="""
-        Amount to clip the gradient by L2 Norm.
-        A value of 0.0 specifies no clipping.""",
+        description=(
+            "Amount to clip the gradient by L2 Norm. "
+            "A value of 0.0 specifies no clipping."
+        ),
     )
     is_dry_run: bool = BOOL_FIELD(
         value=False,
         display_name="Is dry run",
-        description="""
-        Whether to run the trainer in Dry Run mode. This serves
-        as a good means to validate the spec file and run a sanity check on the trainer
-        without actually initializing and running the trainer.""",
+        description=(
+            "Whether to run the trainer in Dry Run mode. This serves "
+            "as a good means to validate the spec file and run a sanity check on the trainer "
+            "without actually initializing and running the trainer."
+        ),
     )
 
     optim: OptimConfig = DATACLASS_FIELD(
@@ -169,21 +175,23 @@ class DDTrainExpConfig(TrainConfig):
             ["ddp", "fsdp"]
         ),
         display_name="distributed_strategy",
-        description="""
-        The multi-GPU training strategy.
-        DDP (Distributed Data Parallel) and Fully Sharded DDP are supported.""",
+        description=(
+            "The multi-GPU training strategy. "
+            "DDP (Distributed Data Parallel) and Fully Sharded DDP are supported."
+        ),
     )
     activation_checkpoint: bool = BOOL_FIELD(
         value=True,
         display_name="enable activation checkpointing",
-        description="""
-        A True value instructs train to recompute in backward pass to save GPU memory,
-        rather than storing activations.""",
+        description=(
+            "A True value instructs train to recompute in backward pass to save GPU memory, "
+            "rather than storing activations."
+        ),
     )
     verbose: bool = BOOL_FIELD(
         value=False,
         display_name="enable verbose logs",
-        description="""
-        Flag to enable printing of detailed learning rate scaling from the optimizer.
-        """
+        description=(
+            "Flag to enable printing of detailed learning rate scaling from the optimizer."
+        )
     )

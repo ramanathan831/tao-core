@@ -221,9 +221,14 @@ class MAEModelConfig:
     arch: str = STR_FIELD(
         value='convnextv2_base', value_type="ordered", default_value="convnextv2_base",
         valid_options=",".join([
-            "convnextv2_atto", "convnextv2_femto", "convnextv2_pico", "convnextv2_nano", "convnextv2_tiny", "convnextv2_base", "convnextv2_large", "convnextv2_huge",
-            "vit_base_patch16", "vit_large_patch16", "vit_huge_patch14",
-            "hiera_tiny_224", "hiera_small_224", "hiera_base_224", "hiera_large_224", "hiera_huge_224"
+            "convnextv2_atto",
+            "convnextv2_femto",
+            "convnextv2_pico",
+            "convnextv2_nano",
+            "convnextv2_tiny",
+            "convnextv2_base",
+            "convnextv2_large",
+            "convnextv2_huge"
         ]),
         description="Model architecture.",
         display_name="Model arch")

@@ -172,8 +172,10 @@ class NVDINOv2DatasetConfig:
         value=True,
         default_value=True,
         display_name="pin_memory",
-        description="""Flag to enable the dataloader to allocated pagelocked memory for faster
-                    of data between the CPU and GPU.""",
+        description=(
+            "Flag to enable the dataloader to allocated pagelocked memory for faster "
+            "of data between the CPU and GPU."
+        ),
         popular="yes"
     )
     workers: int = INT_FIELD(
@@ -201,9 +203,10 @@ class BackboneConfig:
         value="vit_l",
         default_value="vit_l",
         display_name="backbone",
-        description="""The teacher backbone name of the model.
-                    TAO implementation of NVDINOv2 support vit_l and vit_s
-                    """,
+        description=(
+            "The teacher backbone name of the model. "
+            "TAO implementation of NVDINOv2 support vit_l and vit_s"
+        ),
         valid_options=",".join(SUPPORTED_BACKBONES),
         popular="no"
     )
@@ -211,9 +214,10 @@ class BackboneConfig:
         value="vit_l",
         default_value="vit_l",
         display_name="backbone",
-        description="""The student backbone name of the model.
-                    TAO implementation of NVDINOv2 support vit_l and vit_s
-                    """,
+        description=(
+            "The student backbone name of the model. "
+            "TAO implementation of NVDINOv2 support vit_l and vit_s"
+        ),
         valid_options=",".join(SUPPORTED_BACKBONES),
         popular="no"
     )
@@ -305,7 +309,10 @@ class NVDINOv2ModelDistillConfig:
     pretrained_non_distill_pl_model_path: Optional[str] = STR_FIELD(
         value=None,
         default_type=None,
-        description="Path to a pre-trained pl model from non-distillation DINOv2 SSL pipe for initializing teacher in distillation."
+        description=(
+            "Path to a pre-trained pl model from non-distillation DINOv2 SSL pipe "
+            "for initializing teacher in distillation."
+        )
     )
 
 
@@ -543,7 +550,9 @@ class NVDINOv2TrainExpConfig(TrainConfig):
     pretrained_model_path: Optional[str] = STR_FIELD(
         value=None,
         default_type=None,
-        description="Path to a pre-trained NVDINOv2 model to initialize the current training from."
+        description=(
+            "Path to a pre-trained NVDINOv2 model to initialize the current training from."
+        )
     )
     layerwise_decay: float = FLOAT_FIELD(
         value=1.0,
@@ -594,32 +603,112 @@ class NVDINOv2TrainExpConfig(TrainConfig):
 class NVDINOv2TrtConfig(TrtConfig):
     """Trt config."""
 
-    data_type: str = STR_FIELD(value="fp32", default_value="fp32,fp16", description="Data type", display_name="Data type")
+    data_type: str = STR_FIELD(
+        value="fp32",
+        default_value="fp32,fp16",
+        description="Data type",
+        display_name="Data type"
+    )
 
 
 @dataclass
 class NVDINOv2InferenceExpConfig(InferenceConfig):
     """Inference experiment config."""
 
-    vis_after_n_batches: int = INT_FIELD(value=16, default_value=1, valid_min=1, valid_max="inf", description="Visualize evaluation segmentation results after n batches")
-    batch_size: int = INT_FIELD(value=-1, default_value=8, valid_min=1, valid_max="inf", description="Batch size", display_name="Batch Size")
+    vis_after_n_batches: int = INT_FIELD(
+        value=16,
+        default_value=1,
+        valid_min=1,
+        valid_max="inf",
+        description="Visualize evaluation segmentation results after n batches"
+    )
+    batch_size: int = INT_FIELD(
+        value=-1,
+        default_value=8,
+        valid_min=1,
+        valid_max="inf",
+        description="Batch size",
+        display_name="Batch Size"
+    )
 
 
 @dataclass
 class NVDINOv2ExportExpConfig:
     """Export experiment config."""
 
-    results_dir: Optional[str] = STR_FIELD(value=None, default_value="", description="Results directory", display_name="Results directory")
-    gpu_id: int = INT_FIELD(value=0, default_value=0, description="GPU ID", display_name="GPU ID", value_min=0)
-    checkpoint: str = STR_FIELD(value=MISSING, default_value="", description="Path to checkpoint file", display_name="Path to checkpoint file")
-    onnx_file: Optional[str] = STR_FIELD(value=MISSING, default_value="", description="ONNX file", display_name="ONNX file")
-    on_cpu: bool = BOOL_FIELD(value=False, default_value=False, description="Flag to export on cpu", display_name="On CPU")
-    input_channel: int = INT_FIELD(value=3, default_value=3, description="Input channel", display_name="Input channel")
-    input_width: int = INT_FIELD(value=518, default_value=518, description="Input width", display_name="Input width", valid_min=128)
-    input_height: int = INT_FIELD(value=518, default_value=518, description="Input height", display_name="Input height", valid_min=128)
-    opset_version: int = INT_FIELD(value=17, default_value=12, valid_min=1, display_name="opset version", description="""Operator set version of the ONNX model used to generate the TensorRT engine.""")
-    batch_size: int = INT_FIELD(value=-1, default_value=-1, description="Batch size", display_name="Batch size", valid_min=0)
-    verbose: bool = BOOL_FIELD(value=False, default_value=False, description="Verbose", display_name="Verbose")
+    results_dir: Optional[str] = STR_FIELD(
+        value=None,
+        default_value="",
+        description="Results directory",
+        display_name="Results directory"
+    )
+    gpu_id: int = INT_FIELD(
+        value=0,
+        default_value=0,
+        description="GPU ID",
+        display_name="GPU ID",
+        value_min=0
+    )
+    checkpoint: str = STR_FIELD(
+        value=MISSING,
+        default_value="",
+        description="Path to checkpoint file",
+        display_name="Path to checkpoint file"
+    )
+    onnx_file: Optional[str] = STR_FIELD(
+        value=MISSING,
+        default_value="",
+        description="ONNX file",
+        display_name="ONNX file"
+    )
+    on_cpu: bool = BOOL_FIELD(
+        value=False,
+        default_value=False,
+        description="Flag to export on cpu",
+        display_name="On CPU"
+    )
+    input_channel: int = INT_FIELD(
+        value=3,
+        default_value=3,
+        description="Input channel",
+        display_name="Input channel"
+    )
+    input_width: int = INT_FIELD(
+        value=518,
+        default_value=518,
+        description="Input width",
+        display_name="Input width",
+        valid_min=128
+    )
+    input_height: int = INT_FIELD(
+        value=518,
+        default_value=518,
+        description="Input height",
+        display_name="Input height",
+        valid_min=128
+    )
+    opset_version: int = INT_FIELD(
+        value=17,
+        default_value=12,
+        valid_min=1,
+        display_name="opset version",
+        description=(
+            "Operator set version of the ONNX model used to generate the TensorRT engine."
+        )
+    )
+    batch_size: int = INT_FIELD(
+        value=-1,
+        default_value=-1,
+        description="Batch size",
+        display_name="Batch size",
+        valid_min=0
+    )
+    verbose: bool = BOOL_FIELD(
+        value=False,
+        default_value=False,
+        description="Verbose",
+        display_name="Verbose"
+    )
 
 
 @dataclass
@@ -647,7 +736,9 @@ class ExperimentConfig(CommonExperimentConfig):
     )
     inference: NVDINOv2InferenceExpConfig = DATACLASS_FIELD(
         NVDINOv2InferenceExpConfig(),
-        description="Configurable parameters to construct the inference trainer for a NVDINOv2 experiment.",
+        description=(
+            "Configurable parameters to construct the inference trainer for a NVDINOv2 experiment."
+        ),
     )
     export: NVDINOv2ExportExpConfig = DATACLASS_FIELD(
         NVDINOv2ExportExpConfig(),
@@ -655,5 +746,7 @@ class ExperimentConfig(CommonExperimentConfig):
     )
     gen_trt_engine: GenTrtEngineExpConfig = DATACLASS_FIELD(
         GenTrtEngineExpConfig(),
-        description="Configurable parameters to generate TensorRT engine for a NVDINOv2 experiment.",
+        description=(
+            "Configurable parameters to generate TensorRT engine for a NVDINOv2 experiment."
+        ),
     )

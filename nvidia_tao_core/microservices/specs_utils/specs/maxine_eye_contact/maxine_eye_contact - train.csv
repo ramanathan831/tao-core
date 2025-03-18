@@ -1,0 +1,12 @@
+parameter,display_name,value_type,description,default_value,examples,valid_min,valid_max,valid_options,required,regex,popular,CLI,automl_enabled,math_cond,parent_param,depends_on
+datamodule.init_args.datasets.h5py_path,h5py training path,hidden,,,,,,,,,,,FALSE,,,
+datamodule.init_args.val_datasets.h5py_path,h5py val path,hidden,,,,,,,,,,,FALSE,,,
+trainer.logger.init_args.name,logger name,string,,eye_contact,,,,,,,,,FALSE,,,
+trainer.logger.init_args.version,logger version,string,,eye_contact,,,,,,,,,FALSE,,,
+trainer.max_epochs,num epochs,integer,,1,,,,,,,,,FALSE,,,
+trainer.learning_rate,learning rate,float,,0.0001,,,,,,,,,FALSE,,,
+trainer.batch_size,batch size,integer,,5,,,,,,,,,FALSE,,,
+datamodule.num_data_threads,num data threads,integer,,2,,,,,,,,,FALSE,,,
+results_dir,tb log dir,hidden,,,,,,,,,,,FALSE,,,
+trainer.logger.init_args.use_wandb,use wandb,bool,,FALSE,,,,,,,,,FALSE,,,
+load_model_from_ckpt,pretrained model,hidden,,,,,,,,,,,FALSE,,,

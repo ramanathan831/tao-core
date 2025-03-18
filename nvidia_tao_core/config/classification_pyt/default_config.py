@@ -16,6 +16,7 @@
 
 from typing import Optional, List, Dict, Any
 from dataclasses import dataclass
+from omegaconf import MISSING
 
 from nvidia_tao_core.config.utils.types import (
     BOOL_FIELD,
@@ -27,318 +28,648 @@ from nvidia_tao_core.config.utils.types import (
     STR_FIELD,
 )
 from nvidia_tao_core.config.common.common_config import (
+    CommonExperimentConfig,
+    ExportConfig,
+    TrainConfig,
     EvaluateConfig,
     GenTrtEngineConfig,
     InferenceConfig,
-    TrtConfig
+    TrtConfig,
+    CalibrationConfig
 )
-from nvidia_tao_core.config.classification_pyt.model_params_mapping import map_params
-
-SUPPORTED_BACKBONES = [
-    *list(map_params['head']['in_channels'].keys())
-]
+from nvidia_tao_pytorch.core.distillation.config import DistillationConfig
 
 
 @dataclass
-class ImgNormConfig:
-    """Configuration parameters for Img Normalization."""
+class OptimConfig:
+    """Optimizer config."""
 
-    mean: List[float] = LIST_FIELD([123.675, 116.28, 103.53], default_value=[123.675, 116.28, 103.53], description="Mean for the augmentation", display_name="Mean")
-    std: List[float] = LIST_FIELD([58.395, 57.12, 57.375], default_value=[58.395, 57.12, 57.375], description="Standard deviation for the augmentation", display_name="Standard Deviation")
-    to_rgb: bool = BOOL_FIELD(value=True, default_value=True, description="Flag to convert to rgb")
-
-
-@dataclass
-class TrainData:
-    """Train Data Dataclass"""
-
-    type: str = STR_FIELD(value="ImageNet", default_value="", description="Type of training data")
-    data_prefix: Optional[str] = STR_FIELD(value="", default_value="", description="Dataset directory path")
-    pipeline: List[Any] = LIST_FIELD([{"type": "RandomResizedCrop", "scale": 224}, {"type": "RandomFlip", "prob": 0.5, "direction": "horizontal"}], description="Augmentation pipeline")
-    classes: Optional[str] = STR_FIELD(value=None, default_value="", description="Path to text file containing class names")
-
-
-@dataclass
-class ValData:
-    """Validation Data Dataclass"""
-
-    type: str = STR_FIELD(value="ImageNet", default_value="", description="Type of validation data")
-    data_prefix: Optional[str] = STR_FIELD(value=None, default_value="", description="Dataset directory path")
-    ann_file: Optional[str] = STR_FIELD(value=None, default_value="", description="Data annotation file path")
-    pipeline: List[Any] = LIST_FIELD([{"type": "Resize", "scale": 224}, {"type": "CenterCrop", "crop_size": 224}], description="Augmentation pipeline")
-    classes: Optional[str] = STR_FIELD(value=None, default_value="", description="Path to text file containing class names")
-
-
-@dataclass
-class TestData:
-    """Test Data Dataclass"""
-
-    type: str = STR_FIELD(value="ImageNet", default_value="", description="Type of test data")
-    data_prefix: Optional[str] = STR_FIELD(value=None, default_value="", description="Dataset directory path")
-    ann_file: Optional[str] = STR_FIELD(value=None, default_value="", description="Data annotation file path")
-    pipeline: List[Any] = LIST_FIELD([{"type": "Resize", "scale": 224}, {"type": "CenterCrop", "crop_size": 224}], description="Augmentation pipeline")
-    classes: Optional[str] = STR_FIELD(value=None, default_value="", description="Path to text file containing class names")
-
-
-@dataclass
-class DataConfig:
-    """Data Config"""
-
-    samples_per_gpu: int = INT_FIELD(value=1, valid_min=1, valid_max="inf", description="samples per gpu", display_name="samples per gpu")
-    workers_per_gpu: int = INT_FIELD(value=2, valid_min=0, valid_max="inf", description="Workers", display_name="Workers")
-    train: TrainData = DATACLASS_FIELD(TrainData())
-    val: ValData = DATACLASS_FIELD(ValData())
-    test: TestData = DATACLASS_FIELD(TestData())
-
-
-@dataclass
-class DatasetConfig:
-    """Dataset config."""
-
-    img_norm_cfg: ImgNormConfig = DATACLASS_FIELD(ImgNormConfig())
-    data: DataConfig = DATACLASS_FIELD(DataConfig())
-    sampler: Dict[Any, Any] = DICT_FIELD({"type": "DefaultSampler", "shuffle": True}, description="Dataset Sampler")  # Allowed sampler : RepeatAugSampler
-    pin_memory: bool = BOOL_FIELD(value=True, default_value=True, description="Flag to pin memory")  # Newly supported
-    persistent_workers: bool = BOOL_FIELD(value=True, default_value=True, description="Flag for persistent workers")  # Newly supported
-    collate_fn: Dict[Any, Any] = DICT_FIELD({"type": "default_collate"}, description="collate function")  # Does not change
-
-
-@dataclass
-class DistParams:
-    """Distribution Parameters"""
-
-    backend: str = STR_FIELD(value="nccl", default_value="nccl", description="type of backend")
+    monitor_name: str = STR_FIELD(
+        value="val_loss",
+        default_value="val_loss",
+        description="Monitor Name"
+    )
+    optim: str = STR_FIELD(
+        value="adamw",
+        default_value="adamw",
+        description="Optimizer",
+        valid_options="adamw,adam,sgd"
+    )
+    lr: float = FLOAT_FIELD(
+        value=0.00006,
+        default_value=0.00006,
+        valid_min=0,
+        valid_max="inf",
+        automl_enabled="TRUE",
+        description="Optimizer learning rate"
+    )
+    policy: str = STR_FIELD(
+        value="linear",
+        default_value="linear",
+        valid_options="linear,step,cosine,multistep",
+        description="Optimizer policy"
+    )
+    policy_params: Dict[str, Any] = DICT_FIELD(
+        {"step_size": 30, "gamma": 0.1, "milestones": [10, 20]},
+        default_value={"step_size": 30, "gamma": 0.1},
+        description="Optimizer policy parameters"
+    )
+    momentum: float = FLOAT_FIELD(
+        value=0.9,
+        default_value=0.9,
+        math_cond="> 0.0",
+        display_name="momentum - AdamW",
+        description="The momentum for the AdamW optimizer.",
+        automl_enabled="TRUE"
+    )
+    weight_decay: float = FLOAT_FIELD(
+        value=0.01,
+        default_value=0.01,
+        math_cond="> 0.0",
+        display_name="weight decay",
+        description="The weight decay coefficient.",
+        automl_enabled="TRUE"
+    )
+    betas: Optional[List[float]] = LIST_FIELD(
+        [0.9, 0.999],
+        automl_enabled="TRUE",
+        description="coefficients used for computing running averages on adamw"
+    )
+    skip_names: Optional[List[str]] = LIST_FIELD(
+        [],
+        description="layers names which do not need weight decay"
+    )
+    warmup_epochs: int = INT_FIELD(
+        value=20,
+        default_value=20,
+        valid_min=0,
+        valid_max="inf",
+        description="Warmup epochs."
+    )
 
 
 @dataclass
-class RunnerConfig:
-    """Configuration parameters for Runner."""
+class LossConfig:
+    """Loss config."""
 
-    type: str = STR_FIELD(value="TAOEpochBasedRunner", default_value="TAOEpochBasedRunner", description="Runner config")  # Currently We support only Epochbased Runner - Non configurable
-    max_epochs: int = INT_FIELD(value=20, default_value=40, valid_min=1, valid_max="inf", parent_param="TRUE", display_name="Max Epochs", description="Max epochs", popular="yes")  # Set this if Epoch based runner
-    auto_scale_lr_bs: int = INT_FIELD(value=1024, description="auto scale lr batch size")
-
-
-@dataclass
-class CheckpointConfig:
-    """Configuration parameters for Checkpointing."""
-
-    interval: int = INT_FIELD(value=1, default_value=1, valid_min=1, valid_max="inf", math_cond="<" + str(RunnerConfig.max_epochs), display_name="Checkpoint interval", description="checkpointing interval", popular="yes")  # Epochs or Iterations accordingly
-    by_epoch: bool = BOOL_FIELD(value=True, description="Flag to enable by epoch", popular="yes")  # By default it trains by iters
-
-
-# Default Runtime Config
-@dataclass
-class LogConfig:
-    """Configuration parameters for Logging."""
-
-    interval: int = INT_FIELD(value=1000, valid_min=1, description="logging interval")
-    log_dir: str = STR_FIELD(value="logs", description="logging directory")  # Make sure this directory is created
-
-
-# Optim and Schedule Config
-@dataclass
-class ValidationConfig:
-    """Validation Config."""
-
-    interval: int = INT_FIELD(value=100, valid_min=1, display_name="Validation interval", description="validation interval", popular="yes")
-
-
-@dataclass
-class ParamwiseConfig:
-    """Configuration parameters for Parameters."""
-
-    pos_block: Dict[str, float] = DICT_FIELD(hashMap={"decay_mult": 0.0}, description="pos_block")
-    norm: Dict[str, float] = DICT_FIELD(hashMap={"decay_mult": 0.0}, description="norm")
-    head: Dict[str, float] = DICT_FIELD(hashMap={"lr_mult": 10.0}, description="head")
-
-
-@dataclass
-class EvaluationConfig:
-    """Evaluation Config."""
-
-    interval: int = INT_FIELD(value=1, valid_min=1, display_name="Evaluation interval", description="Evaluation interval", popular="yes")
-    metric: str = STR_FIELD(value="accuracy", description="Evaluation metric")
-
-
-@dataclass
-class EnvConfig:
-    """Environment Config."""
-
-    cudnn_benchmark: bool = BOOL_FIELD(value=False, description="cudnn_benchmark")
-    mp_cfg: Dict[Any, Any] = DICT_FIELD(hashMap={"mp_start_method": "fork", "opencv_num_threads": 0}, description="mp configuration")
-    dist_cfg: Dict[Any, Any] = DICT_FIELD(hashMap={"backend": "nccl"}, description="distributed configuration")
-
-
-@dataclass
-class TrainConfig:
-    """Train Config."""
-
-    checkpoint_config: CheckpointConfig = DATACLASS_FIELD(CheckpointConfig())
-    optimizer: Dict[Any, Any] = DATACLASS_FIELD({"type": "AdamW", "lr": 10e-4, "weight_decay": 0.05}, description="Optimizer config")
-    paramwise_cfg: Optional[Dict[Any, Any]] = DICT_FIELD(None, default_value=None, description="Parameter configurations")  # Not a must - needs to be provided in yaml
-    optimizer_config: Dict[Any, Any] = DICT_FIELD(hashMap={"grad_clip": None}, default_value={"grad_clip": None}, description="optimizer configuration")  # Gradient Accumulation and grad clip
-    lr_config: Dict[Any, Any] = DICT_FIELD(hashMap={"type": "CosineAnnealingLR"}, default_value={"type": "CosineAnnealingLR", "T_max": 95, "by_epoch": True, "begin": 5, "end": 100}, description="learning rate config")
-    runner: RunnerConfig = DATACLASS_FIELD(RunnerConfig())
-    logging: LogConfig = DATACLASS_FIELD(LogConfig())  # By default we add logging
-    evaluation: EvaluationConfig = DATACLASS_FIELD(EvaluationConfig())  # Does not change
-    find_unused_parameters: bool = BOOL_FIELD(value=False, default_value=False, description="flag to find unused parameters")  # Does not change
-    resume_training_checkpoint_path: Optional[str] = STR_FIELD(value=None, default_value="", description="Path to checkpoint to resume training")
-    validate: bool = BOOL_FIELD(value=True, default_value=True, description="Flag to validate during training")  # Does not change
-
-    # This param can be omitted if init_cfg is used in model_cfg. Both does same thing.
-    load_from: Optional[str] = STR_FIELD(value=None, default_value="", description="Path to checkpoint")  # If they want to load the weights till head
-    custom_hooks: List[Any] = LIST_FIELD([], default_value=[{"type": "EMAHook", "momentum": "4e-5", "priority": "ABOVE_NORMAL"}], description="custom hooks for training")
-    default_hooks: Dict[Any, Any] = DICT_FIELD(hashMap={"timer": {"type": "IterTimerHook"}, "param_scheduler": {"type": "ParamSchedulerHook"}, "checkpoint": {"type": "CheckpointHook", "interval": 1}, "logger": {"type": "LoggerHook"}, "visualization": {"type": "VisualizationHook", "enable": False}, "sampler_seed": {"type": "DistSamplerSeedHook"}}, description="default hooks")  # Does not change for old spec
-    resume: bool = BOOL_FIELD(value=False, default_value=False, description="Flag to resume training")  # Not exposed
-
-
-# Experiment Common Configs
-@dataclass
-class ExpConfig:
-    """Overall Exp Config for Cls."""
-
-    manual_seed: int = INT_FIELD(value=47, default_value=47, description="manual seed")
-    # If needed, the next line can be commented
-    MASTER_ADDR: str = STR_FIELD(value="127.0.0.1", description="Master node address")
-    MASTER_PORT: int = INT_FIELD(value=631, description="master port number")
-    env_config: EnvConfig = DATACLASS_FIELD(EnvConfig())
-    deterministic: bool = BOOL_FIELD(value=False, default_value=False, description="Flag for deterministic")
-
-
-@dataclass
-class TrainExpConfig:
-    """Train experiment config."""
-
-    exp_config: ExpConfig = DATACLASS_FIELD(ExpConfig())
-    validate: bool = BOOL_FIELD(value=False, default_value=False, description="Flag to validate")
-    train_config: TrainConfig = DATACLASS_FIELD(TrainConfig())  # Could change across networks
-    num_gpus: int = INT_FIELD(value=1, valid_min=1, valid_max="inf", display_name="Number of GPUs", description="Number of GPUs", popular="yes")  # non configurable here
-    gpu_ids: List[int] = LIST_FIELD([0], description="GPU ID", popular="yes")
-    results_dir: Optional[str] = STR_FIELD(value=None, default_value="", description="Results directory", display_name="Results directory")
-
-
-@dataclass
-class InferenceExpConfig(InferenceConfig):
-    """Inference experiment config."""
-
-    exp_config: ExpConfig = DATACLASS_FIELD(ExpConfig())
-    batch_size: int = INT_FIELD(value=1, default_value=1, valid_min=1, valid_max="inf", description="Batch size", display_name="Batch Size", popular="yes")
-
-
-@dataclass
-class EvalExpConfig(EvaluateConfig):
-    """Inference experiment config."""
-
-    exp_config: ExpConfig = DATACLASS_FIELD(ExpConfig())
-    batch_size: int = INT_FIELD(value=1, default_value=8, valid_min=1, valid_max="inf", description="Batch size", display_name="Batch Size", popular="yes")
-    topk: int = INT_FIELD(value=1, valid_min=1, valid_max="inf", description="topk accuracy")  # Configurable
-
-
-@dataclass
-class ClassificationTrtConfig(TrtConfig):
-    """Trt config."""
-
-    data_type: str = STR_FIELD(value="fp32", valid_options="fp32,fp16", popular="yes", display_name="Precision", description="TensorRT precision data type")
-
-
-@dataclass
-class ExportExpConfig:
-    """Export experiment config."""
-
-    verify: bool = BOOL_FIELD(value=False, description="Flag to verify export")
-    opset_version: int = INT_FIELD(value=14, default_value=14, valid_min=14, valid_max=17, display_name="opset version", description="""Operator set version of the ONNX model used to generate the TensorRT engine.""")
-    checkpoint: Optional[str] = STR_FIELD(value=None, default_value="", description="Path to checkpoint file", display_name="Path to checkpoint file")
-    input_channel: int = INT_FIELD(value=3, default_value=3, description="Input channel", display_name="Input channel", popular="yes")
-    input_width: int = INT_FIELD(value=224, default_value=224, description="Input width", display_name="Input width", popular="yes")
-    input_height: int = INT_FIELD(value=224, default_value=224, description="Input height", display_name="Input height", popular="yes")
-    onnx_file: Optional[str] = STR_FIELD(value=None, default_value="", description="ONNX file", display_name="ONNX file")
-    results_dir: Optional[str] = STR_FIELD(value=None, default_value="", description="Results directory", display_name="Results directory")
-
-
-@dataclass
-class LRHeadConfig:
-    """Logistic Regression Head Config"""
-
-    C: float = FLOAT_FIELD(0.316, default_value=0.316, valid_min=0, valid_max="inf", automl_enabled="TRUE", description="C parameter for Logistic Regression")
-    max_iter: int = INT_FIELD(value=5000, default_value=10000, valid_min=0, valid_max="inf", description="max iterations for LR head")
-    class_weight: Optional[str] = STR_FIELD(value=None, default_value="balanced", description="Class weights for LR head")
-    solver: Optional[str] = STR_FIELD(value="lbfgs", valid_options="lbfgs,liblinear,newton-cg,newton-cholesky,sag,saga", description="solver")
-    hpo: bool = BOOL_FIELD(value=False, description="Flag to enable hyperparameter search during training")
-    cs_tune: List[float] = LIST_FIELD(arrList=[0.001, 0.01,  0.316, 1, 10, 1000, 10000], description="List of C values to search from durin training")
-    criteria: str = STR_FIELD(value="accuracy", description="Criteria for HPO")
+    type: str = STR_FIELD(
+        value="CrossEntropyLoss",
+        default_value="CrossEntropyLoss",
+        description="Loss type",
+        valid_options="CrossEntropyLoss"
+    )
+    label_smooth_val: float = FLOAT_FIELD(
+        value=0.0,
+        default_value=0.0,
+        valid_min=0,
+        valid_max=1,
+        description="Label smoothing value"
+    )
 
 
 @dataclass
 class HeadConfig:
-    """Head Config"""
+    """Configuration parameters for Head."""
 
-    type: str = STR_FIELD(value="TAOLinearClsHead", value_type="ordered", valid_options="TAOLinearClsHead,LogisticRegressionHead", description="Type of classification head")
-    binary: bool = BOOL_FIELD(value=False, description="Flag to specify binary classification")
-    num_classes: int = INT_FIELD(value=1000, default_value=20, valid_min=2, valid_max="inf", description="Number of classes")
-    in_channels: int = INT_FIELD(value=448, description="Number of backbone input channels to head")  # Mapped to differenct channels based according to the backbone used in the fan_model.py
-    custom_args: Optional[Dict[Any, Any]] = DICT_FIELD(None, default_value=None, description="custom head arguments")
-    loss: Dict[Any, Any] = DICT_FIELD(hashMap={"type": "CrossEntropyLoss"}, default_value={"type": "CrossEntropyLoss", "loss_weight": 1, "use_soft": False}, description="Loss configs")
-    topk: List[int] = LIST_FIELD([1], description="k value for Topk accuracy")
-    lr_head: LRHeadConfig = DATACLASS_FIELD(LRHeadConfig())
-
-
-@dataclass
-class InitCfg:
-    """Init Config"""
-
-    type: str = STR_FIELD(value="Pretrained", description="Initialisation config")
-    checkpoint: Optional[str] = STR_FIELD(value=None, default_value="", description="Path to checkpoint file", display_name="Path to checkpoint file")
-    prefix: Optional[str] = STR_FIELD(value=None, default_value="", description="prefix for loading backbone weights")  # E.g., backbone
+    type: str = STR_FIELD(
+        value="TAOLinearClsHead",
+        value_type="ordered",
+        valid_options="TAOLinearClsHead,LogisticRegressionHead",
+        description="Type of classification head"
+    )
+    binary: bool = BOOL_FIELD(
+        value=False,
+        description="Flag to specify binary classification"
+    )
+    num_classes: int = INT_FIELD(
+        value=1000,
+        default_value=20,
+        valid_min=2,
+        valid_max="inf",
+        description="Number of classes"
+    )
+    in_channels: int = INT_FIELD(
+        value=448,
+        description="Number of backbone input channels to head"
+    )  # Based on backbone used in fan_model.py
+    custom_args: Optional[Dict[Any, Any]] = DICT_FIELD(
+        None,
+        default_value=None,
+        description="custom head arguments"
+    )
+    loss: LossConfig = DATACLASS_FIELD(LossConfig())
+    topk: List[int] = LIST_FIELD(
+        [1],
+        description="k value for Topk accuracy"
+    )
 
 
 @dataclass
 class BackboneConfig:
     """Configuration parameters for Backbone."""
 
-    type: str = STR_FIELD(value="fan_tiny_8_p4_hybrid", valid_options=",".join(SUPPORTED_BACKBONES), description="Type of backbone")
-    custom_args: Optional[Dict[Any, Any]] = DICT_FIELD(None, default_value=None, description="custom backbone config")
-    freeze: bool = BOOL_FIELD(value=False, default_value=False, description="Flag to freeze backbone weights during training")
-    pretrained: Optional[str] = STR_FIELD(value=None, default_value="", description="Path to pretrained file")
-    init_cfg: Optional[InitCfg] = None
-
-
-@dataclass
-class TrainAugCfg:
-    """Arguments for Train Config"""
-
-    augments: Optional[List[Dict[Any, Any]]] = LIST_FIELD(None)
+    type: str = STR_FIELD(
+        value="fan_small_12_p4_hybrid",
+        default_value="fan_small_12_p4_hybrid",
+        description="Backbone architure",
+        display_name="Backbone architectures",
+        valid_options=",".join([
+            "fan_tiny_8_p4_hybrid",
+            "fan_large_16_p4_hybrid",
+            "fan_small_12_p4_hybrid",
+            "fan_base_16_p4_hybrid",
+            "vit_large_nvdinov2",
+            "vit_giant_nvdinov2",
+            "vit_base_nvclip_16_siglip",
+            "vit_huge_nvclip_14_siglip"
+        ]),
+        automl_enabled="TRUE"
+    )
+    feat_downsample: bool = BOOL_FIELD(
+        value=False,
+        default_value=False,
+        display_name="Feature downsample",
+        description="Feature downsample for fan base backbone"
+    )
+    pretrained_backbone_path: Optional[str] = STR_FIELD(
+        value=None,
+        default_value="",
+        description="Path to the pretrained model"
+    )
+    freeze_backbone: bool = BOOL_FIELD(
+        value=False,
+        default_value=False,
+        description="Flag to freeze backbone",
+        automl_enabled="TRUE"
+    )
 
 
 @dataclass
 class ModelConfig:
-    """Cls model config."""
+    """Model config."""
 
-    type: str = STR_FIELD(value="ImageClassifier", default_value="ImageClassifier", description="Type of model config")
     backbone: BackboneConfig = DATACLASS_FIELD(BackboneConfig())
-    neck: Optional[Dict[Any, Any]] = DICT_FIELD(None, description="Neck configuration")
     head: HeadConfig = DATACLASS_FIELD(HeadConfig())
-    init_cfg: InitCfg = DATACLASS_FIELD(InitCfg())  # No change
-    train_cfg: TrainAugCfg = DATACLASS_FIELD(TrainAugCfg())
+
+
+@dataclass
+class RandomFlip:
+    """RandomFlip augmentation config."""
+
+    vflip_probability: float = FLOAT_FIELD(
+        value=0.5,
+        default_value=0.5,
+        valid_min=0,
+        valid_max=1,
+        description="Vertical Flip probability",
+        automl_enabled="TRUE"
+    )
+    hflip_probability: float = FLOAT_FIELD(
+        value=0.5,
+        default_value=0.5,
+        valid_min=0,
+        valid_max=1,
+        description="Horizontal Flip probability",
+        automl_enabled="TRUE"
+    )
+    enable: bool = BOOL_FIELD(
+        value=True,
+        default_value=True,
+        description="Flag to enable augmentation",
+        automl_enabled="TRUE"
+    )
+
+
+@dataclass
+class RandomRotation:
+    """RandomRotation augmentation config."""
+
+    rotate_probability: float = FLOAT_FIELD(
+        value=0.5,
+        default_value=0.5,
+        valid_min=0,
+        valid_max=1,
+        description="Random Rotate probability",
+        automl_enabled="TRUE"
+    )
+    angle_list: List[float] = LIST_FIELD(
+        arrList=[90, 180, 270],
+        default_value=[90, 180, 270],
+        description="Random rotate angle probability"
+    )
+    enable: bool = BOOL_FIELD(
+        value=True,
+        default_value=True,
+        description="Flag to enable augmentation",
+        automl_enabled="TRUE"
+    )
+
+
+@dataclass
+class RandomColor:
+    """RandomColor augmentation config."""
+
+    brightness: float = FLOAT_FIELD(
+        value=0.3,
+        default_value=0.3,
+        math_cond="> 0.0",
+        description="Random Color Brightness",
+        automl_enabled="TRUE"
+    )
+    contrast: float = FLOAT_FIELD(
+        value=0.3,
+        default_value=0.3,
+        math_cond="> 0.0",
+        description="Random Color Contrast",
+        automl_enabled="TRUE"
+    )
+    saturation: float = FLOAT_FIELD(
+        value=0.3,
+        default_value=0.3,
+        math_cond="> 0.0",
+        description="Random Color Saturation",
+        automl_enabled="TRUE"
+    )
+    hue: float = FLOAT_FIELD(
+        value=0,
+        default_value=0,
+        math_cond="> 0.0",
+        description="Random Color Hue",
+        automl_enabled="TRUE"
+    )
+    enable: bool = BOOL_FIELD(
+        value=True,
+        default_value=True,
+        description="Flag to enable Random Color",
+        automl_enabled="TRUE"
+    )
+    color_probability: float = FLOAT_FIELD(
+        value=0.5,
+        default_value=0.5,
+        valid_min=0,
+        valid_max=1,
+        description="Random Color Probability",
+        automl_enabled="TRUE"
+    )
+
+
+@dataclass
+class RandomCropWithScale:
+    """RandomCropWithScale augmentation config."""
+
+    scale_range: List[float] = LIST_FIELD(
+        arrList=[1, 1.2],
+        default_value=[1, 1.2],
+        description="Random Scale range"
+    )  # non configurable here
+    enable: bool = BOOL_FIELD(
+        value=True,
+        default_value=True,
+        description="Flag to enable Random Crop with Scale",
+        automl_enabled="TRUE"
+    )
+
+
+@dataclass
+class RandomErase:
+    """RandomErase augmentation config."""
+
+    enable: bool = BOOL_FIELD(
+        value=True,
+        default_value=True,
+        description="Flag to enable Random Erase",
+        automl_enabled="TRUE"
+    )
+    erase_probability: float = FLOAT_FIELD(
+        value=0.2,
+        default_value=0.2,
+        valid_min=0,
+        valid_max=1,
+        description="Random Erase Probability",
+        automl_enabled="TRUE"
+    )
+
+
+@dataclass
+class RandomAug:
+    """RandomAug augmentation config."""
+
+    enable: bool = BOOL_FIELD(
+        value=True,
+        default_value=True,
+        description="Flag to enable Random Aug",
+        automl_enabled="TRUE"
+    )
+
+
+@dataclass
+class AugmentationConfig:
+    """Augmentation config."""
+
+    random_flip: RandomFlip = DATACLASS_FIELD(RandomFlip())
+    random_rotate: RandomRotation = DATACLASS_FIELD(RandomRotation())
+    random_color: RandomColor = DATACLASS_FIELD(RandomColor())
+    random_erase: RandomErase = DATACLASS_FIELD(RandomErase())
+    random_aug: RandomAug = DATACLASS_FIELD(RandomAug())
+    with_scale_random_crop: RandomCropWithScale = DATACLASS_FIELD(RandomCropWithScale())
+    with_random_blur: bool = BOOL_FIELD(
+        value=True,
+        default_value=True,
+        description="Flag to enable with_random_blur"
+    )
+    with_random_crop: bool = BOOL_FIELD(
+        value=True,
+        default_value=True,
+        description="Flag to enable with_random_crop"
+    )
+    mean: List[float] = LIST_FIELD(
+        arrList=[0.485, 0.456, 0.406],
+        default_value=[0.485, 0.456, 0.406],
+        description="Mean for the augmentation",
+        display_name="Mean"
+    )  # non configurable here
+    std: List[float] = LIST_FIELD(
+        arrList=[0.229, 0.224, 0.225],
+        default_value=[0.229, 0.224, 0.225],
+        description="Standard deviation for the augmentation",
+        display_name="Standard Deviation"
+    )  # non configurable here
+    mixup_cutmix: bool = BOOL_FIELD(
+        value=True,
+        default_value=True,
+        description="Flag to enable mixup and cutmix. Not recommended for binary classification."
+    )
+    mixup_alpha: float = FLOAT_FIELD(
+        value=0.4,
+        default_value=0.4,
+        valid_min=0,
+        valid_max=1,
+        description="Mixup alpha"
+    )
+
+
+@dataclass
+class DataPathFormat:
+    """Dataset Path experiment config."""
+
+    csv_path: str = STR_FIELD(value=MISSING, default_value="", description="Path to csv file for dataset")
+    images_dir: str = STR_FIELD(value=MISSING, default_value="", description="Path to images directory for dataset")
+
+
+@dataclass
+class TrainData:
+    """Train Data Dataclass"""
+
+    data_prefix: Optional[str] = STR_FIELD(value="", default_value="", description="Dataset directory path")
+
+
+@dataclass
+class ValData:
+    """Validation Data Dataclass"""
+
+    data_prefix: Optional[str] = STR_FIELD(value=None, default_value="", description="Dataset directory path")
+
+
+@dataclass
+class TestData:
+    """Test Data Dataclass"""
+
+    data_prefix: Optional[str] = STR_FIELD(value=None, default_value="", description="Dataset directory path")
+
+
+@dataclass
+class UnstructuredTrainData:
+    """Train Data Dataclass"""
+
+    folder_path: Optional[str] = STR_FIELD(
+        value="", default_value="", description="Dataset directory path"
+    )
+
+
+@dataclass
+class DatasetConfig:
+    """Classification Dataset Config."""
+
+    root_dir: str = STR_FIELD(
+        value=MISSING,
+        default_value="",
+        description="Path to root directory for dataset"
+    )
+    dataset: str = STR_FIELD(
+        value="CLDataset",
+        default_value="CLDataset",
+        valid_options="Dataset",
+        description="dataset class"
+    )
+    num_classes: int = INT_FIELD(
+        value=2,
+        default_value=2,
+        description="The number of classes in the training data",
+        math_cond=">0",
+        valid_min=2,
+        valid_max="inf"
+    )
+    img_size: int = INT_FIELD(
+        value=224,
+        default_value=224,
+        description="The input image size"
+    )
+    batch_size: int = INT_FIELD(
+        value=8,
+        default_value=8,
+        valid_min=1,
+        valid_max="inf",
+        description="Batch size",
+        display_name="Batch Size",
+        automl_enabled="TRUE"
+    )
+    workers: int = INT_FIELD(
+        value=8,
+        default_value=1,
+        valid_min=0,
+        valid_max="inf",
+        description="Workers",
+        display_name="Workers",
+        automl_enabled="TRUE"
+    )
+    shuffle: bool = BOOL_FIELD(
+        value=True,
+        default_value=True,
+        description="Shuffle dataloader"
+    )
+    augmentation: AugmentationConfig = DATACLASS_FIELD(AugmentationConfig())
+    train: TrainData = DATACLASS_FIELD(TrainData())
+    train_nolabel: UnstructuredTrainData = DATACLASS_FIELD(UnstructuredTrainData())
+    val: ValData = DATACLASS_FIELD(ValData())
+    test: TestData = DATACLASS_FIELD(TestData())
+
+
+@dataclass
+class TensorBoardLogger:
+    """Configuration for the tensorboard logger."""
+
+    enabled: bool = BOOL_FIELD(
+        value=False,
+        default_value=False,
+        description="Flag to enable tensorboard"
+    )
+    infrequent_logging_frequency: int = INT_FIELD(
+        value=2,
+        default_value=2,
+        valid_min=0,
+        valid_max="inf",
+        description="infrequent_logging_frequency"
+    )  # Defined per epoch
+
+
+@dataclass
+class TrainExpConfig(TrainConfig):
+    """Train Config."""
+
+    optim: OptimConfig = DATACLASS_FIELD(OptimConfig())
+    pretrained_model_path: Optional[str] = STR_FIELD(
+        value=None,
+        default_value="",
+        description="Pretrained model path",
+        display_name="pretrained model path"
+    )
+    tensorboard: Optional[TensorBoardLogger] = DATACLASS_FIELD(TensorBoardLogger())
+    enable_ema: bool = BOOL_FIELD(
+        value=False,
+        default_value=False,
+        description="Flag to enable EMA"
+    )
+    ema_decay: float = FLOAT_FIELD(
+        value=0.998,
+        default_value=0.998,
+        display_name="EMA decay",
+        description="EMA decay"
+    )
+    clip_grad_norm: float = FLOAT_FIELD(
+        value=2.0,
+        default_value=2.0,
+        display_name="Grad norm",
+        description="Gradient Norm"
+    )
+
+
+@dataclass
+class EvalExpConfig(EvaluateConfig):
+    """Evaluation experiment config."""
+
+    vis_after_n_batches: int = INT_FIELD(
+        value=16,
+        default_value=1,
+        valid_min=1,
+        valid_max="inf",
+        description="Visualize evaluation segmentation results after n batches"
+    )
+    checkpoint: str = STR_FIELD(
+        value=MISSING,
+        default_value="",
+        description="Path to checkpoint file",
+        display_name="Path to checkpoint file"
+    )
+
+
+@dataclass
+class ClassDistillationConfig(DistillationConfig):
+    """Distillation config for classifier."""
+
+    teacher: ModelConfig = DATACLASS_FIELD(
+        ModelConfig(),
+        descripton="Configuration hyper parameters for the teacher model.",
+        display_name="teacher"
+    )
+    loss_type: str = STR_FIELD(
+        value="KL",
+        default_value="KL",
+        display_name="Distillation loss",
+        valid_options="KL,CE,L1,L2",
+        description="Loss function for logits distillation."
+    )
+    loss_lambda: Optional[float] = FLOAT_FIELD(
+        value=0.5,
+        default_value=0.5,
+        math_cond="> 0.0 <= 1.0",
+        display_name="distill weight",
+        description="The weight to be applied to the distillation loss as compared to task loss",
+    )
+    pretrained_teacher_model_path: Optional[str] = STR_FIELD(
+        value=MISSING,
+        display_name="Pretrained teacher model path",
+        description="Path to the pre-trained teacher model."
+    )
+    results_dir: Optional[str] = STR_FIELD(
+        value=None,
+        default_value="",
+        display_name="Results directory",
+        description="Path to where all the assets generated from a task are stored."
+    )
+
+
+@dataclass
+class InferenceExpConfig(InferenceConfig):
+    """Inference experiment config."""
+
+    vis_after_n_batches: int = INT_FIELD(
+        value=16,
+        default_value=1,
+        valid_min=1,
+        valid_max="inf",
+        description="Visualize evaluation segmentation results after n batches"
+    )
+    checkpoint: str = STR_FIELD(
+        value=MISSING,
+        default_value="",
+        description="Path to checkpoint file",
+        display_name="Path to checkpoint file"
+    )
+
+
+@dataclass
+class ExportExpConfig(ExportConfig):
+    """Export experiment config."""
+
+    serialize_nvdsinfer: bool = BOOL_FIELD(
+        value=False,
+        default_value=False,
+        display_name="Serialize DeepStream config.",
+        description=(
+            "Flag to enable serializing the required configs for integrating with DeepStream."
+        )
+    )
+
+
+@dataclass
+class TrtExpConfig(TrtConfig):
+    """Trt config."""
+
+    data_type: str = STR_FIELD(
+        value="FP32",
+        default_value="fp16",
+        description="Data type",
+        display_name="Data type"
+    )
+    calibration: CalibrationConfig = DATACLASS_FIELD(CalibrationConfig())
 
 
 @dataclass
 class GenTrtEngineExpConfig(GenTrtEngineConfig):
     """Gen TRT Engine experiment config."""
 
-    tensorrt: ClassificationTrtConfig = DATACLASS_FIELD(ClassificationTrtConfig())
+    tensorrt: TrtExpConfig = DATACLASS_FIELD(TrtExpConfig())
 
 
 @dataclass
-class ExperimentConfig:
+class ExperimentConfig(CommonExperimentConfig):
     """Experiment config."""
 
-    model_name: Optional[str] = STR_FIELD(value=None)
     model: ModelConfig = DATACLASS_FIELD(ModelConfig())
     dataset: DatasetConfig = DATACLASS_FIELD(DatasetConfig())
     train: TrainExpConfig = DATACLASS_FIELD(TrainExpConfig())
     evaluate: EvalExpConfig = DATACLASS_FIELD(EvalExpConfig())
     inference: InferenceExpConfig = DATACLASS_FIELD(InferenceExpConfig())
-    gen_trt_engine: GenTrtEngineExpConfig = DATACLASS_FIELD(GenTrtEngineExpConfig())
     export: ExportExpConfig = DATACLASS_FIELD(ExportExpConfig())
-    results_dir: Optional[str] = STR_FIELD(value="/results", default_value="/results", description="Results directory", display_name="Results directory")
+    gen_trt_engine: GenTrtEngineExpConfig = DATACLASS_FIELD(GenTrtEngineExpConfig())
+    distill: ClassDistillationConfig = DATACLASS_FIELD(ClassDistillationConfig())

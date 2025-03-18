@@ -40,7 +40,10 @@ class PCModelConfig:
     model_type: str = STR_FIELD(
         value="ST-GCN",
         default_value="ST-GCN",
-        description="The type of model, which can only be ST-GCN for now. Newer architectures will be supported in the future.",
+        description=(
+            "The type of model, which can only be ST-GCN for now. "
+            "Newer architectures will be supported in the future."
+        ),
         display_name="model type",
         valid_options="ST-GCN"
     )
@@ -70,7 +73,10 @@ class PCModelConfig:
     graph_layout: str = STR_FIELD(
         value="nvidia",
         default_value="nvidia",
-        description="The layout of the graph for modeling skeletons. It can be nvidia, openpose, human3.6m, ntu-rgb+d, ntu_edge, or coco.",
+        description=(
+            "The layout of the graph for modeling skeletons. "
+            "It can be nvidia, openpose, human3.6m, ntu-rgb+d, ntu_edge, or coco."
+        ),
         display_name="graph layout",
         valid_options="nvidia,openpose,human3.6m,ntu-rgb+d,ntu_edge,coco"
     )
@@ -136,9 +142,12 @@ class OptimConfig:
     lr_scheduler: str = STR_FIELD(
         value="MultiStep",
         default_value="MultiStep",
-        description="""The learning scheduler. Two schedulers are provided:
-                    * MultiStep : Decrease the lr by lr_decay at setting steps.
-                    * AutoReduce : Decrease the lr by lr_decay while lr_monitor doesn't decline more than 0.1 percent of the previous value.""",
+        description=(
+            "The learning scheduler. Two schedulers are provided:\n"
+            "* MultiStep : Decrease the lr by lr_decay at setting steps.\n"
+            "* AutoReduce : Decrease the lr by lr_decay while lr_monitor doesn't decline "
+            "more than 0.1 percent of the previous value."
+        ),
         display_name="learning rate scheduler",
         valid_options="AutoReduce,MultiStep"
     )
@@ -207,12 +216,18 @@ class PCDatasetConfig:
 
     train_dataset: SkeletonDatasetConfig = DATACLASS_FIELD(
         SkeletonDatasetConfig(),
-        description="The data path to the data in a NumPy array and label path to the labels in a pickle file for training.",
+        description=(
+            "The data path to the data in a NumPy array and label path to the labels "
+            "in a pickle file for training."
+        ),
         display_name="train dataset."
     )
     val_dataset: SkeletonDatasetConfig = DATACLASS_FIELD(
         SkeletonDatasetConfig(),
-        description="The data path to the data in a NumPy array and label path to the labels in a pickle file for validation.",
+        description=(
+            "The data path to the data in a NumPy array and label path to the labels "
+            "in a pickle file for validation."
+        ),
         display_name="validation dataset."
     )
     num_classes: int = INT_FIELD(
@@ -273,7 +288,10 @@ class PCTrainExpConfig(TrainConfig):
 
     optim: OptimConfig = DATACLASS_FIELD(
         OptimConfig(),
-        description="The configuration for the SGD optimizer, including the learning rate, learning scheduler, weight decay, etc.",
+        description=(
+            "The configuration for the SGD optimizer, including the learning rate, "
+            "learning scheduler, weight decay, etc."
+        ),
         display_name="optimization configuration"
     )
     grad_clip: float = FLOAT_FIELD(
@@ -299,7 +317,10 @@ class PCInferenceExpConfig(InferenceConfig):
     )
     test_dataset: SkeletonDatasetConfig = DATACLASS_FIELD(
         SkeletonDatasetConfig(),
-        description="The data path to the data in a NumPy array and label path to the labels in a pickle file for testing.",
+        description=(
+            "The data path to the data in a NumPy array and label path to the labels "
+            "in a pickle file for testing."
+        ),
         display_name="train dataset."
     )
 
@@ -310,7 +331,10 @@ class PCEvalExpConfig(EvaluateConfig):
 
     test_dataset: SkeletonDatasetConfig = DATACLASS_FIELD(
         SkeletonDatasetConfig(),
-        description="The data path to the data in a NumPy array and label path to the labels in a pickle file for testing.",
+        description=(
+            "The data path to the data in a NumPy array and label path to the labels "
+            "in a pickle file for testing."
+        ),
         display_name="train dataset."
     )
 
@@ -334,7 +358,10 @@ class PCExportExpConfig:
     onnx_file: Optional[str] = STR_FIELD(
         value=None,
         default_value="",
-        description="The path to save the exported model to. The default path is in the same directory as the .tlt model.",
+        description=(
+            "The path to save the exported model to. "
+            "The default path is in the same directory as the .tlt model."
+        ),
         display_name="ONNX file",
         required="yes"
     )

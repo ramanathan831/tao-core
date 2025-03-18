@@ -60,9 +60,18 @@ class MALDatasetConfig:
     """Data configuration template."""
 
     type: str = STR_FIELD(value='coco', default_value="coco", valid_options="coco", display_name="dataset type")
-    train_ann_path: str = STR_FIELD(value='/data/raw-data/annotations/instances_train2017.json', display_name="Annotation path of the training set")
-    train_img_dir: str = STR_FIELD(value='/data/raw-data/train2017/', display_name="Image directory of the training set")
-    val_ann_path: str = STR_FIELD(value='/data/raw-data/annotations/instances_val2017.json', display_name="Annotation path of the validation set")
+    train_ann_path: str = STR_FIELD(
+        value='/data/raw-data/annotations/instances_train2017.json',
+        display_name="Annotation path of the training set"
+    )
+    train_img_dir: str = STR_FIELD(
+        value='/data/raw-data/train2017/',
+        display_name="Image directory of the training set"
+    )
+    val_ann_path: str = STR_FIELD(
+        value='/data/raw-data/annotations/instances_val2017.json',
+        display_name="Annotation path of the validation set"
+    )
     val_img_dir: str = STR_FIELD(value='/data/raw-data/val2017/', display_name="Image directory of the validation set")
     min_obj_size: float = FLOAT_FIELD(value=2048, default_value=2048, display_name="minimum object size")
     max_obj_size: float = FLOAT_FIELD(value=1e10, default_value="1.00E+10", display_name="maximum object size")
@@ -75,7 +84,15 @@ class MALDatasetConfig:
 class MALModelConfig:
     """Model configuration template."""
 
-    arch: str = STR_FIELD(value='vit-mae-base/16', value_type="ordered", default_value="vit-mae-base/16", valid_options="vit-deit-tiny/16,vit-deit-small/16,vit-mae-base/16,vit-mae-large/16,vit-mae-huge/14,fan_tiny_12_p16_224,fan_small_12_p16_224,fan_base_18_p16_224,fan_large_24_p16_224,fan_tiny_8_p4_hybrid,fan_small_12_p4_hybrid,fan_base_16_p4_hybrid,fan_large_16_p4_hybrid")
+    arch: str = STR_FIELD(
+        value='vit-mae-base/16',
+        value_type="ordered",
+        default_value="vit-mae-base/16",
+        valid_options=(
+            "vit-deit-tiny/16,vit-deit-small/16,vit-mae-base/16,"
+            "vit-mae-large/16,vit-mae-huge/14"
+        )
+    )
     frozen_stages: List[int] = LIST_FIELD(arrList=[-1], default_value=[-1], value_type="list_1_backbone")
     mask_head_num_convs: int = INT_FIELD(value=4, default_value=4, valid_min=1, valid_max="inf")
     mask_head_hidden_channel: int = INT_FIELD(value=256, default_value=256, valid_min=1, valid_max="inf")
