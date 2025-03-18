@@ -23,13 +23,6 @@ from nvidia_tao_core.api_utils.dataclass2json_converter import create_json_schem
 from nvidia_tao_core.api_utils.json_schema_validation import validate_jsonschema
 from nvidia_tao_core.config.vila.default_config import TrainConfig, SystemConfig, ExperimentConfig
 
-sample_system_config = """
-num_gpus: 8
-num_nodes: 2
-master_addr: 127.0.0.1
-node_rank: 0
-port: 24501
-"""
 
 sample_trainer_config = """
 num_epochs: 1
@@ -41,10 +34,16 @@ gradient_accumulation_steps: 2
 lora_r: 16
 max_tiles: 12
 video_max_tiles: 6
+system:
+    num_gpus: 8
+    num_nodes: 2
+    master_addr: 127.0.0.1
+    node_rank: 0
+    port: 24501
 """
 
 simple_experiment_config = """
-model_path: /path/to/model
+model_path: /models/vila
 results_dir: /path/to/result/lora
 train:
     num_epochs: 10
@@ -53,10 +52,19 @@ train:
     weight_decay: 0.0001
     warmup_ratio: 0.03
     gradient_accumulation_steps: 2
+    dataset:
+        dataset_name: scienceqa
+    system:
+        num_gpus: 1
+evaluate:
+    task: youcook2_val
+inference:
+    conv_mode: auto
+    text: "What is this video about?"
 """
 
 sample_experiment_config = """
-model_path: /path/to/model
+model_path: /models/vila
 results_dir: /path/to/result/lora
 train:
     num_epochs: 1
@@ -69,8 +77,13 @@ train:
         dataset_name: scienceqa
     llm_mode: lora
     vision_mode: ft
-system:
-    num_gpus: 8
+    system:
+        num_gpus: 8
+evaluate:
+    task: youcook2_val
+inference:
+    conv_mode: auto
+    text: "What is this video about?"
 """
 
 
@@ -130,7 +143,6 @@ def test_experiment_jsonschema_conversion(_test_experiment_spec):
 
 TEST_CONFIG_BLOCKS = [
     (sample_trainer_config, TrainConfig),
-    (sample_system_config, SystemConfig),
     (sample_experiment_config, ExperimentConfig),
     (simple_experiment_config, ExperimentConfig)]
 
