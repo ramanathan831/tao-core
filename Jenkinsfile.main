@@ -48,9 +48,21 @@ spec:
       def TARGET="sw-tao-pypi-local/nvidia-tao-core-dev/${VER}/${PYTHON_VERSION}/"
       def PROP="component_name=nvidia-tao-core;arch=x86_64;os=linux;build_source=None;version=${VER};branch=main;release_approver=vpraveen"
       
+      // GitLab related
+      def GITLAB_PROJECT_ID
+      def TAG_NAME = "v${VER}"
+      def RELEASE_NAME = "Release ${VER}"
+      def RELEASE_DESCRIPTION = "Release ${VER} with third-party packages"
+      
+      // Directory paths
+      def WHEELS_DIR = "third_party_wheels"
+      def APT_DIR = "third_party_apt"
+      def APT_SOURCES_DIR = "third_party_apt_sources"
+      
       stage ('checkout') {
         gitlabCommitStatus(name: "checkout", connection: gitLabConnection('git-lab-master')) {
           checkout scm
+          GITLAB_PROJECT_ID = sh(script: 'echo $CI_PROJECT_ID', returnStdout: true).trim()
         }
       }
 
@@ -108,17 +120,13 @@ spec:
         gitlabCommitStatus(name: "publish_third_party_wheels", connection: gitLabConnection('git-lab-master')) {
           // Upload the wheels as GitLab release artifacts.
           withCredentials([string(credentialsId: 'gitlab-api-token', variable: 'GITLAB_TOKEN')]) {
-            // Get project ID from environment.
-            def GITLAB_PROJECT_ID = sh(script: 'echo $CI_PROJECT_ID', returnStdout: true).trim()
-            def TAG_NAME = "v${VER}"
-            
             // Use the dedicated script to upload wheels as GitLab release artifacts
             sh """
             export GITLAB_PROJECT_ID=${GITLAB_PROJECT_ID}
             export TAG_NAME=${TAG_NAME}
-            export RELEASE_NAME="Release ${VER}"
-            export RELEASE_DESCRIPTION="Release ${VER} with third-party packages"
-            export WHEELS_DIR="third_party_wheels"
+            export RELEASE_NAME="${RELEASE_NAME}"
+            export RELEASE_DESCRIPTION="${RELEASE_DESCRIPTION}"
+            export WHEELS_DIR=${WHEELS_DIR}
             python3 scripts/upload_gitlab_release_artifacts.py
             """
           }
@@ -144,17 +152,13 @@ spec:
         gitlabCommitStatus(name: "publish_third_party_apt", connection: gitLabConnection('git-lab-master')) {
           // Upload the apt packages as GitLab release artifacts
           withCredentials([string(credentialsId: 'gitlab-api-token', variable: 'GITLAB_TOKEN')]) {
-            // Get project ID from environment
-            def GITLAB_PROJECT_ID = sh(script: 'echo $CI_PROJECT_ID', returnStdout: true).trim()
-            def TAG_NAME = "v${VER}"
-            
             // Use the dedicated script to upload apt packages as GitLab release artifacts
             sh """
             export GITLAB_PROJECT_ID=${GITLAB_PROJECT_ID}
             export TAG_NAME=${TAG_NAME}
-            export RELEASE_NAME="Release ${VER}"
-            export RELEASE_DESCRIPTION="Release ${VER} with third-party packages"
-            export APT_DIR="third_party_apt"
+            export RELEASE_NAME="${RELEASE_NAME}"
+            export RELEASE_DESCRIPTION="${RELEASE_DESCRIPTION}"
+            export APT_DIR=${APT_DIR}
             python3 scripts/upload_gitlab_release_artifacts.py
             """
           }
@@ -171,15 +175,12 @@ spec:
           
           // Upload acknowledgements.md to the GitLab release as well
           withCredentials([string(credentialsId: 'gitlab-api-token', variable: 'GITLAB_TOKEN')]) {
-            def GITLAB_PROJECT_ID = sh(script: 'echo $CI_PROJECT_ID', returnStdout: true).trim()
-            def TAG_NAME = "v${VER}"
-            
             // Upload acknowledgements.md as a link in the release
             sh """
-            curl --header "PRIVATE-TOKEN: ${GITLAB_TOKEN}" \
-                 --form "name=Third Party Licenses" \
-                 --form "url=https://gitlab-master.nvidia.com/-/ide/project/${GITLAB_PROJECT_ID}/blob/${TAG_NAME}/-/acknowledgements.md" \
-                 --form "link_type=other" \
+            curl --header "PRIVATE-TOKEN: ${GITLAB_TOKEN}" \\
+                 --form "name=Third Party Licenses" \\
+                 --form "url=https://gitlab-master.nvidia.com/-/ide/project/${GITLAB_PROJECT_ID}/blob/${TAG_NAME}/-/acknowledgements.md" \\
+                 --form "link_type=other" \\
                  "https://gitlab-master.nvidia.com/api/v4/projects/${GITLAB_PROJECT_ID}/releases/${TAG_NAME}/assets/links"
             """
             
@@ -198,7 +199,7 @@ spec:
       stage ('cleanup_third_party_packages') {
         gitlabCommitStatus(name: "cleanup_third_party_packages", connection: gitLabConnection('git-lab-master')) {
           // Clean up the third_party_wheels, third_party_apt, and third_party_apt_sources directories
-          sh "rm -rf third_party_wheels third_party_apt third_party_apt_sources"
+          sh "rm -rf ${WHEELS_DIR} ${APT_DIR} ${APT_SOURCES_DIR}"
         }
       }
     }
