@@ -278,14 +278,6 @@ class EvaluateConfig:
             "Base model name. This is the original checkpoint if we're evaluating PEFT model."
         )
     )
-    results_dir: Optional[str] = STR_FIELD(
-        value=None,
-        default_value=None,
-        display_name="Results directory",
-        description=(
-            "Directory for output (defaults to runs/eval/<model_name>/lmms-<task>)"
-        )
-    )
     num_gpus: Optional[int] = INT_FIELD(
         value=1,
         default_value=1,
@@ -357,7 +349,7 @@ class ExperimentConfig:
         description="Pretrained model path"
     )
     results_dir: str = STR_FIELD(
-        value=None,
+        value="",
         display_name="Output directory",
         description=(
             "Output directory. Must contain `lora` in the output name."
