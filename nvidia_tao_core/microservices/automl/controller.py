@@ -647,8 +647,10 @@ class Controller:
                             if (sh == 0):
                                 completed_epochs += self.brain.ni[str(bracket)][sh] * self.brain.ri[str(bracket)][sh]
                             else:
-                                completed_epochs += (self.brain.ni[str(bracket)][sh] *
-                                                     (self.brain.ri[str(bracket)][sh] - self.brain.ri[str(bracket)][sh - 1]))
+                                completed_epochs += (
+                                    self.brain.ni[str(bracket)][sh] *
+                                    (self.brain.ri[str(bracket)][sh] - self.brain.ri[str(bracket)][sh - 1])
+                                )
 
                     # Calculate completed epochs for current sh session
                     current_sh_allowed_epochs = (

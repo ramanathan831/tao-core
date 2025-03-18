@@ -133,8 +133,6 @@ class AutoMLHandler:
         if platform_id:
             run_command = f"{run_command} --platform_id={platform_id}"
 
-        import sys
-        print(f"run_command: {run_command}", file=sys.stderr)
         jobDriver.create(
             org_name,
             job_id,
