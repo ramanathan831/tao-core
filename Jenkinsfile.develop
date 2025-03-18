@@ -63,9 +63,14 @@ spec:
       }
 
       stage ("functional_tests") {
+        withCredentials([string(credentialsId: 'NGC_CLI_API_KEY_SVC_TLT_CI', variable: 'NGC_CLI_API_KEY')]) {
+          script{
+            env.NGC_KEY=NGC_CLI_API_KEY
+            env.NGC_PATH='ea-tlt/tao_ea/pretrained_dino_imagenet:fan_hybrid_tiny'
+          }
+        }
         gitlabCommitStatus(name: "functional_tests", connection: gitLabConnection('git-lab-master')) {
-          sh "python setup.py develop && pip install pytest"
-          sh "pytest"
+          sh "pip install . && pytest"
         }
       }
 

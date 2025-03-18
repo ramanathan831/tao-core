@@ -29,6 +29,7 @@ from nvidia_tao_core.config.utils.types import (
 )
 from nvidia_tao_core.config.common.common_config import (
     CommonExperimentConfig,
+    ExportConfig,
     TrainConfig,
     EvaluateConfig,
     InferenceConfig,
@@ -42,7 +43,11 @@ from nvidia_tao_core.config.common.common_config import (
 class SFOptimConfig:
     """Optimizer config."""
 
-    monitor_name: str = STR_FIELD(value="val_loss", default_value="val_loss", description="Monitor Name")
+    monitor_name: str = STR_FIELD(
+        value="val_loss",
+        default_value="val_loss",
+        description="Monitor Name"
+    )
     optim: str = STR_FIELD(
         value="adamw",
         default_value="adamw",
@@ -87,9 +92,7 @@ class SegFormerHeadConfig:
 
     in_channels: List[int] = LIST_FIELD(
         arrList=[64, 128, 320, 512],
-        description=(
-            "number of input channels to decoder;be overrided by hard-code in channels in "
-        )
+        description="number of input channels to decoder"
     )  # FANHybrid-S
     in_index: List[int] = LIST_FIELD(
         arrList=[0, 1, 2, 3],
@@ -135,7 +138,8 @@ class BackboneConfig:
             "vit_giant_nvdinov2",
             "vit_base_nvclip_16_siglip",
             "vit_huge_nvclip_14_siglip"
-        ])
+        ]),
+        automl_enabled="TRUE"
     )
     feat_downsample: bool = BOOL_FIELD(
         value=False,
@@ -326,11 +330,7 @@ class DataPathFormat:
 class SFDatasetSegmentConfig:
     """Segmentation Dataset Config."""
 
-    root_dir: str = STR_FIELD(
-        value=MISSING,
-        default_value="",
-        description="Path to root directory for dataset"
-    )
+    root_dir: str = STR_FIELD(value=MISSING, default_value="", description="Path to root directory for dataset")
     dataset: str = STR_FIELD(
         value="SFDataset",
         default_value="SFDataset",
@@ -351,13 +351,12 @@ class SFDatasetSegmentConfig:
         description="The input image size"
     )
     batch_size: int = INT_FIELD(
-        value=8,
+        value=-1,
         default_value=8,
         valid_min=1,
         valid_max="inf",
         description="Batch size",
-        display_name="Batch Size",
-        automl_enabled="TRUE"
+        display_name="Batch Size"
     )
     workers: int = INT_FIELD(
         value=8,
@@ -402,23 +401,10 @@ class SFDatasetSegmentConfig:
     )
     palette: Optional[List[Dict[Any, Any]]] = LIST_FIELD(
         arrList=[
-            {
-                "label_id": 0,
-                "mapping_class": "foreground",
-                "rgb": [0, 0, 0],
-                "seg_class": "foreground"
-            },
-            {
-                "label_id": 1,
-                "mapping_class": "background",
-                "rgb": [1, 1, 1],
-                "seg_class": "background"
-            }
+            {"label_id": 0, "mapping_class": "foreground", "rgb": [0, 0, 0], "seg_class": "foreground"},
+            {"label_id": 1, "mapping_class": "background", "rgb": [1, 1, 1], "seg_class": "background"}
         ],
-        description=(
-            "Palette, be careful of label_transform, if norm then RGB value from 0~1, "
-            "else 0~255"
-        ),
+        description="Palette, be careful of label_transform, if norm then RGB value from 0~1, else 0~255",
         display_name="Palette"
     )
 
@@ -535,81 +521,16 @@ class SFInferenceExpConfig(InferenceConfig):
 
 
 @dataclass
-class SFExportExpConfig:
+class SFExportExpConfig(ExportConfig):
     """Export experiment config."""
 
-    results_dir: Optional[str] = STR_FIELD(
-        value=None,
-        default_value="",
-        description="Results directory",
-        display_name="Results directory"
-    )
-    gpu_id: int = INT_FIELD(
-        value=0,
-        default_value=0,
-        description="GPU ID",
-        display_name="GPU ID",
-        value_min=0
-    )
-    checkpoint: str = STR_FIELD(
-        value=MISSING,
-        default_value="",
-        description="Path to checkpoint file",
-        display_name="Path to checkpoint file"
-    )
-    onnx_file: Optional[str] = STR_FIELD(
-        value=MISSING,
-        default_value="",
-        description="ONNX file",
-        display_name="ONNX file"
-    )
-    on_cpu: bool = BOOL_FIELD(
+    serialize_nvdsinfer: bool = BOOL_FIELD(
         value=False,
         default_value=False,
-        description="Flag to export on cpu",
-        display_name="On CPU"
-    )
-    input_channel: int = INT_FIELD(
-        value=3,
-        default_value=3,
-        description="Input channel",
-        display_name="Input channel"
-    )
-    input_width: int = INT_FIELD(
-        value=256,
-        default_value=256,
-        description="Input width",
-        display_name="Input width",
-        valid_min=128
-    )
-    input_height: int = INT_FIELD(
-        value=256,
-        default_value=256,
-        description="Input height",
-        display_name="Input height",
-        valid_min=128
-    )
-    opset_version: int = INT_FIELD(
-        value=17,
-        default_value=12,
-        valid_min=1,
-        display_name="opset version",
+        display_name="Serialize DeepStream config.",
         description=(
-            "Operator set version of the ONNX model used to generate the TensorRT engine."
+            "Flag to enable serializing the required configs for integrating with DeepStream."
         )
-    )
-    batch_size: int = INT_FIELD(
-        value=-1,
-        default_value=-1,
-        description="Batch size",
-        display_name="Batch size",
-        valid_min=0
-    )
-    verbose: bool = BOOL_FIELD(
-        value=False,
-        default_value=False,
-        description="Verbose",
-        display_name="Verbose"
     )
 
 

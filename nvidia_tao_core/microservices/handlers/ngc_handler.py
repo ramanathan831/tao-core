@@ -17,7 +17,7 @@ import json
 import os
 import requests
 import logging
-from ngcbpc import errors
+from ngcbase import errors
 
 from nvidia_tao_core.microservices.handlers.encrypt import NVVaultEncryption
 from nvidia_tao_core.microservices.handlers.mongo_handler import MongoHandler

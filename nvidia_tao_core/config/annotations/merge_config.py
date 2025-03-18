@@ -18,6 +18,8 @@ from dataclasses import dataclass
 from omegaconf import MISSING
 from typing import Optional, List
 
+from nvidia_tao_core.config.utils.types import DATACLASS_FIELD
+
 
 @dataclass
 class DataConfig:
@@ -32,5 +34,5 @@ class DataConfig:
 class MergeConfig:
     """Experiment configuration template."""
 
-    data: DataConfig = DataConfig()
+    data: DataConfig = DATACLASS_FIELD(DataConfig())
     results_dir: Optional[str] = None

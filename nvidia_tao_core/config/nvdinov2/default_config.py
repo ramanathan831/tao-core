@@ -38,24 +38,40 @@ SUPPORTED_BACKBONES = [
     *["vit_l"]
 ]
 
+SUPPORTED_BACKBONES = [
+    *["vit_l", "vit_b", "vit_s"]
+]
+
 map_params = {
     'embed_dim': {
-        'vit_l': 1024
+        'vit_l': 1024,
+        'vit_b': 768,
+        'vit_s': 384
     },
     'depth': {
-        'vit_l': 24
+        'vit_l': 24,
+        'vit_b': 12,
+        'vit_s': 12
     },
     'num_heads': {
-        'vit_l': 16
+        'vit_l': 16,
+        'vit_b': 12,
+        'vit_s': 6
     },
     'init_values': {
-        'vit_l': 1e-5
+        'vit_l': 1e-5,
+        'vit_b': 1e-5,
+        'vit_s': 1e-5
     },
     'drop_path_schedule': {
-        'vit_l': 'linear'
+        'vit_l': 'linear',
+        'vit_b': 'linear',
+        'vit_s': 'linear'
     },
     'num_classes': {
-        'vit_l': 0
+        'vit_l': 0,
+        'vit_b': 0,
+        'vit_s': 0
     },
 }
 
@@ -156,8 +172,10 @@ class NVDINOv2DatasetConfig:
         value=True,
         default_value=True,
         display_name="pin_memory",
-        description="""Flag to enable the dataloader to allocated pagelocked memory for faster
-                    of data between the CPU and GPU.""",
+        description=(
+            "Flag to enable the dataloader to allocated pagelocked memory for faster "
+            "of data between the CPU and GPU."
+        ),
         popular="yes"
     )
     workers: int = INT_FIELD(
@@ -181,13 +199,25 @@ class NVDINOv2DatasetConfig:
 class BackboneConfig:
     """Configuration parameters for Backbone."""
 
-    type: str = STR_FIELD(
+    teacher_type: str = STR_FIELD(
         value="vit_l",
         default_value="vit_l",
         display_name="backbone",
-        description="""The backbone name of the model.
-                    TAO implementation of NVDINOv2 support vit_l
-                    """,
+        description=(
+            "The teacher backbone name of the model. "
+            "TAO implementation of NVDINOv2 support vit_l and vit_s"
+        ),
+        valid_options=",".join(SUPPORTED_BACKBONES),
+        popular="no"
+    )
+    student_type: str = STR_FIELD(
+        value="vit_l",
+        default_value="vit_l",
+        display_name="backbone",
+        description=(
+            "The student backbone name of the model. "
+            "TAO implementation of NVDINOv2 support vit_l and vit_s"
+        ),
         valid_options=",".join(SUPPORTED_BACKBONES),
         popular="no"
     )
@@ -259,9 +289,41 @@ class NVDINOv2HeadConfig:
 
 
 @dataclass
+class NVDINOv2ModelDistillConfig:
+    """NVDINOv2 Model config."""
+
+    enable: bool = BOOL_FIELD(
+        value=False,
+        default_value=False,
+        description="Whether to run distillation",
+        display_name="distillation",
+        popular="yes"
+    )
+    disable_masking: bool = BOOL_FIELD(
+        value=False,
+        default_value=False,
+        description="Whether to disable masking when distillation",
+        display_name="disable_masking",
+        popular="yes"
+    )
+    pretrained_non_distill_pl_model_path: Optional[str] = STR_FIELD(
+        value=None,
+        default_type=None,
+        description=(
+            "Path to a pre-trained pl model from non-distillation DINOv2 SSL pipe "
+            "for initializing teacher in distillation."
+        )
+    )
+
+
+@dataclass
 class NVDINOv2ModelConfig:
     """NVDINOv2 Model config."""
 
+    distill: NVDINOv2ModelDistillConfig = DATACLASS_FIELD(
+        NVDINOv2ModelDistillConfig(),
+        description="Configuration for the NVDINOv2 distillation"
+    )
     backbone: BackboneConfig = DATACLASS_FIELD(
         BackboneConfig(),
         description="Configuration for the NVDINOv2 backbone"
@@ -488,7 +550,9 @@ class NVDINOv2TrainExpConfig(TrainConfig):
     pretrained_model_path: Optional[str] = STR_FIELD(
         value=None,
         default_type=None,
-        description="Path to a pre-trained NVDINOv2 model to initialize the current training from."
+        description=(
+            "Path to a pre-trained NVDINOv2 model to initialize the current training from."
+        )
     )
     layerwise_decay: float = FLOAT_FIELD(
         value=1.0,
@@ -578,7 +642,13 @@ class NVDINOv2ExportExpConfig:
         description="Results directory",
         display_name="Results directory"
     )
-    gpu_id: int = INT_FIELD(value=0, default_value=0, description="GPU ID", display_name="GPU ID", value_min=0)
+    gpu_id: int = INT_FIELD(
+        value=0,
+        default_value=0,
+        description="GPU ID",
+        display_name="GPU ID",
+        value_min=0
+    )
     checkpoint: str = STR_FIELD(
         value=MISSING,
         default_value="",
@@ -597,7 +667,12 @@ class NVDINOv2ExportExpConfig:
         description="Flag to export on cpu",
         display_name="On CPU"
     )
-    input_channel: int = INT_FIELD(value=3, default_value=3, description="Input channel", display_name="Input channel")
+    input_channel: int = INT_FIELD(
+        value=3,
+        default_value=3,
+        description="Input channel",
+        display_name="Input channel"
+    )
     input_width: int = INT_FIELD(
         value=518,
         default_value=518,
@@ -628,7 +703,12 @@ class NVDINOv2ExportExpConfig:
         display_name="Batch size",
         valid_min=0
     )
-    verbose: bool = BOOL_FIELD(value=False, default_value=False, description="Verbose", display_name="Verbose")
+    verbose: bool = BOOL_FIELD(
+        value=False,
+        default_value=False,
+        description="Verbose",
+        display_name="Verbose"
+    )
 
 
 @dataclass
@@ -656,7 +736,9 @@ class ExperimentConfig(CommonExperimentConfig):
     )
     inference: NVDINOv2InferenceExpConfig = DATACLASS_FIELD(
         NVDINOv2InferenceExpConfig(),
-        description="Configurable parameters to construct the inference trainer for a NVDINOv2 experiment.",
+        description=(
+            "Configurable parameters to construct the inference trainer for a NVDINOv2 experiment."
+        ),
     )
     export: NVDINOv2ExportExpConfig = DATACLASS_FIELD(
         NVDINOv2ExportExpConfig(),
@@ -664,5 +746,7 @@ class ExperimentConfig(CommonExperimentConfig):
     )
     gen_trt_engine: GenTrtEngineExpConfig = DATACLASS_FIELD(
         GenTrtEngineExpConfig(),
-        description="Configurable parameters to generate TensorRT engine for a NVDINOv2 experiment.",
+        description=(
+            "Configurable parameters to generate TensorRT engine for a NVDINOv2 experiment."
+        ),
     )
