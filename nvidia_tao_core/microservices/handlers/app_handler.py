@@ -2741,8 +2741,8 @@ class AppHandler:
         if metadata.get("automl_settings", {}).get("automl_enabled") and BACKEND == "NVCF":
             return Code(400, {}, "Automl not supported on NVCF backend, use baremetal deployments of TAO-API")
 
-        if metadata.get("automl_settings", {}).get("automl_enabled") and metadata.get("tensorboard_enabled", False):
-            return Code(400, {}, "Tensorboard not yet supported for AutoML experiments")
+        if BACKEND == "NVCF" and metadata.get("tensorboard_enabled", False):
+            return Code(400, {}, "Tensorboard not supported on NVCF backend, use baremetal deployments of TAO-API")
         if mdl_nw in TAO_NETWORKS and (not metadata.get("workspace")):
             return Code(400, {}, "Workspace must be provided for experiment creation")
         if not ingress_enabled and metadata.get("tensorboard_enabled", False):
@@ -3227,8 +3227,12 @@ class AppHandler:
                             {},
                             "Automl not supported on NVCF backend, use baremetal deployments of TAO-API"
                         )
-                    if tensorboard_enabled and automl_enabled:
-                        return Code(400, {}, "automl_enabled cannot be True for Tensorboard experiment")
+                    if tensorboard_enabled and BACKEND == "NVCF":
+                        return Code(
+                            400,
+                            {},
+                            "Tensorboard not supported on NVCF backend, use baremetal deployments of TAO-API"
+                        )
                     if mdl_nw not in AUTOML_DISABLED_NETWORKS:
                         metadata[key] = request_dict.get(key, {})
                     else:

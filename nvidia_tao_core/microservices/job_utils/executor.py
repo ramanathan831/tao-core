@@ -44,7 +44,11 @@ from nvidia_tao_core.microservices.handlers.nvcf_handler import (
 )
 
 if os.getenv("BACKEND"):  # To see if the container is going to be used for Service pods or network jobs
-    from nvidia_tao_core.microservices.handlers.mongo_handler import mongo_secret
+    from nvidia_tao_core.microservices.handlers.mongo_handler import (
+        mongo_secret,
+        mongo_operator_enabled,
+        mongo_namespace
+    )
 release_name = os.getenv("RELEASE_NAME", 'tao-api')
 
 # Configure logging
@@ -219,6 +223,14 @@ def create(
         name="MONGOSECRET",
         value=mongo_secret  # pylint: disable=E0606
     )
+    mongo_operator_enabled_env = client.V1EnvVar(
+        name="MONGO_OPERATOR_ENABLED",
+        value=str(mongo_operator_enabled).lower()
+    )
+    mongo_namespace_env = client.V1EnvVar(
+        name="NAMESPACE",
+        value=mongo_namespace
+    )
     dynamic_docker_envs = []
     if docker_env_vars:
         for docker_env_var_key, docker_env_var_value in docker_env_vars.items():
@@ -235,7 +247,11 @@ def create(
     container = client.V1Container(
         name="container",
         image=image,
-        env=[backend_env, num_gpu_env, mongo_secret_env] + dynamic_docker_envs,
+        env=[backend_env,
+             num_gpu_env,
+             mongo_secret_env,
+             mongo_operator_enabled_env,
+             mongo_namespace_env] + dynamic_docker_envs,
         command=["/bin/bash", "-c"],
         args=[command],
         resources=resources,
@@ -1058,6 +1074,14 @@ def create_tensorboard_deployment(deployment_name, image, command, logs_image, l
         name="MONGOSECRET",
         value=mongo_secret  # pylint: disable=E0606
     )
+    mongo_operator_enabled_env = client.V1EnvVar(
+        name="MONGO_OPERATOR_ENABLED",
+        value=str(mongo_operator_enabled).lower()
+    )
+    mongo_namespace_env = client.V1EnvVar(
+        name="NAMESPACE",
+        value=mongo_namespace
+    )
     image_pull_secret = os.getenv('IMAGEPULLSECRET', default='imagepullsecret')
     tb_container = client.V1Container(
         name="tb-container",
@@ -1073,7 +1097,7 @@ def create_tensorboard_deployment(deployment_name, image, command, logs_image, l
     tb_logs_container = client.V1Container(
         name="tb-logs-container",
         image=logs_image,
-        env=[no_gpu, mongo_secret_env],
+        env=[no_gpu, mongo_secret_env, mongo_operator_enabled_env, mongo_namespace_env],
         command=["/bin/sh", "-c"],
         resources=resources,
         args=[logs_command],
@@ -1162,8 +1186,6 @@ def create_tensorboard_ingress(tb_service_name, tb_ingress_name, tb_ingress_path
     """Creates Tensorboard Ingress"""
     name_space = _get_name_space()
     networking_v1_api = client.NetworkingV1Api()
-    release_name = os.getenv("RELEASE_NAME", 'tao-api')
-    auth_url = f'http://{release_name}-service.{name_space}.svc.cluster.local:8000/api/v1/auth'
     ingress = client.V1Ingress(
         api_version="networking.k8s.io/v1",
         kind="Ingress",
@@ -1171,7 +1193,6 @@ def create_tensorboard_ingress(tb_service_name, tb_ingress_name, tb_ingress_path
             "resource-type": "tensorboard"
         }, annotations={
             "kubernetes.io/ingress.class": "nginx",
-            "nginx.ingress.kubernetes.io/auth-url": auth_url,
             "nginx.ingress.kubernetes.io/client-max-body-size": "0m",
             "nginx.ingress.kubernetes.io/proxy-body-size": "0m",
             "nginx.ingress.kubernetes.io/body-size": "0m",
