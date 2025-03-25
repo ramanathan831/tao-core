@@ -18,8 +18,12 @@ from typing import List, Optional
 from dataclasses import dataclass
 
 from nvidia_tao_core.config.common.common_config import (
-    EvaluateConfig, CommonExperimentConfig,
-    InferenceConfig, TrainConfig
+    CommonExperimentConfig,
+    EvaluateConfig,
+    ExportConfig,
+    GenTrtEngineConfig,
+    InferenceConfig,
+    TrainConfig,
 )
 from nvidia_tao_core.config.utils.types import (
     STR_FIELD,
@@ -320,3 +324,5 @@ class ExperimentConfig(CommonExperimentConfig):
     model: MAEModelConfig = DATACLASS_FIELD(MAEModelConfig())
     inference: InferenceConfig = DATACLASS_FIELD(InferenceConfig())
     evaluate: EvaluateConfig = DATACLASS_FIELD(EvaluateConfig())
+    gen_trt_engine: GenTrtEngineConfig = DATACLASS_FIELD(GenTrtEngineConfig())
+    export: ExportConfig = DATACLASS_FIELD(ExportConfig())
