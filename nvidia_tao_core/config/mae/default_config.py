@@ -315,6 +315,7 @@ class MAETrainExpConfig(TrainConfig):
         description="Mask ratio",
         display_name="Mask ratio.")
 
+
 @dataclass
 class MAETRTEngineConfig(TrtConfig):
     """Trt config."""
