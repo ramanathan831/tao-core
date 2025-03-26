@@ -21,6 +21,7 @@ from nvidia_tao_core.config.common.common_config import (
     CommonExperimentConfig,
     EvaluateConfig,
     ExportConfig,
+    TrtConfig,
     GenTrtEngineConfig,
     InferenceConfig,
     TrainConfig,
@@ -314,6 +315,24 @@ class MAETrainExpConfig(TrainConfig):
         description="Mask ratio",
         display_name="Mask ratio.")
 
+@dataclass
+class MAETRTEngineConfig(TrtConfig):
+    """Trt config."""
+
+    data_type: str = STR_FIELD(
+        value="fp32",
+        default_value="fp32,fp16",
+        description="Data type",
+        display_name="Data type"
+    )
+
+
+@dataclass
+class MAEGenTrtEngineConfig(GenTrtEngineConfig):
+    """Gen trt engine config."""
+
+    tensorrt: MAETRTEngineConfig = DATACLASS_FIELD(MAETRTEngineConfig())
+
 
 @dataclass
 class ExperimentConfig(CommonExperimentConfig):
@@ -324,5 +343,5 @@ class ExperimentConfig(CommonExperimentConfig):
     model: MAEModelConfig = DATACLASS_FIELD(MAEModelConfig())
     inference: InferenceConfig = DATACLASS_FIELD(InferenceConfig())
     evaluate: EvaluateConfig = DATACLASS_FIELD(EvaluateConfig())
-    gen_trt_engine: GenTrtEngineConfig = DATACLASS_FIELD(GenTrtEngineConfig())
+    gen_trt_engine: MAEGenTrtEngineConfig = DATACLASS_FIELD(MAEGenTrtEngineConfig())
     export: ExportConfig = DATACLASS_FIELD(ExportConfig())
