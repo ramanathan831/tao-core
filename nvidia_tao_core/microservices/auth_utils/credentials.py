@@ -13,16 +13,16 @@
 # limitations under the License.
 
 """Authentication utils credential modules"""
+import copy
 import datetime
 import os
-import requests
 import uuid
 import traceback
 import jwt
 import logging
 
 from nvidia_tao_core.microservices.auth_utils.session import __SESSION_EXPIRY_SECONDS__, _SESSION_REFRESH_SECONDS__
-from nvidia_tao_core.microservices.handlers.ngc_handler import get_user_key
+from nvidia_tao_core.microservices.handlers.ngc_handler import get_user_key, get_user_info
 from nvidia_tao_core.microservices.handlers.encrypt import NVVaultEncryption
 from nvidia_tao_core.microservices.handlers.mongo_handler import MongoHandler
 
@@ -37,12 +37,8 @@ BACKEND = os.getenv("BACKEND", "local-k8s")
 DEPLOYMENT_MODE = os.getenv("DEPLOYMENT_MODE", "PROD")
 
 
-def get_from_ngc(key, org_name):
+def get_from_ngc(key, org_name: str, enable_telemetry: bool | None = None) -> tuple[dict, str]:
     """Get signing key from token"""
-    stg_prefix = "stg."
-    if DEPLOYMENT_MODE == "PROD":
-        stg_prefix = ""
-
     err = None
     creds = None
     try:
@@ -53,20 +49,7 @@ def get_from_ngc(key, org_name):
         if key.startswith("nvapi"):
             logger.info("Scoped key passed with key %s and org %s", key, org_name)
             token = key
-            url = f'https://api.{stg_prefix}ngc.nvidia.com/v3/keys/get-caller-info'
-            try:
-                r = requests.post(
-                    url,
-                    headers={
-                        'Content-Type': 'application/x-www-form-urlencoded',
-                        'Accept-Encoding': 'identity'  # Prevent compression in response
-                    },
-                    data={'credentials': key},
-                    timeout=5
-                )
-            except Exception as e:
-                logger.error("Exception caught during getting user info with personal key: %s", e)
-                raise e
+            r = get_user_info(key, accept_encoding="True")
         else:
             err = ('Credentials error: Invalid NGC_PERSONAL_KEY, NGC_API_KEYs are no longer valid, '
                    'generate a personal key with Cloud Functions, NGC Catalog and Private registry services '
@@ -107,6 +90,24 @@ def get_from_ngc(key, org_name):
         else:
             logger.info("Using old JWT Token")
             creds['token'] = user['jwt_token']
+
+        # If user didn't set the telemetry preference, disable for NVAIE user
+        if enable_telemetry is None:
+            is_nvaie_user = False
+            roles = r.json().get('user', {}).get('roles', [])
+            for role in roles:
+                if org_name == role.get('org', {}).get('name', ''):
+                    if 'NVIDIA_AI_ENTERPRISE_VIEWER' in role.get('orgRoles', []):
+                        is_nvaie_user = True
+                        break
+            if is_nvaie_user:
+                enable_telemetry = False
+            else:
+                enable_telemetry = True
+
+        user_metadata['settings'] = copy.copy(user.get('settings', {}))
+        user_metadata['settings'][org_name] = {'enable_telemetry': enable_telemetry}
+
         mongo.upsert(user_query, user_metadata)
 
     except Exception as e:
