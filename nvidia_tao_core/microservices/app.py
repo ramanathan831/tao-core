@@ -624,6 +624,7 @@ class LoginReqSchema(Schema):
         unknown = EXCLUDE
     ngc_key = fields.Str(format="regex", regex=r'.*', validate=fields.validate.Length(max=1000))
     ngc_org_name = fields.Str(format="regex", regex=r'.*', validate=fields.validate.Length(max=1000))
+    enable_telemetry = fields.Bool(default=False, allow_none=True)  # NVAIE requires disable telemetry by default
 
 
 class LoginRspSchema(Schema):
@@ -949,7 +950,7 @@ def login():
     post:
       tags:
       - AUTHENTICATION
-      summary: Authenticate user with NGC credentials
+      summary: Authenticate user with NGC credentials and set telemetry preferences
       description: |
         Authenticates a user using their NGC API key and organization name.
         Returns JWT token and user credentials upon successful authentication.
@@ -964,6 +965,7 @@ def login():
           Login credentials including:
           - ngc_key: NGC API key for authentication
           - ngc_org_name: Organization name in NGC
+          - enable_telemetry: Optional telemetry preference (default: False)
         required: true
       responses:
         200:
@@ -991,7 +993,9 @@ def login():
     request_dict = schema.dump(schema.load(request.get_json(force=True)))
     key = request_dict.get('ngc_key', 'invalid_key')
     org_name = request_dict.get('ngc_org_name', '')
-    creds, err = credentials.get_from_ngc(key, org_name)
+    enable_telemetry = request_dict.get('enable_telemetry', None)
+
+    creds, err = credentials.get_from_ngc(key, org_name, enable_telemetry)
     if err:
         logger.warning("Unauthorized: %s", err)
         metadata = {"error_desc": "Unauthorized: " + err, "error_code": 1}
@@ -1041,6 +1045,7 @@ def auth():
         if len(authorization_parts) == 2 and authorization_parts[0].lower() == 'basic':
             basic_auth = request.authorization
             if basic_auth:
+                # status callback: service to service authentication
                 if basic_auth.username == '$oauthtoken':
                     try:
                         org_name, key = basic_auth.password.split(",")
@@ -1053,7 +1058,7 @@ def auth():
                         schema = ErrorRspSchema()
                         response = make_response(jsonify(schema.dump(schema.load(metadata))), 401)
                         return response
-                    creds, err = credentials.get_from_ngc(key, org_name)
+                    creds, err = credentials.get_from_ngc(key, org_name, True)
                     if 'token' in creds:
                         token = creds['token']
                 # special metrics case

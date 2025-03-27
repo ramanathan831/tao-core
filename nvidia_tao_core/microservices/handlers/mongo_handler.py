@@ -32,7 +32,7 @@ logger = logging.getLogger(__name__)
 # MongoDB connection setup
 
 if os.getenv("BACKEND"):
-    mongo_secret = os.getenv("MONGOSECRET")
+    mongo_secret = os.getenv("MONGOSECRET", "")
     mongo_namespace = os.getenv("NAMESPACE", "default")
     mongo_operator_enabled = os.getenv('MONGO_OPERATOR_ENABLED', 'true') == 'true'
     encoded_secret = parse.quote(mongo_secret, safe='')

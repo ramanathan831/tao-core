@@ -66,7 +66,8 @@ from nvidia_tao_core.microservices.handlers.stateless_handlers import (
     update_job_metadata,
     update_job_status,
     write_handler_metadata,
-    update_job_details_with_microservices_response
+    update_job_details_with_microservices_response,
+    get_user_telemetry_opt_out
 )
 from nvidia_tao_core.microservices.handlers.utilities import (
     StatusParser,
@@ -276,7 +277,10 @@ class ActionPipeline:
             if experiment_number:
                 self.job_env_variables["AUTOML_EXPERIMENT_NUMBER"] = experiment_number
 
-        self.job_env_variables["TELEMETRY_OPT_OUT"] = os.getenv('TELEMETRY_OPT_OUT', default='no')
+        self.job_env_variables["TELEMETRY_OPT_OUT"] = get_user_telemetry_opt_out(
+            self.job_context.user_id,
+            self.job_context.org_name
+        )
         self.job_env_variables["CLOUD_BASED"] = "True"
         user_key, ngc_cookie = get_user_key(
             self.job_context.user_id,

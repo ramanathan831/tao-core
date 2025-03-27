@@ -1055,6 +1055,15 @@ def set_metrics(metrics):
     mongo_metrics.upsert({'name': 'metrics'}, metrics)
 
 
+def get_user_telemetry_opt_out(user_id: str, org_name: str, user_db: MongoHandler = None) -> str:
+    """Returns the telemetry opt out setting for a user"""
+    user = get_user(user_id, user_db)
+    enable_telemetry = False
+    if user:
+        enable_telemetry = user.get("settings", {}).get(org_name, {}).get("enable_telemetry", True)
+    return "no" if enable_telemetry else "yes"
+
+
 def serialize_object(obj):
     """Serialize Database metadata to strings"""
     if isinstance(obj, datetime):
