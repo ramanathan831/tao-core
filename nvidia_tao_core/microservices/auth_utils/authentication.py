@@ -100,6 +100,7 @@ def validate(url, token):
                 token = creds.get('user_key')
             headers['Authorization'] = 'Bearer ' + token
     try:
+        headers['Accept-Encoding'] = 'identity'
         r = requests.get(f'{ngc_api_base_url}/users/me', headers=headers, timeout=120)
     except Exception as e:
         logger.error("Exception caught during getting NGC user info: %s", e)

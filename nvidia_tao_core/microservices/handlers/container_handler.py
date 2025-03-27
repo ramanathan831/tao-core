@@ -112,27 +112,29 @@ class ContainerJobHandler:
                     def run_entrypoint():
                         nonlocal status_logger
                         is_completed = False
-                        status_file = ContainerJobHandler.get_status_file(specs["results_dir"], job["action_name"])
+                        status_file = None
+
+                        def initialize_status_logger(status_file):
+                            """Initialize or get existing status logger."""
+                            nonlocal status_logger
+                            if not status_logger:
+                                status_logger = status_logging.StatusLogger(
+                                    filename=status_file,
+                                    is_master=True,
+                                    verbosity=1,
+                                    append=True
+                                )
+                                status_logging.set_status_logger(status_logger)
+                            return status_logger
 
                         try:
-                            # Initialize status logger
-                            status_logger = status_logging.StatusLogger(
-                                filename=status_file,
-                                is_master=True,
-                                verbosity=1,
-                                append=True
-                            )
-                            status_logging.set_status_logger(status_logger)
-
                             # Launch entrypoint
                             if entrypoint:
                                 try:
                                     _, actions = module_utils.get_neural_network_actions(job["neural_network_name"])
                                     entrypoint.launch(args, "", actions, network=job["neural_network_name"])
-                                    # If we get here, it means the process exited with 0
                                     is_completed = True
                                 except SystemExit as e:
-                                    # Capture the exit code from the SystemExit exception
                                     is_completed = e.code == 0
                             else:
                                 is_completed = vlm_entrypoint.vlm_launch(
@@ -144,8 +146,15 @@ class ContainerJobHandler:
                         except Exception:
                             logger.error("Traceback")
                             logger.error(traceback.format_exc())
+                            status_file = ContainerJobHandler.get_status_file(specs["results_dir"], job["action_name"])
+                            status_logger = initialize_status_logger(status_file)
                             ContainerJobHandler._handle_failure(job, status_logger, status_file)
                         finally:
+                            status_file = status_file or ContainerJobHandler.get_status_file(
+                                specs["results_dir"],
+                                job["action_name"]
+                            )
+                            status_logger = initialize_status_logger(status_file)
                             ContainerJobHandler._cleanup(
                                 exit_event,
                                 upload_thread,

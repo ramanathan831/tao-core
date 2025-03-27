@@ -53,13 +53,15 @@ class ErrorResponse:
 
 
 @retry_method(response=True)
-def send_ngc_api_request(endpoint, requests_method, request_body, json=False, ngc_key=""):
+def send_ngc_api_request(endpoint, requests_method, request_body, json=False, ngc_key="", accept_encoding=""):
     """Send NGC API requests with token refresh, retries, and timeout handling"""
     headers = {"Authorization": f"Bearer {ngc_key}"}
     if requests_method == "POST":
         if json:
             headers['accept'] = 'application/json'
             headers['Content-Type'] = 'application/json'
+        if accept_encoding:
+            headers['Accept-Encoding'] = accept_encoding
         response = requests.post(url=endpoint, data=request_body, headers=headers, timeout=TIMEOUT)
     elif requests_method == "GET":
         response = requests.get(url=endpoint, headers=headers, timeout=TIMEOUT)
@@ -170,7 +172,7 @@ def get_user_key(user_id, org_name, admin_key_override=False):
     return decrypted_key, use_cookie
 
 
-def get_user_info(ngc_key: str) -> requests.Response:
+def get_user_info(ngc_key: str, accept_encoding: str = "") -> requests.Response:
     """Get NGC user info from NGC"""
     endpoint = "https://api.stg.ngc.nvidia.com/v2/users/me"
     if DEPLOYMENT_MODE == "PROD":
@@ -182,7 +184,8 @@ def get_user_info(ngc_key: str) -> requests.Response:
             requests_method="GET",
             request_body={},
             json=True,
-            ngc_key=ngc_key
+            ngc_key=ngc_key,
+            accept_encoding=accept_encoding
         )
     except Exception as e:
         print("Exception caught during getting NGC user info", e, file=sys.stderr)

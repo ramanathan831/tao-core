@@ -223,15 +223,18 @@ def create(
         name="MONGOSECRET",
         value=mongo_secret  # pylint: disable=E0606
     )
-    mongo_operator_enabled_env = client.V1EnvVar(
-        name="MONGO_OPERATOR_ENABLED",
-        value=str(mongo_operator_enabled).lower()
-    )
-    mongo_namespace_env = client.V1EnvVar(
-        name="NAMESPACE",
-        value=mongo_namespace
-    )
     dynamic_docker_envs = []
+    if os.getenv("BACKEND"):
+        mongo_operator_enabled_env = client.V1EnvVar(
+            name="MONGO_OPERATOR_ENABLED",
+            value=str(mongo_operator_enabled).lower()
+        )
+        mongo_namespace_env = client.V1EnvVar(
+            name="NAMESPACE",
+            value=mongo_namespace
+        )
+        dynamic_docker_envs.append(mongo_operator_enabled_env)
+        dynamic_docker_envs.append(mongo_namespace_env)
     if docker_env_vars:
         for docker_env_var_key, docker_env_var_value in docker_env_vars.items():
             kubernetes_env = client.V1EnvVar(
@@ -249,9 +252,7 @@ def create(
         image=image,
         env=[backend_env,
              num_gpu_env,
-             mongo_secret_env,
-             mongo_operator_enabled_env,
-             mongo_namespace_env] + dynamic_docker_envs,
+             mongo_secret_env] + dynamic_docker_envs,
         command=["/bin/bash", "-c"],
         args=[command],
         resources=resources,

@@ -97,9 +97,14 @@ def _get_network_architectures() -> list[str]:
 
     architectures = set()
     if config_dir.exists():
-        for file in config_dir.glob("*.config.json"):
-            arch_name = file.stem.replace(".config", "")
-            if arch_name in dataset_types:
+        for config_file in config_dir.glob("*.config.json"):
+            arch_name = config_file.stem.replace(".config", "")
+            try:
+                with open(config_file, 'r', encoding='utf-8') as f:
+                    config = json.load(f)
+                    if "data_sources" in config:
+                        actions.update(arch_name)
+            except (json.JSONDecodeError, IOError):
                 continue
             architectures.add(arch_name)
 
@@ -246,12 +251,6 @@ class BaseMetrics(str, enum.Enum):
     object_count_percent = 'object_count_percent'
     bbox_area_type = 'bbox_area_type'
     bbox_area_mean = 'bbox_area_mean'
-
-    # VLMspecific metrics
-    grad_norm = 'grad_norm'
-    train_runtime = 'train_runtime'
-    train_samples_per_second = 'train_samples_per_second'
-    train_steps_per_second = 'train_steps_per_second'
 
 
 class BaseExperimentTask(enum.Enum):
