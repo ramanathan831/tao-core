@@ -35,9 +35,10 @@ from nvidia_tao_core.config.common.common_config import (
     GenTrtEngineConfig,
     InferenceConfig,
     TrtConfig,
-    CalibrationConfig
+    CalibrationConfig,
 )
-from nvidia_tao_pytorch.core.distillation.config import DistillationConfig
+
+from nvidia_tao_core.config.common.distillation_config import DistillationConfig
 
 
 @dataclass
@@ -450,8 +451,8 @@ class UnstructuredTrainData:
 class DatasetConfig:
     """Classification Dataset Config."""
 
-    root_dir: str = STR_FIELD(
-        value=MISSING,
+    root_dir: Optional[str] = STR_FIELD(
+        value="",
         default_value="",
         description="Path to root directory for dataset"
     )
