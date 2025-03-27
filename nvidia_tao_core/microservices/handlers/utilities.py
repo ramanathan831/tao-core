@@ -529,7 +529,7 @@ class StatusParser:
             epoch, value = (int(tuple_var[0]), tuple_var[1])
             if epoch >= 0:
                 if automl_algorithm in ("bayesian", "b", ""):
-                    excluded_networks = set(["pointpillars", "segformer", "bevfusion", "ml_recog"])
+                    excluded_networks = set(["pointpillars", "bevfusion", "ml_recog"])
                     if self.network in (_PYT_TAO_NETWORKS - excluded_networks):
                         # epoch number in checkpoint starts from 0 or models whose validation logs
                         # are generated before the training logs
@@ -539,7 +539,6 @@ class StatusParser:
                         trimmed_list.append((epoch, value))
                 elif (self.network in _TF2_NETWORKS or
                       self.network in (
-                          "segformer",
                           "classification_pyt",
                           "bevfusion",
                           "ml_recog"
