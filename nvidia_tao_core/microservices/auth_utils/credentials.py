@@ -51,13 +51,16 @@ def get_from_ngc(key, org_name):
             err = f'Org Name {org_name} not valid'
             return creds, err
         if key.startswith("nvapi"):
-            logger.info("Scoped key passed")
+            logger.info("Scoped key passed with key %s and org %s", key, org_name)
             token = key
             url = f'https://api.{stg_prefix}ngc.nvidia.com/v3/keys/get-caller-info'
             try:
                 r = requests.post(
                     url,
-                    headers={'Content-Type': 'application/x-www-form-urlencoded'},
+                    headers={
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                        'Accept-Encoding': 'identity'  # Prevent compression in response
+                    },
                     data={'credentials': key},
                     timeout=5
                 )
