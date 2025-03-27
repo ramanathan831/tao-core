@@ -1,6 +1,7 @@
 #!/bin/bash
 
 echo "Installing required packages"
+pip install --upgrade pip setuptools
 pip install pyarmor==8.5.8 pyinstaller pybind11
 echo "Registering pyarmor"
 pyarmor -d reg release/python/pyarmor-regfile-1219.zip || exit $?

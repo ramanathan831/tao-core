@@ -15,6 +15,7 @@
 """API Stateless handlers modules"""
 import json
 import os
+import sys
 import requests
 import logging
 from ngcbase import errors
@@ -167,6 +168,26 @@ def get_user_key(user_id, org_name, admin_key_override=False):
         use_cookie = False
 
     return decrypted_key, use_cookie
+
+
+def get_user_info(ngc_key: str) -> requests.Response:
+    """Get NGC user info from NGC"""
+    endpoint = "https://api.stg.ngc.nvidia.com/v2/users/me"
+    if DEPLOYMENT_MODE == "PROD":
+        endpoint = "https://api.ngc.nvidia.com/v2/users/me"
+
+    try:
+        response = send_ngc_api_request(
+            endpoint=endpoint,
+            requests_method="GET",
+            request_body={},
+            json=True,
+            ngc_key=ngc_key
+        )
+    except Exception as e:
+        print("Exception caught during getting NGC user info", e, file=sys.stderr)
+        raise e
+    return response
 
 
 def get_model(org_name, team_name, model_name, ngc_key, use_cookie):
