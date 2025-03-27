@@ -58,7 +58,7 @@
     },
 
     "metrics": {
-        "available_metrics": ["val_acc"],
+        "available_metrics": ["grad_norm", "train_runtime", "train_samples_per_second", "train_steps_per_second", "val_acc"],
         "monitoring_metric": "val_acc"
     }
 }

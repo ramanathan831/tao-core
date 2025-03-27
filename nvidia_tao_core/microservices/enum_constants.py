@@ -252,12 +252,6 @@ class BaseMetrics(str, enum.Enum):
     bbox_area_type = 'bbox_area_type'
     bbox_area_mean = 'bbox_area_mean'
 
-    # VLMspecific metrics
-    grad_norm = 'grad_norm'
-    train_runtime = 'train_runtime'
-    train_samples_per_second = 'train_samples_per_second'
-    train_steps_per_second = 'train_steps_per_second'
-
 
 class BaseExperimentTask(enum.Enum):
     """Class defining base experiment metadata task field"""
