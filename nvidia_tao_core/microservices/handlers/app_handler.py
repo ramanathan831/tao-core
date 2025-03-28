@@ -287,6 +287,54 @@ def get_job_logs(log_file_path):
             yield log_line
 
 
+def is_maxine_request(handler_id, handler_kind, handler_metadata={}):
+    """Check if the request is related to Maxine.
+
+    Args:
+        handler_id (str): The ID of the handler.
+        handler_kind (str): The kind of handler.
+        handler_metadata (dict): The metadata of the handler.
+
+    Returns:
+        bool: True if the request is related to Maxine, False otherwise.
+    """
+    if not handler_metadata:
+        handler_metadata = stateless_handlers.get_handler_metadata(handler_id, handler_kind)
+    if handler_kind in ("workspaces", "workspace"):
+        return True
+    if handler_kind in ("datasets", "dataset"):
+        return handler_metadata.get("type", "") == "maxine_dataset"
+    if handler_kind in ("experiments", "experiment"):
+        return handler_metadata.get("network_arch", "") == "maxine_eye_contact"
+    return False
+
+
+def handler_level_access_control(user_id, org_name, handler_id="", handler_kind="",
+                                 handler_metadata={}, base_experiment=False):
+    """Control access to handlers based on user permissions and product entitlements.
+
+    Args:
+        user_id (str): The ID of the user.
+        org_name (str): The name of the organization.
+        handler_id (str, optional): The ID of the handler. Defaults to "".
+        handler_kind (str, optional): The kind of handler. Defaults to "".
+        handler_metadata (dict, optional): The metadata of the handler. Defaults to {}.
+        base_experiment (bool, optional): Whether this is a base experiment. Defaults to False.
+
+    Returns:
+        bool: True if the user has access, False otherwise.
+    """
+    if base_experiment or is_maxine_request(handler_id, handler_kind, handler_metadata):
+        if "MAXINE" not in ngc_handler.get_org_products(user_id, org_name):
+            return False
+        mongo = MongoHandler("tao", "users")
+        user_metadata = mongo.find_one({'id': user_id})
+        member_of = user_metadata.get('member_of', [])
+        if f"{org_name}/:MAXINE_USER" not in member_of:
+            return False
+    return True
+
+
 class AppHandler:
     """Handles dataset, workspace, experiment, job creation, updating, deletion and retrieval."""
 
@@ -696,7 +744,7 @@ class AppHandler:
 
         intention = request_dict.get("use_for", [])
         if ds_format in ("raw", "coco_raw") and intention:
-            if intention != ["testing"]:
+            if intention != ["testing"] and ds_type != "maxine_dataset":
                 msg = "raw or coco_raw's format should be associated with ['testing'] intent"
                 return Code(400, {}, msg)
 
@@ -737,6 +785,9 @@ class AppHandler:
                     "use_for": intention,
                     "base_experiment": request_dict.get("base_experiment", []),
                     }
+
+        if not handler_level_access_control(user_id, org_name, dataset_id, "datasets", handler_metadata=metadata):
+            return Code(403, {}, "Not allowed to work with this org")
 
         # Set status based on skip_validation flag
         skip_validation = request_dict.get("skip_validation", False)
@@ -856,6 +907,8 @@ class AppHandler:
             return Code(404, {}, "Dataset not found")
 
         user_id = metadata.get("user_id")
+        if not handler_level_access_control(user_id, org_name, dataset_id, "datasets", handler_metadata=metadata):
+            return Code(403, {}, "Not allowed to work with this org")
         if not check_write_access(user_id, org_name, dataset_id, kind="datasets"):
             return Code(404, {}, "Dataset not available")
         if request_dict.get("public", None):
@@ -1164,6 +1217,9 @@ class AppHandler:
                 microservices_network = "efficientdet_tf2"
                 action = "dataset_convert"
 
+        if "maxine" in network and "dataset_convert" in action:
+            microservices_network = "maxine_eye_contact"
+
         try:
             json_schema = generate_schema(microservices_network, action)
         except Exception as e:
@@ -1258,6 +1314,10 @@ class AppHandler:
             if action == "convert_efficientdet_tf2":
                 microservices_network = "efficientdet_tf2"
                 action = "dataset_convert"
+
+        if "maxine" in network and "dataset_convert" in action:
+            microservices_network = "maxine_eye_contact"
+            microservices_action = "dataset_convert"
 
         try:
             json_schema = generate_schema(microservices_network, microservices_action)
@@ -2628,12 +2688,13 @@ class AppHandler:
                     handler_metadata["status"] = get_handler_status(handler_metadata)
                     metadatas.append(handler_metadata)
         if not user_only:
-            public_experiments_metadata = stateless_handlers.get_public_experiments()
+            maxine_request = handler_level_access_control(user_id, org_name, base_experiment=True)
+            public_experiments_metadata = stateless_handlers.get_public_experiments(maxine=maxine_request)
             metadatas += public_experiments_metadata
         return metadatas
 
     @staticmethod
-    def list_base_experiments():
+    def list_base_experiments(user_id, org_name):
         """Lists public base experiments.
 
         Returns:
@@ -2641,7 +2702,8 @@ class AppHandler:
         """
         # Collect all metadatas
         metadatas = []
-        public_experiments_metadata = stateless_handlers.get_public_experiments()
+        maxine_request = handler_level_access_control(user_id, org_name, base_experiment=True)
+        public_experiments_metadata = stateless_handlers.get_public_experiments(maxine=maxine_request)
         metadatas += public_experiments_metadata
         return metadatas
 
@@ -2735,6 +2797,9 @@ class AppHandler:
                     "experiment_actions": request_dict.get('experiment_actions', []),
                     "tags": list({t.lower(): t for t in request_dict.get("tags", [])}.values()),
                     }
+
+        if not handler_level_access_control(user_id, org_name, experiment_id, "experiments", handler_metadata=metadata):
+            return Code(403, {}, "Not allowed to work with this org")
 
         if metadata.get("automl_settings", {}).get("automl_enabled") and mdl_nw in AUTOML_DISABLED_NETWORKS:
             return Code(400, {}, "automl_enabled cannot be True for unsupported network")
@@ -3139,6 +3204,8 @@ class AppHandler:
             return Code(400, {}, "Experiment does not exist")
 
         user_id = metadata.get("user_id")
+        if not handler_level_access_control(user_id, org_name, experiment_id, "experiments", handler_metadata=metadata):
+            return Code(403, {}, "Not allowed to work with this org")
         if not check_write_access(user_id, org_name, experiment_id, kind="experiments"):
             return Code(400, {}, "User doesn't have write access to experiment")
 

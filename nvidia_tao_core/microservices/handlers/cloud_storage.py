@@ -18,6 +18,7 @@ import io
 import copy
 import time
 import functools
+import fnmatch
 import logging
 
 from nvidia_tao_core.microservices.handlers.encrypt import NVVaultEncryption
@@ -144,6 +145,18 @@ class CloudStorage:
 
         self.driver = cls(access_key, secret_key, region=self.region)
         self.container = self.driver.get_container(container_name=self.bucket_name)
+
+    @retry_method
+    def glob_files(self, pattern):
+        """Search for files in the bucket that match the specified pattern.
+
+        pattern: File pattern to match, e.g., "*.mp4".
+        Returns:
+            List of matching file names.
+        """
+        all_files = self.driver.list_container_objects(self.container)
+        matching_files = [obj.name for obj in all_files if fnmatch.fnmatch(obj.name, pattern)]
+        return matching_files
 
     @retry_method
     def upload_file(self, local_file_path, cloud_file_path):

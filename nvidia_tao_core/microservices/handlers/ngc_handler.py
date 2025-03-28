@@ -428,3 +428,20 @@ def validate_ptm_download(base_experiment_folder, sha256_digest):
                             )
                         return sha256_digest[filename] == downloaded_file_checksum
     return True
+
+
+def get_org_products(user_id, org_name):
+    """Return the products the ORG has subscribe to"""
+    ngc_key, _ = get_user_key(user_id, org_name)
+    headers = {}
+    headers['Authorization'] = 'Bearer ' + ngc_key
+    url = f'https://api.ngc.nvidia.com/v2/orgs/{org_name}'
+    response = requests.get(url, headers=headers, timeout=120)
+    products = []
+    if response.ok:
+        org_metadata = response.json().get("organizations", {})
+        product_enablements = org_metadata.get("productEnablements", [])
+        for product_enablement in product_enablements:
+            if product_enablement.get("productName", "") in ("TAO", "MONAI", "MAXINE"):
+                products.append(product_enablement.get("productName"))
+    return products

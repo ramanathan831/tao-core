@@ -698,13 +698,15 @@ def check_write_access(user_id, org_name, handler_id, base_experiment=False, kin
     return False
 
 
-def get_public_experiments():
+def get_public_experiments(maxine=False):
     """Get public experiments"""
     # Make sure to check if it exists
     public_experiments_metadata = []
     mongo_experiments = MongoHandler("tao", "experiments")
     base_experiments = mongo_experiments.find({'public': True})
     for base_experiment_metadata in base_experiments:
+        if not maxine and base_experiment_metadata.get("network_arch", "").startswith("maxine"):
+            continue
         public_experiments_metadata.append(base_experiment_metadata)
     return list(public_experiments_metadata)
 

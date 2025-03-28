@@ -589,7 +589,14 @@ class AllowedDockerEnvVariables(Enum):
     """Allowed docker environment variables while launching DNN containers"""
 
     HF_TOKEN = "HF_TOKEN"
+
     WANDB_API_KEY = "WANDB_API_KEY"
+    WANDB_BASE_URL = "WANDB_BASE_URL"
+    WANDB_USERNAME = "WANDB_USERNAME"
+    WANDB_ENTITY = "WANDB_ENTITY"
+    WANDB_PROJECT = "WANDB_PROJECT"
+    WANDB_INSECURE_LOGGING = "WANDB_INSECURE_LOGGING"
+
     CLEARML_WEB_HOST = "CLEARML_WEB_HOST"
     CLEARML_API_HOST = "CLEARML_API_HOST"
     CLEARML_FILES_HOST = "CLEARML_FILES_HOST"
@@ -5657,7 +5664,8 @@ def base_experiment_list(org_name):
             X-RateLimit-Limit:
               $ref: '#/components/headers/X-RateLimit-Limit'
     """
-    experiments = app_handler.list_base_experiments()
+    user_id = authentication.get_user_id(request.headers.get('Authorization', ''), request.cookies, org_name)
+    experiments = app_handler.list_base_experiments(user_id, org_name)
     filtered_experiments = filtering.apply(request.args, experiments)
     paginated_experiments = pagination.apply(request.args, filtered_experiments)
     metadata = {"experiments": paginated_experiments}

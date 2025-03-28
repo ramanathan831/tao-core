@@ -44,14 +44,26 @@ class SimpleHandler:
         if workspace_metadata:
             self.cloud_instance, _ = create_cs_instance(workspace_metadata)
 
-    def check_for_file_existence(self, path, file_type="file"):
+    def check_for_file_existence(self, path, file_type="file", file_extension=""):
         """Check for existence of file"""
         if self.cloud_instance:
             if file_type == "file":
                 return self.cloud_instance.is_file(path)
-            path = path[1:] if path.startswith("/") else path
-            return self.cloud_instance.is_folder(path)
-        return os.path.exists(path)
+            if file_type == "folder":
+                path = path[1:] if path.startswith("/") else path
+                return self.cloud_instance.is_folder(path)
+            if file_type == "regex":
+                pattern = os.path.join(path, f"*.{file_extension}")
+                return any(self.cloud_instance.glob_files(pattern))
+        else:
+            if file_type == "file":
+                return os.path.isfile(path)
+            if file_type == "folder":
+                return os.path.isdir(path)
+            if file_type == "regex":
+                pattern = os.path.join(path, f"*.{file_extension}")
+                return bool(glob.glob(pattern))
+        return False
 
 
 def _untar_file(tar_path, dest, strip_components=0):
@@ -120,15 +132,21 @@ def validate_dataset(org_name, handler_metadata, temp_dir="", workspace_metadata
             if "path" in req:
                 path = os.path.join(handler.root, req["path"])
                 file_type = req.get("type", "file")
+                file_extension = req.get("regex", "") if file_type == "regex" else ""
                 error_msg = f"Required file not found: {path}"
-                assert handler.check_for_file_existence(path, file_type=file_type), error_msg
+                assert handler.check_for_file_existence(
+                    path, file_type=file_type, file_extension=file_extension
+                ), error_msg
             elif "all_of" in req:
                 # Check if all requirements are met
                 for subreq in req["all_of"]:
                     path = os.path.join(handler.root, subreq["path"])
                     file_type = subreq.get("type", "file")
+                    file_extension = subreq.get("regex", "") if file_type == "regex" else ""
                     error_msg = f"Required file not found: {path}"
-                    assert handler.check_for_file_existence(path, file_type=file_type), error_msg
+                    assert handler.check_for_file_existence(
+                        path, file_type=file_type, file_extension=file_extension
+                    ), error_msg
             elif "any_of" in req:
                 # Check if any of the requirements are met
                 any_valid = False
@@ -136,7 +154,10 @@ def validate_dataset(org_name, handler_metadata, temp_dir="", workspace_metadata
                     if "path" in subreq:
                         path = os.path.join(handler.root, subreq["path"])
                         file_type = subreq.get("type", "file")
-                        if handler.check_for_file_existence(path, file_type=file_type):
+                        file_extension = subreq.get("regex", "") if file_type == "regex" else ""
+                        if handler.check_for_file_existence(
+                            path, file_type=file_type, file_extension=file_extension
+                        ):
                             any_valid = True
                             break
                     elif "all_of" in subreq:
@@ -145,7 +166,10 @@ def validate_dataset(org_name, handler_metadata, temp_dir="", workspace_metadata
                         for subsubreq in subreq["all_of"]:
                             path = os.path.join(handler.root, subsubreq["path"])
                             file_type = subsubreq.get("type", "file")
-                            if not handler.check_for_file_existence(path, file_type=file_type):
+                            file_extension = subsubreq.get("regex", "") if file_type == "regex" else ""
+                            if not handler.check_for_file_existence(
+                                path, file_type=file_type, file_extension=file_extension
+                            ):
                                 all_valid = False
                                 break
                         if all_valid:
@@ -164,8 +188,11 @@ def validate_dataset(org_name, handler_metadata, temp_dir="", workspace_metadata
 
                 path = os.path.join(handler.root, intent_req["path"])
                 file_type = intent_req.get("type", "file")
+                file_extension = intent_req.get("regex", "") if file_type == "regex" else ""
                 error_msg = f"Required file not found: {path}"
-                assert handler.check_for_file_existence(path, file_type=file_type), error_msg
+                assert handler.check_for_file_existence(
+                    path, file_type=file_type, file_extension=file_extension
+                ), error_msg
             if "intent_restriction" in req:
                 if handler.intent:
                     assert handler.intent == req["intent_restriction"], (

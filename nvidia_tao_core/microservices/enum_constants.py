@@ -297,6 +297,7 @@ class BaseExperimentBackboneClass(enum.Enum):
     resnet = "resnet"
     stgcn = "st gcn"
     convnext = "convnext"
+    densenet = "densenet"
 
 
 class BaseExperimentLicense(enum.Enum):

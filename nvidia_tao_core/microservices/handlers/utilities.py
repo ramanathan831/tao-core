@@ -1300,7 +1300,7 @@ def get_files_from_cloud(handler_metadata, job_id):
     return files, action, res_root, workspace_id
 
 
-def resolve_checkpoint_root_and_search(handler_metadata, job_id):
+def resolve_checkpoint_root_and_search(handler_metadata, job_id, folder=False):
     """Returns path of the model based on the action of the job"""
     if job_id is None:
         return None
@@ -1340,14 +1340,16 @@ def resolve_checkpoint_root_and_search(handler_metadata, job_id):
         workspace_identifier = get_workspace_string_identifier(workspace_id, workspace_cache={})
         if workspace_identifier not in result_file:
             result_file = f"{workspace_identifier}{result_file}"
+            if folder:
+                result_file = f"{workspace_identifier}{os.path.dirname(result_file)}"
 
     return result_file
 
 
-def get_model_results_path(handler_metadata, job_id):
+def get_model_results_path(handler_metadata, job_id, folder=False):
     """Return the model file for the job context and handler metadata passes"""
     logger.info("\nget_model_results_path\n")
-    return resolve_checkpoint_root_and_search(handler_metadata, job_id)
+    return resolve_checkpoint_root_and_search(handler_metadata, job_id, folder=folder)
 
 
 def get_model_bundle_root(org_name, experiment_id):
