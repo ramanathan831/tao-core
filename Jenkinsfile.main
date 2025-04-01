@@ -59,10 +59,25 @@ spec:
       def APT_DIR = "third_party_apt"
       def APT_SOURCES_DIR = "third_party_apt_sources"
       
+      // Flag to track if apt-requirements.txt exists and should be processed
+      def PROCESS_APT_PACKAGES = false
+      
       stage ('checkout') {
         gitlabCommitStatus(name: "checkout", connection: gitLabConnection('git-lab-master')) {
           checkout scm
           GITLAB_PROJECT_ID = sh(script: 'echo $CI_PROJECT_ID', returnStdout: true).trim()
+          
+          // Check if apt-requirements.txt exists
+          def aptReqExists = sh(script: 'test -f apt-requirements.txt && echo "true" || echo "false"', returnStdout: true).trim()
+          PROCESS_APT_PACKAGES = aptReqExists == "true"
+          
+          // Also check if it's not empty (has at least one non-comment line)
+          if (PROCESS_APT_PACKAGES) {
+            def hasContent = sh(script: 'grep -v "^\\s*#" apt-requirements.txt | grep -q "." && echo "true" || echo "false"', returnStdout: true).trim()
+            PROCESS_APT_PACKAGES = hasContent == "true"
+          }
+          
+          echo "APT package processing: ${PROCESS_APT_PACKAGES ? 'ENABLED' : 'SKIPPED (apt-requirements.txt not found or empty)'}"
         }
       }
 
@@ -134,14 +149,11 @@ spec:
       }
       
       stage ('download_third_party_apt') {
+        when {
+          expression { return PROCESS_APT_PACKAGES }
+        }
         gitlabCommitStatus(name: "download_third_party_apt", connection: gitLabConnection('git-lab-master')) {
-          // Create apt-requirements.txt if it doesn't exist yet with default packages
-          sh """
-          if [ ! -f apt-requirements.txt ]; then
-            echo "# APT packages required for TAO" > apt-requirements.txt
-            # No default packages, add specific dependencies in the file as needed
-          fi
-          """
+          // No need to create apt-requirements.txt as we only run this stage if it already exists
           
           // Run the helper script to download third party apt packages
           sh "python3 scripts/download_apt_packages.py --requirements apt-requirements.txt --download-sources"
@@ -149,6 +161,9 @@ spec:
       }
       
       stage ('publish_third_party_apt') {
+        when {
+          expression { return PROCESS_APT_PACKAGES }
+        }
         gitlabCommitStatus(name: "publish_third_party_apt", connection: gitLabConnection('git-lab-master')) {
           // Upload the apt packages as GitLab release artifacts
           withCredentials([string(credentialsId: 'gitlab-api-token', variable: 'GITLAB_TOKEN')]) {
@@ -168,7 +183,9 @@ spec:
       stage ('generate_license_acknowledgements') {
         gitlabCommitStatus(name: "generate_license_acknowledgements", connection: gitLabConnection('git-lab-master')) {
           // Generate license acknowledgements from downloaded packages
-          sh "python3 scripts/generate_license_acknowledgements.py --include-apt --output acknowledgements.md"
+          // Only include APT packages if they were processed
+          def aptFlag = PROCESS_APT_PACKAGES ? "--include-apt" : ""
+          sh "python3 scripts/generate_license_acknowledgements.py ${aptFlag} --output acknowledgements.md"
           
           // Archive the generated acknowledgements file as a build artifact
           archiveArtifacts artifacts: 'acknowledgements.md', onlyIfSuccessful: true
@@ -198,8 +215,14 @@ spec:
 
       stage ('cleanup_third_party_packages') {
         gitlabCommitStatus(name: "cleanup_third_party_packages", connection: gitLabConnection('git-lab-master')) {
-          // Clean up the third_party_wheels, third_party_apt, and third_party_apt_sources directories
-          sh "rm -rf ${WHEELS_DIR} ${APT_DIR} ${APT_SOURCES_DIR}"
+          // Define what to clean up based on what was processed
+          def dirsToClean = "${WHEELS_DIR}"
+          if (PROCESS_APT_PACKAGES) {
+            dirsToClean += " ${APT_DIR} ${APT_SOURCES_DIR}"
+          }
+          
+          // Clean up the directories
+          sh "rm -rf ${dirsToClean}"
         }
       }
     }
