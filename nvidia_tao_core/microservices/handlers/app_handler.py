@@ -2275,8 +2275,21 @@ class AppHandler:
             )
 
         try:
-            source_file = resolve_checkpoint_root_and_search(handler_metadata, job_id)
-            if not source_file:
+            network_arch = handler_metadata.get('network_arch')
+            source_files = []
+            if job_action == 'gen_trt_engine' and network_arch in MAXINE_NETWORKS:
+                encoder_regex = r'.*encoder.*\.(engine|engine\.trtpkg)$'
+                encoder_file = resolve_checkpoint_root_and_search(handler_metadata, job_id, regex=encoder_regex)
+                if encoder_file:
+                    source_files.append(encoder_file)
+                decoder_regex = r'.*decoder.*\.(engine|engine\.trtpkg)$'
+                decoder_file = resolve_checkpoint_root_and_search(handler_metadata, job_id, regex=decoder_regex)
+                if decoder_file:
+                    source_files.append(decoder_file)
+            else:
+                source_file = resolve_checkpoint_root_and_search(handler_metadata, job_id)
+                source_files.append(source_file)
+            if not source_files:
                 return Code(404, [], "Unable to find a model for the given job")
 
             # Create NGC model
@@ -2285,7 +2298,7 @@ class AppHandler:
                 return Code(403, {}, "User does not have access to publish model")
 
             code, message = ngc_handler.create_model(
-                org_name, team_name, handler_metadata, source_file, ngc_key, use_cookie, display_name, description
+                org_name, team_name, handler_metadata, source_files[0], ngc_key, use_cookie, display_name, description
             )
             if code not in [200, 200]:
                 logger.error("Error while creating NGC model")
@@ -2293,7 +2306,7 @@ class AppHandler:
 
             # Upload model version
             response_code, response_message = ngc_handler.upload_model(
-                org_name, team_name, handler_metadata, source_file, ngc_key, job_id, job_action
+                org_name, team_name, handler_metadata, source_files, ngc_key, job_id, job_action
             )
             if "already exists" in response_message:
                 response_message = (
