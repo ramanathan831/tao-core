@@ -18,9 +18,6 @@
                     "path": ".",
                     "type": "regex",
                     "regex": "mp4"
-                },
-                {
-                    "intent_restriction": ["testing"]
                 }
             ],
             "maxine_gaze": [

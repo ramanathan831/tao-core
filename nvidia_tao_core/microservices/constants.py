@@ -43,7 +43,7 @@ _DATA_SERVICES_ACTIONS = set([
     "annotation_format_convert", "auto_label", "augment", "analyze",
     "validate_images", "validate_annotations"
 ])
-_DATA_GENERATE_ACTIONS = set(["augment", "validate_images"])
+_DATA_GENERATE_ACTIONS = set(["dataset_convert_gaze", "augment", "validate_images"])
 
 MEDICAL_CUSTOM_ARCHITECT = ["monai_custom", "monai_classification", "monai_detection", "monai_segmentation"]
 MEDICAL_NETWORK_ARCHITECT = [
@@ -52,7 +52,7 @@ MEDICAL_NETWORK_ARCHITECT = [
 MEDICAL_AUTOML_ARCHITECT = ["monai_automl", "monai_automl_generated"]
 MONAI_NETWORKS = set(MEDICAL_NETWORK_ARCHITECT + MEDICAL_AUTOML_ARCHITECT)  # Data_Service tasks.
 NO_SPEC_ACTIONS_MODEL = (
-    "evaluate", "retrain", "inference", "inference_seq", "inference_trt"
+    "dataset_convert_gaze", "evaluate", "retrain", "export", "gen_trt_engine", "inference"
 )  # Actions with **optional** specs
 NO_PTM_MODELS = set([])  # These networks don't have a pretrained model that can be downloaded from ngc model registry
 _ITER_MODELS = set([])  # These networks operate on iterations instead of epochs
