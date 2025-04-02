@@ -225,5 +225,5 @@ def set_status_logger(status_logger):
 
 def get_status_logger():
     """Get the status logger."""
-    global _STATUS_LOGGER  # pylint: disable=W0602,W0603
+    global _STATUS_LOGGER  # pylint: disable=W0602,W0603 # noqa: F824
     return _STATUS_LOGGER
