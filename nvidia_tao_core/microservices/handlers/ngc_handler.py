@@ -16,6 +16,7 @@
 import json
 import os
 import sys
+import shutil
 import requests
 import logging
 from ngcbase import errors
@@ -281,9 +282,9 @@ def create_model(org_name, team_name, handler_metadata, source_file, ngc_key, us
     return status_code, message
 
 
-def upload_model(org_name, team_name, handler_metadata, source_file, ngc_key, job_id, job_action):
+def upload_model(org_name, team_name, handler_metadata, source_files, ngc_key, job_id, job_action):
     """Upload model to ngc private registry"""
-    logger.info("Publishing %s", source_file)
+    logger.info("Publishing %s", source_files)
     network = handler_metadata.get("network_arch")
 
     checkpoint_choose_method = handler_metadata.get("checkpoint_choose_method", "best_model")
@@ -293,27 +294,33 @@ def upload_model(org_name, team_name, handler_metadata, source_file, ngc_key, jo
     workspace_id = handler_metadata.get("workspace")
 
     workspace_identifier = get_workspace_string_identifier(workspace_id, workspace_cache={})
-    cloud_path = source_file[len(workspace_identifier):]
-    jobs_root = get_jobs_root(handler_metadata.get("user_id"), org_name=org_name)
-    local_path = os.path.join(jobs_root, cloud_path[cloud_path.find(job_id):])
 
     workspace_metadata = get_handler_metadata(workspace_id, "workspaces")
     cs_instance, _ = create_cs_instance(workspace_metadata)
-    cs_instance.download_file(cloud_path, local_path)
+    jobs_root = get_jobs_root(handler_metadata.get("user_id"), org_name=org_name)
+    local_dir = os.path.join(jobs_root, "publish_model_artifacts")
+    if not os.path.exists(local_dir):
+        os.makedirs(local_dir, exist_ok=True)
+    for source_file in source_files:
+        cloud_path = source_file[len(workspace_identifier):]
+        artifact_name = os.path.basename(cloud_path[:-1] if cloud_path[-1] == '/' else cloud_path)
+        local_path = os.path.join(jobs_root, "publish_model_artifacts", artifact_name)
+        cs_instance.download_file(cloud_path, local_path)
 
     target_version = f"{org_name}/{team_name}/{network}:{job_action}_{job_id}_{epoch_number}"
 
     try:
+        os.environ["NGC_CLI_HOME"] = "/tmp/.ngc"
         from ngcsdk import Client  # pylint: disable=C0415
         clt = Client()
         clt.configure(api_key=ngc_key, org_name=org_name, team_name=team_name)
-        clt.registry.model.upload_version(target=target_version, source=local_path, num_epochs=num_epochs_trained)
+        clt.registry.model.upload_version(target=target_version, source=local_dir, num_epochs=num_epochs_trained)
         clt.clear_config()
     except Exception as e:
-        os.remove(local_path)
+        shutil.rmtree(local_dir)
         logger.error("Exception in model_upload: %s, %s", str(e), type(e))
         return 404, str(e)
-    os.remove(local_path)
+    shutil.rmtree(local_dir)
     return 200, "Published model into requested org"
 
 
@@ -428,3 +435,20 @@ def validate_ptm_download(base_experiment_folder, sha256_digest):
                             )
                         return sha256_digest[filename] == downloaded_file_checksum
     return True
+
+
+def get_org_products(user_id, org_name):
+    """Return the products the ORG has subscribe to"""
+    ngc_key, _ = get_user_key(user_id, org_name)
+    headers = {}
+    headers['Authorization'] = 'Bearer ' + ngc_key
+    url = f'https://api.ngc.nvidia.com/v2/orgs/{org_name}'
+    response = requests.get(url, headers=headers, timeout=120)
+    products = []
+    if response.ok:
+        org_metadata = response.json().get("organizations", {})
+        product_enablements = org_metadata.get("productEnablements", [])
+        for product_enablement in product_enablements:
+            if product_enablement.get("productName", "") in ("TAO", "MONAI", "MAXINE"):
+                products.append(product_enablement.get("productName"))
+    return products

@@ -170,9 +170,12 @@ class ActionPipeline:
         if self.job_context.action in _DATA_SERVICES_ACTIONS and not self.network.startswith("monai"):
             self.image = DOCKER_IMAGE_MAPPER["TAO_DS"]
         # If current or parent action is gen_trt_engine or trtexec, then it'a a tao-deploy container action
-        if self.tao_deploy_actions:
-            self.image = DOCKER_IMAGE_MAPPER["TAO_DEPLOY"]
         # Override version of image specific for networks
+        if self.tao_deploy_actions:
+            team = "TAO"
+            if "maxine" in self.network:
+                team = "MAXINE"
+            self.image = DOCKER_IMAGE_MAPPER[f"{team}_DEPLOY"]
         if self.network in DOCKER_IMAGE_VERSION.keys():
             self.tao_framework_version, self.tao_model_override_version = DOCKER_IMAGE_VERSION[self.network]
             if self.tao_model_override_version not in self.image:
@@ -319,7 +322,10 @@ class ActionPipeline:
                 "instance_type": available_nvcf_instances[self.platform_id]["instance_type"]
             }
             if self.tao_deploy_actions:
-                nv_job_metadata["deployment_string"] = os.getenv('FUNCTION_TAO_DEPLOY')
+                team = "TAO"
+                if "maxine" in self.network:
+                    team = "MAXINE"
+                nv_job_metadata["deployment_string"] = os.getenv(f'FUNCTION_{team}_DEPLOY')
             nv_job_metadata["network"] = self.network
             for key, value in self.job_env_variables.items():
                 nv_job_metadata[key] = value
@@ -691,6 +697,9 @@ class CLIPipeline(ActionPipeline):
         if self.network == "object_detection" and "efficientdet" in self.action:
             self.network = self.action.replace("convert_", "")
             self.action = "dataset_convert"
+        if "maxine" in self.network and "dataset_convert" in self.action:
+            self.network = "maxine_eye_contact"
+            self.action = "dataset_convert"
         if self.network == "object_detection":
             if self.action == "annotation_format_convert":
                 self.network = "annotations"
@@ -864,8 +873,7 @@ class TrainVal(CLIPipeline):
             write_handler_metadata(self.handler_id, handler_metadata, self.handler_kind)
         # Create dataset for data service actions that generate new dataset
         # These actions create a new dataset as part of their actions
-        if (action in _DATA_GENERATE_ACTIONS or
-                (action == "dataset_convert" and self.network == "maxine_eye_contact")):
+        if action in _DATA_GENERATE_ACTIONS:
             from nvidia_tao_core.microservices.handlers.app_handler import AppHandler  # pylint: disable=C0415
             handler_metadata = get_handler_metadata(self.handler_id, self.handler_kind)
             request_dict = AppHandler.create_dataset_dict_from_experiment_metadata(
@@ -873,6 +881,8 @@ class TrainVal(CLIPipeline):
                 self.action,
                 handler_metadata
             )
+            if action == "dataset_convert_gaze":
+                request_dict["format"] = "maxine_gaze"
             response = AppHandler.create_dataset(
                 self.job_context.user_id,
                 self.job_context.org_name,

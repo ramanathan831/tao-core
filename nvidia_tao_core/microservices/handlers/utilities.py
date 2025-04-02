@@ -1300,7 +1300,7 @@ def get_files_from_cloud(handler_metadata, job_id):
     return files, action, res_root, workspace_id
 
 
-def resolve_checkpoint_root_and_search(handler_metadata, job_id):
+def resolve_checkpoint_root_and_search(handler_metadata, job_id, folder=False, regex=None):
     """Returns path of the model based on the action of the job"""
     if job_id is None:
         return None
@@ -1325,12 +1325,12 @@ def resolve_checkpoint_root_and_search(handler_metadata, job_id):
         result_file = format_checkpoints_path(result_file)
 
     elif action == "export":
-        regex_pattern = r'.*\.(onnx|uff)$'
+        regex_pattern = regex if regex else r'.*\.(onnx|uff)$'
         result_file = filter_files(files, regex_pattern=regex_pattern)
         result_file = format_checkpoints_path(result_file)
 
     elif action in ("trtexec", "gen_trt_engine"):
-        regex_pattern = r'.*\.(engine)$'
+        regex_pattern = regex if regex else r'.*\.(engine)$'
         result_file = filter_files(files, regex_pattern=regex_pattern)
         result_file = format_checkpoints_path(result_file)
     else:
@@ -1338,16 +1338,18 @@ def resolve_checkpoint_root_and_search(handler_metadata, job_id):
 
     if result_file:
         workspace_identifier = get_workspace_string_identifier(workspace_id, workspace_cache={})
+        if folder:
+            result_file = f"{os.path.dirname(result_file)}"
         if workspace_identifier not in result_file:
             result_file = f"{workspace_identifier}{result_file}"
 
     return result_file
 
 
-def get_model_results_path(handler_metadata, job_id):
+def get_model_results_path(handler_metadata, job_id, folder=False):
     """Return the model file for the job context and handler metadata passes"""
     logger.info("\nget_model_results_path\n")
-    return resolve_checkpoint_root_and_search(handler_metadata, job_id)
+    return resolve_checkpoint_root_and_search(handler_metadata, job_id, folder=folder)
 
 
 def get_model_bundle_root(org_name, experiment_id):
