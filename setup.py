@@ -61,7 +61,8 @@ setuptools.setup(
             'specs_utils/specs/**/*.csv',
             '*.sh',
             'uwsgi.ini',
-            'handlers/network_configs/*'
+            'handlers/network_configs/*',
+            'nginx.conf'
         ]
     },
     include_package_data=True,
@@ -71,6 +72,7 @@ setuptools.setup(
         'console_scripts': [
             'finetuning-microservice=nvidia_tao_core.microservices.app:main',
             'get-microservice-script=nvidia_tao_core.microservices.utils:print_start_script_path',
+            'get-nginx-conf-path=nvidia_tao_core.microservices.utils:print_nginx_conf_path',
         ],
     },
 )

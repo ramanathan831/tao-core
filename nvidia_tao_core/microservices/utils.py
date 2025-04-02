@@ -664,3 +664,8 @@ def is_cookie_request(request):
 def print_start_script_path():
     """Print the path to the start script."""
     print(os.path.join(os.path.dirname(__file__), 'app_start.sh'))
+
+
+def print_nginx_conf_path():
+    """Print the path to the nginx.conf file."""
+    print(os.path.join(os.path.dirname(__file__), 'nginx.conf'))
