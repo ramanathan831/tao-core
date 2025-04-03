@@ -442,6 +442,7 @@ def get_org_products(user_id, org_name):
     ngc_key, _ = get_user_key(user_id, org_name)
     headers = {}
     headers['Authorization'] = 'Bearer ' + ngc_key
+    headers['Accept-Encoding'] = "True"
     url = f'https://api.ngc.nvidia.com/v2/orgs/{org_name}'
     response = requests.get(url, headers=headers, timeout=120)
     products = []
