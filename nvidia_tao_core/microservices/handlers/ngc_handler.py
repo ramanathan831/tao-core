@@ -57,12 +57,12 @@ class ErrorResponse:
 def send_ngc_api_request(endpoint, requests_method, request_body, json=False, ngc_key="", accept_encoding=""):
     """Send NGC API requests with token refresh, retries, and timeout handling"""
     headers = {"Authorization": f"Bearer {ngc_key}"}
+    if accept_encoding:
+        headers['Accept-Encoding'] = accept_encoding
     if requests_method == "POST":
         if json:
             headers['accept'] = 'application/json'
             headers['Content-Type'] = 'application/json'
-        if accept_encoding:
-            headers['Accept-Encoding'] = accept_encoding
         response = requests.post(url=endpoint, data=request_body, headers=headers, timeout=TIMEOUT)
     elif requests_method == "GET":
         response = requests.get(url=endpoint, headers=headers, timeout=TIMEOUT)
