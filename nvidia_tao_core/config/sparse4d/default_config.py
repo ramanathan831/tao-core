@@ -168,8 +168,14 @@ class Sparse4DLossClsConfig:
     use_sigmoid: bool = BOOL_FIELD(value=True, default_value=True, description="Use sigmoid")
     gamma: float = FLOAT_FIELD(value=2.0, default_value=2.0, valid_min=0, valid_max="inf", description="Focal loss gamma")
     alpha: float = FLOAT_FIELD(value=0.25, default_value=0.25, valid_min=0, valid_max=1, description="Focal loss alpha")
-    cls_weight: float = FLOAT_FIELD(value=2.0, default_value=2.0, valid_min=0, valid_max="inf", description="Loss weight")
+    loss_weight: float = FLOAT_FIELD(value=2.0, default_value=2.0, valid_min=0, valid_max="inf", description="Loss weight")
 
+@dataclass
+class Sparse4DTrainDatasetConfig:
+    """Training dataset configuration for Sparse4D."""
+    
+    ann_file: str = STR_FIELD(value=MISSING, default_value="", description="Path to annotation file")
+    # Add other train dataset specific fields as needed
 
 @dataclass
 class Sparse4DLossRegConfig:
@@ -213,6 +219,27 @@ class Sparse4DVisibilityNetConfig:
     embedding_dim: int = INT_FIELD(value=256, default_value=256, valid_min=1, valid_max="inf", description="Embedding dimension")
     hidden_channels: int = INT_FIELD(value=32, default_value=32, valid_min=1, valid_max="inf", description="Hidden channels")
 
+@dataclass
+class Sparse4DSamplerConfig:
+    """Sampler configuration for Sparse4D."""
+
+    num_dn_groups: int = INT_FIELD(value=5, default_value=5, valid_min=1, valid_max="inf", description="Number of DN groups")
+    num_temp_dn_groups: int = INT_FIELD(value=3, default_value=3, valid_min=0, valid_max="inf", description="Number of temporal DN groups")
+    dn_noise_scale: List[float] = LIST_FIELD(
+        arrList=[2.0, 2.0, 2.0, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5], 
+        default_value=[2.0, 2.0, 2.0, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5], 
+        description="DN noise scale"
+    )
+    max_dn_gt: int = INT_FIELD(value=32, default_value=32, valid_min=1, valid_max="inf", description="Maximum DN ground truth")
+    add_neg_dn: bool = BOOL_FIELD(value=True, default_value=True, description="Add negative DN")
+    cls_weight: float = FLOAT_FIELD(value=2.0, default_value=2.0, valid_min=0, valid_max="inf", description="Classification weight")
+    box_weight: float = FLOAT_FIELD(value=0.25, default_value=0.25, valid_min=0, valid_max="inf", description="Box weight")
+    reg_weights: List[float] = LIST_FIELD(
+        arrList=[2.0, 2.0, 2.0, 0.5, 0.5, 0.5, 0.0, 0.0, 0.0, 0.0, 0.0],
+        default_value=[2.0, 2.0, 2.0, 0.5, 0.5, 0.5, 0.0, 0.0, 0.0, 0.0, 0.0],
+        description="Regression weights"
+    )
+
 
 @dataclass
 class Sparse4DHeadConfig:
@@ -236,6 +263,12 @@ class Sparse4DHeadConfig:
     visibility_net: Sparse4DVisibilityNetConfig = DATACLASS_FIELD(Sparse4DVisibilityNetConfig())
     instance_bank: Sparse4DInstanceBankConfig = DATACLASS_FIELD(Sparse4DInstanceBankConfig())
     kps_generator: Sparse4DKpsGeneratorConfig = DATACLASS_FIELD(Sparse4DKpsGeneratorConfig())
+    sampler: Sparse4DSamplerConfig = DATACLASS_FIELD(Sparse4DSamplerConfig())
+    reg_weights: List[float] = LIST_FIELD(
+        arrList=[2.0, 2.0, 2.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
+        default_value=[2.0, 2.0, 2.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
+        description="Regression weights"
+    )
     loss: Sparse4DLossConfig = DATACLASS_FIELD(Sparse4DLossConfig())
     bnneck: Sparse4DBNNeckConfig = DATACLASS_FIELD(Sparse4DBNNeckConfig())
 
@@ -308,7 +341,7 @@ class Sparse4DDatasetConfig:
     augmentation: Sparse4DAugmentationConfig = DATACLASS_FIELD(Sparse4DAugmentationConfig())
     normalize: Sparse4DNormalizeConfig = DATACLASS_FIELD(Sparse4DNormalizeConfig())
     sequences: Sparse4DSequencesConfig = DATACLASS_FIELD(Sparse4DSequencesConfig())
-
+    train_dataset: Sparse4DTrainDatasetConfig = DATACLASS_FIELD(Sparse4DTrainDatasetConfig())
 
 @dataclass
 class Sparse4DEvaluateConfig(EvaluateConfig):
