@@ -25,7 +25,7 @@ TEST_MODULES = [
 STATIC_TESTS = [
     f"pylint --rcfile {RCFILE}",
     "pydocstyle --ignore=D400,D213,D203,D211,D4",
-    "flake8 --ignore=E24,W504,E501",
+    "flake8 --ignore=E24,W504 --max-line-length=120",
 ]
 
 

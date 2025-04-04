@@ -96,16 +96,19 @@ class GDINOAugmentationConfig:
     fixed_padding: bool = BOOL_FIELD(
         value="TRUE",
         default_value="TRUE",
-        description="""A flag specifying whether to resize the image (with no padding) to
-                     (sorted(scales[-1]), random_resize_max_size) to prevent a CPU " \
-                    memory leak. """,
+        description=(
+            "A flag specifying whether to resize the image (with no padding) to "
+            "(sorted(scales[-1]), random_resize_max_size) to prevent a CPU memory leak."
+        ),
         display_name="fixed padding"
     )
     fixed_random_crop: Optional[int] = INT_FIELD(
         value=None,
         default_value=1024,
-        description="""A flag to enable Large Scale Jittering, which is used for ViT backbones.
-                    The resulting image resolution is fixed to fixed_random_crop.""",
+        description=(
+            "A flag to enable Large Scale Jittering, which is used for ViT backbones. "
+            "The resulting image resolution is fixed to fixed_random_crop."
+        ),
         display_name="fixed random crop",
         valid_min=1,
         valid_max="inf"
@@ -118,40 +121,51 @@ class GDINODatasetConfig:
 
     train_data_sources: Optional[List[Dict[str, str]]] = LIST_FIELD(
         arrList=None,
-        default_value=[{"image_dir": "", "json_file": "", "label_map": ""}, {"image_dir": "", "json_file": ""}],
-        description="""The list of data sources for training:
-                    * image_dir : The directory that contains the training images
-                    * json_file : The path of the JSONL file, which uses training-annotation ODVG format
-                    * label_map: (Optional) The path of the label mapping only required for detection dataset""",
+        default_value=[
+            {"image_dir": "", "json_file": "", "label_map": ""},
+            {"image_dir": "", "json_file": ""}
+        ],
+        description=(
+            "The list of data sources for training:\n"
+            "* image_dir : The directory that contains the training images\n"
+            "* json_file : The path of the JSONL file, which uses training-annotation ODVG format\n"
+            "* label_map: (Optional) The path of the label mapping only required for detection dataset"
+        ),
         display_name="train data sources",
     )
     val_data_sources: Optional[Dict[str, str]] = DICT_FIELD(
         hashMap=None,
         arrList=None,
         default_value={"image_dir": "", "json_file": ""},
-        description="""The data source for validation:
-                    * image_dir : The directory that contains the validation images
-                    * json_file : The path of the JSON file, which uses validation-annotation COCO format.
-                    Note that category id needs to start from 0 if we want to calculate validation loss.
-                    Run Data Services annotation convert to making the categories contiguous.""",
+        description=(
+            "The data source for validation:\n"
+            "* image_dir : The directory that contains the validation images\n"
+            "* json_file : The path of the JSON file, which uses validation-annotation COCO format.\n"
+            "Note that category id needs to start from 0 if we want to calculate validation loss.\n"
+            "Run Data Services annotation convert to making the categories contiguous."
+        ),
         display_name="validation data sources",
     )
     test_data_sources: Optional[Dict[str, str]] = DICT_FIELD(
         hashMap=None,
         arrList=None,
         default_value={"image_dir": "", "json_file": ""},
-        description="""The data source for testing:
-                    * image_dir : The directory that contains the test images
-                    * json_file : The path of the JSON file, which uses test-annotation COCO format""",
+        description=(
+            "The data source for testing:\n"
+            "* image_dir : The directory that contains the test images\n"
+            "* json_file : The path of the JSON file, which uses test-annotation COCO format"
+        ),
         display_name="test data sources",
     )
     infer_data_sources: Optional[Dict[str, str]] = DICT_FIELD(
         hashMap=None,
         arrList=None,
         default_value={"image_dir": [""], "captions": [""]},
-        description="""The data source for inference:
-                    * image_dir : The list of directories that contains the inference images
-                    * captions : The list of caption to run inference""",
+        description=(
+            "The data source for inference:\n"
+            "* image_dir : The list of directories that contains the inference images\n"
+            "* captions : The list of caption to run inference"
+        ),
         display_name="infer data sources",
     )
     batch_size: int = INT_FIELD(
@@ -174,28 +188,34 @@ class GDINODatasetConfig:
         value=True,
         default_value=True,
         display_name="pin_memory",
-        description="""Flag to enable the dataloader to allocated pagelocked memory for faster
-                    of data between the CPU and GPU."""
+        description=(
+            "Flag to enable the dataloader to allocated pagelocked memory for faster "
+            "of data between the CPU and GPU."
+        )
     )
     dataset_type: str = STR_FIELD(
         value="serialized",
         default_value="serialized",
         display_name="dataset type",
-        description="""If set to default, we follow the standard map-style dataset structure
-                    from torch which loads ODVG annotation in every subprocess. This leads to redudant
-                    copy of data and can cause RAM to explod if `workers` is high. If set to serialized,
-                    the data is serialized through pickle and `torch.Tensor` that allows the data to be shared
-                    across subprocess. As a result, RAM usage can be greatly improved.""",
+        description=(
+            "If set to default, we follow the standard map-style dataset structure "
+            "from torch which loads ODVG annotation in every subprocess. This leads to redudant "
+            "copy of data and can cause RAM to explod if `workers` is high. If set to serialized, "
+            "the data is serialized through pickle and `torch.Tensor` that allows the data to be shared "
+            "across subprocess. As a result, RAM usage can be greatly improved."
+        ),
         valid_options=",".join(["serialized", "default"])
     )
     max_labels: int = INT_FIELD(
         value=50,
         default_value=50,
-        description="""The total number of labels to sample from. After sampling positive labels,
-                    we randomly sample negative samples so that total number of labels equal to `max_labels`.
-                    For detection dataset, negative labels are categories not present in the image.
-                    For grounding dataset, negative labels are phrases in the original caption not present in the image.
-                    Setting higher `max_labels` may improve robustness of the model with the cost of longer training time.""",
+        description=(
+            "The total number of labels to sample from. After sampling positive labels, "
+            "we randomly sample negative samples so that total number of labels equal to `max_labels`. "
+            "For detection dataset, negative labels are categories not present in the image. "
+            "For grounding dataset, negative labels are phrases in the original caption not present in the image. "
+            "Setting higher `max_labels` may improve robustness of the model with the cost of longer training time."
+        ),
         math_cond=">0",
         valid_min=1,
         valid_max="inf",

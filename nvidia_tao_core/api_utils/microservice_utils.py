@@ -12,10 +12,12 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Microservice utils"""
+"""Microservice utilities."""
 
 import requests
 import json
+
+TIMEOUT = 120
 
 
 def invoke_microservices(request_dict):
@@ -34,7 +36,10 @@ def invoke_microservices(request_dict):
     tao_api_ui_cookie = request_dict.get('tao_api_ui_cookie', "")
     tao_api_admin_key = request_dict.get('tao_api_admin_key', "")
     tao_api_base_url = request_dict.get('tao_api_base_url', "https://nvidia.com")
-    tao_api_status_callback_url = request_dict.get('tao_api_status_callback_url', "https://nvidia.com")
+    tao_api_status_callback_url = request_dict.get(
+        'tao_api_status_callback_url',
+        "https://nvidia.com"
+    )
     automl_experiment_number = request_dict.get('automl_experiment_number', "")
     hosted_service_interaction = request_dict.get('hosted_service_interaction', "")
     nvcf_helm = request_dict.get('nvcf_helm', "")
@@ -42,37 +47,48 @@ def invoke_microservices(request_dict):
 
     response = None
     if api_endpoint == "get_networks":
-        response = requests.get(f"{url}/neural_networks")   # noqa pylint: disable=W3101
+        response = requests.get(f"{url}/neural_networks", timeout=TIMEOUT)
     elif api_endpoint == "get_actions":
-        response = requests.get(f"{url}/neural_networks/{neural_network_name}/actions")   # noqa pylint: disable=W3101
+        response = requests.get(f"{url}/neural_networks/{neural_network_name}/actions", timeout=TIMEOUT)
     elif api_endpoint == "list_ptms":
         req_obj = {"ngc_key": ngc_key}
-        response = requests.post(f"{url}/neural_networks/{neural_network_name}/pretrained_models", req_obj)   # noqa pylint: disable=W3101
+        url_path = f"{url}/neural_networks/{neural_network_name}/pretrained_models"
+        response = requests.post(url_path, req_obj, timeout=TIMEOUT)
     elif api_endpoint == "get_schema":
-        response = requests.get(f"{url}/neural_networks/{neural_network_name}/actions/{action_name}:schema")   # noqa pylint: disable=W3101
+        url_path = f"{url}/neural_networks/{neural_network_name}/actions/{action_name}:schema"
+        response = requests.get(url_path, timeout=TIMEOUT)
     elif api_endpoint == "post_action":
-        req_obj = {"specs": specs,
-                   "cloud_metadata": storage,
-                   "ngc_key": ngc_key,
-                   "job_id": job_id,
-                   "telemetry_opt_out": telemetry_opt_out,
-                   "use_ngc_staging": use_ngc_staging,
-                   "tao_api_ui_cookie": tao_api_ui_cookie,
-                   "tao_api_admin_key": tao_api_admin_key,
-                   "tao_api_base_url": tao_api_base_url,
-                   "tao_api_status_callback_url": tao_api_status_callback_url,
-                   "automl_experiment_number": automl_experiment_number,
-                   "hosted_service_interaction": hosted_service_interaction,
-                   "nvcf_helm": nvcf_helm,
-                   "docker_env_vars": docker_env_vars,
-                   }
-        response = requests.post(f"{url}/neural_networks/{neural_network_name}/actions/{action_name}", data=json.dumps(req_obj))   # noqa pylint: disable=W3101
+        req_obj = {
+            "specs": specs,
+            "cloud_metadata": storage,
+            "ngc_key": ngc_key,
+            "job_id": job_id,
+            "telemetry_opt_out": telemetry_opt_out,
+            "use_ngc_staging": use_ngc_staging,
+            "tao_api_ui_cookie": tao_api_ui_cookie,
+            "tao_api_admin_key": tao_api_admin_key,
+            "tao_api_base_url": tao_api_base_url,
+            "tao_api_status_callback_url": tao_api_status_callback_url,
+            "automl_experiment_number": automl_experiment_number,
+            "hosted_service_interaction": hosted_service_interaction,
+            "nvcf_helm": nvcf_helm,
+            "docker_env_vars": docker_env_vars,
+        }
+        url_path = f"{url}/neural_networks/{neural_network_name}/actions/{action_name}"
+        response = requests.post(url_path, data=json.dumps(req_obj), timeout=TIMEOUT)
     elif api_endpoint == "get_jobs":
-        response = requests.get(f"{url}/neural_networks/{neural_network_name}/actions/{action_name}:ids")   # noqa pylint: disable=W3101
+        url_path = f"{url}/neural_networks/{neural_network_name}/actions/{action_name}:ids"
+        response = requests.get(url_path, timeout=TIMEOUT)
     elif api_endpoint == "get_job_status":
-        response = requests.get(f"{url}/neural_networks/{neural_network_name}/actions/{action_name}/{job_id}")   # noqa pylint: disable=W3101
+        url_path = f"{url}/neural_networks/{neural_network_name}/actions/{action_name}/{job_id}"
+        response = requests.get(url_path, timeout=TIMEOUT)
 
     if response and response.status_code in (200, 201):
         return response.json()
 
-    raise ValueError(f"{response.json()['error_desc']}" if response.json().get('error_desc') else f"Failed to get execute (Status Code: {response.status_code} : {response.json()})")
+    error_desc = response.json().get('error_desc')
+    if error_desc:
+        raise ValueError(error_desc)
+    raise ValueError(
+        f"Failed to get execute (Status Code: {response.status_code} : {response.json()})"
+    )

@@ -19,6 +19,9 @@
 import json
 import pynvml
 
+if not hasattr(pynvml, 'NVML_BRAND_NVIDIA_CLOUD_GAMING'):
+    pynvml.NVML_BRAND_NVIDIA_CLOUD_GAMING = 14  # This is the value used in newer versions
+
 BRAND_NAMES = {
     pynvml.NVML_BRAND_UNKNOWN:              "Unknown",
     pynvml.NVML_BRAND_QUADRO:               "Quadro",

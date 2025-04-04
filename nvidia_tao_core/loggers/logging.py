@@ -14,7 +14,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Logger class for TLT IVA models."""
+"""Logger class"""
 
 from abc import abstractmethod
 from datetime import datetime
@@ -184,6 +184,10 @@ class StatusLogger(BaseLogger):
         """Logger to write out the status."""
         super().__init__(is_master=is_master, verbosity=verbosity)
         self.log_path = os.path.realpath(filename)
+        if not os.path.exists(os.path.dirname(self.log_path)):
+            os.makedirs(os.path.dirname(self.log_path), exist_ok=True)
+        self.append = append
+        self.is_master = is_master
         if os.path.exists(self.log_path):
             logger.info(f"Log file already exists at {self.log_path}".format)
         if is_master:
@@ -221,5 +225,5 @@ def set_status_logger(status_logger):
 
 def get_status_logger():
     """Get the status logger."""
-    global _STATUS_LOGGER  # pylint: disable=W0602,W0603
+    global _STATUS_LOGGER  # pylint: disable=W0602,W0603 # noqa: F824
     return _STATUS_LOGGER

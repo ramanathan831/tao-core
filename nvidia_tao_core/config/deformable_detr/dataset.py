@@ -179,16 +179,19 @@ class DDAugmentationConfig:
     fixed_padding: bool = BOOL_FIELD(
         value="TRUE",
         default_value="TRUE",
-        description="""A flag specifying whether to resize the image (with no padding) to
-                     (sorted(scales[-1]), random_resize_max_size) to prevent a CPU " \
-                    memory leak. """,
+        description=(
+            "A flag specifying whether to resize the image (with no padding) to "
+            "(sorted(scales[-1]), random_resize_max_size) to prevent a CPU memory leak."
+        ),
         display_name="fixed padding"
     )
     fixed_random_crop: Optional[int] = INT_FIELD(
         value=None,
         default_value=1024,
-        description="""A flag to enable Large Scale Jittering, which is used for ViT backbones.
-                    The resulting image resolution is fixed to fixed_random_crop.""",
+        description=(
+            "A flag to enable Large Scale Jittering, which is used for ViT backbones. "
+            "The resulting image resolution is fixed to fixed_random_crop."
+        ),
         display_name="fixed random crop",
         valid_min=1,
         valid_max="inf"
@@ -202,8 +205,10 @@ class DDDatasetConfig:
     train_sampler: str = STR_FIELD(
         value="default_sampler",
         default_value="default_sampler",
-        description="""The minibatch sampling method. Non-default sampling methods can be enabled for multi-node jobs. \
-                    The config doesn't have any effect if the :code:`dataset_type` isn't set to `default`.""",
+        description=(
+            "The minibatch sampling method. Non-default sampling methods can be enabled for multi-node jobs. "
+            "The config doesn't have any effect if the :code:`dataset_type` isn't set to `default`."
+        ),
         valid_options=",".join(["default_sampler", "non_uniform_sampler", "uniform_sampler"]),
         display_name="train sampler"
     )
@@ -262,18 +267,22 @@ class DDDatasetConfig:
         value=True,
         default_value=True,
         display_name="pin_memory",
-        description="""Flag to enable the dataloader to allocated pagelocked memory for faster
-                    of data between the CPU and GPU."""
+        description=(
+            "Flag to enable the dataloader to allocated pagelocked memory for faster "
+            "of data between the CPU and GPU."
+        )
     )
     dataset_type: str = STR_FIELD(
         value="serialized",
         default_value="serialized",
         display_name="dataset type",
-        description="""If set to default, we follow the standard CocoDetection` dataset structure
-                    from the torchvision which loads COCO annotation in every subprocess. This leads to redudant
-                    copy of data and can cause RAM to explod if workers` is high. If set to serialized,
-                    the data is serialized through pickle and torch.Tensor` that allows the data to be shared
-                    across subprocess. As a result, RAM usage can be greatly improved.""",
+        description=(
+            "If set to default, we follow the standard CocoDetection` dataset structure "
+            "from the torchvision which loads COCO annotation in every subprocess. This leads to redudant "
+            "copy of data and can cause RAM to explod if workers` is high. If set to serialized, "
+            "the data is serialized through pickle and torch.Tensor` that allows the data to be shared "
+            "across subprocess. As a result, RAM usage can be greatly improved."
+        ),
         valid_options=",".join(["serialized", "default"])
     )
     num_classes: int = INT_FIELD(

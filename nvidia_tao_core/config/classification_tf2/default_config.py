@@ -185,7 +185,15 @@ class EvalConfig:
     dataset_path: str = STR_FIELD(value=MISSING)
     checkpoint: str = STR_FIELD(value=MISSING)
     trt_engine: Optional[str] = STR_FIELD(value=None)
-    batch_size: int = INT_FIELD(value=64, default_value=1, valid_min=1, valid_max="inf", popular="yes", display_name="Batch Size", description="Batch size to use for evaluation.")
+    batch_size: int = INT_FIELD(
+        value=64,
+        default_value=1,
+        valid_min=1,
+        valid_max="inf",
+        popular="yes",
+        display_name="Batch Size",
+        description="Batch size to use for evaluation."
+    )
     n_workers: int = INT_FIELD(value=64, default_value=1, valid_min=1, valid_max="inf")
     top_k: int = INT_FIELD(value=3, default_value=1, valid_min=1, valid_max="inf")
     classmap: str = STR_FIELD(value="")
@@ -207,8 +215,20 @@ class CalibrationConfig:
 
     cal_image_dir: str = STR_FIELD(value="")
     cal_cache_file: str = STR_FIELD(value="")
-    cal_batch_size: int = INT_FIELD(value=1, default_value=16, popular="yes", display_name="Calibration Batch Size", description="Batch size to use for calibration.")
-    cal_batches: int = INT_FIELD(value=1, default_value=10, popular="yes", display_name="Calibration Batches", description="Number of batches to use for calibration.")
+    cal_batch_size: int = INT_FIELD(
+        value=1,
+        default_value=16,
+        popular="yes",
+        display_name="Calibration Batch Size",
+        description="Batch size to use for calibration."
+    )
+    cal_batches: int = INT_FIELD(
+        value=1,
+        default_value=10,
+        popular="yes",
+        display_name="Calibration Batches",
+        description="Number of batches to use for calibration."
+    )
     cal_data_file: str = STR_FIELD(value="")
 
 
@@ -218,9 +238,24 @@ class TrtConfig:
 
     data_type: str = STR_FIELD(value="fp32", valid_options="fp32,int8,fp16")
     max_workspace_size: int = INT_FIELD(value=2)  # in Gb
-    min_batch_size: int = INT_FIELD(value=1, popular="yes", display_name="Min Batch Size", description="Minimum batch size for TensorRT engine.")
-    opt_batch_size: int = INT_FIELD(value=1, popular="yes", display_name="Opt Batch Size", description="Optimal batch size for TensorRT engine.")
-    max_batch_size: int = INT_FIELD(value=1, popular="yes", display_name="Max Batch Size", description="Maximum batch size for TensorRT engine.")
+    min_batch_size: int = INT_FIELD(
+        value=1,
+        popular="yes",
+        display_name="Min Batch Size",
+        description="Minimum batch size for TensorRT engine."
+    )
+    opt_batch_size: int = INT_FIELD(
+        value=1,
+        popular="yes",
+        display_name="Opt Batch Size",
+        description="Optimal batch size for TensorRT engine."
+    )
+    max_batch_size: int = INT_FIELD(
+        value=1,
+        popular="yes",
+        display_name="Max Batch Size",
+        description="Maximum batch size for TensorRT engine."
+    )
     calibration: CalibrationConfig = DATACLASS_FIELD(CalibrationConfig())
 
 

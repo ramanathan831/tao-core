@@ -18,8 +18,13 @@ from typing import List, Optional
 from dataclasses import dataclass
 
 from nvidia_tao_core.config.common.common_config import (
-    EvaluateConfig, CommonExperimentConfig,
-    InferenceConfig, TrainConfig
+    CommonExperimentConfig,
+    EvaluateConfig,
+    ExportConfig,
+    TrtConfig,
+    GenTrtEngineConfig,
+    InferenceConfig,
+    TrainConfig,
 )
 from nvidia_tao_core.config.utils.types import (
     STR_FIELD,
@@ -221,9 +226,14 @@ class MAEModelConfig:
     arch: str = STR_FIELD(
         value='convnextv2_base', value_type="ordered", default_value="convnextv2_base",
         valid_options=",".join([
-            "convnextv2_atto", "convnextv2_femto", "convnextv2_pico", "convnextv2_nano", "convnextv2_tiny", "convnextv2_base", "convnextv2_large", "convnextv2_huge",
-            "vit_base_patch16", "vit_large_patch16", "vit_huge_patch14",
-            "hiera_tiny_224", "hiera_small_224", "hiera_base_224", "hiera_large_224", "hiera_huge_224"
+            "convnextv2_atto",
+            "convnextv2_femto",
+            "convnextv2_pico",
+            "convnextv2_nano",
+            "convnextv2_tiny",
+            "convnextv2_base",
+            "convnextv2_large",
+            "convnextv2_huge"
         ]),
         description="Model architecture.",
         display_name="Model arch")
@@ -307,6 +317,25 @@ class MAETrainExpConfig(TrainConfig):
 
 
 @dataclass
+class MAETRTEngineConfig(TrtConfig):
+    """Trt config."""
+
+    data_type: str = STR_FIELD(
+        value="fp32",
+        default_value="fp32,fp16",
+        description="Data type",
+        display_name="Data type"
+    )
+
+
+@dataclass
+class MAEGenTrtEngineConfig(GenTrtEngineConfig):
+    """Gen trt engine config."""
+
+    tensorrt: MAETRTEngineConfig = DATACLASS_FIELD(MAETRTEngineConfig())
+
+
+@dataclass
 class ExperimentConfig(CommonExperimentConfig):
     """Experiment configuration template."""
 
@@ -315,3 +344,5 @@ class ExperimentConfig(CommonExperimentConfig):
     model: MAEModelConfig = DATACLASS_FIELD(MAEModelConfig())
     inference: InferenceConfig = DATACLASS_FIELD(InferenceConfig())
     evaluate: EvaluateConfig = DATACLASS_FIELD(EvaluateConfig())
+    gen_trt_engine: MAEGenTrtEngineConfig = DATACLASS_FIELD(MAEGenTrtEngineConfig())
+    export: ExportConfig = DATACLASS_FIELD(ExportConfig())

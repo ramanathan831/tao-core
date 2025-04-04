@@ -97,10 +97,19 @@ class BEVFusionTrainExpConfig(TrainConfig):
         display_name="optimizer"
     )
     lr_scheduler: List[Dict[Any, Any]] = LIST_FIELD(
-        arrList=[{'type': 'LinearLR', 'start_factor': 0.33333333, 'by_epoch': False, 'begin': 0, 'end': 500},
-                 {'type': 'CosineAnnealingLR', 'T_max': 10, 'eta_min_ratio': 1e-4, 'begin': 0, 'end': 10, 'by_epoch': True},
-                 {'type': 'CosineAnnealingMomentum', 'eta_min': 0.8947, 'begin': 0, 'end': 2.4, 'by_epoch': True},
-                 {'type': 'CosineAnnealingMomentum',  'eta_min': 1, 'begin': 2.4, 'end': 10, 'by_epoch': True}],
+        arrList=[
+            {'type': 'LinearLR', 'start_factor': 0.33333333, 'by_epoch': False, 'begin': 0, 'end': 500},
+            {
+                'type': 'CosineAnnealingLR',
+                'T_max': 10,
+                'eta_min_ratio': 1e-4,
+                'begin': 0,
+                'end': 10,
+                'by_epoch': True
+            },
+            {'type': 'CosineAnnealingMomentum', 'eta_min': 0.8947, 'begin': 0, 'end': 2.4, 'by_epoch': True},
+            {'type': 'CosineAnnealingMomentum',  'eta_min': 1, 'begin': 2.4, 'end': 10, 'by_epoch': True}
+        ],
         description="Hyper parameters to configure the learning rate scheduler.",
         display_name="learning rate scheduler."
     )

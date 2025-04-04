@@ -15,9 +15,9 @@
 """This module provides utility functions to create dataclass fields with customized metadata for various data types.
 
 Each function in this module is designed to simplify the creation of dataclass fields with predefined metadata,
-which can be further customized via keyword arguments. This approach facilitates the definition of models or configurations
-where the properties of data fields need to be clearly specified, such as in settings for data validation, serialization,
-or user interfaces.
+which can be further customized via keyword arguments. This approach facilitates the definition of models or
+configurations where the properties of data fields need to be clearly specified, such as in settings for data
+validation, serialization, or user interfaces.
 
 Functions:
     STR_FIELD(value, **meta_args) - Returns a dataclass field for a string with customizable metadata.
@@ -26,10 +26,11 @@ Functions:
     BOOL_FIELD(value, **meta_args) - Returns a dataclass field for a boolean with customizable metadata.
     LIST_FIELD(arrList, **meta_args) - Returns a dataclass field for a list with customizable metadata.
     DICT_FIELD(hashMap, **meta_args) - Returns a dataclass field for a dictionary with customizable metadata.
-    DATACLASS_FIELD(hashMap, **meta_args) - Returns a dataclass field for dataclass instances with customizable metadata.
+    DATACLASS_FIELD(hashMap, **meta_args) - Returns a dataclass field for dataclass instances with customizable
+        metadata.
 
-Each function supports an extensive range of metadata options to define attributes like display name, description, default values,
-examples, validation constraints, and dependency relationships among fields.
+Each function supports an extensive range of metadata options to define attributes like display name,
+description, default values, examples, validation constraints, and dependency relationships among fields.
 
 Usage:
     The module functions can be directly called to create fields in dataclasses, where each field's characteristics
@@ -44,7 +45,8 @@ def STR_FIELD(value, **meta_args):
 
     Args:
         value (str): Default value for the field.
-        **meta_args: Arbitrary keyword arguments for additional metadata attributes such as display name, description, etc.
+        **meta_args: Arbitrary keyword arguments for additional metadata attributes such as display
+            name, description, etc.
 
     Returns:
         dataclasses.Field: Configured dataclass field with specified metadata and default value.
@@ -80,7 +82,8 @@ def INT_FIELD(value, **meta_args):
 
     Args:
         value (int): Default value for the field.
-        **meta_args: Arbitrary keyword arguments for additional metadata attributes such as display name, description, etc.
+        **meta_args: Arbitrary keyword arguments for additional metadata attributes such as display
+            name, description, etc.
 
     Returns:
         dataclasses.Field: Configured dataclass field with specified metadata and default value.
@@ -116,7 +119,8 @@ def FLOAT_FIELD(value, **meta_args):
 
     Args:
         value (float): Default value for the field.
-        **meta_args: Arbitrary keyword arguments for additional metadata attributes such as display name, description, etc.
+        **meta_args: Arbitrary keyword arguments for additional metadata attributes such as display
+            name, description, etc.
 
     Returns:
         dataclasses.Field: Configured dataclass field with specified metadata and default value.
@@ -150,7 +154,8 @@ def BOOL_FIELD(value, **meta_args):
 
     Args:
         value (bool): Default value for the field.
-        **meta_args: Arbitrary keyword arguments for additional metadata attributes such as display name, description, etc.
+        **meta_args: Arbitrary keyword arguments for additional metadata attributes such as display
+            name, description, etc.
 
     Returns:
         dataclasses.Field: Configured dataclass field with specified metadata and default value.
@@ -184,10 +189,12 @@ def LIST_FIELD(arrList, **meta_args):
 
     Args:
         arrList (list): Default list to initialize the field with.
-        **meta_args: Arbitrary keyword arguments for additional metadata attributes such as display name, description, etc.
+        **meta_args: Arbitrary keyword arguments for additional metadata attributes such as display
+            name, description, etc.
 
     Returns:
-        dataclasses.Field: Configured dataclass field with specified metadata and default value (default factory if specified).
+        dataclasses.Field: Configured dataclass field with specified metadata and default value
+            (default factory if specified).
     """
     metadata = {
         "display_name": "",
@@ -216,10 +223,12 @@ def DICT_FIELD(hashMap, **meta_args):
 
     Args:
         hashMap (dict): Default dictionary to initialize the field with.
-        **meta_args: Arbitrary keyword arguments for additional metadata attributes such as display name, description, etc.
+        **meta_args: Arbitrary keyword arguments for additional metadata attributes such as display
+            name, description, etc.
 
     Returns:
-        dataclasses.Field: Configured dataclass field with specified metadata and default value (default factory if specified).
+        dataclasses.Field: Configured dataclass field with specified metadata and default value
+            (default factory if specified).
     """
     metadata = {
         "display_name": "",
@@ -248,10 +257,12 @@ def DATACLASS_FIELD(hashMap, **meta_args):
 
     Args:
         hashMap (any): Default dataclass instance to initialize the field with.
-        **meta_args: Arbitrary keyword arguments for additional metadata attributes such as display name, description, etc.
+        **meta_args: Arbitrary keyword arguments for additional metadata attributes such as display
+            name, description, etc.
 
     Returns:
-        dataclasses.Field: Configured dataclass field with specified metadata and default value (default factory if specified).
+        dataclasses.Field: Configured dataclass field with specified metadata and default value
+            (default factory if specified).
     """
     metadata = {
         "display_name": "",

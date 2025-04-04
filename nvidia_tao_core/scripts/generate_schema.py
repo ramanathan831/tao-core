@@ -19,11 +19,15 @@ from nvidia_tao_core.api_utils import dataclass2json_converter
 
 def generate_schema(neural_network_name, action=""):
     """Generates JSON schema for network"""
-    imported_module = dataclass2json_converter.import_module_from_path(f"nvidia_tao_core.config.{neural_network_name}.default_config")
+    imported_module = dataclass2json_converter.import_module_from_path(
+        f"nvidia_tao_core.config.{neural_network_name}.default_config"
+    )
     if neural_network_name == "bevfusion" and action == "dataset_convert":
         expConfig = imported_module.BEVFusionDataConvertExpConfig()
     if neural_network_name == "stylegan_xl" and action == "dataset_convert":
-        imported_module = dataclass2json_converter.import_module_from_path(f"nvidia_tao_core.config.{neural_network_name}.dataset")
+        imported_module = dataclass2json_converter.import_module_from_path(
+            f"nvidia_tao_core.config.{neural_network_name}.dataset"
+        )
         expConfig = imported_module.DataConvertExpConfig()
     else:
         expConfig = imported_module.ExperimentConfig()

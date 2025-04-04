@@ -1,19 +1,19 @@
 #!/bin/bash
 
 echo "Installing required packages"
+pip install --upgrade pip setuptools
 pip install pyarmor==8.5.8 pyinstaller pybind11
 echo "Registering pyarmor"
-pyarmor -d reg release/python/pyarmor-regfile-1219.zip || exit $?
+pyarmor reg release/python/pyarmor-regfile-1219.zip || exit $?
 
 echo "Clearing build and dists"
 python setup.py clean --all
 echo "Clearing pycache and pycs"
 find . | grep -E "(__pycache__|\.pyc|\.pyo$)" | xargs rm -rf
 
-echo "Obfuscating the code using pyarmor"
-# This makes sure the non-py files are retained.
-pyarmor cfg data_files=*
-pyarmor -d gen --recursive --output obf_src/ nvidia_tao_core/ || exit $?
+echo "Obfuscating metrics.py using pyarmor"
+cp -r nvidia_tao_core obf_src
+pyarmor gen --output obf_src/telemetry nvidia_tao_core/telemetry/metrics.py || exit $?
 
 echo "Migrating codebase"
 # Move sources to orig_src
@@ -22,7 +22,7 @@ mkdir orig_src
 mv nvidia_tao_core/* orig_src/
 
 # Move obf_src files to src
-mv obf_src/* ./
+mv obf_src/* nvidia_tao_core/
 
 echo "Building bdist wheel"
 python setup.py bdist_wheel || exit $?
