@@ -2427,6 +2427,13 @@ class DatasetReqSchema(Schema):
         fields.Str(format="uuid", validate=fields.validate.Length(max=36)),
         validate=validate.Length(max=2)
     )
+    skip_validation = fields.Bool(allow_none=True)
+    authorized_party_nca_id = fields.Str(
+        format="regex",
+        regex=r'.*',
+        validate=fields.validate.Length(max=2048),
+        allow_none=True
+    )
 
 
 class DatasetJobSchema(Schema):
@@ -2510,6 +2517,13 @@ class DatasetRspSchema(Schema):
     base_experiment = fields.List(
         fields.Str(format="uuid", validate=fields.validate.Length(max=36)),
         validate=validate.Length(max=2)
+    )
+    skip_validation = fields.Bool(allow_none=True)
+    authorized_party_nca_id = fields.Str(
+        format="regex",
+        regex=r'.*',
+        validate=fields.validate.Length(max=2048),
+        allow_none=True
     )
 
 
@@ -5142,6 +5156,12 @@ class ExperimentReqSchema(Schema):
         validate=validate.Length(max=16)
     )
     retry_experiment_id = fields.Str(format="uuid", validate=fields.validate.Length(max=36), allow_none=True)
+    authorized_party_nca_id = fields.Str(
+        format="regex",
+        regex=r'.*',
+        validate=fields.validate.Length(max=2048),
+        allow_none=True
+    )
 
 
 class ExperimentJobSchema(Schema):
@@ -5317,6 +5337,12 @@ class ExperimentRspSchema(Schema):
             validate=fields.validate.Length(max=36)
         ),
         validate=validate.Length(max=16)
+    )
+    authorized_party_nca_id = fields.Str(
+        format="regex",
+        regex=r'.*',
+        validate=fields.validate.Length(max=2048),
+        allow_none=True
     )
 
 
