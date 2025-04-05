@@ -167,6 +167,32 @@ def check_gitlab_api_permissions():
         print("This may cause failures during execution.")
         return False
 
+def get_project_path(gitlab_project_id, gitlab_token):
+    """Fetch the project's path_with_namespace from GitLab API."""
+    print(f"Fetching project path for project ID: {gitlab_project_id}")
+    url = f"https://gitlab-master.nvidia.com/api/v4/projects/{gitlab_project_id}"
+    headers = {"PRIVATE-TOKEN": gitlab_token}
+    try:
+        response = requests.get(url, headers=headers, timeout=30)
+        if response.status_code == 200:
+            project_data = response.json()
+            path = project_data.get('path_with_namespace')
+            if path:
+                print(f"Successfully fetched project path: {path}")
+                return path
+            else:
+                print("ERROR: 'path_with_namespace' not found in project data.")
+                return None
+        else:
+            print(f"ERROR: Failed to fetch project data (HTTP {response.status_code})")
+            if response.text:
+                print(f"Error response: {response.text}")
+            return None
+    except Exception as e:
+        print(f"Exception fetching project path: {str(e)}")
+        traceback.print_exc()
+        return None
+
 def convert_tarballs_to_wheels(wheels_dir):
     """Convert any .tar.gz files to wheels."""
     print(f"Checking for tarballs in {wheels_dir}...")
@@ -470,13 +496,14 @@ def check_existing_assets(gitlab_project_id, tag_name):
     
     return existing_assets
 
-def add_file_as_release_asset(upload_info, gitlab_project_id, tag_name, existing_assets=None):
+def add_file_as_release_asset(upload_info, gitlab_project_id, tag_name, project_path, existing_assets=None):
     """
     Add an uploaded file as a release asset.
     
     :param upload_info: Upload info from GitLab uploads API
     :param gitlab_project_id: GitLab project ID
     :param tag_name: Release tag name
+    :param project_path: Project path from GitLab API
     :param existing_assets: Dictionary of existing asset names to avoid duplicates
     :return: True if successful, False otherwise
     """
@@ -496,8 +523,9 @@ def add_file_as_release_asset(upload_info, gitlab_project_id, tag_name, existing
         print(f"SKIPPED: Asset '{asset_name}' already exists in the release. Skipping duplicate upload.")
         return True
 
-    # Construct the full URL for the asset link using the relative URL from GitLab.
-    asset_link_url = f"https://gitlab-master.nvidia.com{uploaded_url_path}"
+    # Construct the public download URL for the release asset
+    # Note: We still needed to upload the file first via upload_file_to_gitlab
+    asset_link_url = f"https://gitlab-master.nvidia.com/{project_path}/-/releases/{tag_name}/downloads/{asset_name}"
     
     print(f"Adding file as release asset: {asset_name} using link URL: {asset_link_url}")
     
@@ -542,6 +570,13 @@ def main():
         gitlab_project_id = os.environ.get("GITLAB_PROJECT_ID")
         tag_name = os.environ.get("TAG_NAME")
         wheels_dir = os.environ.get("WHEELS_DIR")
+        gitlab_token = os.environ.get("GITLAB_TOKEN")
+
+        # Fetch project path
+        project_path = get_project_path(gitlab_project_id, gitlab_token)
+        if not project_path:
+            print("ERROR: Failed to fetch project path. Cannot construct correct download URLs.")
+            return 1
         
         print(f"DEBUG: Python version: {sys.version}")
         print(f"DEBUG: Requests version: {requests.__version__}")
@@ -581,7 +616,8 @@ def main():
                 upload_info = upload_file_to_gitlab(wheel, gitlab_project_id)
                 
                 if upload_info:
-                    if add_file_as_release_asset(upload_info, gitlab_project_id, tag_name, existing_assets):
+                    # Pass project_path to the function
+                    if add_file_as_release_asset(upload_info, gitlab_project_id, tag_name, project_path, existing_assets):
                         upload_count += 1
                         # Add to existing assets to avoid duplicate processing in this session
                         asset_name = upload_info.get('alt')
