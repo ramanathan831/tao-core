@@ -133,16 +133,23 @@ spec:
 
       stage ('publish_third_party_wheels') {
         gitlabCommitStatus(name: "publish_third_party_wheels", connection: gitLabConnection('git-lab-master')) {
-          // Upload the wheels as GitLab release artifacts.
+          // Debug statments
+          sh "echo 'DEBUG: GITLAB_PROJECT_ID=${GITLAB_PROJECT_ID}'"
+          sh "echo 'DEBUG: Checking wheel directory:'"
+          sh "ls -la ${WHEELS_DIR}"
+          
           withCredentials([string(credentialsId: 'gitlab-api-token', variable: 'GITLAB_TOKEN')]) {
-            // Use the dedicated script to upload wheels as GitLab release artifacts
+            // Debug statements
+            sh "echo 'DEBUG: Got credentials'"
+            sh "echo 'DEBUG: Attempting to run upload script'"
+            
             sh """
             export GITLAB_PROJECT_ID=${GITLAB_PROJECT_ID}
             export TAG_NAME=${TAG_NAME}
             export RELEASE_NAME="${RELEASE_NAME}"
             export RELEASE_DESCRIPTION="${RELEASE_DESCRIPTION}"
             export WHEELS_DIR=${WHEELS_DIR}
-            python3 scripts/upload_gitlab_release_artifacts.py
+            python3 -u scripts/upload_gitlab_release_artifacts.py
             """
           }
         }
