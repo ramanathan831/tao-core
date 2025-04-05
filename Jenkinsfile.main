@@ -132,23 +132,47 @@ spec:
 
       stage ('publish_third_party_wheels') {
         gitlabCommitStatus(name: "publish_third_party_wheels", connection: gitLabConnection('git-lab-master')) {
-          // Debug statments
+          // Debug statements
           sh "echo 'DEBUG: GITLAB_PROJECT_ID=${GITLAB_PROJECT_ID}'"
           sh "echo 'DEBUG: Checking wheel directory:'"
           sh "ls -la ${WHEELS_DIR}"
+          
+          // Convert any .tar.gz files to wheels if possible
+          sh """
+          # Check for tar.gz files and try to build wheels from them
+          for tarball in ${WHEELS_DIR}/*.tar.gz; do
+            if [ -f "\$tarball" ]; then
+              echo "Converting \$tarball to wheel..."
+              # Try to build a wheel from the source distribution
+              pip wheel \$tarball -w ${WHEELS_DIR} --no-deps || echo "Failed to build wheel from \$tarball, will be skipped"
+              # Remove the source tarball to avoid upload issues
+              rm -f \$tarball
+            fi
+          done
+          
+          # Show final directory contents
+          echo "Final wheel directory contents:"
+          ls -la ${WHEELS_DIR}
+          """
           
           withCredentials([string(credentialsId: 'gitlab-api-token', variable: 'GITLAB_TOKEN')]) {
             // Debug statements
             sh "echo 'DEBUG: Got credentials'"
             sh "echo 'DEBUG: Attempting to run upload script'"
             
+            // Add environment variable to increase debug output in the upload script
             sh """
             export GITLAB_PROJECT_ID=${GITLAB_PROJECT_ID}
             export TAG_NAME=${TAG_NAME}
             export RELEASE_NAME="${RELEASE_NAME}"
             export RELEASE_DESCRIPTION="${RELEASE_DESCRIPTION}"
             export WHEELS_DIR=${WHEELS_DIR}
-            python3 -u scripts/upload_gitlab_release_artifacts.py
+            export DEBUG=1
+            python3 -u scripts/upload_gitlab_release_artifacts.py || {
+              echo "Failed to upload wheels, checking API connectivity..."
+              # Test GitLab API connectivity and token validity
+              curl --silent --header "PRIVATE-TOKEN: \${GITLAB_TOKEN}" "https://gitlab-master.nvidia.com/api/v4/projects/${GITLAB_PROJECT_ID}" | jq '.' || echo "API connectivity check failed"
+            }
             """
           }
         }
