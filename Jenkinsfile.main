@@ -143,7 +143,7 @@ spec:
           // Ensure required dependencies are installed
           sh "pip install --quiet requests || echo 'Failed to install requests library'"
           
-          withCredentials([string(credentialsId: 'gitlab-api-token', variable: 'GITLAB_TOKEN')]) {
+          withCredentials([gitLabApiToken(credentialsId: 'gitlab-api-token', apiTokenVariable: 'GITLAB_TOKEN')]) {
             sh """
             export GITLAB_PROJECT_ID=${GITLAB_PROJECT_ID}
             export TAG_NAME=${TAG_NAME}
@@ -195,7 +195,7 @@ spec:
           sh "pip install --quiet requests || echo 'Failed to install requests library'"
           
           // Upload the apt packages as GitLab release artifacts
-          withCredentials([string(credentialsId: 'gitlab-api-token', variable: 'GITLAB_TOKEN')]) {
+          withCredentials([gitLabApiToken(credentialsId: 'gitlab-api-token', apiTokenVariable: 'GITLAB_TOKEN')]) {
             // Use the dedicated script to upload apt packages as GitLab release artifacts
             sh """
             export GITLAB_PROJECT_ID=${GITLAB_PROJECT_ID}
