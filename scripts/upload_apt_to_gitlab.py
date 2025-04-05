@@ -394,15 +394,15 @@ def create_release():
 
 def upload_file_to_gitlab(file_path, gitlab_project_id):
     """
-    Upload file to GitLab project's uploads storage.
+    Upload file to GitLab project using Generic Packages API.
     This is a first step in adding a file as a release asset.
     
     :param file_path: Path to the file to upload
     :param gitlab_project_id: GitLab project ID
-    :return: Response JSON containing upload info, or False if failed
+    :return: Dictionary with package info, or False if failed
     """
     filename = os.path.basename(file_path)
-    print(f"Uploading file to GitLab project storage: {filename}")
+    print(f"Uploading file to GitLab Generic Packages storage: {filename}")
     
     # Make sure file exists and is readable
     if not os.path.isfile(file_path):
@@ -422,23 +422,38 @@ def upload_file_to_gitlab(file_path, gitlab_project_id):
         print(f"ERROR: Cannot get size of file {file_path}: {e}")
         return False
     
-    upload_url = f"https://gitlab-master.nvidia.com/api/v4/projects/{gitlab_project_id}/uploads"
-    response = curl_with_retry(upload_url, "POST", None, file_path)
+    # Using Generic Packages API instead of uploads API
+    # Format: /api/v4/projects/:id/packages/generic/:package_name/:package_version/:file_name
+    tag_name = os.environ.get("TAG_NAME").lstrip('v')  # Remove leading 'v' if present
+    package_name = f"apt-{tag_name}"
+    package_version = "1.0.0"
     
-    if response and isinstance(response, dict) and 'url' in response and 'alt' in response:
-        print(f"Successfully uploaded file to project storage: {filename}")
-        print(f"DEBUG: Upload response: {response}")
-        if response.get('alt') != filename:
-            print(f"WARNING: Uploaded filename '{response.get('alt')}' does not match original '{filename}'")
-        return response
-    else:
-        print(f"ERROR: Failed to upload file {filename} to project storage or invalid response received.")
-        if isinstance(response, bool):
-            print("DEBUG: Upload call returned a boolean, expected a dictionary.")
-        elif isinstance(response, dict):
-            print(f"DEBUG: Received dictionary lacks expected keys 'url' or 'alt': {response}")
+    upload_url = f"https://gitlab-master.nvidia.com/api/v4/projects/{gitlab_project_id}/packages/generic/{package_name}/{package_version}/{filename}"
+    print(f"DEBUG: Using Generic Packages API URL: {upload_url}")
+    
+    # Generic Packages API uses PUT instead of POST
+    headers = {"PRIVATE-TOKEN": os.environ.get("GITLAB_TOKEN")}
+    try:
+        with open(file_path, 'rb') as f:
+            response = requests.put(upload_url, headers=headers, data=f, timeout=180)
+        
+        if response.status_code >= 200 and response.status_code < 300:
+            print(f"Successfully uploaded file using Generic Packages API: {filename}")
+            # Return a dictionary with the information needed for add_file_as_release_asset
+            return {
+                "package_name": package_name,
+                "package_version": package_version,
+                "filename": filename,
+                "alt": filename  # Keep 'alt' for compatibility with existing code
+            }
         else:
-            print(f"DEBUG: Received unexpected response type: {type(response)}")
+            print(f"ERROR: Failed to upload file {filename} using Generic Packages API (HTTP {response.status_code}).")
+            if response.text:
+                print(f"Error response: {response.text}")
+            return False
+    except Exception as e:
+        print(f"ERROR: Exception uploading file {filename} using Generic Packages API: {str(e)}")
+        traceback.print_exc()
         return False
 
 def check_existing_assets(gitlab_project_id, tag_name):
@@ -478,12 +493,12 @@ def check_existing_assets(gitlab_project_id, tag_name):
 
 def add_file_as_release_asset(upload_info, gitlab_project_id, tag_name, project_path, existing_assets=None):
     """
-    Add an uploaded file as a release asset.
+    Add an uploaded file as a release asset using Generic Packages API.
     
-    :param upload_info: Upload info from GitLab uploads API
+    :param upload_info: Upload info from GitLab Generic Packages API
     :param gitlab_project_id: GitLab project ID
     :param tag_name: Release tag name
-    :param project_path: Project path for constructing correct download URLs
+    :param project_path: Project path for constructing URLs (not used with Generic Packages API)
     :param existing_assets: Dictionary of existing asset names to avoid duplicates
     :return: True if successful, False otherwise
     """
@@ -491,11 +506,9 @@ def add_file_as_release_asset(upload_info, gitlab_project_id, tag_name, project_
         print(f"ERROR: Invalid upload_info provided to add_file_as_release_asset: {upload_info}")
         return False
 
-    uploaded_url_path = upload_info.get('url')
-    asset_name = upload_info.get('alt')
-
-    if not uploaded_url_path or not asset_name:
-        print(f"ERROR: Missing 'url' or 'alt' in upload_info: {upload_info}")
+    asset_name = upload_info.get('alt')  # Use the alt field for compatibility
+    if not asset_name:
+        print(f"ERROR: Missing 'alt' in upload_info: {upload_info}")
         return False
 
     # Check if this asset already exists in the release
@@ -503,15 +516,24 @@ def add_file_as_release_asset(upload_info, gitlab_project_id, tag_name, project_
         print(f"SKIPPED: Asset '{asset_name}' already exists in the release. Skipping duplicate upload.")
         return True
 
-    # URL construction using the uploaded_url_path from the GitLab uploads API response
-    asset_link_url = f"https://gitlab-master.nvidia.com/{project_path}{uploaded_url_path}"
+    # Construct direct download URL using Generic Packages API format
+    package_name = upload_info.get('package_name')
+    package_version = upload_info.get('package_version')
+    filename = upload_info.get('filename')
     
-    print(f"Adding file as release asset: {asset_name} using correct link URL: {asset_link_url}")
+    if not all([package_name, package_version, filename]):
+        print(f"ERROR: Missing package information in upload_info: {upload_info}")
+        return False
+    
+    # Construct direct download URL for the Generic Package
+    asset_link_url = f"https://gitlab-master.nvidia.com/api/v4/projects/{gitlab_project_id}/packages/generic/{package_name}/{package_version}/{filename}"
+    
+    print(f"Adding file as release asset: {asset_name} using Generic Packages URL: {asset_link_url}")
     
     link_data = {
         "name": asset_name,
         "url": asset_link_url,
-        "link_type": "other"  # Use "other" for direct downloads
+        "link_type": "package"  # Use "package" for Generic Packages API links
     }
     
     assets_url = f"https://gitlab-master.nvidia.com/api/v4/projects/{gitlab_project_id}/releases/{tag_name}/assets/links"
