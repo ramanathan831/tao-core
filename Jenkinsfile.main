@@ -158,9 +158,22 @@ spec:
           withCredentials([string(credentialsId: 'gitlab-api-token', variable: 'GITLAB_TOKEN')]) {
             // Debug statements
             sh "echo 'DEBUG: Got credentials'"
-            sh "echo 'DEBUG: Attempting to run upload script'"
+            sh "echo 'DEBUG: GitLab URL: https://gitlab-master.nvidia.com'"
+            sh "echo 'DEBUG: GitLab Project ID: ${GITLAB_PROJECT_ID}'"
             
-            // Add environment variable to increase debug output in the upload script
+            // Verify access GitLab API
+            sh """
+            echo "Testing GitLab API connectivity..."
+            curl --silent --fail --show-error --header "PRIVATE-TOKEN: \${GITLAB_TOKEN}" \
+                "https://gitlab-master.nvidia.com/api/v4/projects/${GITLAB_PROJECT_ID}" > gitlab_project_info.json || {
+                echo "ERROR: Cannot access GitLab API or project. Check your token and project ID."
+                exit 1
+            }
+            echo "Project name from API: \$(cat gitlab_project_info.json | grep -o '\"name\":\"[^\"]*\"' | head -1)"
+            rm gitlab_project_info.json
+            """
+            
+            // Split the upload into smaller batches to avoid timeout issues
             sh """
             export GITLAB_PROJECT_ID=${GITLAB_PROJECT_ID}
             export TAG_NAME=${TAG_NAME}
@@ -168,11 +181,42 @@ spec:
             export RELEASE_DESCRIPTION="${RELEASE_DESCRIPTION}"
             export WHEELS_DIR=${WHEELS_DIR}
             export DEBUG=1
-            python3 -u scripts/upload_gitlab_release_artifacts.py || {
-              echo "Failed to upload wheels, checking API connectivity..."
-              # Test GitLab API connectivity and token validity
-              curl --silent --header "PRIVATE-TOKEN: \${GITLAB_TOKEN}" "https://gitlab-master.nvidia.com/api/v4/projects/${GITLAB_PROJECT_ID}" | jq '.' || echo "API connectivity check failed"
+            
+            echo "Creating release if it doesn't exist..."
+            # Create the release first as a separate step
+            curl --silent --fail --show-error --request POST \
+                --header "PRIVATE-TOKEN: \${GITLAB_TOKEN}" \
+                --form "name=${RELEASE_NAME}" \
+                --form "tag_name=${TAG_NAME}" \
+                --form "description=${RELEASE_DESCRIPTION}" \
+                "https://gitlab-master.nvidia.com/api/v4/projects/${GITLAB_PROJECT_ID}/releases" || {
+                echo "Note: Release may already exist, continuing..."
             }
+            
+            # Now try running the upload script with detailed error reporting
+            echo "Running upload script..."
+            python3 -u scripts/upload_gitlab_release_artifacts.py || {
+                echo "Upload script failed with exit code \$?"
+                echo "Checking for common issues..."
+                
+                # Check upload token permissions
+                echo "1. Verifying token permissions - testing release access..."
+                curl --silent --fail --show-error --header "PRIVATE-TOKEN: \${GITLAB_TOKEN}" \
+                    "https://gitlab-master.nvidia.com/api/v4/projects/${GITLAB_PROJECT_ID}/releases" > /dev/null || {
+                    echo "ERROR: Token may not have sufficient permissions for releases"
+                }
+                
+                # Check package registry access
+                echo "2. Verifying package registry access..."
+                curl --silent --fail --show-error --header "PRIVATE-TOKEN: \${GITLAB_TOKEN}" \
+                    "https://gitlab-master.nvidia.com/api/v4/projects/${GITLAB_PROJECT_ID}/packages" > /dev/null || {
+                    echo "ERROR: Token may not have sufficient permissions for package registry"
+                }
+                
+                echo "ERROR: Upload failed. Check logs above for specific errors."
+                exit 1
+            }
+            echo "Upload completed successfully!"
             """
           }
         }
