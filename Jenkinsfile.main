@@ -65,7 +65,28 @@ spec:
       stage ('checkout') {
         gitlabCommitStatus(name: "checkout", connection: gitLabConnection('git-lab-master')) {
           checkout scm
-          GITLAB_PROJECT_ID = sh(script: 'echo $CI_PROJECT_ID', returnStdout: true).trim()
+          
+          // Get GitLab project ID using the API instead of relying on CI_PROJECT_ID
+          withCredentials([string(credentialsId: 'gitlab-api-token', variable: 'GITLAB_TOKEN')]) {
+            // Define GitLab instance URL and project path
+            def GITLAB_URL = "https://gitlab-master.nvidia.com"
+            def PROJECT_PATH = "nvidia-tao-toolkit/tao-core"
+            
+            // Use the API to get the project ID
+            def projectIdScript = """
+              curl --silent --header "PRIVATE-TOKEN: ${GITLAB_TOKEN}" \\
+                "${GITLAB_URL}/api/v4/projects/${PROJECT_PATH.replaceAll('/', '%2F')}" | \\
+                python3 -c "import sys, json; print(json.load(sys.stdin).get('id', ''))"
+            """
+            GITLAB_PROJECT_ID = sh(script: projectIdScript, returnStdout: true).trim()
+            
+            // Fail early if couldn't get the project ID
+            if (!GITLAB_PROJECT_ID) {
+              error "Failed to get GitLab project ID. Please check gitlab-api-token credential and ensure it has API access."
+            }
+            
+            echo "Using GitLab project ID: ${GITLAB_PROJECT_ID} for ${PROJECT_PATH}"
+          }
           
           // Check if apt-requirements.txt exists
           def aptReqExists = sh(script: 'test -f apt-requirements.txt && echo "true" || echo "false"', returnStdout: true).trim()
