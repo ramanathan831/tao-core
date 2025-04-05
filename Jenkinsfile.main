@@ -132,48 +132,11 @@ spec:
 
       stage ('publish_third_party_wheels') {
         gitlabCommitStatus(name: "publish_third_party_wheels", connection: gitLabConnection('git-lab-master')) {
-          // Debug statements
+          // Debug info
+          sh "echo 'DEBUG: Starting publish_third_party_wheels stage'"
           sh "echo 'DEBUG: GITLAB_PROJECT_ID=${GITLAB_PROJECT_ID}'"
-          sh "echo 'DEBUG: Checking wheel directory:'"
-          sh "ls -la ${WHEELS_DIR}"
-          
-          // Convert any .tar.gz files to wheels if possible
-          sh """
-          # Check for tar.gz files and try to build wheels from them
-          for tarball in ${WHEELS_DIR}/*.tar.gz; do
-            if [ -f "\$tarball" ]; then
-              echo "Converting \$tarball to wheel..."
-              # Try to build a wheel from the source distribution
-              pip wheel \$tarball -w ${WHEELS_DIR} --no-deps || echo "Failed to build wheel from \$tarball, will be skipped"
-              # Remove the source tarball to avoid upload issues
-              rm -f \$tarball
-            fi
-          done
-          
-          # Show final directory contents
-          echo "Final wheel directory contents:"
-          ls -la ${WHEELS_DIR}
-          """
           
           withCredentials([string(credentialsId: 'gitlab-api-token', variable: 'GITLAB_TOKEN')]) {
-            // Debug statements
-            sh "echo 'DEBUG: Got credentials'"
-            sh "echo 'DEBUG: GitLab URL: https://gitlab-master.nvidia.com'"
-            sh "echo 'DEBUG: GitLab Project ID: ${GITLAB_PROJECT_ID}'"
-            
-            // Verify access GitLab API
-            sh """
-            echo "Testing GitLab API connectivity..."
-            curl --silent --fail --show-error --header "PRIVATE-TOKEN: \${GITLAB_TOKEN}" \
-                "https://gitlab-master.nvidia.com/api/v4/projects/${GITLAB_PROJECT_ID}" > gitlab_project_info.json || {
-                echo "ERROR: Cannot access GitLab API or project. Check your token and project ID."
-                exit 1
-            }
-            echo "Project name from API: \$(cat gitlab_project_info.json | grep -o '\"name\":\"[^\"]*\"' | head -1)"
-            rm gitlab_project_info.json
-            """
-            
-            // Split the upload into smaller batches to avoid timeout issues
             sh """
             export GITLAB_PROJECT_ID=${GITLAB_PROJECT_ID}
             export TAG_NAME=${TAG_NAME}
@@ -182,41 +145,7 @@ spec:
             export WHEELS_DIR=${WHEELS_DIR}
             export DEBUG=1
             
-            echo "Creating release if it doesn't exist..."
-            # Create the release first as a separate step
-            curl --silent --fail --show-error --request POST \
-                --header "PRIVATE-TOKEN: \${GITLAB_TOKEN}" \
-                --form "name=${RELEASE_NAME}" \
-                --form "tag_name=${TAG_NAME}" \
-                --form "description=${RELEASE_DESCRIPTION}" \
-                "https://gitlab-master.nvidia.com/api/v4/projects/${GITLAB_PROJECT_ID}/releases" || {
-                echo "Note: Release may already exist, continuing..."
-            }
-            
-            # Now try running the upload script with detailed error reporting
-            echo "Running upload script..."
-            python3 -u scripts/upload_gitlab_release_artifacts.py || {
-                echo "Upload script failed with exit code \$?"
-                echo "Checking for common issues..."
-                
-                # Check upload token permissions
-                echo "1. Verifying token permissions - testing release access..."
-                curl --silent --fail --show-error --header "PRIVATE-TOKEN: \${GITLAB_TOKEN}" \
-                    "https://gitlab-master.nvidia.com/api/v4/projects/${GITLAB_PROJECT_ID}/releases" > /dev/null || {
-                    echo "ERROR: Token may not have sufficient permissions for releases"
-                }
-                
-                # Check package registry access
-                echo "2. Verifying package registry access..."
-                curl --silent --fail --show-error --header "PRIVATE-TOKEN: \${GITLAB_TOKEN}" \
-                    "https://gitlab-master.nvidia.com/api/v4/projects/${GITLAB_PROJECT_ID}/packages" > /dev/null || {
-                    echo "ERROR: Token may not have sufficient permissions for package registry"
-                }
-                
-                echo "ERROR: Upload failed. Check logs above for specific errors."
-                exit 1
-            }
-            echo "Upload completed successfully!"
+            python3 -u scripts/upload_wheels_to_gitlab.py
             """
           }
         }
@@ -248,7 +177,7 @@ spec:
             export RELEASE_NAME="${RELEASE_NAME}"
             export RELEASE_DESCRIPTION="${RELEASE_DESCRIPTION}"
             export APT_DIR=${APT_DIR}
-            python3 scripts/upload_gitlab_release_artifacts.py
+            python3 scripts/upload_apt_to_gitlab.py
             """
           }
         }
