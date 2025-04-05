@@ -109,7 +109,7 @@ def curl_with_retry(url, method="GET", data=None, upload_file=None, max_attempts
                 print(f"Success: {method} request to {url} (HTTP {http_code})")
                 if response.text:
                     print(response.text)
-                return True
+                return response.json() if response.text and response.headers.get('Content-Type', '').startswith('application/json') else True
             # 404 is fine for release creation (it may already exist)
             elif method == "POST" and http_code == 404 and "/releases" in url:
                 print(f"Note: Release may already exist. Continuing. (HTTP {http_code})")
@@ -117,12 +117,6 @@ def curl_with_retry(url, method="GET", data=None, upload_file=None, max_attempts
             # 409 is fine for release creation (already exists)
             elif method == "POST" and http_code == 409 and "/releases" in url:
                 print(f"Note: Release already exists. Continuing. (HTTP {http_code})")
-                return True
-            # Package already exists is often 400 or 409
-            elif "/packages/generic" in url and (http_code == 400 or http_code == 409):
-                print(f"Note: Package might already exist. Continuing. (HTTP {http_code})")
-                if response.text:
-                    print(f"Response: {response.text}")
                 return True
             else:
                 print(f"Attempt {attempt} failed: {method} request to {url} (HTTP {http_code})")
@@ -173,26 +167,6 @@ def check_apt_packages(directory):
     
     return files
 
-def extract_apt_package_info(file_path):
-    """
-    Extract package information from APT package filename.
-    
-    :param file_path: Path to the package file
-    :return: Tuple of (package_name, version)
-    """
-    filename = os.path.basename(file_path)
-    
-    # Parse deb filename: {package}_{version}_{architecture}.deb
-    parts = filename.split('_')
-    if len(parts) >= 2:
-        package_name = parts[0]
-        version = parts[1].split('_')[0]  # Get version part
-        return package_name, version
-    
-    # For other file types or if parsing fails
-    package_name = os.path.splitext(filename)[0]
-    return package_name, "unknown"
-
 def create_release():
     """Create a release in GitLab."""
     gitlab_project_id = os.environ.get("GITLAB_PROJECT_ID")
@@ -209,58 +183,67 @@ def create_release():
     
     release_url = f"https://gitlab-master.nvidia.com/api/v4/projects/{gitlab_project_id}/releases"
     if not curl_with_retry(release_url, "POST", release_data):
-        print("WARNING: Failed to create release, but will try to upload packages anyway")
+        print("WARNING: Failed to create release, but will try to upload artifacts anyway")
 
-def upload_generic_package(file_path, gitlab_project_id, package_type="apt"):
+def upload_file_to_gitlab(file_path, gitlab_project_id):
     """
-    Upload a generic package (e.g., .deb) to GitLab generic package registry.
+    Upload file to GitLab project's uploads storage.
+    This is a first step in adding a file as a release asset.
     
-    :param file_path: Path to the package file
+    :param file_path: Path to the file to upload
     :param gitlab_project_id: GitLab project ID
-    :param package_type: Package type identifier (e.g., "apt", "rpm")
-    :return: True if successful, False otherwise
+    :return: Response JSON containing upload info, or False if failed
     """
     filename = os.path.basename(file_path)
-    package_name, version = extract_apt_package_info(file_path)
+    print(f"Uploading file to GitLab project storage: {filename}")
     
-    print(f"Uploading generic {package_type} package: {filename}")
+    upload_url = f"https://gitlab-master.nvidia.com/api/v4/projects/{gitlab_project_id}/uploads"
+    response = curl_with_retry(upload_url, "POST", None, file_path)
     
-    # Upload to generic package registry
-    upload_url = f"https://gitlab-master.nvidia.com/api/v4/projects/{gitlab_project_id}/packages/generic/{package_type}/{package_name}/{version}/{filename}"
-    return curl_with_retry(upload_url, "PUT", None, file_path)
+    if response and isinstance(response, dict):
+        print(f"Successfully uploaded file to project storage: {filename}")
+        return response
+    else:
+        print(f"ERROR: Failed to upload file to project storage: {filename}")
+        return False
 
-def create_package_link(filename, package_name, gitlab_project_id, tag_name):
+def add_file_as_release_asset(upload_info, gitlab_project_id, tag_name):
     """
-    Create a link in the release to a package.
+    Add an uploaded file as a release asset.
     
-    :param filename: Name of the package file
-    :param package_name: Name of the package
+    :param upload_info: Upload info from GitLab uploads API
     :param gitlab_project_id: GitLab project ID
     :param tag_name: Release tag name
     :return: True if successful, False otherwise
     """
-    print(f"Creating link in release {tag_name} to package {package_name}...")
+    if not upload_info or not isinstance(upload_info, dict):
+        return False
+
+    asset_url = f"https://gitlab-master.nvidia.com{upload_info.get('url', '')}"
+    asset_name = upload_info.get('alt', os.path.basename(upload_info.get('url', '')))
     
-    # Link directly to the GitLab package page
-    package_url = f"https://gitlab-master.nvidia.com/projects/{gitlab_project_id}/packages/{package_name}"
+    print(f"Adding file as release asset: {asset_name}")
+    
     link_data = {
-        "name": filename,
-        "url": package_url,
-        "link_type": "package"
+        "name": asset_name,
+        "url": asset_url,
+        "link_type": "other"  # Use "other" for direct downloads
     }
     
-    return curl_with_retry(
-        f"https://gitlab-master.nvidia.com/api/v4/projects/{gitlab_project_id}/releases/{tag_name}/assets/links", 
-        "POST", 
-        link_data
-    )
+    assets_url = f"https://gitlab-master.nvidia.com/api/v4/projects/{gitlab_project_id}/releases/{tag_name}/assets/links"
+    if curl_with_retry(assets_url, "POST", link_data):
+        print(f"Successfully added file as release asset: {asset_name}")
+        return True
+    else:
+        print(f"ERROR: Failed to add file as release asset: {asset_name}")
+        return False
 
 def main():
-    """Main function to upload APT packages to GitLab."""
-    print("Starting GitLab APT package upload process...")
+    """Main function to upload APT packages to GitLab release as artifacts."""
+    print("Starting GitLab APT package upload process (direct artifact mode)...")
     
     # Print script version for debugging
-    print("Script version: 1.0.0 (APT-specific)")
+    print("Script version: 2.0.0 (APT direct artifacts)")
     
     # Print environment variables for debugging if DEBUG is set
     if os.environ.get("DEBUG"):
@@ -291,40 +274,36 @@ def main():
     # Create a release in GitLab if it doesn't exist
     create_release()
     
-    # Upload each APT file to GitLab package registry and link it in the release
+    # Upload each APT file to GitLab and add as release asset
     upload_count = 0
     failed_count = 0
     
-    # Upload APT packages
     for apt_file in apt_files:
         filename = os.path.basename(apt_file)
-        package_name, version = extract_apt_package_info(apt_file)
+        print(f"Processing APT package: {filename}")
         
-        print(f"Processing APT package: {filename} ({package_name} v{version})")
+        # Upload file to GitLab first
+        upload_info = upload_file_to_gitlab(apt_file, gitlab_project_id)
         
-        if upload_generic_package(apt_file, gitlab_project_id, package_type="apt"):
-            print(f"Successfully uploaded {filename} to package registry")
-            
-            if create_package_link(filename, f"apt:{package_name}", gitlab_project_id, tag_name):
-                print(f"Successfully linked {filename} in release")
+        if upload_info:
+            # Add uploaded file as release asset
+            if add_file_as_release_asset(upload_info, gitlab_project_id, tag_name):
                 upload_count += 1
             else:
-                print(f"WARNING: Uploaded package but failed to link it in the release")
                 failed_count += 1
         else:
-            print(f"ERROR: Failed to upload {filename} to package registry")
             failed_count += 1
     
     # Report results
     print("Upload summary:")
-    print(f"- Total APT packages uploaded and linked: {upload_count}")
-    print(f"- Total APT packages failed: {failed_count}")
+    print(f"- Total APT artifacts uploaded and linked: {upload_count}")
+    print(f"- Total APT artifacts failed: {failed_count}")
     
     if failed_count > 0:
         print("WARNING: Some APT packages failed to upload or link. Check the logs for details.")
         return 1
     else:
-        print("All APT packages have been successfully uploaded to GitLab package registry and linked in the release")
+        print("All APT packages have been successfully uploaded as release artifacts")
         return 0
 
 if __name__ == "__main__":
