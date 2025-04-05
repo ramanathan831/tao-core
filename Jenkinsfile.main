@@ -136,6 +136,13 @@ spec:
           sh "echo 'DEBUG: Starting publish_third_party_wheels stage'"
           sh "echo 'DEBUG: GITLAB_PROJECT_ID=${GITLAB_PROJECT_ID}'"
           
+          // Check for script existence and permissions
+          sh "ls -la scripts/upload_wheels_to_gitlab.py || echo 'Script not found!'"
+          sh "chmod +x scripts/upload_wheels_to_gitlab.py || echo 'Failed to set exec permissions'"
+          
+          // Ensure required dependencies are installed
+          sh "pip install --quiet requests || echo 'Failed to install requests library'"
+          
           withCredentials([string(credentialsId: 'gitlab-api-token', variable: 'GITLAB_TOKEN')]) {
             sh """
             export GITLAB_PROJECT_ID=${GITLAB_PROJECT_ID}
@@ -145,7 +152,15 @@ spec:
             export WHEELS_DIR=${WHEELS_DIR}
             export DEBUG=1
             
-            python3 -u scripts/upload_wheels_to_gitlab.py
+            # Print Python version for debugging
+            python3 --version
+            
+            # Script Debugging
+            python3 -u scripts/upload_wheels_to_gitlab.py || {
+              echo "ERROR: Script execution failed with code \$?"
+              # Try to see if the script has syntax errors
+              python3 -m py_compile scripts/upload_wheels_to_gitlab.py || echo "Syntax error in script"
+            }
             """
           }
         }
@@ -168,6 +183,17 @@ spec:
           expression { return PROCESS_APT_PACKAGES }
         }
         gitlabCommitStatus(name: "publish_third_party_apt", connection: gitLabConnection('git-lab-master')) {
+          // Debug info
+          sh "echo 'DEBUG: Starting publish_third_party_apt stage'"
+          sh "echo 'DEBUG: GITLAB_PROJECT_ID=${GITLAB_PROJECT_ID}'"
+          
+          // Check for script existence and permissions
+          sh "ls -la scripts/upload_apt_to_gitlab.py || echo 'Script not found!'"
+          sh "chmod +x scripts/upload_apt_to_gitlab.py || echo 'Failed to set exec permissions'"
+          
+          // Ensure required dependencies are installed
+          sh "pip install --quiet requests || echo 'Failed to install requests library'"
+          
           // Upload the apt packages as GitLab release artifacts
           withCredentials([string(credentialsId: 'gitlab-api-token', variable: 'GITLAB_TOKEN')]) {
             // Use the dedicated script to upload apt packages as GitLab release artifacts
@@ -177,7 +203,17 @@ spec:
             export RELEASE_NAME="${RELEASE_NAME}"
             export RELEASE_DESCRIPTION="${RELEASE_DESCRIPTION}"
             export APT_DIR=${APT_DIR}
-            python3 scripts/upload_apt_to_gitlab.py
+            export DEBUG=1
+            
+            # Print Python version for debugging
+            python3 --version
+            
+            # Script Debugging
+            python3 -u scripts/upload_apt_to_gitlab.py || {
+              echo "ERROR: Script execution failed with code \$?"
+              # Try to see if the script has syntax errors
+              python3 -m py_compile scripts/upload_apt_to_gitlab.py || echo "Syntax error in script"
+            }
             """
           }
         }
