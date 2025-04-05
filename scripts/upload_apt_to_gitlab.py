@@ -503,11 +503,10 @@ def add_file_as_release_asset(upload_info, gitlab_project_id, tag_name, project_
         print(f"SKIPPED: Asset '{asset_name}' already exists in the release. Skipping duplicate upload.")
         return True
 
-    # Construct the public download URL for the release asset
-    # Note: We still needed to upload the file first via upload_file_to_gitlab
-    asset_link_url = f"https://gitlab-master.nvidia.com/{project_path}/-/releases/{tag_name}/downloads/{asset_name}"
+    # URL construction using the uploaded_url_path from the GitLab uploads API response
+    asset_link_url = f"https://gitlab-master.nvidia.com/{project_path}{uploaded_url_path}"
     
-    print(f"Adding file as release asset: {asset_name} using link URL: {asset_link_url}")
+    print(f"Adding file as release asset: {asset_name} using correct link URL: {asset_link_url}")
     
     link_data = {
         "name": asset_name,
