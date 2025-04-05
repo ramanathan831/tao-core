@@ -220,35 +220,26 @@ spec:
 
       stage ('generate_license_acknowledgements') {
         gitlabCommitStatus(name: "generate_license_acknowledgements", connection: gitLabConnection('git-lab-master')) {
-          // Generate license acknowledgements from downloaded packages
+          // Generate license acknowledgements from downloaded packages and upload to GitLab
           // Include APT packages only if enabled
           def aptFlag = ENABLE_APT ? "--include-apt" : ""
           echo "DEBUG: APT package inclusion in licenses: ${ENABLE_APT ? 'ENABLED' : 'DISABLED'}"
-          sh "python3 scripts/generate_license_acknowledgements.py ${aptFlag} --output acknowledgements.md"
+          
+          // Execute the script which handles both generation and uploading
+          withCredentials([string(credentialsId: 'gitlab-api-token', variable: 'GITLAB_TOKEN')]) {
+            sh """
+            export GITLAB_PROJECT_ID=${GITLAB_PROJECT_ID}
+            export TAG_NAME=${TAG_NAME}
+            export RELEASE_NAME="${RELEASE_NAME}"
+            export RELEASE_DESCRIPTION="${RELEASE_DESCRIPTION}"
+            export DEBUG=1
+            
+            python3 -u scripts/upload_license_to_gitlab.py ${aptFlag}
+            """
+          }
           
           // Archive the generated acknowledgements file as a build artifact
           archiveArtifacts artifacts: 'acknowledgements.md', onlyIfSuccessful: true
-          
-          // Upload acknowledgements.md to the GitLab release as well
-          withCredentials([string(credentialsId: 'gitlab-api-token', variable: 'GITLAB_TOKEN')]) {
-            // Upload acknowledgements.md as a link in the release
-            sh """
-            curl --header "PRIVATE-TOKEN: ${GITLAB_TOKEN}" \\
-                 --form "name=Third Party Licenses" \\
-                 --form "url=https://gitlab-master.nvidia.com/-/ide/project/${GITLAB_PROJECT_ID}/blob/${TAG_NAME}/-/acknowledgements.md" \\
-                 --form "link_type=other" \\
-                 "https://gitlab-master.nvidia.com/api/v4/projects/${GITLAB_PROJECT_ID}/releases/${TAG_NAME}/assets/links"
-            """
-            
-            // Also update the file in the repository for future reference
-            sh """
-            git config --global user.email "ci-bot@nvidia.com"
-            git config --global user.name "TAO CI Bot"
-            git add acknowledgements.md
-            git commit -m "Update third-party license acknowledgements [CI SKIP]" || true
-            git push origin HEAD:main || true
-            """
-          }
         }
       }
 
