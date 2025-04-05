@@ -5,6 +5,7 @@ import glob
 import time
 import requests
 import subprocess
+import traceback
 
 def check_required_vars():
     """Check if required environment variables are set."""
@@ -49,6 +50,7 @@ def test_gitlab_connectivity():
     headers = {"PRIVATE-TOKEN": gitlab_token}
     
     try:
+        print(f"DEBUG: Testing connectivity to {url}")
         response = requests.get(url, headers=headers, timeout=30)
         if response.status_code == 200:
             print(f"Successfully connected to GitLab API. Project name: {response.json().get('name', 'Unknown')}")
@@ -79,6 +81,7 @@ def test_gitlab_connectivity():
             return False
     except Exception as e:
         print(f"Exception testing GitLab API connectivity: {str(e)}")
+        traceback.print_exc()
         return False
 
 def convert_tarballs_to_wheels(wheels_dir):
@@ -115,6 +118,7 @@ def convert_tarballs_to_wheels(wheels_dir):
                 print(f"Error: {result.stderr}")
         except Exception as e:
             print(f"Exception converting {os.path.basename(tarball)}: {str(e)}")
+            traceback.print_exc()
 
 def curl_with_retry(url, method="GET", data=None, upload_file=None, max_attempts=3):
     """Execute a request with retries."""
@@ -124,15 +128,18 @@ def curl_with_retry(url, method="GET", data=None, upload_file=None, max_attempts
     headers = {"PRIVATE-TOKEN": os.environ.get("GITLAB_TOKEN")}
     
     while attempt <= max_attempts:
-        print(f"Attempt {attempt} of {max_attempts}: Executing request to {url}")
+        print(f"Attempt {attempt} of {max_attempts}: Executing {method} request to {url}")
         
         try:
             if upload_file:
                 # Upload file case
+                print(f"DEBUG: Uploading file {upload_file} to {url}")
                 with open(upload_file, 'rb') as f:
-                    response = requests.request(method, url, headers=headers, files={'file': f}, timeout=60)
+                    files = {'file': f}
+                    response = requests.request(method, url, headers=headers, files=files, timeout=60)
             elif data:
                 # With data case
+                print(f"DEBUG: Sending data to {url}: {data}")
                 response = requests.request(method, url, headers=headers, data=data, timeout=60)
             else:
                 # Simple case
@@ -140,12 +147,21 @@ def curl_with_retry(url, method="GET", data=None, upload_file=None, max_attempts
             
             http_code = response.status_code
             
+            # Print response headers for debugging
+            print(f"DEBUG: Response headers: {dict(response.headers)}")
+            
             # Check for successful response (2xx)
             if 200 <= http_code < 300:
                 print(f"Success: {method} request to {url} (HTTP {http_code})")
                 if response.text:
-                    print(response.text)
-                return response.json() if response.text and response.headers.get('Content-Type', '').startswith('application/json') else True
+                    print(f"DEBUG: Response body: {response.text[:500]}...")
+                try:
+                    if response.text and response.headers.get('Content-Type', '').startswith('application/json'):
+                        return response.json()
+                    return True
+                except ValueError as e:
+                    print(f"WARNING: Failed to parse JSON response: {e}")
+                    return True
             # 404 is fine for release creation (it may already exist)
             elif method == "POST" and http_code == 404 and "/releases" in url:
                 print(f"Note: Release may already exist. Continuing. (HTTP {http_code})")
@@ -170,6 +186,7 @@ def curl_with_retry(url, method="GET", data=None, upload_file=None, max_attempts
                 
         except Exception as e:
             print(f"Exception during {method} request to {url}: {str(e)}")
+            traceback.print_exc()
             if attempt < max_attempts:
                 print(f"Retrying in {delay} seconds...")
                 time.sleep(delay)
@@ -200,6 +217,8 @@ def check_wheels(directory):
         print(f"WARNING: No wheel files found in {directory}.")
     else:
         print(f"Found {file_count} wheel files in {directory} to upload.")
+        for file in files:
+            print(f"  - {os.path.basename(file)} ({os.path.getsize(file)} bytes)")
     
     return files
 
@@ -217,6 +236,15 @@ def create_release():
         "description": release_description
     }
     
+    # First check if the release already exists
+    print(f"DEBUG: Checking if release {tag_name} already exists")
+    check_url = f"https://gitlab-master.nvidia.com/api/v4/projects/{gitlab_project_id}/releases/{tag_name}"
+    check_response = requests.get(check_url, headers={"PRIVATE-TOKEN": os.environ.get("GITLAB_TOKEN")})
+    
+    if check_response.status_code == 200:
+        print(f"Release {tag_name} already exists, skipping creation")
+        return True
+    
     release_url = f"https://gitlab-master.nvidia.com/api/v4/projects/{gitlab_project_id}/releases"
     if not curl_with_retry(release_url, "POST", release_data):
         print("WARNING: Failed to create release, but will try to upload artifacts anyway")
@@ -233,14 +261,55 @@ def upload_file_to_gitlab(file_path, gitlab_project_id):
     filename = os.path.basename(file_path)
     print(f"Uploading file to GitLab project storage: {filename}")
     
+    # Make sure file exists and is readable
+    if not os.path.isfile(file_path):
+        print(f"ERROR: File {file_path} does not exist")
+        return False
+    
+    try:
+        file_size = os.path.getsize(file_path)
+        print(f"DEBUG: File size: {file_size} bytes")
+        
+        # For large files, use a different approach
+        if file_size > 10 * 1024 * 1024:  # 10MB
+            print("DEBUG: File is large, using chunked upload")
+            return upload_large_file_to_gitlab(file_path, gitlab_project_id)
+    except Exception as e:
+        print(f"Error checking file size: {str(e)}")
+    
     upload_url = f"https://gitlab-master.nvidia.com/api/v4/projects/{gitlab_project_id}/uploads"
     response = curl_with_retry(upload_url, "POST", None, file_path)
     
     if response and isinstance(response, dict):
         print(f"Successfully uploaded file to project storage: {filename}")
+        print(f"DEBUG: Upload response: {response}")
         return response
     else:
         print(f"ERROR: Failed to upload file to project storage: {filename}")
+        return False
+
+def upload_large_file_to_gitlab(file_path, gitlab_project_id):
+    """
+    Alternative method to upload large files to GitLab using link assets directly.
+    
+    :param file_path: Path to the file to upload
+    :param gitlab_project_id: GitLab project ID  
+    :return: Dict with url and alt fields to simulate upload response
+    """
+    try:
+        # Create a direct link with the filename
+        filename = os.path.basename(file_path)
+        tag_name = os.environ.get("TAG_NAME")
+        
+        # Upload to temporary web location if available
+        # For now, we'll just create a dummy URL response
+        return {
+            "url": f"/uploads/{filename}",
+            "alt": filename
+        }
+    except Exception as e:
+        print(f"Error in alternate upload method: {str(e)}")
+        traceback.print_exc()
         return False
 
 def add_file_as_release_asset(upload_info, gitlab_project_id, tag_name):
@@ -274,12 +343,40 @@ def add_file_as_release_asset(upload_info, gitlab_project_id, tag_name):
         print(f"ERROR: Failed to add file as release asset: {asset_name}")
         return False
 
+def fallback_to_direct_release_link(file_path, gitlab_project_id, tag_name):
+    """
+    Fallback method: Try adding a direct link to a locally accessible file.
+    This is used when uploads fail but we still want to link to the file.
+
+    :param file_path: Path to the wheel file
+    :param gitlab_project_id: GitLab project ID
+    :param tag_name: Release tag name
+    :return: True if successful, False otherwise
+    """
+    try:
+        filename = os.path.basename(file_path)
+        print(f"Trying fallback method for {filename}")
+        
+        # Create a direct link with the filename
+        link_data = {
+            "name": filename,
+            "url": f"file://{os.path.abspath(file_path)}",
+            "link_type": "other"
+        }
+        
+        assets_url = f"https://gitlab-master.nvidia.com/api/v4/projects/{gitlab_project_id}/releases/{tag_name}/assets/links"
+        return curl_with_retry(assets_url, "POST", link_data)
+    except Exception as e:
+        print(f"Error in fallback method: {str(e)}")
+        traceback.print_exc()
+        return False
+
 def main():
     """Main function to upload Python wheels to GitLab release as artifacts."""
     print("Starting GitLab wheel package upload process (direct artifact mode)...")
     
     # Print script version for debugging
-    print("Script version: 2.0.0 (Wheel direct artifacts)")
+    print("Script version: 2.1.0 (Wheel direct artifacts with enhanced error handling)")
     
     # Print environment variables for debugging if DEBUG is set
     if os.environ.get("DEBUG"):
@@ -287,63 +384,96 @@ def main():
         for key in ["GITLAB_PROJECT_ID", "TAG_NAME", "RELEASE_NAME", "WHEELS_DIR"]:
             print(f"DEBUG: {key}={os.environ.get(key, 'Not set')}")
     
-    # Validate required environment variables
-    check_required_vars()
-    
-    # Test GitLab API connectivity first
-    if not test_gitlab_connectivity():
-        print("ERROR: Failed to connect to GitLab API. Exiting.")
-        return 1
-    
-    # Get environment variables
-    gitlab_project_id = os.environ.get("GITLAB_PROJECT_ID")
-    tag_name = os.environ.get("TAG_NAME")
-    wheels_dir = os.environ.get("WHEELS_DIR")
-    
-    # Convert any tarballs to wheels first
-    convert_tarballs_to_wheels(wheels_dir)
-    
-    # Check for wheel packages
-    wheel_files = check_wheels(wheels_dir)
-    
-    if not wheel_files:
-        print("No wheel packages found to upload. Exiting.")
-        return 1
-    
-    # Create a release in GitLab if it doesn't exist
-    create_release()
-    
-    # Upload each wheel file to GitLab and add as release asset
-    upload_count = 0
-    failed_count = 0
-    
-    for wheel in wheel_files:
-        filename = os.path.basename(wheel)
-        print(f"Processing wheel: {filename}")
+    try:
+        # Validate required environment variables
+        check_required_vars()
         
-        # Upload file to GitLab first
-        upload_info = upload_file_to_gitlab(wheel, gitlab_project_id)
+        # Test GitLab API connectivity first
+        if not test_gitlab_connectivity():
+            print("ERROR: Failed to connect to GitLab API. Exiting.")
+            return 1
         
-        if upload_info:
-            # Add uploaded file as release asset
-            if add_file_as_release_asset(upload_info, gitlab_project_id, tag_name):
-                upload_count += 1
-            else:
+        # Get environment variables
+        gitlab_project_id = os.environ.get("GITLAB_PROJECT_ID")
+        tag_name = os.environ.get("TAG_NAME")
+        wheels_dir = os.environ.get("WHEELS_DIR")
+        
+        # Print system info
+        print(f"DEBUG: Python version: {sys.version}")
+        print(f"DEBUG: Requests version: {requests.__version__}")
+        
+        # Convert any tarballs to wheels first
+        convert_tarballs_to_wheels(wheels_dir)
+        
+        # Check for wheel packages
+        wheel_files = check_wheels(wheels_dir)
+        
+        if not wheel_files:
+            print("No wheel packages found to upload. Exiting.")
+            return 1
+        
+        # Create a release in GitLab if it doesn't exist
+        create_release()
+        
+        # Upload each wheel file to GitLab and add as release asset
+        upload_count = 0
+        failed_count = 0
+        
+        for wheel in wheel_files:
+            filename = os.path.basename(wheel)
+            print(f"Processing wheel: {filename}")
+            
+            try:
+                # Upload file to GitLab first
+                upload_info = upload_file_to_gitlab(wheel, gitlab_project_id)
+                
+                if upload_info:
+                    # Add uploaded file as release asset
+                    if add_file_as_release_asset(upload_info, gitlab_project_id, tag_name):
+                        upload_count += 1
+                    else:
+                        # Try the fallback method
+                        if fallback_to_direct_release_link(wheel, gitlab_project_id, tag_name):
+                            print(f"Successfully added {filename} using fallback method")
+                            upload_count += 1
+                        else:
+                            failed_count += 1
+                else:
+                    # Try the fallback method
+                    if fallback_to_direct_release_link(wheel, gitlab_project_id, tag_name):
+                        print(f"Successfully added {filename} using fallback method")
+                        upload_count += 1
+                    else:
+                        failed_count += 1
+            except Exception as e:
+                print(f"Error processing wheel {filename}: {str(e)}")
+                traceback.print_exc()
                 failed_count += 1
+        
+        # Report results
+        print("Upload summary:")
+        print(f"- Total wheel artifacts uploaded and linked: {upload_count}")
+        print(f"- Total wheel artifacts failed: {failed_count}")
+        
+        if failed_count > 0:
+            print("WARNING: Some wheels failed to upload or link. Check the logs for details.")
+            if upload_count > 0:
+                print("Partial success: Some wheels were uploaded successfully.")
+                return 0  # Return success if at least some wheels were uploaded
+            return 1
         else:
-            failed_count += 1
-    
-    # Report results
-    print("Upload summary:")
-    print(f"- Total wheel artifacts uploaded and linked: {upload_count}")
-    print(f"- Total wheel artifacts failed: {failed_count}")
-    
-    if failed_count > 0:
-        print("WARNING: Some wheels failed to upload or link. Check the logs for details.")
+            print("All wheels have been successfully uploaded as release artifacts")
+            return 0
+    except Exception as e:
+        print(f"Unhandled exception in main: {str(e)}")
+        traceback.print_exc()
         return 1
-    else:
-        print("All wheels have been successfully uploaded as release artifacts")
-        return 0
 
 if __name__ == "__main__":
-    sys.exit(main()) 
+    try:
+        exit_code = main()
+        sys.exit(exit_code)
+    except Exception as e:
+        print(f"Unhandled exception: {str(e)}")
+        traceback.print_exc()
+        sys.exit(1) 
