@@ -435,13 +435,49 @@ def upload_file_to_gitlab(file_path, gitlab_project_id):
              print(f"DEBUG: Received unexpected response type: {type(response)}")
         return False
 
-def add_file_as_release_asset(upload_info, gitlab_project_id, tag_name):
+def check_existing_assets(gitlab_project_id, tag_name):
+    """
+    Check for existing assets in a release to avoid duplicates.
+    
+    :param gitlab_project_id: GitLab project ID
+    :param tag_name: Release tag name
+    :return: Dictionary of existing asset names mapped to their URLs
+    """
+    print(f"Checking for existing assets in release {tag_name}...")
+    headers = {"PRIVATE-TOKEN": os.environ.get("GITLAB_TOKEN")}
+    existing_assets = {}
+    
+    # Get release info
+    release_url = f"https://gitlab-master.nvidia.com/api/v4/projects/{gitlab_project_id}/releases/{tag_name}"
+    try:
+        response = requests.get(release_url, headers=headers, timeout=30)
+        if response.status_code == 200:
+            release_data = response.json()
+            
+            # Extract asset links
+            if 'assets' in release_data and 'links' in release_data['assets']:
+                for link in release_data['assets']['links']:
+                    existing_assets[link['name']] = link['url']
+                
+            print(f"Found {len(existing_assets)} existing assets in the release")
+            for name in existing_assets:
+                print(f"  - {name}")
+        else:
+            print(f"Warning: Failed to get release info for {tag_name}. Status code: {response.status_code}")
+    except Exception as e:
+        print(f"Error checking existing assets: {e}")
+        traceback.print_exc()
+    
+    return existing_assets
+
+def add_file_as_release_asset(upload_info, gitlab_project_id, tag_name, existing_assets=None):
     """
     Add an uploaded file as a release asset.
     
     :param upload_info: Upload info from GitLab uploads API
     :param gitlab_project_id: GitLab project ID
     :param tag_name: Release tag name
+    :param existing_assets: Dictionary of existing asset names to avoid duplicates
     :return: True if successful, False otherwise
     """
     if not upload_info or not isinstance(upload_info, dict):
@@ -454,6 +490,11 @@ def add_file_as_release_asset(upload_info, gitlab_project_id, tag_name):
     if not uploaded_url_path or not asset_name:
         print(f"ERROR: Missing 'url' or 'alt' in upload_info: {upload_info}")
         return False
+
+    # Check if this asset already exists in the release
+    if existing_assets and asset_name in existing_assets:
+        print(f"SKIPPED: Asset '{asset_name}' already exists in the release. Skipping duplicate upload.")
+        return True
 
     # Construct the full URL for the asset link using the relative URL from GitLab.
     asset_link_url = f"https://gitlab-master.nvidia.com{uploaded_url_path}"
@@ -518,20 +559,34 @@ def main():
              print("ERROR: Failed to create or find the release. Cannot proceed with artifact linking.")
              return 1
         
+        # Get existing assets to avoid duplicates
+        existing_assets = check_existing_assets(gitlab_project_id, tag_name)
+        
         upload_count = 0
         failed_count = 0
+        skipped_count = 0
         
         print(f"\n--- Processing {len(wheel_files)} wheel file(s) ---")
         for wheel in wheel_files:
             filename = os.path.basename(wheel)
             print(f"\nProcessing wheel: {filename}")
             
+            # Check if asset already exists
+            if filename in existing_assets:
+                print(f"Skipping {filename} - already exists in release {tag_name}")
+                skipped_count += 1
+                continue
+            
             try:
                 upload_info = upload_file_to_gitlab(wheel, gitlab_project_id)
                 
                 if upload_info:
-                    if add_file_as_release_asset(upload_info, gitlab_project_id, tag_name):
+                    if add_file_as_release_asset(upload_info, gitlab_project_id, tag_name, existing_assets):
                         upload_count += 1
+                        # Add to existing assets to avoid duplicate processing in this session
+                        asset_name = upload_info.get('alt')
+                        if asset_name:
+                            existing_assets[asset_name] = "Added in this session"
                     else:
                         print(f"Failed to add {filename} as release asset after successful upload.")
                         failed_count += 1
@@ -547,16 +602,17 @@ def main():
         print("\n--- Upload Summary ---")
         print(f"- Total wheel artifacts processed: {len(wheel_files)}")
         print(f"- Successfully uploaded and linked: {upload_count}")
+        print(f"- Skipped (already existing): {skipped_count}")
         print(f"- Failed: {failed_count}")
         
         if failed_count > 0:
             print("\nWARNING: One or more wheels failed to upload or link. Check the logs above for details.")
-            return 1 if upload_count == 0 else 0
-        elif upload_count == 0 and len(wheel_files) > 0:
+            return 1 if upload_count == 0 and skipped_count == 0 else 0
+        elif upload_count == 0 and skipped_count == 0 and len(wheel_files) > 0:
              print("\nERROR: No wheels were successfully uploaded, though some were found.")
              return 1
         else:
-            print("\nAll found wheels have been successfully uploaded as release artifacts.")
+            print(f"\nAll found wheels have been successfully processed for release {tag_name}.")
             return 0
             
     except Exception as e:
