@@ -294,7 +294,7 @@ def create_release():
         print("ERROR: Missing environment variables for release creation.")
         return False
 
-    # First check if the release already exists
+    # Check if the release already exists
     print(f"DEBUG: Checking if release {tag_name} already exists")
     check_url = f"https://gitlab-master.nvidia.com/api/v4/projects/{gitlab_project_id}/releases/{tag_name}"
     headers = {"PRIVATE-TOKEN": gitlab_token}
@@ -314,7 +314,7 @@ def create_release():
         print(f"Error checking for existing release {tag_name}: {e}")
         print("Proceeding with creation attempt...")
 
-    # First, check if the tag exists in the repository
+    # Check if the tag exists in the repository
     tag_check_url = f"https://gitlab-master.nvidia.com/api/v4/projects/{gitlab_project_id}/repository/tags/{tag_name}"
     try:
         tag_response = requests.get(tag_check_url, headers=headers, timeout=30)
@@ -474,7 +474,7 @@ def main():
         # Validate required environment variables
         check_required_vars()
         
-        # Test GitLab API connectivity first
+        # Test GitLab API connectivity 
         if not test_gitlab_connectivity():
             print("ERROR: Failed to connect to GitLab API. Exiting.")
             return 1
@@ -515,7 +515,7 @@ def main():
             print(f"\nProcessing APT package: {filename}")
             
             try:
-                # Upload file to GitLab first
+                # Upload file to GitLab 
                 upload_info = upload_file_to_gitlab(apt_file, gitlab_project_id)
                 
                 if upload_info:
