@@ -82,6 +82,91 @@ def test_gitlab_connectivity():
         traceback.print_exc()
         return False
 
+def check_gitlab_api_permissions():
+    """Check if token has necessary permissions for uploads and releases."""
+    print("Checking GitLab API token permissions...")
+    gitlab_project_id = os.environ.get("GITLAB_PROJECT_ID")
+    gitlab_token = os.environ.get("GITLAB_TOKEN")
+    
+    headers = {"PRIVATE-TOKEN": gitlab_token}
+    
+    # Check permissions needed for this script
+    permissions = {
+        "read_project": False,
+        "upload_files": False,
+        "manage_releases": False
+    }
+    
+    # 1. Check basic project access (already tested in test_gitlab_connectivity but including here for completeness)
+    project_url = f"https://gitlab-master.nvidia.com/api/v4/projects/{gitlab_project_id}"
+    try:
+        response = requests.get(project_url, headers=headers, timeout=30)
+        if response.status_code == 200:
+            permissions["read_project"] = True
+            print("✓ Token has read access to the project")
+        else:
+            print(f"✗ Token lacks read access to the project (HTTP {response.status_code})")
+    except Exception as e:
+        print(f"Error checking project access: {str(e)}")
+    
+    # 2. Check ability to upload files (test with a small dummy upload if possible)
+    upload_url = f"https://gitlab-master.nvidia.com/api/v4/projects/{gitlab_project_id}/uploads"
+    try:
+        # Create a small temporary file for testing
+        temp_file = "temp_test_upload.txt"
+        with open(temp_file, "w") as f:
+            f.write("Test upload permission")
+        
+        with open(temp_file, "rb") as f:
+            files = {"file": ("test_permission.txt", f)}
+            response = requests.post(upload_url, headers=headers, files=files, timeout=30)
+            
+            if response.status_code >= 200 and response.status_code < 300:
+                permissions["upload_files"] = True
+                print("✓ Token has permission to upload files")
+            else:
+                print(f"✗ Token lacks permission to upload files (HTTP {response.status_code})")
+                if response.text:
+                    print(f"  Error: {response.text[:200]}")
+        
+        # Clean up the temporary file
+        try:
+            os.remove(temp_file)
+        except:
+            pass
+    except Exception as e:
+        print(f"Error checking upload permission: {str(e)}")
+        traceback.print_exc()
+    
+    # 3. Check releases API access
+    releases_url = f"https://gitlab-master.nvidia.com/api/v4/projects/{gitlab_project_id}/releases"
+    try:
+        response = requests.get(releases_url, headers=headers, timeout=30)
+        if response.status_code >= 200 and response.status_code < 300:
+            permissions["manage_releases"] = True
+            print("✓ Token has permission to manage releases")
+        else:
+            print(f"✗ Token lacks permission to access releases (HTTP {response.status_code})")
+            if response.text:
+                print(f"  Error: {response.text[:200]}")
+    except Exception as e:
+        print(f"Error checking releases permission: {str(e)}")
+    
+    # Summarize findings
+    print("\nPermission summary:")
+    all_permissions_granted = all(permissions.values())
+    for perm, granted in permissions.items():
+        status = "✓" if granted else "✗"
+        print(f"  {status} {perm}")
+    
+    if all_permissions_granted:
+        print("\nToken has all required permissions for this script.")
+        return True
+    else:
+        print("\nWARNING: Token is missing some permissions required for this script.")
+        print("This may cause failures during execution.")
+        return False
+
 def convert_tarballs_to_wheels(wheels_dir):
     """Convert any .tar.gz files to wheels."""
     print(f"Checking for tarballs in {wheels_dir}...")
@@ -369,6 +454,11 @@ def main():
         
         if not test_gitlab_connectivity():
             print("ERROR: Failed to connect to GitLab API. Exiting.")
+            return 1
+        
+        # Check if the GitLab token has sufficient permissions
+        if not check_gitlab_api_permissions():
+            print("ERROR: GitLab token does not have sufficient permissions. Exiting.")
             return 1
         
         gitlab_project_id = os.environ.get("GITLAB_PROJECT_ID")
