@@ -336,9 +336,46 @@ def create_release():
         print(f"Error checking for existing release {tag_name}: {e}")
         print("Proceeding with creation attempt...")
 
+    # Check if the tag exists in the repository
+    tag_check_url = f"https://gitlab-master.nvidia.com/api/v4/projects/{gitlab_project_id}/repository/tags/{tag_name}"
+    try:
+        tag_response = requests.get(tag_check_url, headers=headers, timeout=30)
+        if tag_response.status_code != 200:
+            print(f"Warning: Tag {tag_name} does not exist in the repository. Creating it first.")
+            # Try to create the tag if it doesn't exist
+            # This requires a commit SHA to base the tag on
+            # Get default branch as reference
+            project_url = f"https://gitlab-master.nvidia.com/api/v4/projects/{gitlab_project_id}"
+            project_response = requests.get(project_url, headers=headers, timeout=30)
+            if project_response.status_code == 200:
+                default_branch = project_response.json().get('default_branch', 'main')
+                print(f"Using default branch '{default_branch}' as reference for creating tag")
+            else:
+                default_branch = 'main'
+                print(f"Could not determine default branch, using '{default_branch}' as fallback")
+                
+            # Get the latest commit SHA from the default branch
+            commits_url = f"https://gitlab-master.nvidia.com/api/v4/projects/{gitlab_project_id}/repository/commits/{default_branch}"
+            commits_response = requests.get(commits_url, headers=headers, timeout=30)
+            if commits_response.status_code == 200:
+                ref = commits_response.json().get('id')
+                print(f"Using commit {ref} from branch {default_branch} as reference")
+            else:
+                print(f"Warning: Could not get latest commit from {default_branch}. Release creation may fail.")
+                ref = default_branch
+        else:
+            # Tag exists, use it as the ref
+            ref = tag_name
+            print(f"Tag {tag_name} exists, using it as reference")
+    except Exception as e:
+        print(f"Warning: Error checking tag existence: {e}")
+        # Fallback to using the tag name as ref
+        ref = tag_name
+
     print(f"Creating GitLab release {tag_name}...")
     release_data = {
         "tag_name": tag_name,
+        "ref": ref,  # Add ref parameter pointing to the commit, branch or tag
         "name": release_name,
         "description": release_description
     }

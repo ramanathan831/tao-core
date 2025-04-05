@@ -3,6 +3,7 @@ import os
 import sys
 import glob
 import time
+import json
 import requests
 import traceback
 
@@ -44,7 +45,6 @@ def test_gitlab_connectivity():
     gitlab_project_id = os.environ.get("GITLAB_PROJECT_ID")
     gitlab_token = os.environ.get("GITLAB_TOKEN")
     
-    # First check if we can access the GitLab API
     url = f"https://gitlab-master.nvidia.com/api/v4/projects/{gitlab_project_id}"
     headers = {"PRIVATE-TOKEN": gitlab_token}
     
@@ -59,7 +59,6 @@ def test_gitlab_connectivity():
             if response.text:
                 print(f"Error response: {response.text}")
             
-            # Check different permission issues
             if response.status_code == 404:
                 print("ERROR: Project not found or token does not have access to this project")
             elif response.status_code == 401:
@@ -67,7 +66,6 @@ def test_gitlab_connectivity():
             elif response.status_code == 403:
                 print("ERROR: Permission denied. Token does not have sufficient permissions")
             
-            # Test general API access
             try:
                 user_response = requests.get("https://gitlab-master.nvidia.com/api/v4/user", headers=headers, timeout=10)
                 if user_response.status_code == 200:
@@ -83,27 +81,118 @@ def test_gitlab_connectivity():
         traceback.print_exc()
         return False
 
+def check_gitlab_api_permissions():
+    """Check if token has necessary permissions for uploads and releases."""
+    print("Checking GitLab API token permissions...")
+    gitlab_project_id = os.environ.get("GITLAB_PROJECT_ID")
+    gitlab_token = os.environ.get("GITLAB_TOKEN")
+    
+    headers = {"PRIVATE-TOKEN": gitlab_token}
+    
+    # Check permissions needed for this script
+    permissions = {
+        "read_project": False,
+        "upload_files": False,
+        "manage_releases": False
+    }
+    
+    # 1. Check basic project access (already tested in test_gitlab_connectivity but including here for completeness)
+    project_url = f"https://gitlab-master.nvidia.com/api/v4/projects/{gitlab_project_id}"
+    try:
+        response = requests.get(project_url, headers=headers, timeout=30)
+        if response.status_code == 200:
+            permissions["read_project"] = True
+            print("✓ Token has read access to the project")
+        else:
+            print(f"✗ Token lacks read access to the project (HTTP {response.status_code})")
+    except Exception as e:
+        print(f"Error checking project access: {str(e)}")
+    
+    # 2. Check ability to upload files (test with a small dummy upload if possible)
+    upload_url = f"https://gitlab-master.nvidia.com/api/v4/projects/{gitlab_project_id}/uploads"
+    try:
+        # Create a small temporary file for testing
+        temp_file = "temp_test_upload.txt"
+        with open(temp_file, "w") as f:
+            f.write("Test upload permission")
+        
+        with open(temp_file, "rb") as f:
+            files = {"file": ("test_permission.txt", f)}
+            response = requests.post(upload_url, headers=headers, files=files, timeout=30)
+            
+            if response.status_code >= 200 and response.status_code < 300:
+                permissions["upload_files"] = True
+                print("✓ Token has permission to upload files")
+            else:
+                print(f"✗ Token lacks permission to upload files (HTTP {response.status_code})")
+                if response.text:
+                    print(f"  Error: {response.text[:200]}")
+        
+        # Clean up the temporary file
+        try:
+            os.remove(temp_file)
+        except:
+            pass
+    except Exception as e:
+        print(f"Error checking upload permission: {str(e)}")
+        traceback.print_exc()
+    
+    # 3. Check releases API access
+    releases_url = f"https://gitlab-master.nvidia.com/api/v4/projects/{gitlab_project_id}/releases"
+    try:
+        response = requests.get(releases_url, headers=headers, timeout=30)
+        if response.status_code >= 200 and response.status_code < 300:
+            permissions["manage_releases"] = True
+            print("✓ Token has permission to manage releases")
+        else:
+            print(f"✗ Token lacks permission to access releases (HTTP {response.status_code})")
+            if response.text:
+                print(f"  Error: {response.text[:200]}")
+    except Exception as e:
+        print(f"Error checking releases permission: {str(e)}")
+    
+    # Summarize findings
+    print("\nPermission summary:")
+    all_permissions_granted = all(permissions.values())
+    for perm, granted in permissions.items():
+        status = "✓" if granted else "✗"
+        print(f"  {status} {perm}")
+    
+    if all_permissions_granted:
+        print("\nToken has all required permissions for this script.")
+        return True
+    else:
+        print("\nWARNING: Token is missing some permissions required for this script.")
+        print("This may cause failures during execution.")
+        return False
+
 def curl_with_retry(url, method="GET", data=None, upload_file=None, max_attempts=3):
     """Execute a request with retries."""
     attempt = 1
     delay = 5
     
     headers = {"PRIVATE-TOKEN": os.environ.get("GITLAB_TOKEN")}
+    current_file = upload_file if upload_file else "N/A"
     
     while attempt <= max_attempts:
-        print(f"Attempt {attempt} of {max_attempts}: Executing {method} request to {url}")
+        print(f"Attempt {attempt} of {max_attempts}: Executing {method} request to {url} (File: {os.path.basename(current_file)})")
         
         try:
             if upload_file:
                 # Upload file case
                 print(f"DEBUG: Uploading file {upload_file} to {url}")
                 with open(upload_file, 'rb') as f:
-                    files = {'file': f}
-                    response = requests.request(method, url, headers=headers, files=files, timeout=60)
+                    files = {'file': (os.path.basename(upload_file), f)}
+                    response = requests.request(method, url, headers=headers, files=files, timeout=180)
             elif data:
                 # With data case
-                print(f"DEBUG: Sending data to {url}: {data}")
-                response = requests.request(method, url, headers=headers, data=data, timeout=60)
+                if isinstance(data, dict):
+                    headers["Content-Type"] = "application/json"
+                    print(f"DEBUG: Sending JSON data to {url}: {data}")
+                    response = requests.request(method, url, headers=headers, json=data, timeout=60)
+                else:
+                    print(f"DEBUG: Sending data to {url}: {data}")
+                    response = requests.request(method, url, headers=headers, data=data, timeout=60)
             else:
                 # Simple case
                 response = requests.request(method, url, headers=headers, timeout=60)
@@ -111,19 +200,20 @@ def curl_with_retry(url, method="GET", data=None, upload_file=None, max_attempts
             http_code = response.status_code
             
             # Print response headers for debugging
-            print(f"DEBUG: Response headers: {dict(response.headers)}")
+            print(f"DEBUG: Response headers for {url}: {dict(response.headers)}")
             
             # Check for successful response (2xx)
             if 200 <= http_code < 300:
                 print(f"Success: {method} request to {url} (HTTP {http_code})")
                 if response.text:
-                    print(f"DEBUG: Response body: {response.text[:500]}...")
+                    print(f"DEBUG: Response body (first 500 chars): {response.text[:500]}")
                 try:
-                    if response.text and response.headers.get('Content-Type', '').startswith('application/json'):
+                    if response.text and 'application/json' in response.headers.get('Content-Type', ''):
                         return response.json()
                     return True
                 except ValueError as e:
-                    print(f"WARNING: Failed to parse JSON response: {e}")
+                    print(f"WARNING: Failed to parse JSON response from {url} despite success code: {e}")
+                    print(f"DEBUG: Full response text: {response.text}")
                     return True
             # 404 is fine for release creation (it may already exist)
             elif method == "POST" and http_code == 404 and "/releases" in url:
@@ -134,9 +224,9 @@ def curl_with_retry(url, method="GET", data=None, upload_file=None, max_attempts
                 print(f"Note: Release already exists. Continuing. (HTTP {http_code})")
                 return True
             else:
-                print(f"Attempt {attempt} failed: {method} request to {url} (HTTP {http_code})")
+                print(f"Attempt {attempt} failed: {method} request to {url} (HTTP {http_code}) (File: {os.path.basename(current_file)})")
                 if response.text:
-                    print(f"Error response: {response.text}")
+                    print(f"Error response body: {response.text}")
                 
                 if attempt < max_attempts:
                     print(f"Retrying in {delay} seconds...")
@@ -144,20 +234,24 @@ def curl_with_retry(url, method="GET", data=None, upload_file=None, max_attempts
                     attempt += 1
                     delay *= 2
                 else:
-                    print("Maximum attempts reached. Giving up.")
+                    print(f"Maximum attempts reached for {url}. Giving up.")
                     return False
                 
-        except Exception as e:
-            print(f"Exception during {method} request to {url}: {str(e)}")
+        except requests.exceptions.RequestException as e:
+            print(f"Network/Request Exception during {method} request to {url} (File: {os.path.basename(current_file)}): {str(e)}")
             traceback.print_exc()
             if attempt < max_attempts:
-                print(f"Retrying in {delay} seconds...")
+                print(f"Retrying in {delay} seconds due to network error...")
                 time.sleep(delay)
                 attempt += 1
                 delay *= 2
             else:
-                print("Maximum attempts reached. Giving up.")
+                print("Maximum attempts reached after network error. Giving up.")
                 return False
+        except Exception as e:
+            print(f"Unexpected Exception during {method} request to {url} (File: {os.path.basename(current_file)}): {str(e)}")
+            traceback.print_exc()
+            return False
     
     return False
 
@@ -181,36 +275,96 @@ def check_apt_packages(directory):
     else:
         print(f"Found {file_count} .deb files in {directory} to upload.")
         for file in files:
-            print(f"  - {os.path.basename(file)} ({os.path.getsize(file)} bytes)")
+            try:
+                print(f"  - {os.path.basename(file)} ({os.path.getsize(file)} bytes)")
+            except OSError as e:
+                print(f"  - {os.path.basename(file)} (Error getting size: {e})")
     
     return files
 
 def create_release():
-    """Create a release in GitLab."""
+    """Create a release in GitLab if it doesn't exist."""
     gitlab_project_id = os.environ.get("GITLAB_PROJECT_ID")
     tag_name = os.environ.get("TAG_NAME")
     release_name = os.environ.get("RELEASE_NAME")
     release_description = os.environ.get("RELEASE_DESCRIPTION")
+    gitlab_token = os.environ.get("GITLAB_TOKEN")
     
-    print(f"Creating/updating GitLab release {tag_name}...")
-    release_data = {
-        "tag_name": tag_name,
-        "name": release_name,
-        "description": release_description
-    }
-    
+    if not all([gitlab_project_id, tag_name, release_name, release_description, gitlab_token]):
+        print("ERROR: Missing environment variables for release creation.")
+        return False
+
     # First check if the release already exists
     print(f"DEBUG: Checking if release {tag_name} already exists")
     check_url = f"https://gitlab-master.nvidia.com/api/v4/projects/{gitlab_project_id}/releases/{tag_name}"
-    check_response = requests.get(check_url, headers={"PRIVATE-TOKEN": os.environ.get("GITLAB_TOKEN")})
+    headers = {"PRIVATE-TOKEN": gitlab_token}
     
-    if check_response.status_code == 200:
-        print(f"Release {tag_name} already exists, skipping creation")
-        return True
-    
+    try:
+        check_response = requests.get(check_url, headers=headers, timeout=30)
+        if check_response.status_code == 200:
+            print(f"Release {tag_name} already exists, skipping creation")
+            return True
+        elif check_response.status_code == 404:
+            print(f"Release {tag_name} does not exist, proceeding with creation")
+        else:
+            print(f"Warning: Unexpected status code {check_response.status_code} when checking for release {tag_name}")
+            if check_response.text:
+                print(f"Response: {check_response.text}")
+    except requests.exceptions.RequestException as e:
+        print(f"Error checking for existing release {tag_name}: {e}")
+        print("Proceeding with creation attempt...")
+
+    # First, check if the tag exists in the repository
+    tag_check_url = f"https://gitlab-master.nvidia.com/api/v4/projects/{gitlab_project_id}/repository/tags/{tag_name}"
+    try:
+        tag_response = requests.get(tag_check_url, headers=headers, timeout=30)
+        if tag_response.status_code != 200:
+            print(f"Warning: Tag {tag_name} does not exist in the repository. Creating it first.")
+            # Try to create the tag if it doesn't exist
+            # This requires a commit SHA to base the tag on
+            # Get default branch as reference
+            project_url = f"https://gitlab-master.nvidia.com/api/v4/projects/{gitlab_project_id}"
+            project_response = requests.get(project_url, headers=headers, timeout=30)
+            if project_response.status_code == 200:
+                default_branch = project_response.json().get('default_branch', 'main')
+                print(f"Using default branch '{default_branch}' as reference for creating tag")
+            else:
+                default_branch = 'main'
+                print(f"Could not determine default branch, using '{default_branch}' as fallback")
+                
+            # Get the latest commit SHA from the default branch
+            commits_url = f"https://gitlab-master.nvidia.com/api/v4/projects/{gitlab_project_id}/repository/commits/{default_branch}"
+            commits_response = requests.get(commits_url, headers=headers, timeout=30)
+            if commits_response.status_code == 200:
+                ref = commits_response.json().get('id')
+                print(f"Using commit {ref} from branch {default_branch} as reference")
+            else:
+                print(f"Warning: Could not get latest commit from {default_branch}. Release creation may fail.")
+                ref = default_branch
+        else:
+            # Tag exists, use it as the ref
+            ref = tag_name
+            print(f"Tag {tag_name} exists, using it as reference")
+    except Exception as e:
+        print(f"Warning: Error checking tag existence: {e}")
+        # Fallback to using the tag name as ref
+        ref = tag_name
+
+    print(f"Creating GitLab release {tag_name}...")
+    release_data = {
+        "tag_name": tag_name,
+        "ref": ref,  # Add ref parameter pointing to the commit, branch or tag
+        "name": release_name,
+        "description": release_description
+    }
     release_url = f"https://gitlab-master.nvidia.com/api/v4/projects/{gitlab_project_id}/releases"
-    if not curl_with_retry(release_url, "POST", release_data):
-        print("WARNING: Failed to create release, but will try to upload artifacts anyway")
+    
+    if curl_with_retry(release_url, "POST", release_data):
+        print(f"Successfully created or found release {tag_name}")
+        return True
+    else:
+        print(f"ERROR: Failed to create release {tag_name}. Artifact linking might fail.")
+        return False
 
 def upload_file_to_gitlab(file_path, gitlab_project_id):
     """
@@ -226,53 +380,39 @@ def upload_file_to_gitlab(file_path, gitlab_project_id):
     
     # Make sure file exists and is readable
     if not os.path.isfile(file_path):
-        print(f"ERROR: File {file_path} does not exist")
+        print(f"ERROR: File {file_path} does not exist or is not a file.")
+        return False
+    if not os.access(file_path, os.R_OK):
+        print(f"ERROR: File {file_path} is not readable.")
         return False
     
     try:
         file_size = os.path.getsize(file_path)
         print(f"DEBUG: File size: {file_size} bytes")
-        
-        # For large files, use a different approach
-        if file_size > 10 * 1024 * 1024:  # 10MB
-            print("DEBUG: File is large, using chunked upload")
-            return upload_large_file_to_gitlab(file_path, gitlab_project_id)
-    except Exception as e:
-        print(f"Error checking file size: {str(e)}")
+        if file_size == 0:
+            print(f"WARNING: File {filename} is empty. Skipping upload.")
+            return False
+    except OSError as e:
+        print(f"ERROR: Cannot get size of file {file_path}: {e}")
+        return False
     
     upload_url = f"https://gitlab-master.nvidia.com/api/v4/projects/{gitlab_project_id}/uploads"
     response = curl_with_retry(upload_url, "POST", None, file_path)
     
-    if response and isinstance(response, dict):
+    if response and isinstance(response, dict) and 'url' in response and 'alt' in response:
         print(f"Successfully uploaded file to project storage: {filename}")
         print(f"DEBUG: Upload response: {response}")
+        if response.get('alt') != filename:
+            print(f"WARNING: Uploaded filename '{response.get('alt')}' does not match original '{filename}'")
         return response
     else:
-        print(f"ERROR: Failed to upload file to project storage: {filename}")
-        return False
-
-def upload_large_file_to_gitlab(file_path, gitlab_project_id):
-    """
-    Alternative method to upload large files to GitLab using link assets directly.
-    
-    :param file_path: Path to the file to upload
-    :param gitlab_project_id: GitLab project ID  
-    :return: Dict with url and alt fields to simulate upload response
-    """
-    try:
-        # Create a direct link with the filename
-        filename = os.path.basename(file_path)
-        tag_name = os.environ.get("TAG_NAME")
-        
-        # Upload to temporary web location if available
-        # For now, we'll just create a dummy URL response
-        return {
-            "url": f"/uploads/{filename}",
-            "alt": filename
-        }
-    except Exception as e:
-        print(f"Error in alternate upload method: {str(e)}")
-        traceback.print_exc()
+        print(f"ERROR: Failed to upload file {filename} to project storage or invalid response received.")
+        if isinstance(response, bool):
+            print("DEBUG: Upload call returned a boolean, expected a dictionary.")
+        elif isinstance(response, dict):
+            print(f"DEBUG: Received dictionary lacks expected keys 'url' or 'alt': {response}")
+        else:
+            print(f"DEBUG: Received unexpected response type: {type(response)}")
         return False
 
 def add_file_as_release_asset(upload_info, gitlab_project_id, tag_name):
@@ -285,53 +425,36 @@ def add_file_as_release_asset(upload_info, gitlab_project_id, tag_name):
     :return: True if successful, False otherwise
     """
     if not upload_info or not isinstance(upload_info, dict):
+        print(f"ERROR: Invalid upload_info provided to add_file_as_release_asset: {upload_info}")
         return False
 
-    asset_url = f"https://gitlab-master.nvidia.com{upload_info.get('url', '')}"
-    asset_name = upload_info.get('alt', os.path.basename(upload_info.get('url', '')))
+    uploaded_url_path = upload_info.get('url')
+    asset_name = upload_info.get('alt')
+
+    if not uploaded_url_path or not asset_name:
+        print(f"ERROR: Missing 'url' or 'alt' in upload_info: {upload_info}")
+        return False
+
+    # Construct the full URL for the asset link
+    asset_link_url = f"https://gitlab-master.nvidia.com{uploaded_url_path}"
     
-    print(f"Adding file as release asset: {asset_name}")
+    print(f"Adding file as release asset: {asset_name} using link URL: {asset_link_url}")
     
     link_data = {
         "name": asset_name,
-        "url": asset_url,
+        "url": asset_link_url,
         "link_type": "other"  # Use "other" for direct downloads
     }
     
     assets_url = f"https://gitlab-master.nvidia.com/api/v4/projects/{gitlab_project_id}/releases/{tag_name}/assets/links"
+    print(f"DEBUG: Posting to assets link URL: {assets_url}")
+    print(f"DEBUG: Link data: {link_data}")
+    
     if curl_with_retry(assets_url, "POST", link_data):
-        print(f"Successfully added file as release asset: {asset_name}")
+        print(f"Successfully added file {asset_name} as release asset link.")
         return True
     else:
-        print(f"ERROR: Failed to add file as release asset: {asset_name}")
-        return False
-
-def fallback_to_direct_release_link(file_path, gitlab_project_id, tag_name):
-    """
-    Fallback method: Try adding a direct link to a locally accessible file.
-    This is used when uploads fail but we still want to link to the file.
-
-    :param file_path: Path to the APT package file
-    :param gitlab_project_id: GitLab project ID
-    :param tag_name: Release tag name
-    :return: True if successful, False otherwise
-    """
-    try:
-        filename = os.path.basename(file_path)
-        print(f"Trying fallback method for {filename}")
-        
-        # Create a direct link with the filename
-        link_data = {
-            "name": filename,
-            "url": f"file://{os.path.abspath(file_path)}",
-            "link_type": "other"
-        }
-        
-        assets_url = f"https://gitlab-master.nvidia.com/api/v4/projects/{gitlab_project_id}/releases/{tag_name}/assets/links"
-        return curl_with_retry(assets_url, "POST", link_data)
-    except Exception as e:
-        print(f"Error in fallback method: {str(e)}")
-        traceback.print_exc()
+        print(f"ERROR: Failed to add file {asset_name} as release asset link.")
         return False
 
 def main():
@@ -339,12 +462,12 @@ def main():
     print("Starting GitLab APT package upload process (direct artifact mode)...")
     
     # Print script version for debugging
-    print("Script version: 2.1.0 (APT direct artifacts with enhanced error handling)")
+    print("Script version: 2.2.0 (APT direct artifacts with enhanced error handling)")
     
     # Print environment variables for debugging if DEBUG is set
     if os.environ.get("DEBUG"):
         print("DEBUG: Environment variables:")
-        for key in ["GITLAB_PROJECT_ID", "TAG_NAME", "RELEASE_NAME", "APT_DIR"]:
+        for key in ["GITLAB_PROJECT_ID", "TAG_NAME", "RELEASE_NAME", "RELEASE_DESCRIPTION", "APT_DIR"]:
             print(f"DEBUG: {key}={os.environ.get(key, 'Not set')}")
     
     try:
@@ -354,6 +477,11 @@ def main():
         # Test GitLab API connectivity first
         if not test_gitlab_connectivity():
             print("ERROR: Failed to connect to GitLab API. Exiting.")
+            return 1
+        
+        # Check if the GitLab token has sufficient permissions
+        if not check_gitlab_api_permissions():
+            print("ERROR: GitLab token does not have sufficient permissions. Exiting.")
             return 1
         
         # Get environment variables
@@ -373,15 +501,18 @@ def main():
             return 1
         
         # Create a release in GitLab if it doesn't exist
-        create_release()
+        if not create_release():
+            print("ERROR: Failed to create or find the release. Cannot proceed with artifact linking.")
+            return 1
         
         # Upload each APT file to GitLab and add as release asset
         upload_count = 0
         failed_count = 0
         
+        print(f"\n--- Processing {len(apt_files)} APT package(s) ---")
         for apt_file in apt_files:
             filename = os.path.basename(apt_file)
-            print(f"Processing APT package: {filename}")
+            print(f"\nProcessing APT package: {filename}")
             
             try:
                 # Upload file to GitLab first
@@ -392,48 +523,45 @@ def main():
                     if add_file_as_release_asset(upload_info, gitlab_project_id, tag_name):
                         upload_count += 1
                     else:
-                        # Try the fallback method
-                        if fallback_to_direct_release_link(apt_file, gitlab_project_id, tag_name):
-                            print(f"Successfully added {filename} using fallback method")
-                            upload_count += 1
-                        else:
-                            failed_count += 1
-                else:
-                    # Try the fallback method
-                    if fallback_to_direct_release_link(apt_file, gitlab_project_id, tag_name):
-                        print(f"Successfully added {filename} using fallback method")
-                        upload_count += 1
-                    else:
+                        print(f"Failed to add {filename} as release asset after successful upload.")
                         failed_count += 1
+                else:
+                    print(f"Upload failed for {filename}. Skipping asset linking.")
+                    failed_count += 1
             except Exception as e:
-                print(f"Error processing APT package {filename}: {str(e)}")
+                print(f"ERROR: Unexpected exception processing APT package {filename}: {str(e)}")
                 traceback.print_exc()
                 failed_count += 1
+            print(f"--- Finished processing {filename} ---")
         
         # Report results
-        print("Upload summary:")
-        print(f"- Total APT artifacts uploaded and linked: {upload_count}")
-        print(f"- Total APT artifacts failed: {failed_count}")
+        print("\n--- Upload Summary ---")
+        print(f"- Total APT artifacts processed: {len(apt_files)}")
+        print(f"- Successfully uploaded and linked: {upload_count}")
+        print(f"- Failed: {failed_count}")
         
         if failed_count > 0:
-            print("WARNING: Some APT packages failed to upload or link. Check the logs for details.")
-            if upload_count > 0:
-                print("Partial success: Some APT packages were uploaded successfully.")
-                return 0  # Return success if at least some packages were uploaded
+            print("\nWARNING: One or more APT packages failed to upload or link. Check the logs above for details.")
+            return 1 if upload_count == 0 else 0
+        elif upload_count == 0 and len(apt_files) > 0:
+            print("\nERROR: No APT packages were successfully uploaded, though some were found.")
             return 1
         else:
-            print("All APT packages have been successfully uploaded as release artifacts")
+            print("\nAll found APT packages have been successfully uploaded as release artifacts.")
             return 0
+            
     except Exception as e:
-        print(f"Unhandled exception in main: {str(e)}")
+        print(f"FATAL: Unhandled exception in main execution: {str(e)}")
         traceback.print_exc()
         return 1
 
 if __name__ == "__main__":
+    exit_code = 1
     try:
         exit_code = main()
-        sys.exit(exit_code)
     except Exception as e:
-        print(f"Unhandled exception: {str(e)}")
+        print(f"FATAL: Unhandled exception at script level: {str(e)}")
         traceback.print_exc()
-        sys.exit(1) 
+    finally:
+        print(f"Script finished with exit code {exit_code}")
+        sys.exit(exit_code) 

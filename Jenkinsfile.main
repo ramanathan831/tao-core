@@ -76,7 +76,11 @@ spec:
             PROCESS_APT_PACKAGES = hasContent == "true"
           }
           
+          // Store the value in environment variables for use in stage conditions
+          env.SHOULD_PROCESS_APT = PROCESS_APT_PACKAGES.toString()
+          
           echo "APT package processing: ${PROCESS_APT_PACKAGES ? 'ENABLED' : 'SKIPPED (apt-requirements.txt not found or empty)'}"
+          echo "DEBUG: SHOULD_PROCESS_APT env var set to: ${env.SHOULD_PROCESS_APT}"
         }
       }
 
@@ -168,10 +172,15 @@ spec:
       
       stage ('download_third_party_apt') {
         when {
-          expression { return PROCESS_APT_PACKAGES }
+          expression { 
+            echo "DEBUG: Evaluating condition for download_third_party_apt stage"
+            echo "DEBUG: SHOULD_PROCESS_APT = ${env.SHOULD_PROCESS_APT}"
+            return env.SHOULD_PROCESS_APT == "true" 
+          }
         }
         gitlabCommitStatus(name: "download_third_party_apt", connection: gitLabConnection('git-lab-master')) {
           // No need to create apt-requirements.txt as we only run this stage if it already exists
+          echo "DEBUG: Processing APT packages because SHOULD_PROCESS_APT = ${env.SHOULD_PROCESS_APT}"
           
           // Run the helper script to download third party apt packages
           sh "python3 scripts/download_apt_packages.py --requirements apt-requirements.txt --download-sources"
@@ -180,10 +189,15 @@ spec:
       
       stage ('publish_third_party_apt') {
         when {
-          expression { return PROCESS_APT_PACKAGES }
+          expression { 
+            echo "DEBUG: Evaluating condition for publish_third_party_apt stage"
+            echo "DEBUG: SHOULD_PROCESS_APT = ${env.SHOULD_PROCESS_APT}"
+            return env.SHOULD_PROCESS_APT == "true" 
+          }
         }
         gitlabCommitStatus(name: "publish_third_party_apt", connection: gitLabConnection('git-lab-master')) {
           // Debug info
+          echo "DEBUG: Processing APT packages because SHOULD_PROCESS_APT = ${env.SHOULD_PROCESS_APT}"
           sh "echo 'DEBUG: Starting publish_third_party_apt stage'"
           sh "echo 'DEBUG: GITLAB_PROJECT_ID=${GITLAB_PROJECT_ID}'"
           
@@ -223,7 +237,8 @@ spec:
         gitlabCommitStatus(name: "generate_license_acknowledgements", connection: gitLabConnection('git-lab-master')) {
           // Generate license acknowledgements from downloaded packages
           // Only include APT packages if they were processed
-          def aptFlag = PROCESS_APT_PACKAGES ? "--include-apt" : ""
+          def aptFlag = env.SHOULD_PROCESS_APT == "true" ? "--include-apt" : ""
+          echo "DEBUG: Including APT in license acknowledgements: ${env.SHOULD_PROCESS_APT == 'true'}"
           sh "python3 scripts/generate_license_acknowledgements.py ${aptFlag} --output acknowledgements.md"
           
           // Archive the generated acknowledgements file as a build artifact
@@ -256,11 +271,14 @@ spec:
         gitlabCommitStatus(name: "cleanup_third_party_packages", connection: gitLabConnection('git-lab-master')) {
           // Define what to clean up based on what was processed
           def dirsToClean = "${WHEELS_DIR}"
-          if (PROCESS_APT_PACKAGES) {
+          echo "DEBUG: Checking if APT dirs should be cleaned (SHOULD_PROCESS_APT=${env.SHOULD_PROCESS_APT})"
+          if (env.SHOULD_PROCESS_APT == "true") {
+            echo "DEBUG: Adding APT directories to cleanup list"
             dirsToClean += " ${APT_DIR} ${APT_SOURCES_DIR}"
           }
           
           // Clean up the directories
+          echo "DEBUG: Cleaning up directories: ${dirsToClean}"
           sh "rm -rf ${dirsToClean}"
         }
       }
