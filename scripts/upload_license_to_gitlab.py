@@ -37,6 +37,29 @@ def check_required_vars():
         print("ERROR: Required environment variables are missing. Exiting.")
         sys.exit(1)
 
+def extract_base_version(version_string):
+    """
+    Extract the base version (major.minor.patch) from a version string.
+    Example: 'v5.3.0.123.dev0' -> 'v5.3.0'
+    """
+    if not version_string:
+        return version_string
+    
+    # Remove leading 'v' if present for processing
+    has_v_prefix = version_string.startswith('v')
+    version = version_string[1:] if has_v_prefix else version_string
+    
+    # Split by dots and take the first three components (major.minor.patch)
+    components = version.split('.')
+    if len(components) >= 3:
+        base_version = '.'.join(components[:3])
+    else:
+        # If less than 3 components, use the original version
+        base_version = version
+    
+    # Add the 'v' prefix back if it was present
+    return f"v{base_version}" if has_v_prefix else base_version
+
 def test_gitlab_connectivity():
     """Test GitLab API connectivity and token validity."""
     print("Testing GitLab API connectivity...")
@@ -287,36 +310,44 @@ def create_release():
     release_description = os.environ.get("RELEASE_DESCRIPTION")
     gitlab_token = os.environ.get("GITLAB_TOKEN")
     
-    if not all([gitlab_project_id, tag_name, release_name, release_description, gitlab_token]):
+    # Extract the base version from the tag name (e.g., v5.3.0.123.dev0 -> v5.3.0)
+    base_tag_name = extract_base_version(tag_name)
+    print(f"Using base version tag '{base_tag_name}' instead of full tag '{tag_name}'")
+    
+    # Update release name and description to use the base version
+    base_release_name = release_name.replace(tag_name, base_tag_name) if tag_name in release_name else f"Release {base_tag_name}"
+    base_release_description = release_description.replace(tag_name, base_tag_name) if tag_name in release_description else f"Third-party packages for {base_tag_name}"
+    
+    if not all([gitlab_project_id, base_tag_name, base_release_name, base_release_description, gitlab_token]):
         print("ERROR: Missing environment variables for release creation.")
         return False
 
     # Check if the release already exists
-    print(f"DEBUG: Checking if release {tag_name} already exists")
-    check_url = f"https://gitlab-master.nvidia.com/api/v4/projects/{gitlab_project_id}/releases/{tag_name}"
+    print(f"DEBUG: Checking if release {base_tag_name} already exists")
+    check_url = f"https://gitlab-master.nvidia.com/api/v4/projects/{gitlab_project_id}/releases/{base_tag_name}"
     headers = {"PRIVATE-TOKEN": gitlab_token}
     
     try:
         check_response = requests.get(check_url, headers=headers, timeout=30)
         if check_response.status_code == 200:
-            print(f"Release {tag_name} already exists, skipping creation")
+            print(f"Release {base_tag_name} already exists, skipping creation")
             return True
         elif check_response.status_code == 404:
-            print(f"Release {tag_name} does not exist, proceeding with creation")
+            print(f"Release {base_tag_name} does not exist, proceeding with creation")
         else:
-            print(f"Warning: Unexpected status code {check_response.status_code} when checking for release {tag_name}")
+            print(f"Warning: Unexpected status code {check_response.status_code} when checking for release {base_tag_name}")
             if check_response.text:
                 print(f"Response: {check_response.text}")
     except requests.exceptions.RequestException as e:
-        print(f"Error checking for existing release {tag_name}: {e}")
+        print(f"Error checking for existing release {base_tag_name}: {e}")
         print("Proceeding with creation attempt...")
 
     # Check if the tag exists in the repository
-    tag_check_url = f"https://gitlab-master.nvidia.com/api/v4/projects/{gitlab_project_id}/repository/tags/{tag_name}"
+    tag_check_url = f"https://gitlab-master.nvidia.com/api/v4/projects/{gitlab_project_id}/repository/tags/{base_tag_name}"
     try:
         tag_response = requests.get(tag_check_url, headers=headers, timeout=30)
         if tag_response.status_code != 200:
-            print(f"Warning: Tag {tag_name} does not exist in the repository. Creating it first.")
+            print(f"Warning: Tag {base_tag_name} does not exist in the repository. Creating it first.")
             # Try to create the tag if it doesn't exist
             # This requires a commit SHA to base the tag on
             # Get default branch as reference
@@ -340,27 +371,27 @@ def create_release():
                 ref = default_branch
         else:
             # Tag exists, use it as the ref
-            ref = tag_name
-            print(f"Tag {tag_name} exists, using it as reference")
+            ref = base_tag_name
+            print(f"Tag {base_tag_name} exists, using it as reference")
     except Exception as e:
         print(f"Warning: Error checking tag existence: {e}")
         # Fallback to using the tag name as ref
-        ref = tag_name
+        ref = base_tag_name
 
-    print(f"Creating GitLab release {tag_name}...")
+    print(f"Creating GitLab release {base_tag_name}...")
     release_data = {
-        "tag_name": tag_name,
+        "tag_name": base_tag_name,
         "ref": ref,  # Add ref parameter pointing to the commit, branch or tag
-        "name": release_name,
-        "description": release_description
+        "name": base_release_name,
+        "description": base_release_description
     }
     release_url = f"https://gitlab-master.nvidia.com/api/v4/projects/{gitlab_project_id}/releases"
     
     if curl_with_retry(release_url, "POST", release_data):
-        print(f"Successfully created or found release {tag_name}")
+        print(f"Successfully created or found release {base_tag_name}")
         return True
     else:
-        print(f"ERROR: Failed to create release {tag_name}. Artifact linking might fail.")
+        print(f"ERROR: Failed to create release {base_tag_name}. Artifact linking might fail.")
         return False
 
 def upload_file_to_gitlab(file_path, gitlab_project_id):
@@ -435,12 +466,15 @@ def check_existing_assets(gitlab_project_id, tag_name):
     :param tag_name: Release tag name
     :return: Dictionary of existing asset names mapped to their URLs
     """
-    print(f"Checking for existing assets in release {tag_name}...")
+    # Extract the base version from the tag name
+    base_tag_name = extract_base_version(tag_name)
+    
+    print(f"Checking for existing assets in release {base_tag_name}...")
     headers = {"PRIVATE-TOKEN": os.environ.get("GITLAB_TOKEN")}
     existing_assets = {}
     
     # Get release info
-    release_url = f"https://gitlab-master.nvidia.com/api/v4/projects/{gitlab_project_id}/releases/{tag_name}"
+    release_url = f"https://gitlab-master.nvidia.com/api/v4/projects/{gitlab_project_id}/releases/{base_tag_name}"
     try:
         response = requests.get(release_url, headers=headers, timeout=30)
         if response.status_code == 200:
@@ -455,7 +489,7 @@ def check_existing_assets(gitlab_project_id, tag_name):
             for name in existing_assets:
                 print(f"  - {name}")
         else:
-            print(f"Warning: Failed to get release info for {tag_name}. Status code: {response.status_code}")
+            print(f"Warning: Failed to get release info for {base_tag_name}. Status code: {response.status_code}")
     except Exception as e:
         print(f"Error checking existing assets: {e}")
         traceback.print_exc()
@@ -473,6 +507,9 @@ def add_file_as_release_asset(upload_info, gitlab_project_id, tag_name, project_
     :param existing_assets: Dictionary of existing asset names to avoid duplicates
     :return: True if successful, False otherwise
     """
+    # Extract the base version from the tag name
+    base_tag_name = extract_base_version(tag_name)
+    
     if not upload_info or not isinstance(upload_info, dict):
         print(f"ERROR: Invalid upload_info provided to add_file_as_release_asset: {upload_info}")
         return False
@@ -507,7 +544,7 @@ def add_file_as_release_asset(upload_info, gitlab_project_id, tag_name, project_
         "link_type": "package"  # Use "package" for Generic Packages API links
     }
     
-    assets_url = f"https://gitlab-master.nvidia.com/api/v4/projects/{gitlab_project_id}/releases/{tag_name}/assets/links"
+    assets_url = f"https://gitlab-master.nvidia.com/api/v4/projects/{gitlab_project_id}/releases/{base_tag_name}/assets/links"
     print(f"DEBUG: Posting to assets link URL: {assets_url}")
     print(f"DEBUG: Link data: {link_data}")
     
@@ -610,6 +647,9 @@ def main():
         print("DEBUG: Environment variables:")
         for key in ["GITLAB_PROJECT_ID", "TAG_NAME", "RELEASE_NAME", "RELEASE_DESCRIPTION"]:
             print(f"DEBUG: {key}={os.environ.get(key, 'Not set')}")
+            if key == "TAG_NAME" and os.environ.get(key):
+                base_tag = extract_base_version(os.environ.get(key))
+                print(f"DEBUG: Extracted base version: {base_tag}")
     
     try:
         # Validate required environment variables
