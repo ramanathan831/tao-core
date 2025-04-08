@@ -175,7 +175,24 @@ class Sparse4DTrainDatasetConfig:
     """Training dataset configuration for Sparse4D."""
     
     ann_file: str = STR_FIELD(value=MISSING, default_value="", description="Path to annotation file")
-    # Add other train dataset specific fields as needed
+    test_mode: bool = BOOL_FIELD(value=False, default_value=False, description="Test mode")
+    use_valid_flag: bool = BOOL_FIELD(value=True, default_value=True, description="Use valid flag")
+    with_seq_flag: bool = BOOL_FIELD(value=True, default_value=True, description="With sequence flag")
+    sequences_split_num: int = INT_FIELD(value=100, default_value=100, valid_min=1, valid_max="inf", description="Number of sequences")
+    keep_consistent_seq_aug: bool = BOOL_FIELD(value=True, default_value=True, description="Keep consistent sequence augmentation")
+    same_scene_in_batch: bool = BOOL_FIELD(value=True, default_value=True, description="Same scene in batch")
+
+@dataclass
+class Sparse4DValDatasetConfig:
+    """Validation dataset configuration for Sparse4D."""
+    
+    ann_file: str = STR_FIELD(value=MISSING, default_value="", description="Path to annotation file")
+    test_mode: bool = BOOL_FIELD(value=False, default_value=False, description="Test mode")
+    use_valid_flag: bool = BOOL_FIELD(value=True, default_value=True, description="Use valid flag")
+    tracking: bool = BOOL_FIELD(value=True, default_value=True, description="Tracking")
+    tracking_threshold: float = FLOAT_FIELD(value=0.2, default_value=0.2, valid_min=0, valid_max=1, description="Tracking threshold")
+    same_scene_in_batch: bool = BOOL_FIELD(value=True, default_value=True, description="Same scene in batch")
+
 
 @dataclass
 class Sparse4DLossRegConfig:
@@ -342,7 +359,7 @@ class Sparse4DDatasetConfig:
     normalize: Sparse4DNormalizeConfig = DATACLASS_FIELD(Sparse4DNormalizeConfig())
     sequences: Sparse4DSequencesConfig = DATACLASS_FIELD(Sparse4DSequencesConfig())
     train_dataset: Sparse4DTrainDatasetConfig = DATACLASS_FIELD(Sparse4DTrainDatasetConfig())
-
+    val_dataset: Sparse4DValDatasetConfig = DATACLASS_FIELD(Sparse4DValDatasetConfig())
 @dataclass
 class Sparse4DEvaluateConfig(EvaluateConfig):
     """Evaluation configuration for Sparse4D."""
