@@ -132,7 +132,7 @@ class TrainConfig:
         default_value=1e-4,
         valid_min=0,
         valid_max="inf",
-        description="Learning rate. Default is 1e-5.",
+        description="Learning rate. Default is 1e-4.",
         display_name="Learning rate",
         popular="yes"
     )
