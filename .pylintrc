@@ -52,7 +52,7 @@ optimize-ast=no
 confidence=
 
 # List of tests to be disabled.
-disable=import-error,no-name-in-module,method-hidden,
+disable=import-error,import-outside-toplevel,no-name-in-module,method-hidden,
        access-member-before-definition,attribute-defined-outside-init,interface-is-not-class,
        missing-interface-method,arguments-differ,signature-differs,abstract-method,
        unresolved-interface,no-init,no-member,maybe-no-member,invalid-name,
