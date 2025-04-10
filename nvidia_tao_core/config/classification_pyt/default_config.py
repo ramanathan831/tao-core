@@ -101,8 +101,8 @@ class OptimConfig:
         description="layers names which do not need weight decay"
     )
     warmup_epochs: int = INT_FIELD(
-        value=20,
-        default_value=20,
+        value=0,
+        default_value=0,
         valid_min=0,
         valid_max="inf",
         description="Warmup epochs."
@@ -396,8 +396,8 @@ class AugmentationConfig:
         display_name="Standard Deviation"
     )  # non configurable here
     mixup_cutmix: bool = BOOL_FIELD(
-        value=True,
-        default_value=True,
+        value=False,
+        default_value=False,
         description="Flag to enable mixup and cutmix. Not recommended for binary classification."
     )
     mixup_alpha: float = FLOAT_FIELD(
@@ -413,29 +413,12 @@ class AugmentationConfig:
 class DataPathFormat:
     """Dataset Path experiment config."""
 
-    csv_path: str = STR_FIELD(value=MISSING, default_value="", description="Path to csv file for dataset")
-    images_dir: str = STR_FIELD(value=MISSING, default_value="", description="Path to images directory for dataset")
-
-
-@dataclass
-class TrainData:
-    """Train Data Dataclass"""
-
-    data_prefix: Optional[str] = STR_FIELD(value="", default_value="", description="Dataset directory path")
-
-
-@dataclass
-class ValData:
-    """Validation Data Dataclass"""
-
-    data_prefix: Optional[str] = STR_FIELD(value=None, default_value="", description="Dataset directory path")
-
-
-@dataclass
-class TestData:
-    """Test Data Dataclass"""
-
-    data_prefix: Optional[str] = STR_FIELD(value=None, default_value="", description="Dataset directory path")
+    images_dir: str = STR_FIELD(
+        value="/data",
+        default_value="",
+        description="Path to images directory for dataset",
+        display_name="image directory"
+    )
 
 
 @dataclass
@@ -451,10 +434,11 @@ class UnstructuredTrainData:
 class DatasetConfig:
     """Classification Dataset Config."""
 
-    root_dir: Optional[str] = STR_FIELD(
+    root_dir: str = STR_FIELD(
         value="",
         default_value="",
-        description="Path to root directory for dataset"
+        description="Path to folder that contains classes.txt which indicate class name and train ID. \
+        Can be optional then the mapping will be generated from pipeline."
     )
     dataset: str = STR_FIELD(
         value="CLDataset",
@@ -499,10 +483,22 @@ class DatasetConfig:
         description="Shuffle dataloader"
     )
     augmentation: AugmentationConfig = DATACLASS_FIELD(AugmentationConfig())
-    train: TrainData = DATACLASS_FIELD(TrainData())
+    train_dataset: DataPathFormat = DATACLASS_FIELD(
+        DataPathFormat(),
+        description="Configuration for the training dataset path",
+        display_name="Training Dataset"
+    )
     train_nolabel: UnstructuredTrainData = DATACLASS_FIELD(UnstructuredTrainData())
-    val: ValData = DATACLASS_FIELD(ValData())
-    test: TestData = DATACLASS_FIELD(TestData())
+    val_dataset: DataPathFormat = DATACLASS_FIELD(
+        DataPathFormat(),
+        description="Configuration for the validation dataset path",
+        display_name="Validation Dataset"
+    )
+    test_dataset: DataPathFormat = DATACLASS_FIELD(
+        DataPathFormat(),
+        description="Configuration for the testing dataset path",
+        display_name="Testing Dataset"
+    )
 
 
 @dataclass
