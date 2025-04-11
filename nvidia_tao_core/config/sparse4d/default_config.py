@@ -93,7 +93,6 @@ class Sparse4DLoggingConfig:
 class Sparse4DTrainConfig(TrainConfig):
     """Training configuration for Sparse4D."""
 
-    batch_size: int = INT_FIELD(value=2, default_value=2, valid_min=1, valid_max="inf", description="Batch size")
     num_bev_groups: int = INT_FIELD(value=1, default_value=1, valid_min=1, valid_max="inf", description="Number of BEV groups")
     validation_interval: float = FLOAT_FIELD(value=0.5, default_value=0.5, valid_min=0, valid_max="inf", description="Validation interval in epochs")
     checkpoint_interval: float = FLOAT_FIELD(value=0.5, default_value=0.5, valid_min=0, valid_max="inf", description="Checkpoint interval in epochs")
@@ -257,6 +256,21 @@ class Sparse4DSamplerConfig:
         description="Regression weights"
     )
 
+@dataclass
+class Sparse4DDeformableModelConfig:
+    """Deformable model configuration for Sparse4D."""
+
+    embed_dims: int = INT_FIELD(value=256, default_value=256, valid_min=1, valid_max="inf", description="Embedding dimensions")
+    num_groups: int = INT_FIELD(value=8, default_value=8, valid_min=1, valid_max="inf", description="Number of groups")
+    num_levels: int = INT_FIELD(value=4, default_value=4, valid_min=1, valid_max="inf", description="Number of levels")
+    attn_drop: float = FLOAT_FIELD(value=0.15, default_value=0.15, valid_min=0, valid_max=1, description="Attention dropout")
+    use_deformable_func: bool = BOOL_FIELD(value=True, default_value=True, description="Use deformable function")
+    use_camera_embed: bool = BOOL_FIELD(value=False, default_value=False, description="Use camera embedding")
+    residual_mode: str = STR_FIELD(value="cat", default_value="cat", description="Residual mode", valid_options="cat,add")
+    num_cams: int = INT_FIELD(value=6, default_value=6, valid_min=1, valid_max="inf", description="Number of cameras")
+    max_num_cams: int = INT_FIELD(value=20, default_value=20, valid_min=1, valid_max="inf", description="Maximum number of cameras")
+    proj_drop: float = FLOAT_FIELD(value=0.0, default_value=0.0, valid_min=0, valid_max=1, description="Projection dropout")
+    attn_drop: float = FLOAT_FIELD(value=0.0, default_value=0.0, valid_min=0, valid_max=1, description="Attention dropout")
 
 @dataclass
 class Sparse4DHeadConfig:
@@ -288,7 +302,7 @@ class Sparse4DHeadConfig:
     )
     loss: Sparse4DLossConfig = DATACLASS_FIELD(Sparse4DLossConfig())
     bnneck: Sparse4DBNNeckConfig = DATACLASS_FIELD(Sparse4DBNNeckConfig())
-
+    deformable_model: Sparse4DDeformableModelConfig = DATACLASS_FIELD(Sparse4DDeformableModelConfig())
 
 @dataclass
 class Sparse4DModelConfig:
@@ -302,6 +316,7 @@ class Sparse4DModelConfig:
     neck: Sparse4DNeckConfig = DATACLASS_FIELD(Sparse4DNeckConfig())
     depth_branch: Sparse4DDepthBranchConfig = DATACLASS_FIELD(Sparse4DDepthBranchConfig())
     head: Sparse4DHeadConfig = DATACLASS_FIELD(Sparse4DHeadConfig())
+    use_temporal_align: bool = BOOL_FIELD(value=False, default_value=False, description="Use temporal alignment")
 
 
 @dataclass
@@ -348,6 +363,7 @@ class Sparse4DDatasetConfig:
     """Dataset configuration for Sparse4D."""
 
     type: str = STR_FIELD(value="omniverse_3d_det_track", default_value="omniverse_3d_det_track", description="Dataset type")
+    batch_size: int = INT_FIELD(value=2, default_value=2, valid_min=1, valid_max="inf", description="Batch size")
     data_root: str = STR_FIELD(value=MISSING, default_value="", description="Path to data root")
     anno_root: str = STR_FIELD(value=MISSING, default_value="", description="Path to annotation root")
     classes: List[str] = LIST_FIELD(arrList=["person", "nova_carter", "transporter", "forklift", "box", "pallet", "crate"], 
@@ -360,6 +376,7 @@ class Sparse4DDatasetConfig:
     sequences: Sparse4DSequencesConfig = DATACLASS_FIELD(Sparse4DSequencesConfig())
     train_dataset: Sparse4DTrainDatasetConfig = DATACLASS_FIELD(Sparse4DTrainDatasetConfig())
     val_dataset: Sparse4DValDatasetConfig = DATACLASS_FIELD(Sparse4DValDatasetConfig())
+
 @dataclass
 class Sparse4DEvaluateConfig(EvaluateConfig):
     """Evaluation configuration for Sparse4D."""
