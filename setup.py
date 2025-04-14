@@ -62,7 +62,8 @@ setuptools.setup(
             '*.sh',
             'uwsgi.ini',
             'handlers/network_configs/*',
-            'nginx.conf'
+            'nginx.conf',
+            'templates/*'
         ]
     },
     include_package_data=True,
