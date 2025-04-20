@@ -88,16 +88,17 @@ class FrozenFMConfig:
         description="""Flag to enable frozen foundation model to be added to RT-DETR.""",
     )
     backbone: str = STR_FIELD(
-        value="radio",
-        default_value="radio",
-        display_name="Arch of the frozen foundation model",
-        description="Arch of the frozen foundation model.",
+        value="radio_v2-l",
+        default_value="radio_v2-l",
+        valid_options=",".join(["radio_v2-b", "radio_v2-l", "radio_v2-h"]),
+        display_name="Name of the frozen foundation model",
+        description="Name of the frozen foundation model.",
     )
     checkpoint: Optional[str] = STR_FIELD(
         value=None,
         default_value="",
         display_name="Pretrained foundation model path or name",
-        description="[Optional] Path to a pretrained foundation model.",
+        description="Path to a pretrained foundation model.",
     )
 
 
