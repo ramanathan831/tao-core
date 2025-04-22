@@ -88,7 +88,8 @@ from nvidia_tao_core.microservices.utils import (
     safe_load_file,
     find_differences,
     merge_nested_dicts,
-    get_monitoring_metric
+    get_monitoring_metric,
+    get_microservices_network_and_action
 )
 from nvidia_tao_core.microservices.job_utils import executor as jobDriver
 from nvidia_tao_core.microservices.network_utils.network_constants import ptm_mapper
@@ -688,38 +689,13 @@ class CLIPipeline(ActionPipeline):
 
         self.network = job_context.network
         self.action = job_context.action
+
         # Handle anomalies in network action names
         if self.action == "retrain":
             self.action = "train"
-        if self.network == "object_detection" and self.action == "convert":
-            self.network = "detectnet_v2"
-            self.action = "dataset_convert"
-        if self.network == "object_detection" and "efficientdet" in self.action:
-            self.network = self.action.replace("convert_", "")
-            self.action = "dataset_convert"
-        if "maxine" in self.network and "dataset_convert" in self.action:
-            self.network = "maxine_eye_contact"
-            self.action = "dataset_convert"
-        if self.network == "object_detection":
-            if self.action == "annotation_format_convert":
-                self.network = "annotations"
-                self.action = "convert"
-            if self.action == "auto_label":
-                self.network = "auto_label"
-                self.action = "generate"
-            if self.action == "auto_labeling":
-                self.network = "auto_label"
-                self.action = "generate"
-            if self.action == "augment":
-                self.network = "augment"
-                self.action = "generate"
-            if self.action in ("analyze", "validate_annotations"):
-                self.network = "data_analytics"
-                if self.action == "validate_annotations":
-                    self.action = "validate"
-            if self.action == "validate_images":
-                self.network = "image"
-                self.action = "validate"
+
+        # Use the centralized function to map network and action
+        self.network, self.action = get_microservices_network_and_action(self.network, self.action)
 
     def generate_config(self):
         """Generate config dictionary"""
