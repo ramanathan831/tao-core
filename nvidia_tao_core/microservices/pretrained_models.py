@@ -172,7 +172,11 @@ class BaseExperimentMetadata:
         logger.info("Getting accessible org/team for the provided NGC Personal key")
         logger.info("--------------------------------------------------------")
         ngc_token = self.get_ngc_token()
-        headers = {"Accept": "application/json", "Authorization": f"Bearer {ngc_token}"}
+        headers = {
+            "Accept": "application/json",
+            "Authorization": f"Bearer {ngc_token}",
+            "Accept-Encoding": "identity"
+        }
         url = f"{ngc_api_base_url}/orgs"
         try:
             response = requests.get(url, headers=headers, params={"page-size": 1000}, timeout=TIMEOUT)
@@ -242,7 +246,11 @@ class BaseExperimentMetadata:
             url += f"/org/{org}/models/{model_name}/versions/{model_version}"
         if file:
             url += f"/files/{file}"
-        headers = {"Accept": "application/json", "Authorization": f"Bearer {ngc_token}"}
+        headers = {
+            "Accept": "application/json",
+            "Authorization": f"Bearer {ngc_token}",
+            "Accept-Encoding": "identity"
+        }
         try:
             response = requests.get(url, headers=headers, params={"page-size": 1000}, timeout=TIMEOUT)
         except Exception as e:
@@ -289,7 +297,11 @@ class BaseExperimentMetadata:
         for org, team in self.org_team_list:
             logger.info(f"Querying base experiments from '{org}{'/' + team if team else ''}'")
             ngc_token = self.get_ngc_token(org, team)
-            headers = {"Accept": "application/json", "Authorization": f"Bearer {ngc_token}"}
+            headers = {
+                "Accept": "application/json",
+                "Authorization": f"Bearer {ngc_token}",
+                "Accept-Encoding": "identity"
+            }
             url = f"{ngc_api_base_url}/search/resources/MODEL"
 
             # Create the query to filter models and the required return fields
