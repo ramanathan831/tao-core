@@ -20,7 +20,7 @@ epochs_mapper = {
     "annotations": "",
     "augmentation": "",
     "auto_label": "",
-    "classification_pyt": "train.train_config.runner.max_epochs",
+    "classification_pyt": "train.num_epochs",
     "classification_tf2": "train.num_epochs",
     "deformable_detr": "train.num_epochs",
     "detectnet_v2": "training_config.num_epochs",
@@ -92,13 +92,13 @@ image_size_mapper = {
 # Include your network if it has spec fields to load full network as PTM and loading backbone portion alone
 ptm_mapper = {
     "backbone": {
-        "classification_pyt": "model.backbone.pretrained",
+        "classification_pyt": "model.backbone.pretrained_backbone_path",
         "dino": "model.pretrained_backbone_path",
         "grounding_dino": "model.pretrained_backbone_path",
         "mask_grounding_dino": "model.pretrained_backbone_path",
     },
     "end_to_end": {
-        "classification_pyt": "model.init_cfg.checkpoint",
+        "classification_pyt": "train.pretrained_model_path",
         "dino": "train.pretrained_model_path",
     }
 }

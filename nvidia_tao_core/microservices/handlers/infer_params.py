@@ -74,7 +74,9 @@ def infer_output_dir(job_context, handler_metadata):
     workspace_identifier = get_workspace_string_identifier(workspace_id, workspace_cache={})
     dnn_results_dir = f'{workspace_identifier}results/{job_context.id}'
     if job_context.network == "vila":
-        dnn_results_dir = f'{workspace_identifier}results/{job_context.id}/lora'
+        llm_mode = job_context.specs.get("train", {}).get("llm_mode", "lora")
+        vision_mode = job_context.specs.get("train", {}).get("vision_mode", "ft")
+        dnn_results_dir = f'{workspace_identifier}results/{job_context.id}/{vision_mode}_{llm_mode}'
     return dnn_results_dir
 
 

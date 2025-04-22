@@ -12,8 +12,7 @@
     "dataset_validation": {
         "required_files": {
             "default": [
-                {"path": "dataset.tar.gz", "type": "file"},
-                {"path": "annotations.json", "type": "file"}
+                {"path": "dataset.yaml", "type": "file"}
             ],
             "raw": [
                 {

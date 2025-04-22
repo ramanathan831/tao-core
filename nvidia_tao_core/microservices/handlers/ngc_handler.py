@@ -57,12 +57,12 @@ class ErrorResponse:
 def send_ngc_api_request(endpoint, requests_method, request_body, json=False, ngc_key="", accept_encoding=""):
     """Send NGC API requests with token refresh, retries, and timeout handling"""
     headers = {"Authorization": f"Bearer {ngc_key}"}
+    if accept_encoding:
+        headers['Accept-Encoding'] = accept_encoding
     if requests_method == "POST":
         if json:
             headers['accept'] = 'application/json'
             headers['Content-Type'] = 'application/json'
-        if accept_encoding:
-            headers['Accept-Encoding'] = accept_encoding
         response = requests.post(url=endpoint, data=request_body, headers=headers, timeout=TIMEOUT)
     elif requests_method == "GET":
         response = requests.get(url=endpoint, headers=headers, timeout=TIMEOUT)
@@ -439,9 +439,14 @@ def validate_ptm_download(base_experiment_folder, sha256_digest):
 
 def get_org_products(user_id, org_name):
     """Return the products the ORG has subscribe to"""
-    ngc_key, _ = get_user_key(user_id, org_name)
+    try:
+        ngc_key, _ = get_user_key(user_id, org_name)
+    except Exception as e:
+        logger.error("Error getting NGC key for user %s and org %s: %s", user_id, org_name, e)
+        return []
     headers = {}
     headers['Authorization'] = 'Bearer ' + ngc_key
+    headers['Accept-Encoding'] = "True"
     url = f'https://api.ngc.nvidia.com/v2/orgs/{org_name}'
     response = requests.get(url, headers=headers, timeout=120)
     products = []

@@ -83,6 +83,11 @@ class DatasetConfig:
         display_name="Dataset path",
         description="Path to the dataset file"
     )
+    dataset_yaml_path: Optional[str] = STR_FIELD(
+        value=None,
+        display_name="Dataset yaml path",
+        description="Path to the dataset yaml file"
+    )
     mixture_path: Optional[str] = STR_FIELD(
         value=None,
         display_name="Mixture path",
@@ -123,13 +128,20 @@ class TrainConfig:
         popular="yes"
     )
     learning_rate: float = FLOAT_FIELD(
+        value=1e-4,
+        default_value=1e-4,
+        valid_min=0,
+        valid_max="inf",
+        description="Learning rate. Default is 1e-4.",
+        display_name="Learning rate",
+        popular="yes"
+    )
+    vision_learning_rate: float = FLOAT_FIELD(
         value=1e-5,
         default_value=1e-5,
         valid_min=0,
         valid_max="inf",
-        description="Learning rate. Default is 1e-5.",
-        display_name="Learning rate",
-        popular="yes"
+        description="Vision learning rate. Default is 1e-5.",
     )
     weight_decay: float = FLOAT_FIELD(
         value=0.,
@@ -251,6 +263,13 @@ class TrainConfig:
         description="Number of video frames. Default is 8.",
         popular="yes"
     )
+    num_time_tokens: int = INT_FIELD(
+        value=0,
+        default_value=0,
+        valid_min=0,
+        valid_max="inf",
+        display_name="Number of time tokens",
+    )
     system: SystemConfig = DATACLASS_FIELD(SystemConfig(), description="GPU and Multinode System config")
     dataset: DatasetConfig = DATACLASS_FIELD(DatasetConfig(), description="Dataset config")
 
@@ -269,6 +288,11 @@ class EvaluateConfig:
             "youcook2_val,scienceqa_image,scienceqa_image_text,scienceqa_text,"
             "scienceqa_video,scienceqa_video_text"
         )
+    )
+    dataset_yaml_path: Optional[str] = STR_FIELD(
+        value=None,
+        display_name="Dataset yaml path",
+        description="Path to the dataset yaml file"
     )
     model_base: Optional[str] = STR_FIELD(
         value=None,

@@ -109,7 +109,7 @@ def search_for_ptm(root, network="", parameter_name=""):
         return model_path
     if os.path.exists(root):
         if network == "vila":
-            return os.path.join(root, "nvila_vnvila-15b-highres")
+            return os.path.join(root, os.listdir(root)[0])
         return root
     logger.info("PTM can't be found")
     return None
@@ -519,8 +519,9 @@ def download_files_from_cloud(
         destination_folder = os.path.dirname(destination_path)
         download_from_https_link(link, destination_folder)
         dictionary[key] = destination_path
+        return destination_path
 
-    elif value.startswith("ngc://"):
+    if value.startswith("ngc://"):
         if not ngc_key:
             raise ValueError("NGC Personal key has not been provided")
         ngc_model = value.split("ngc://")[-1]
@@ -535,8 +536,9 @@ def download_files_from_cloud(
             raise ValueError("Unable to download the PTM")
         ptm_path = search_for_ptm(f"/ptm/{org}/{team}/{model_name}/{model_version}/model", network_arch, key)
         dictionary[key] = ptm_path
+        return ptm_path
 
-    elif "://" in value:
+    if "://" in value:
         cloud_storage, cloud_file_path = get_cloud_storage_class_object(cloud_data, value)
         local_path_of_dataset_file = f"/results/{job_id}/{cloud_file_path}"
         if reset_value:
@@ -570,7 +572,8 @@ def download_files_from_spec(
     network_arch=None,
     ngc_key=None,
     tao_api_ui_cookie="",
-    use_ngc_staging=""
+    use_ngc_staging="",
+    reprocess_files=None
 ):
     """Recursively download files from a nested dictionary."""
     if isinstance(data, dict):
@@ -583,7 +586,8 @@ def download_files_from_spec(
                     network_arch=network_arch,
                     ngc_key=ngc_key,
                     tao_api_ui_cookie=tao_api_ui_cookie,
-                    use_ngc_staging=use_ngc_staging
+                    use_ngc_staging=use_ngc_staging,
+                    reprocess_files=reprocess_files
                 )
             elif isinstance(value, list):
                 override_list = []
@@ -602,6 +606,9 @@ def download_files_from_spec(
                         )
                         if not override_value:
                             override_value = list_element
+                        if (reprocess_files is not None and override_value and
+                                (list_element.endswith(".yaml") or list_element.endswith(".json"))):
+                            reprocess_files.append(override_value)
                         override_list.append(override_value)
                     elif isinstance(list_element, dict):
                         override_dict = {}
@@ -618,6 +625,9 @@ def download_files_from_spec(
                                     tao_api_ui_cookie=tao_api_ui_cookie,
                                     use_ngc_staging=use_ngc_staging
                                 )
+                                if (reprocess_files is not None and override_value and
+                                        (list_dict_value.endswith(".yaml") or list_dict_value.endswith(".json"))):
+                                    reprocess_files.append(override_value)
                                 if not override_value:
                                     override_value = list_dict_value
                             else:
@@ -629,7 +639,7 @@ def download_files_from_spec(
                 data[key] = override_list
             else:
                 if isinstance(value, str):
-                    download_files_from_cloud(
+                    override_value = download_files_from_cloud(
                         cloud_data,
                         data,
                         key,
@@ -641,6 +651,9 @@ def download_files_from_spec(
                         use_ngc_staging=use_ngc_staging,
                         reset_value=True
                     )
+                    if (reprocess_files is not None and override_value and
+                            (value.endswith(".yaml") or value.endswith(".json"))):
+                        reprocess_files.append(override_value)
 
 
 def get_results_cloud_data(cloud_data, spec_data, dest_dir=None):

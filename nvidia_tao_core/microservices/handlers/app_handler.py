@@ -103,7 +103,8 @@ from nvidia_tao_core.microservices.utils import (
     check_and_convert,
     safe_dump_file,
     log_monitor,
-    DataMonitorLogTypeEnum
+    get_microservices_network_and_action,
+    DataMonitorLogTypeEnum,
 )
 
 from nvidia_tao_core.scripts.generate_schema import generate_schema
@@ -1198,27 +1199,8 @@ class AppHandler:
         if not network:
             # Used for dataset jobs
             network = metadata.get("type", None)
-        microservices_network = network
-        if network == "object_detection":
-            if action == "annotation_format_convert":
-                microservices_network = "annotations"
-            if action == "auto_label":
-                microservices_network = "auto_label"
-            if action == "augment":
-                microservices_network = "augment"
-                action = "generate"
-            if action in ("analyze", "validate_annotations"):
-                microservices_network = "data_analytics"
-                if action == "validate_annotations":
-                    action = "validate"
-            if action == "validate_images":
-                microservices_network = "image"
-            if action == "convert_efficientdet_tf2":
-                microservices_network = "efficientdet_tf2"
-                action = "dataset_convert"
 
-        if "maxine" in network and "dataset_convert" in action:
-            microservices_network = "maxine_eye_contact"
+        microservices_network, action = get_microservices_network_and_action(network, action)
 
         try:
             json_schema = generate_schema(microservices_network, action)
@@ -1292,32 +1274,8 @@ class AppHandler:
         if not network:
             # Used for dataset jobs
             network = metadata.get("type", None)
-        microservices_network = network
-        microservices_action = action
-        if network == "object_detection":
-            if action == "annotation_format_convert":
-                microservices_network = "annotations"
-                microservices_action = "convert"
-            if action == "auto_label":
-                microservices_network = "auto_label"
-                microservices_action = "generate"
-            if action == "augment":
-                microservices_network = "augment"
-                microservices_action = "generate"
-            if action in ("analyze", "validate_annotations"):
-                microservices_network = "data_analytics"
-                if action == "validate_annotations":
-                    microservices_action = "validate"
-            if action == "validate_images":
-                microservices_network = "image"
-                microservices_action = "validate"
-            if action == "convert_efficientdet_tf2":
-                microservices_network = "efficientdet_tf2"
-                action = "dataset_convert"
 
-        if "maxine" in network and "dataset_convert" in action:
-            microservices_network = "maxine_eye_contact"
-            microservices_action = "dataset_convert"
+        microservices_network, microservices_action = get_microservices_network_and_action(network, action)
 
         try:
             json_schema = generate_schema(microservices_network, microservices_action)

@@ -47,7 +47,7 @@ def get_from_ngc(key, org_name: str, enable_telemetry: bool | None = None) -> tu
             err = f'Org Name {org_name} not valid'
             return creds, err
         if key.startswith("nvapi"):
-            logger.info("Scoped key passed with key %s and org %s", key, org_name)
+            logger.info("Scoped key passed with and org %s", org_name)
             token = key
             r = get_user_info(key, accept_encoding="True")
         else:
