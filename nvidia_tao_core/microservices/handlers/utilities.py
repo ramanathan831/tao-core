@@ -1254,7 +1254,11 @@ def search_for_checkpoint(handler_metadata, job_id, res_root, files, checkpoint_
     network = handler_metadata.get("network_arch")
     if network == "vila":
         parent_specs = get_job_specs(job_id)
-        result_file = parent_specs.get("results_dir", "")
+        if parent_specs:
+            llm_mode = parent_specs.get("train", {}).get("llm_mode", "lora")
+            vision_mode = parent_specs.get("train", {}).get("vision_mode", "ft")
+            result_file = f'results/{job_id}/{vision_mode}_{llm_mode}'
+            logger.info("result_file: %s", result_file)
     else:
         epoch_number_dictionary = handler_metadata.get("checkpoint_epoch_number", {})
         epoch_number = epoch_number_dictionary.get(f"{checkpoint_choose_method}_{job_id}", 0)
