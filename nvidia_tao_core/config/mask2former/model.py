@@ -69,8 +69,8 @@ class SemanticSegmentationHead:
         display_name="transformer encoder in_features"
     )
     num_classes: int = INT_FIELD(
-        value=150,
-        default_value=150,
+        value=200,
+        default_value=200,
         description="Number of classes.",
         display_name="number of classes.",
         valid_min=1,
