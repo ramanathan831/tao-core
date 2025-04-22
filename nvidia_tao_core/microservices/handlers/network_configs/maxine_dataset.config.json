@@ -11,6 +11,13 @@
         }
     },
 
+    "actions_mapping": {
+        "dataset_convert_gaze": {
+            "network": "maxine_eye_contact",
+            "action": "dataset_convert"
+        }
+    },
+
     "dataset_validation": {
         "required_files": {
             "raw": [

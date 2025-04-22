@@ -1202,9 +1202,6 @@ class AppHandler:
 
         microservices_network, action = get_microservices_network_and_action(network, action)
 
-        if "maxine" in network and "dataset_convert" in action:
-            microservices_network = "maxine_eye_contact"
-
         try:
             json_schema = generate_schema(microservices_network, action)
         except Exception as e:
