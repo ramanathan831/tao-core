@@ -439,7 +439,11 @@ def validate_ptm_download(base_experiment_folder, sha256_digest):
 
 def get_org_products(user_id, org_name):
     """Return the products the ORG has subscribe to"""
-    ngc_key, _ = get_user_key(user_id, org_name)
+    try:
+        ngc_key, _ = get_user_key(user_id, org_name)
+    except Exception as e:
+        logger.error("Error getting NGC key for user %s and org %s: %s", user_id, org_name, e)
+        return []
     headers = {}
     headers['Authorization'] = 'Bearer ' + ngc_key
     headers['Accept-Encoding'] = "True"
