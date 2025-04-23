@@ -103,18 +103,6 @@ spec:
             echo "Updating dependencies..."
 
             sh """
-                    SOURCES_FILE=/etc/apt/sources.list.d/ubuntu-sources.list
-                    cat <<EOF > ${SOURCES_FILE}
-                    deb-src http://archive.ubuntu.com/ubuntu/ jammy main restricted universe multiverse
-                    deb-src http://archive.ubuntu.com/ubuntu/ jammy-updates main restricted universe multiverse
-                    deb-src http://archive.ubuntu.com/ubuntu/ jammy-backports main restricted universe multiverse
-                    deb-src http://security.ubuntu.com/ubuntu jammy-security main restricted universe multiverse
-                    EOF
-
-                    apt-get update
-                    
-                    python3 -m pip --version || (apt-get update && apt-get install -y python3-pip)
-                    python3 -m pip install --upgrade pip
                     python3 -m pip install requests
                 """
 
