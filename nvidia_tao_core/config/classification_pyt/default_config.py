@@ -142,13 +142,6 @@ class HeadConfig:
         value=False,
         description="Flag to specify binary classification"
     )
-    num_classes: int = INT_FIELD(
-        value=1000,
-        default_value=20,
-        valid_min=2,
-        valid_max="inf",
-        description="Number of classes"
-    )
     in_channels: int = INT_FIELD(
         value=448,
         description="Number of backbone input channels to head"
@@ -176,13 +169,26 @@ class BackboneConfig:
         display_name="Backbone architectures",
         valid_options=",".join([
             "fan_tiny_8_p4_hybrid",
-            "fan_large_16_p4_hybrid",
             "fan_small_12_p4_hybrid",
             "fan_base_16_p4_hybrid",
-            "vit_large_nvdinov2",
-            "vit_giant_nvdinov2",
-            "vit_base_nvclip_16_siglip",
-            "vit_huge_nvclip_14_siglip"
+            "fan_large_16_p4_hybrid",
+            "fan_Xlarge_16_p4_hybrid",
+            "fan_base_18_p16_224",
+            "fan_tiny_12_p16_224",
+            "fan_small_12_p16_224_se_attn",
+            "fan_small_12_p16_224",
+            "fan_large_24_p16_224",
+            "vit_large_patch14_dinov2_swiglu",
+            "vit_giant_patch14_reg4_dinov2_swiglu",
+            "ViT-H-14-SigLIP-CLIPA-224",
+            "ViT-L-14-SigLIP-CLIPA-336",
+            "ViT-L-14-SigLIP-CLIPA-224",
+            "c_radio_p1_vit_huge_patch16_mlpnorm",
+            "c_radio_p2_vit_huge_patch16_mlpnorm",
+            "c_radio_p3_vit_huge_patch16_mlpnorm",
+            "c_radio_v2_vit_base_patch16",
+            "c_radio_v2_vit_large_patch16",
+            "c_radio_v2_vit_huge_patch16"
         ]),
         automl_enabled="TRUE"
     )
