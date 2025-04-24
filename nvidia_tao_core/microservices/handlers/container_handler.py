@@ -28,7 +28,12 @@ import logging
 
 from nvidia_tao_core.api_utils import module_utils
 from nvidia_tao_core.api_utils.entrypoint_mimicker import vlm_entrypoint
-from nvidia_tao_core.cloud_handlers.utils import download_files_from_spec, get_results_cloud_data, monitor_and_upload
+from nvidia_tao_core.cloud_handlers.utils import (
+    download_files_from_spec,
+    get_results_cloud_data,
+    monitor_and_upload,
+    cleanup_cuda_contexts,
+)
 import nvidia_tao_core.loggers.logging as status_logging
 from nvidia_tao_core.api_utils.module_utils import entrypoint_paths, entry_points
 from nvidia_tao_core.microservices.utils import safe_load_file, safe_dump_file
@@ -267,6 +272,8 @@ class ContainerJobHandler:
                 message=f"{job['action_name']} action {result} for {job['neural_network_name']}",
                 status_level=status
             )
+        # Clean up any stale CUDA contexts
+        cleanup_cuda_contexts()
 
     @staticmethod
     def get_status_file(results_dir, action_name=""):
@@ -292,6 +299,7 @@ class ContainerJobHandler:
             results_dir = results_dir[results_dir.find(bucket_name) + len(bucket_name):]
 
         if not results_dir:
+            cleanup_cuda_contexts()
             raise ValueError("Empty 'results_dir' in specs.")
         if not os.path.isdir(results_dir):
             logger.error("results_dir directory %s does not exist", results_dir)
