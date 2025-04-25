@@ -98,7 +98,7 @@ spec:
       stage ('publish_release_artifacts') {
         gitlabCommitStatus(name: "publish_release_artifacts", connection: gitLabConnection('git-lab-master')) {
           withCredentials([string(credentialsId: 'gitlab-api-token', variable: 'GITLAB_TOKEN')]) {
-            MAIN_WORKSPACE="${WORKSPACE}"
+            def MAIN_WORKSPACE="${WORKSPACE}"
 
             echo "Updating dependencies..."
 
