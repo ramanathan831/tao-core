@@ -142,6 +142,18 @@ class BaseExperimentMetadata:
     def get_ngc_token(self, org: str = "", team: str = ""):
         """Authenticate to NGC"""
         # Get the NGC login token
+        ngc_api_key = os.getenv("PTM_API_KEY")
+        if ngc_api_key:
+            url = "https://authn.nvidia.com/token"
+            params = {"service": "ngc", "scope": "group/ngc"}
+            if org:
+                params["scope"] = f"group/ngc:{org}"
+            if team:
+                params["scope"] += f"&group/ngc:{org}/{team}"
+            headers = {"Accept": "application/json"}
+            auth = ("$oauthtoken", ngc_api_key)
+            response = requests.get(url, headers=headers, auth=auth, params=params, timeout=TIMEOUT)
+            return response.json()["token"]
         if self.ngc_key.startswith("nvapi"):
             return self.ngc_key
         raise ValueError(
