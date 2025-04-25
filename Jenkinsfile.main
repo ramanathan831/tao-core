@@ -38,10 +38,6 @@ spec:
     """
 )
 {
-  // Global configuration
-  // Set this to true and uncomment the APT stages below to enable APT package processing
-  def ENABLE_APT = false
-  
   node(POD_LABEL) {
     container('pyt') {
       def BUILD_TYPE="dev0"
@@ -52,24 +48,15 @@ spec:
       def TARGET="sw-tao-pypi-local/nvidia-tao-core-dev/${VER}/${PYTHON_VERSION}/"
       def PROP="component_name=nvidia-tao-core;arch=x86_64;os=linux;build_source=None;version=${VER};branch=main;release_approver=vpraveen"
       
-      // GitLab related
+      // GitLab Related
       def GITLAB_PROJECT_ID = "140075" 
       def TAG_NAME = "v${VER}"
       def RELEASE_NAME = "Release ${VER}"
       def RELEASE_DESCRIPTION = "Release ${VER} with third-party packages"
       
-      // Directory paths
-      def WHEELS_DIR = "third_party_wheels"
-      def APT_DIR = "third_party_apt"
-      def APT_SOURCES_DIR = "third_party_apt_sources"
-      
       stage ('checkout') {
         gitlabCommitStatus(name: "checkout", connection: gitLabConnection('git-lab-master')) {
           checkout scm
-          echo "APT package processing: ${ENABLE_APT ? 'ENABLED' : 'DISABLED (set ENABLE_APT to true to enable)'}"
-          // To enable APT processing:
-          // 1. Set ENABLE_APT to true at the top of this file
-          // 2. Uncomment the APT-related stages below
         }
       }
 
@@ -108,155 +95,48 @@ spec:
         }
       }
 
-      stage ('download_third_party_wheels') {
-        gitlabCommitStatus(name: "download_third_party_wheels", connection: gitLabConnection('git-lab-master')) {
-          // Create a default requirements.txt if it doesn't exist yet
-          sh """
-          if [ ! -f requirements.txt ]; then
-            echo "# Python packages required for TAO" > requirements.txt
-            # Add specific dependencies to the file as needed
-          fi
-          """
-          
-          // Run the helper script to download third party wheels from requirements.txt
-          sh "python3 scripts/download_third_party_wheels.py --requirements requirements.txt"
-        }
-      }
-
-      stage ('publish_third_party_wheels') {
-        gitlabCommitStatus(name: "publish_third_party_wheels", connection: gitLabConnection('git-lab-master')) {
-          // Debug info
-          sh "echo 'DEBUG: Starting publish_third_party_wheels stage'"
-          sh "echo 'DEBUG: GITLAB_PROJECT_ID=${GITLAB_PROJECT_ID}'"
-          
-          // Check for script existence and permissions
-          sh "ls -la scripts/upload_wheels_to_gitlab.py || echo 'Script not found!'"
-          sh "chmod +x scripts/upload_wheels_to_gitlab.py || echo 'Failed to set exec permissions'"
-          
-          // Ensure required dependencies are installed
-          sh "pip install --quiet requests || echo 'Failed to install requests library'"
-          
+      stage ('publish_release_artifacts') {
+        gitlabCommitStatus(name: "publish_release_artifacts", connection: gitLabConnection('git-lab-master')) {
           withCredentials([string(credentialsId: 'gitlab-api-token', variable: 'GITLAB_TOKEN')]) {
+            def MAIN_WORKSPACE="${WORKSPACE}"
+
+            echo "Updating dependencies..."
+
             sh """
-            export GITLAB_PROJECT_ID=${GITLAB_PROJECT_ID}
-            export TAG_NAME=${TAG_NAME}
-            export RELEASE_NAME="${RELEASE_NAME}"
-            export RELEASE_DESCRIPTION="${RELEASE_DESCRIPTION}"
-            export WHEELS_DIR=${WHEELS_DIR}
-            export DEBUG=1
-            
-            # Print Python version for debugging
-            python3 --version
-            
-            # Script Debugging
-            python3 -u scripts/upload_wheels_to_gitlab.py || {
-              echo "ERROR: Script execution failed with code \$?"
-              # Try to see if the script has syntax errors
-              python3 -m py_compile scripts/upload_wheels_to_gitlab.py || echo "Syntax error in script"
-            }
+                    python3 -m pip install requests
+                """
+
+            echo "Publishing release artifacts..."
+
+            sh """
+              # Check if git is installed, if not install it
+              command -v git >/dev/null 2>&1 || { echo "Installing git..."; apt-get update && apt-get install -y git; }
+              
+              # Clone using GitLab token for authentication
+              git clone https://oauth2:\${GITLAB_TOKEN}@gitlab-master.nvidia.com/nvidia-tao-toolkit/tao-third-party-packages.git third-party-manager
             """
+
+            sh """
+              cd third-party-manager
+              python3 manage_third_party.py \\
+                --enable-wheels \\
+                --python-requirements "${MAIN_WORKSPACE}/requirements.txt" \\
+                --gitlab-project-id ${GITLAB_PROJECT_ID} \\
+                --tag-name ${TAG_NAME} \\
+                --gitlab-token \${GITLAB_TOKEN} \\
+                --release-name "${RELEASE_NAME}" \\
+                --release-description "${RELEASE_DESCRIPTION}" \\
+                --wheels-dir "third_party_wheels" \\
+                --gitlab-timeout 60 \\
+                --gitlab-retries 3
+            """
+
+            echo "Cleaning up workspace..."
+            sh 'rm -rf third_party_wheels third_party_apt third_party_apt_sources || true'
           }
         }
       }
       
-      // Comment out APT related stages
-      /*
-      // ======= BEGIN APT PROCESSING STAGES (UNCOMMENT AND SET ENABLE_APT=true TO ENABLE) =======
-      stage ('download_third_party_apt') {
-        when {
-          expression { return ENABLE_APT }
-        }
-        gitlabCommitStatus(name: "download_third_party_apt", connection: gitLabConnection('git-lab-master')) {
-          echo "DEBUG: APT processing is enabled, downloading packages"
-          
-          // Run the helper script to download third party apt packages
-          sh "python3 scripts/download_apt_packages.py --requirements apt-requirements.txt --download-sources"
-        }
-      }
-      
-      stage ('publish_third_party_apt') {
-        when {
-          expression { return ENABLE_APT }
-        }
-        gitlabCommitStatus(name: "publish_third_party_apt", connection: gitLabConnection('git-lab-master')) {
-          // Debug info
-          echo "DEBUG: APT processing is enabled, uploading packages"
-          sh "echo 'DEBUG: Starting publish_third_party_apt stage'"
-          sh "echo 'DEBUG: GITLAB_PROJECT_ID=${GITLAB_PROJECT_ID}'"
-          
-          // Check for script existence and permissions
-          sh "ls -la scripts/upload_apt_to_gitlab.py || echo 'Script not found!'"
-          sh "chmod +x scripts/upload_apt_to_gitlab.py || echo 'Failed to set exec permissions'"
-          
-          // Ensure required dependencies are installed
-          sh "pip install --quiet requests || echo 'Failed to install requests library'"
-          
-          // Upload the apt packages as GitLab release artifacts
-          withCredentials([string(credentialsId: 'gitlab-api-token', variable: 'GITLAB_TOKEN')]) {
-            // Use the dedicated script to upload apt packages as GitLab release artifacts
-            sh """
-            export GITLAB_PROJECT_ID=${GITLAB_PROJECT_ID}
-            export TAG_NAME=${TAG_NAME}
-            export RELEASE_NAME="${RELEASE_NAME}"
-            export RELEASE_DESCRIPTION="${RELEASE_DESCRIPTION}"
-            export APT_DIR=${APT_DIR}
-            export DEBUG=1
-            
-            # Print Python version for debugging
-            python3 --version
-            
-            # Script Debugging
-            python3 -u scripts/upload_apt_to_gitlab.py || {
-              echo "ERROR: Script execution failed with code \$?"
-              # Try to see if the script has syntax errors
-              python3 -m py_compile scripts/upload_apt_to_gitlab.py || echo "Syntax error in script"
-            }
-            """
-          }
-        }
-      }
-      // ======= END APT PROCESSING STAGES (UNCOMMENT ABOVE AND SET ENABLE_APT=true TO ENABLE) =======
-      */
-
-      stage ('generate_license_acknowledgements') {
-        gitlabCommitStatus(name: "generate_license_acknowledgements", connection: gitLabConnection('git-lab-master')) {
-          // Generate license acknowledgements from downloaded packages and upload to GitLab
-          // Include APT packages only if enabled
-          def aptFlag = ENABLE_APT ? "--include-apt" : ""
-          echo "DEBUG: APT package inclusion in licenses: ${ENABLE_APT ? 'ENABLED' : 'DISABLED'}"
-          
-          // Execute the script which handles both generation and uploading
-          withCredentials([string(credentialsId: 'gitlab-api-token', variable: 'GITLAB_TOKEN')]) {
-            sh """
-            export GITLAB_PROJECT_ID=${GITLAB_PROJECT_ID}
-            export TAG_NAME=${TAG_NAME}
-            export RELEASE_NAME="${RELEASE_NAME}"
-            export RELEASE_DESCRIPTION="${RELEASE_DESCRIPTION}"
-            export DEBUG=1
-            
-            python3 -u scripts/upload_license_to_gitlab.py ${aptFlag}
-            """
-          }
-          
-          // Archive the generated acknowledgements file as a build artifact
-          archiveArtifacts artifacts: 'acknowledgements.md', onlyIfSuccessful: true
-        }
-      }
-
-      stage ('cleanup_third_party_packages') {
-        gitlabCommitStatus(name: "cleanup_third_party_packages", connection: gitLabConnection('git-lab-master')) {
-          // Define what to clean up based on ENABLE_APT
-          def dirsToClean = "${WHEELS_DIR}"
-          if (ENABLE_APT) {
-            echo "DEBUG: APT enabled, adding APT directories to cleanup list"
-            dirsToClean += " ${APT_DIR} ${APT_SOURCES_DIR}"
-          }
-          
-          // Clean up the directories
-          echo "DEBUG: Cleaning up directories: ${dirsToClean}"
-          sh "rm -rf ${dirsToClean}"
-        }
-      }
     }
     
     // container('docker') {
