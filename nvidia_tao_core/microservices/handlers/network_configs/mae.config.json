@@ -1,7 +1,7 @@
 {
     "api_params": {
         "dataset_type":"image_classification",
-        "actions": ["train","export","inference"],
+        "actions": ["train", "evaluate", "export", "inference", "gen_trt_engine"],
         "formats":["ssl"],
         "accepted_ds_intents": ["training", "evaluation", "testing"],
         "image":"TAO_PYTORCH",
@@ -9,27 +9,34 @@
         "actions_pipe":{
             "train":"train",
             "evaluate":"evaluate",
-            "inference":"inference"
+            "inference":"inference",
+            "export": "export_with_spec",
+            "gen_trt_engine": "gen_trt_engine"
         }
     },
 
     "data_sources": {
         "train": {
-            "dataset.train_dataset.images_dir": {
+            "dataset.train_data_sources": {
                 "source": "train_datasets",
                 "multiple_sources": false,
                 "path": "images_train.tar.gz"
+            },
+            "dataset.val_data_sources": {
+                "source": "eval_dataset",
+                "multiple_sources": false,
+                "path": "images_val.tar.gz"
             }
         },
         "evaluate": {
-            "dataset.val_dataset.images_dir": {
+            "dataset.val_data_sources": {
                 "source": "eval_dataset",
                 "multiple_sources": false,
                 "path": "images_val.tar.gz"
             }
         },
         "inference": {
-            "dataset.test_dataset.images_dir": {
+            "dataset.test_data_sources": {
                 "source": "inference_dataset",
                 "multiple_sources": false,
                 "path": "images_test.tar.gz"
@@ -40,28 +47,39 @@
     "spec_params":{
         "train": {
             "results_dir":"output_dir",
-            "model.pretrained_backbone_path":"ptm_if_no_resume_model",
             "train.pretrained_model_path":"ptm_if_no_resume_model",
             "train.resume_training_checkpoint_path":"resume_model",
             "encryption_key":"key"
         },
-        "inference":{
+        "inference": {
             "results_dir":"output_dir",
             "inference.checkpoint":"parent_model",
             "inference.trt_engine":"parent_model",
             "encryption_key":"key"
         },
-        "evaluate":{
+        "evaluate": {
             "results_dir":"output_dir",
             "evaluate.checkpoint":"parent_model",
             "evaluate.trt_engine":"parent_model",
             "encryption_key":"key"
+        },
+        "export": {
+            "results_dir":"output_dir",
+            "encryption_key":"key",
+            "export.onnx_file":"create_onnx_file",
+            "export.checkpoint":"parent_model"
+
+        },
+        "gen_trt_engine": {
+            "results_dir":"output_dir",
+            "encryption_key":"key",
+            "gen_trt_engine.onnx_file":"parent_model",
+            "gen_trt_engine.trt_engine":"create_engine_file"
         }
     },
 
     "automl_spec_params":{
         "results_dir":"automl_output_dir",
-        "model.pretrained_backbone_path":"automl_assign_ptm",
         "train.pretrained_model_path":"ptm_if_no_resume_model",
         "train.resume_training_checkpoint_path":"automl_resume_model",
         "train.checkpoint_interval":"assign_const_value,train.num_epochs",

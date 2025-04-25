@@ -61,7 +61,7 @@ from nvidia_tao_core.microservices.handlers.stateless_handlers import (
     get_metrics,
     set_metrics
 )
-from nvidia_tao_core.microservices.handlers.utilities import validate_uuid
+from nvidia_tao_core.microservices.handlers.utilities import validate_uuid, send_microservice_request
 from nvidia_tao_core.microservices.utils import (
     is_pvc_space_free,
     safe_load_file,
@@ -89,10 +89,13 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+NAMESPACE = os.getenv("NAMESPACE", "default")
 
 #
 # Utils
 #
+
+
 def sys_int_format():
     """Get integer format based on system."""
     if sys.maxsize > 2**31 - 1:
@@ -1131,6 +1134,11 @@ class ContainerJobSchema(Schema):
             allow_none=True
         )
     )
+    statefulset_replicas = fields.Int(
+        format="int64",
+        validate=fields.validate.Range(min=0, max=sys.maxsize),
+        allow_none=True
+    )
 
 
 @app.route('/api/v1/internal/container_job', methods=['POST'])
@@ -1206,6 +1214,21 @@ def container_job_run():
     try:
         if "job_id" not in job_dict:
             job_dict["job_id"] = str(uuid.uuid4())
+
+        statefulset_replicas = job_dict.get("statefulset_replicas")
+        if statefulset_replicas:  # proxy requests to all replicas from master
+            for replica_index in range(1, statefulset_replicas):
+                send_microservice_request(
+                    api_endpoint="post_action",
+                    network=job_dict["neural_network_name"],
+                    action=job_dict["action_name"],
+                    cloud_metadata=job_dict["cloud_metadata"],
+                    specs=job_dict["specs"],
+                    docker_env_vars=job_dict["docker_env_vars"],
+                    job_id=job_dict["job_id"],
+                    statefulset_replica_index=replica_index,
+                    statefulset_replicas=statefulset_replicas
+                )
 
         job_id = container_handler.entrypoint_wrapper(job_dict)
         if job_id:
@@ -1598,6 +1621,17 @@ class DateTimeField(fields.DateTime):
         if isinstance(value, datetime):
             return value
         return super()._deserialize(value, attr, data, **kwargs)
+
+
+class WorkspaceBackupReqSchema(Schema):
+    """Class defining workspace backup schema"""
+
+    class Meta:
+        """Class enabling sorting field values by the order in which they are declared"""
+
+        ordered = True
+        unknown = EXCLUDE
+    backup_file_name = fields.Str(validate=validate.Length(max=2048), allow_none=True)
 
 
 class WorkspaceRspSchema(Schema):
@@ -2333,6 +2367,178 @@ def workspace_partial_update(org_name, workspace_id):
     schema = None
     if response.code == 200:
         schema = WorkspaceRspSchema()
+    else:
+        schema = ErrorRspSchema()
+    # Load metadata in schema and return
+    schema_dict = schema.dump(schema.load(response.data))
+    return make_response(jsonify(schema_dict), response.code)
+
+
+@app.route('/api/v1/orgs/<org_name>/workspaces/<workspace_id>/backup', methods=['POST'])
+@disk_space_check
+def workspace_backup(org_name, workspace_id):
+    """Backup MongoDB data for a specific workspace.
+
+    ---
+    post:
+      tags:
+      - WORKSPACE
+      summary: Backup MongoDB data for a specific workspace
+      description: Returns the backup file name
+      parameters:
+      - name: org_name
+        in: path
+        description: Org Name
+        required: true
+        schema:
+          type: string
+          maxLength: 255
+          pattern: '^[a-zA-Z0-9_-]+$'
+      - name: workspace_id
+        in: path
+        description: Workspace ID
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema: WorkspaceBackupReqSchema
+        description: Backup file name
+        required: true
+      responses:
+        200:
+          description: Message indicating if the backup was successful
+          content:
+            application/json:
+              schema: MessageOnlySchema
+          headers:
+            Access-Control-Allow-Origin:
+              $ref: '#/components/headers/Access-Control-Allow-Origin'
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/X-RateLimit-Limit'
+        400:
+          description: Bad request, see reply body for details
+          content:
+            application/json:
+              schema: ErrorRspSchema
+          headers:
+            Access-Control-Allow-Origin:
+              $ref: '#/components/headers/Access-Control-Allow-Origin'
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/X-RateLimit-Limit'
+        404:
+          description: User or Workspace not found
+          content:
+            application/json:
+              schema: ErrorRspSchema
+          headers:
+            Access-Control-Allow-Origin:
+              $ref: '#/components/headers/Access-Control-Allow-Origin'
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/X-RateLimit-Limit'
+    """
+    message = validate_uuid(workspace_id=workspace_id)
+    if message:
+        metadata = {"error_desc": message, "error_code": 1}
+        schema = ErrorRspSchema()
+        response = make_response(jsonify(schema.dump(schema.load(metadata))), 400)
+        return response
+    schema = WorkspaceBackupReqSchema()
+    request_dict = schema.dump(schema.load(request.get_json(force=True)))
+    # Get response
+    response = app_handler.mongo_backup(workspace_id, request_dict.get("backup_file_name"))
+    # Get schema
+    schema = None
+    if response.code == 200:
+        schema = MessageOnlySchema()
+    else:
+        schema = ErrorRspSchema()
+    # Load metadata in schema and return
+    schema_dict = schema.dump(schema.load(response.data))
+    return make_response(jsonify(schema_dict), response.code)
+
+
+@app.route('/api/v1/orgs/<org_name>/workspaces/<workspace_id>/restore', methods=['POST'])
+@disk_space_check
+def workspace_restore(org_name, workspace_id):
+    """Restore MongoDB data for a specific workspace.
+
+    ---
+    post:
+      tags:
+      - WORKSPACE
+      summary: Restore MongoDB data for a specific workspace
+      description: Returns the restore file name
+      parameters:
+      - name: org_name
+        in: path
+        description: Org Name
+        required: true
+        schema:
+          type: string
+          maxLength: 255
+          pattern: '^[a-zA-Z0-9_-]+$'
+      - name: workspace_id
+        in: path
+        description: Workspace ID
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema: WorkspaceReqSchema
+        description: Updated metadata for Workspace
+        required: true
+      responses:
+        200:
+          description: Returned the updated Workspace
+          content:
+            application/json:
+              schema: MessageOnlySchema
+          headers:
+            Access-Control-Allow-Origin:
+              $ref: '#/components/headers/Access-Control-Allow-Origin'
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/X-RateLimit-Limit'
+        400:
+          description: Bad request, see reply body for details
+          content:
+            application/json:
+              schema: ErrorRspSchema
+          headers:
+            Access-Control-Allow-Origin:
+              $ref: '#/components/headers/Access-Control-Allow-Origin'
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/X-RateLimit-Limit'
+        404:
+          description: User or Workspace not found
+          content:
+            application/json:
+              schema: ErrorRspSchema
+          headers:
+            Access-Control-Allow-Origin:
+              $ref: '#/components/headers/Access-Control-Allow-Origin'
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/X-RateLimit-Limit'
+    """
+    message = validate_uuid(workspace_id=workspace_id)
+    if message:
+        metadata = {"error_desc": message, "error_code": 1}
+        schema = ErrorRspSchema()
+        response = make_response(jsonify(schema.dump(schema.load(metadata))), 400)
+        return response
+    schema = WorkspaceBackupReqSchema()
+    request_dict = schema.dump(schema.load(request.get_json(force=True)))
+    # Get response
+    response = app_handler.mongo_restore(workspace_id, request_dict.get("backup_file_name"))
+    # Get schema
+    schema = None
+    if response.code == 200:
+        schema = MessageOnlySchema()
     else:
         schema = ErrorRspSchema()
     # Load metadata in schema and return

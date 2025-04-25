@@ -130,6 +130,7 @@ NETWORK_CONTAINER_MAPPING = {"action_recognition": "TAO_PYTORCH",
                              "unet": "TAO_TF2",
                              "visual_changenet": "TAO_PYTORCH",
                              "maxine_eye_contact": "MAXINE_DLDK",
+                             "mae": "TAO_PYTORCH",
                              "vila": "VILA"}
 
 CV_ACTION_RULES = {

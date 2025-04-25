@@ -54,7 +54,7 @@ class ErrorResponse:
 
 
 @retry_method(response=True)
-def send_ngc_api_request(endpoint, requests_method, request_body, json=False, ngc_key="", accept_encoding=""):
+def send_ngc_api_request(endpoint, requests_method, request_body, json=False, ngc_key="", accept_encoding="identity"):
     """Send NGC API requests with token refresh, retries, and timeout handling"""
     headers = {"Authorization": f"Bearer {ngc_key}"}
     if accept_encoding:
@@ -173,7 +173,7 @@ def get_user_key(user_id, org_name, admin_key_override=False):
     return decrypted_key, use_cookie
 
 
-def get_user_info(ngc_key: str, accept_encoding: str = "") -> requests.Response:
+def get_user_info(ngc_key: str, accept_encoding: str = "identity") -> requests.Response:
     """Get NGC user info from NGC"""
     endpoint = "https://api.stg.ngc.nvidia.com/v2/users/me"
     if DEPLOYMENT_MODE == "PROD":
