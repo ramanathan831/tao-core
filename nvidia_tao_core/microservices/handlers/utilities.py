@@ -955,7 +955,10 @@ def validate_num_gpu(num_gpu=None, action: str = ""):
         return 0, f"Requested number of GPUs ({num_gpu}) is larger than available number of GPUs ({max_num_gpu}). "
 
     # Use single GPU for actions not supporting multi-GPU
-    multi_gpu_supported_actions = ["train", "distill", "retrain", "finetune", "auto3dseg", "inference"]  # disable `batchinfer`
+    multi_gpu_supported_actions = [
+        "train", "distill", "retrain", "finetune",
+        "auto3dseg", "inference"
+    ]
     if action not in multi_gpu_supported_actions:
         if num_gpu > 1:
             return 0, f"Multi-GPU is not supported for {action}."

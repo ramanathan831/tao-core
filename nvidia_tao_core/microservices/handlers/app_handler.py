@@ -2315,7 +2315,8 @@ class AppHandler:
             return Code(
                 404,
                 {},
-                "Delete published model is available only for train, distill, prune, retrain, export, gen_trt_engine actions"
+                "Delete published model is available only for train, distill, ",
+                "prune, retrain, export, gen_trt_engine actions"
             )
 
         try:
@@ -2472,7 +2473,8 @@ class AppHandler:
                     format_epoch_number = f"{best_checkpoint_epoch_number:03}"
                 if best_model or latest_model:
                     job_root = os.path.join(root, job_id)
-                    if handler_metadata.get("automl_settings", {}).get("automl_enabled") is True and action in ("train", "distill"):
+                    if (handler_metadata.get("automl_settings", {}).get("automl_enabled") is True and
+                       action in ("train", "distill")):
                         job_root = os.path.join(job_root, "best_model")
                     find_trained_tlt = (
                         glob.glob(f"{job_root}/*{format_epoch_number}.tlt") +

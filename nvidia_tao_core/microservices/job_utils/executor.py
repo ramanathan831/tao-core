@@ -814,7 +814,7 @@ def status(
                         )
                         return "Error"
                     if nvcf_function_metadata.get("function", {}).get("status") == "ACTIVE":
-                        logger.info(f"NVCF function is active, creating microservice job on NVCF")
+                        logger.info("NVCF function is active, creating microservice job on NVCF")
                         deployment_string = (
                             f"{nvcf_function_metadata['function']['id']}:"
                             f"{nvcf_function_metadata['function']['versionId']}"
