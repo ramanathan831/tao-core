@@ -37,8 +37,6 @@ _PYT_TAO_NETWORKS = set([
     "mal", "mask2former", "ml_recog", "ocdnet", "ocrnet", "optical_inspection", "pointpillars",
     "pose_classification", "re_identification", "rtdetr", "centerpose", "segformer", "visual_changenet"
 ])
-_PYT_PLAYGROUND_NETWORKS = set(["classification_pyt"])
-_PYT_CV_NETWORKS = _PYT_TAO_NETWORKS | _PYT_PLAYGROUND_NETWORKS
 _DATA_SERVICES_ACTIONS = set([
     "annotation_format_convert", "auto_label", "augment", "analyze",
     "validate_images", "validate_annotations"
@@ -73,7 +71,7 @@ TENSORBOARD_EXPERIMENT_LIMIT = 10  # Maximum number of Tensorboard enabled exper
 # only at end of training they run evaluation
 NO_VAL_METRICS_DURING_TRAINING_NETWORKS = set(["unet"])
 MISSING_EPOCH_FORMAT_NETWORKS = set([
-    "classification_pyt", "pointpillars", "bevfusion"
+    "pointpillars", "bevfusion"
 ])  # These networks have the epoch/iter number not following a format; ex: 1.pth instead of 001.pth
 STATUS_CALLBACK_MISMATCH_WITH_CHECKPOINT_EPOCH = set([
     "pointpillars", "detectnet_v2"

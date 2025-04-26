@@ -34,6 +34,7 @@ from nvidia_tao_core.microservices.constants import (
     TAO_NETWORKS,
     MEDICAL_CUSTOM_ARCHITECT,
     MAXINE_NETWORKS,
+    MISSING_EPOCH_FORMAT_NETWORKS
 )
 from nvidia_tao_core.microservices.enum_constants import DatasetType, ExperimentNetworkArch
 from nvidia_tao_core.microservices.handlers import ngc_handler, stateless_handlers
@@ -2465,7 +2466,7 @@ class AppHandler:
                 if (not best_model) and latest_model:
                     best_checkpoint_epoch_number = latest_checkpoint_epoch_number
                 network = handler_metadata.get("network_arch", "")
-                if network in ("classification_pyt", "detectnet_v2", "pointpillars", "unet"):
+                if network in MISSING_EPOCH_FORMAT_NETWORKS:
                     format_epoch_number = str(best_checkpoint_epoch_number)
                 else:
                     format_epoch_number = f"{best_checkpoint_epoch_number:03}"
