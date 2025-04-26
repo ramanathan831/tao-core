@@ -126,7 +126,7 @@ def create(
     if BACKEND == "NVCF" and nv_job_metadata:
         team_name = nv_job_metadata["teamName"]
         nvcf_backend_details = nv_job_metadata["nvcf_backend_details"]
-        ngc_key = nv_job_metadata["TAO_USER_KEY"]
+        ngc_key = nv_job_metadata["TAO_ADMIN_KEY"]
         docker_image_name = nv_job_metadata["dockerImageName"]
         deployment_string = nv_job_metadata.get("deployment_string", "")
 
@@ -814,6 +814,7 @@ def status(
                         )
                         return "Error"
                     if nvcf_function_metadata.get("function", {}).get("status") == "ACTIVE":
+                        logger.info(f"NVCF function is active, creating microservice job on NVCF")
                         deployment_string = (
                             f"{nvcf_function_metadata['function']['id']}:"
                             f"{nvcf_function_metadata['function']['versionId']}"
@@ -959,8 +960,7 @@ def delete(job_name, use_ngc=True):
             logger.warning(f"Deployment not active yet {job_name}")
             return
         function_id, version_id = deployment_string.split(":")
-        if org_name not in ["0544357712065245"]:
-            delete_function_version(org_name, team_name, function_id, version_id, ngc_key)
+        delete_function_version(org_name, team_name, function_id, version_id, ngc_key)
         return
 
     api_instance = client.BatchV1Api()

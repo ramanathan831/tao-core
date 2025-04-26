@@ -29,7 +29,7 @@ from nvidia_tao_core.microservices.handlers.stateless_handlers import (
     internal_job_status_update
 )
 from nvidia_tao_core.microservices.handlers.utilities import get_cloud_metadata
-from nvidia_tao_core.microservices.utils import retry_method
+from nvidia_tao_core.microservices.utils import retry_method, get_microservices_network_and_action
 
 
 NUM_OF_RETRY = 3
@@ -97,6 +97,7 @@ def invoke_function(
         if not docker_env_vars.get("TAO_LOGGING_SERVER_URL"):
             docker_env_vars["TAO_LOGGING_SERVER_URL"] = "https://nvidia.com"
 
+    network, action = get_microservices_network_and_action(network, action)
     if action == "retrain":
         action = "train"
 

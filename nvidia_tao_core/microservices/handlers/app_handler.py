@@ -326,12 +326,15 @@ def handler_level_access_control(user_id, org_name, handler_id="", handler_kind=
         bool: True if the user has access, False otherwise.
     """
     if base_experiment or is_maxine_request(handler_id, handler_kind, handler_metadata):
+        logger.info("Checking if user has MAXINE entitlement")
         if "MAXINE" not in ngc_handler.get_org_products(user_id, org_name):
+            logger.info("User does not have MAXINE entitlement")
             return False
         mongo = MongoHandler("tao", "users")
         user_metadata = mongo.find_one({'id': user_id})
         member_of = user_metadata.get('member_of', [])
         if f"{org_name}/:MAXINE_USER" not in member_of:
+            logger.info("User does not have MAXINE entitlement in NGC metadata")
             return False
     return True
 
@@ -1200,10 +1203,10 @@ class AppHandler:
             # Used for dataset jobs
             network = metadata.get("type", None)
 
-        microservices_network, action = get_microservices_network_and_action(network, action)
+        microservices_network, microservices_action = get_microservices_network_and_action(network, action)
 
         try:
-            json_schema = generate_schema(microservices_network, action)
+            json_schema = generate_schema(microservices_network, microservices_action)
         except Exception as e:
             logger.error("Exception thrown in get_spec_schema is %s", str(e))
             logger.error("Unable to fetch schema from tao_core")
