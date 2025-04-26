@@ -190,7 +190,6 @@ class BackboneConfig:
             "c_radio_v2_vit_large_patch16",
             "c_radio_v2_vit_huge_patch16"
         ]),
-        automl_enabled="TRUE"
     )
     feat_downsample: bool = BOOL_FIELD(
         value=False,
@@ -453,8 +452,8 @@ class DatasetConfig:
         description="dataset class"
     )
     num_classes: int = INT_FIELD(
-        value=2,
-        default_value=2,
+        value=20,
+        default_value=20,
         description="The number of classes in the training data",
         math_cond=">0",
         valid_min=2,
