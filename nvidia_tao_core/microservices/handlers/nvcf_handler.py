@@ -28,7 +28,7 @@ from nvidia_tao_core.microservices.handlers.stateless_handlers import (
     get_log_file_path,
     internal_job_status_update
 )
-from nvidia_tao_core.microservices.handlers.utilities import get_cloud_metadata
+from nvidia_tao_core.microservices.handlers.utilities import get_cloud_metadata, get_num_nodes_from_spec
 from nvidia_tao_core.microservices.utils import retry_method, get_microservices_network_and_action
 
 
@@ -131,7 +131,10 @@ def invoke_function(
             function_tao_api = os.getenv("FUNCTION_TAO_API", "")
             if not function_tao_api:
                 raise ValueError("FUNCTION_TAO_API should be present for NVCF as host platform")
-            request_metadata["request_body"]["docker_env_vars"]["NVCF_HELM"] = function_tao_api
+
+    num_nodes = get_num_nodes_from_spec(specs, action)
+    if num_nodes > 1:
+        request_metadata["request_body"]["statefulset_replicas"] = num_nodes
 
     function_id, version_id = deployment_string.split(":")
 
@@ -189,13 +192,19 @@ def get_function(org_name, team_name, function_id, version_id, ngc_key):
 
 def create_function(org_name, team_name, job_id, container, ngc_key):
     """Create NVCF function"""
+    helm_chart_service_name = f"tao-svc-{job_id}"
+    nvcf_helm_chart = os.getenv(
+        "NVCF_HELM_CHART",
+        "https://helm.ngc.nvidia.com/ea-tlt/tao_ea/charts/tao-multi-node-6.0.7.tgz"
+    )
+
     payload = {
         "name": job_id,
         "inferenceUrl": "/api/v1/orgs/ea-tlt/super_endpoint",
         "inferencePort": 8000,
-        "containerImage": container,
         "apiBodyFormat": "CUSTOM",
-        "containerArgs": "flask run --host 0.0.0.0 --port 8000",
+        "helmChart": nvcf_helm_chart,
+        "helmChartServiceName": helm_chart_service_name,
         "health": {
             "protocol": "HTTP",
             "uri": "/api/v1/health/readiness",
@@ -217,18 +226,37 @@ def create_function(org_name, team_name, job_id, container, ngc_key):
     return send_ngc_api_request(endpoint, requests_method, request_body=json.dumps(payload), json=True, ngc_key=ngc_key)
 
 
-def deploy_function(org_name, team_name, function_details, nvcf_backend_details, ngc_key):
+def deploy_function(org_name, team_name, function_details, nvcf_backend_details, ngc_key, image=None, num_nodes=1):
     """Deploy NVCF function"""
     function_id = function_details["function"]["id"]
     version_id = function_details["function"]["versionId"]
+    job_id = function_details["function"]["name"]
+    helm_chart_service_name = f"tao-svc-{job_id}"
+    statefulset_name = f"tao-sts-{job_id}"
+    statefulset_service_name = f"tao-sts-svc-{job_id}"
+    num_gpu_per_node = nvcf_backend_details.get("num_gpu_per_node", 1)
+    instanceType = nvcf_backend_details['instance_type']
+    nccl_ib_disable = os.getenv('NCCL_IB_DISABLE', default='0')
+    nccl_ibext_disable = os.getenv('NCCL_IBEXT_DISABLE', default='0')
     payload = {
         "deploymentSpecifications": [
             {
+                "image": image,
                 "gpu": nvcf_backend_details["gpu_type"],
                 "backend": nvcf_backend_details["cluster"],
                 "maxInstances": 1,
                 "minInstances": 1,
-                "instanceType": nvcf_backend_details["instance_type"]
+                "instanceType": instanceType,
+                "configuration": {
+                    "numGpuPerNode": num_gpu_per_node,
+                    "numNodes": num_nodes,
+                    "jobId": job_id,
+                    "helmChartServiceName": helm_chart_service_name,
+                    "statefulSetName": statefulset_name,
+                    "statefulSetServiceName": statefulset_service_name,
+                    "ncclIbDisable": nccl_ib_disable,
+                    "ncclIbExtDisable": nccl_ibext_disable,
+                }
             }
         ]
     }

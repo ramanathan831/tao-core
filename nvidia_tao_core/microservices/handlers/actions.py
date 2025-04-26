@@ -73,6 +73,7 @@ from nvidia_tao_core.microservices.handlers.utilities import (
     StatusParser,
     build_cli_command,
     generate_cl_script,
+    get_num_nodes_from_spec,
     get_total_epochs,
     read_nested_dict,
     search_for_base_experiment,
@@ -210,6 +211,7 @@ class ActionPipeline:
             self.job_context.specs.get("num_gpu", self.job_context.num_gpu)
             if self.job_context.specs else self.job_context.num_gpu
         )
+        self.num_nodes = get_num_nodes_from_spec(self.job_context.specs, self.action)
         # add an entry on the docker image mapper for trt engine generation MAXINE DEPLOY
         # if action is trt engine generation and network is a maxine network, override image from docker image mapper
         # TODO: robbie add image mpping fix for trt engine gen
@@ -317,11 +319,18 @@ class ActionPipeline:
                 "gpu_type": "L40S",
                 "instance_type": "gl40s_1x2.br25_4xlarge"
             }
+            instance_type = available_nvcf_instances[self.platform_id]["instance_type"]
             nv_job_metadata["nvcf_backend_details"] = {
                 "cluster": available_nvcf_instances[self.platform_id]["cluster"],
                 "gpu_type": available_nvcf_instances[self.platform_id]["gpu_type"],
-                "instance_type": available_nvcf_instances[self.platform_id]["instance_type"]
+                "instance_type": instance_type,
+                "current_available": available_nvcf_instances[self.platform_id]["current_available"]
             }
+            for gpu_postfix in ["2x", "4x", "8x"]:
+                if gpu_postfix in instance_type:
+                    nv_job_metadata["nvcf_backend_details"]["num_gpu_per_node"] = int(gpu_postfix[:-1])
+                    break
+
             if self.tao_deploy_actions:
                 team = "TAO"
                 if "maxine" in self.network:
@@ -409,7 +418,9 @@ class ActionPipeline:
                                                                   handler_id=self.handler_id,
                                                                   handler_kind=self.handler_kind,
                                                                   accelerator=self.platform_id,
-                                                                  docker_env_vars=self.job_env_variables)
+                                                                  docker_env_vars=self.job_env_variables,
+                                                                  num_nodes=self.num_nodes
+                                                                  )
         if response and not response.ok:
             update_job_details_with_microservices_response(response.json().get("error", ""), job_id, self.job_name)
 
@@ -581,6 +592,8 @@ class ActionPipeline:
             self.run_command, outdir = self.generate_run_command()
             if self.network not in MONAI_NETWORKS and self.spec:
                 self.num_gpu = get_num_gpus_from_spec(self.spec, self.job_context.action, default=self.num_gpu)
+                self.num_nodes = get_num_nodes_from_spec(self.spec, self.job_context.action, default=self.num_nodes)
+                self.detailed_print(f"Job {self.job_name} running with {self.num_gpu} GPUs and {self.num_nodes} nodes")
             if not outdir:
                 outdir = f"/results/{self.job_name}"
             # Pipe stdout and stderr to logfile
@@ -636,11 +649,12 @@ class ActionPipeline:
                     self.image,
                     self.run_command,
                     num_gpu=self.num_gpu,
+                    num_nodes=self.num_nodes,
                     accelerator=self.platform_id,
                     docker_env_vars=self.job_env_variables,
                     nv_job_metadata=nv_job_metadata,
                     local_cluster=self.local_cluster,
-                    automl_exp_job=False
+                    automl_exp_job=False,
                 )
             self.detailed_print("Job created", self.job_name)
             self.monitor_job()
@@ -961,6 +975,7 @@ class AutoMLPipeline(ActionPipeline):
         for param_name, param_value in recommended_values.items():
             write_nested_dict(spec, param_name, param_value)
         self.num_gpu = get_num_gpus_from_spec(spec, "train", default=self.num_gpu)
+        self.num_nodes = get_num_nodes_from_spec(spec, "train", default=self.num_nodes)
 
         return spec
 
@@ -1051,6 +1066,7 @@ class AutoMLPipeline(ActionPipeline):
                         self.image,
                         run_command,
                         num_gpu=self.num_gpu,
+                        num_nodes=self.num_nodes,
                         docker_env_vars=self.job_env_variables,
                         nv_job_metadata=nv_job_metadata,
                         automl_exp_job=True
@@ -1112,6 +1128,7 @@ class AutoMLPipeline(ActionPipeline):
                     self.image,
                     run_command,
                     num_gpu=self.num_gpu,
+                    num_nodes=self.num_nodes,
                     docker_env_vars=self.job_env_variables,
                     nv_job_metadata=nv_job_metadata,
                     automl_exp_job=False

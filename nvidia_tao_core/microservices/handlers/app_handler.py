@@ -59,6 +59,7 @@ from nvidia_tao_core.microservices.handlers.stateless_handlers import (
     check_write_access,
     get_base_experiment_metadata,
     get_job_specs,
+    get_root,
     infer_action_from_job,
     is_valid_uuid4,
     printc,
@@ -91,7 +92,11 @@ from nvidia_tao_core.microservices.handlers.utilities import (
     validate_num_gpu,
     get_num_gpus_from_spec
 )
-from nvidia_tao_core.microservices.handlers.mongo_handler import MongoHandler
+if os.getenv("BACKEND"):  # To see if the container is going to be used for Service pods or network jobs
+    from nvidia_tao_core.microservices.handlers.mongo_handler import (
+        MongoHandler,
+        mongo_connection_string,
+    )
 from nvidia_tao_core.microservices.job_utils import executor as jobDriver
 from nvidia_tao_core.microservices.job_utils.workflow_driver import create_job_context, on_delete_job, on_new_job
 from nvidia_tao_core.microservices.job_utils.automl_job_utils import on_delete_automl_job
@@ -3569,3 +3574,87 @@ class AppHandler:
             logger.error("Exception thrown in automl_details fetch is %s", str(e))
             logger.error(traceback.format_exc())
             return Code(400, [], "Error in constructing AutoML results")
+
+    @staticmethod
+    def mongo_backup(workspace_id, backup_file_name=None):
+        """Backup MongoDB data for a specific workspace.
+
+        Args:
+            workspace_id (str): ID of the workspace to backup.
+
+        Returns:
+            Response: A response indicating the outcome of the operation (200 for success, error responses for failure).
+        """
+        try:
+            # Get the workspace metadata
+            workspace_metadata = get_workspace(workspace_id)
+            if not workspace_metadata:
+                return Code(404, {}, "Workspace not found")
+            cloud_type = workspace_metadata.get("cloud_type")
+            if cloud_type not in ["aws", "azure"]:
+                return Code(400, {}, "MongoDB backup is only supported for AWS and Azure workspaces")
+            cs_instance, _ = create_cs_instance(workspace_metadata)
+            if not cs_instance:
+                return Code(404, {}, "Unable to create cloud storage instance for MongoDB backup")
+
+            logger.info("Starting MongoDB backup for workspace %s", workspace_id)
+
+            # Create dump directory if it doesn't exist
+            root = get_root()
+            dump_dir = os.path.join(root, "dump", "archive")
+            os.makedirs(dump_dir, exist_ok=True)
+
+            backup_file = backup_file_name if backup_file_name else "mongodb_backup.gz"
+            backup_file = os.path.join(dump_dir, backup_file)
+            backup_command = f'mongodump --uri="{mongo_connection_string}" --archive="{backup_file}" --gzip'
+            run_system_command(backup_command)
+
+            cs_instance.upload_file(backup_file, backup_file)
+
+            logger.info("Successfully backed up MongoDB to S3")
+            return Code(200, {"message": "MongoDB backup successful"}, "MongoDB backup successful")
+
+        except Exception as e:
+            logger.error("Exception thrown in mongo_backup is %s", str(e))
+            logger.error(traceback.format_exc())
+            return Code(400, {}, "Error in MongoDB backup")
+
+    @staticmethod
+    def mongo_restore(workspace_id, backup_file_name=None):
+        """Restore MongoDB data for a specific workspace.
+
+        Args:
+            workspace_id (str): ID of the workspace to restore.
+
+        Returns:
+            Response: A response indicating the outcome of the operation (200 for success, error responses for failure).
+        """
+        try:
+            # Get the workspace metadata
+            workspace_metadata = get_workspace(workspace_id)
+            if not workspace_metadata:
+                return Code(404, {}, "Workspace not found")
+
+            cloud_type = workspace_metadata.get("cloud_type")
+            if cloud_type not in ["aws", "azure"]:
+                return Code(400, {}, "MongoDB restore is only supported for AWS and Azure workspaces")
+            cs_instance, _ = create_cs_instance(workspace_metadata)
+            if not cs_instance:
+                return Code(404, {}, "Unable to create cloud storage instance for MongoDB restore")
+
+            root = get_root()
+            dump_dir = os.path.join(root, "dump", "archive")
+            backup_file = backup_file_name if backup_file_name else "mongodb_backup.gz"
+            backup_file = os.path.join(dump_dir, backup_file)
+            cs_instance.download_file(backup_file, backup_file)
+            logger.info(f"Downloaded backup file to {backup_file}")
+            restore_command = f'mongorestore --uri="{mongo_connection_string}" --archive="{backup_file}" --gzip'
+            run_system_command(restore_command)
+            logger.info("Restored DB from backup file")
+            os.remove(backup_file)
+            return Code(200, {"message": "MongoDB restore successful"}, "MongoDB restore successful")
+
+        except Exception as e:
+            logger.error("Exception thrown in mongo_restore is %s", str(e))
+            logger.error(traceback.format_exc())
+            return Code(400, {}, "Error in MongoDB restore")

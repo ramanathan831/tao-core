@@ -26,6 +26,7 @@ Functions:
 - get_model_results_path
 - write_nested_dict
 - build_cli_command
+- get_num_nodes_from_spec
 
 """
 import os
@@ -900,6 +901,8 @@ def get_num_gpus_from_spec(spec, action, default=0):
             field_value = spec[action][gpu_param_name]
             if field_value != 0:
                 _check_gpu_conditions(field_name, field_value)
+        if action in spec and "system" in spec[action]:
+            gpu_set_values.append(int(spec[action]["system"].get(gpu_param_name, 0)))
         if field_name in ("gpus", "num_gpus"):
             gpu_set_values.append(int(field_value))
         if field_name in ("gpu_ids", "gpu_id"):
@@ -907,10 +910,46 @@ def get_num_gpus_from_spec(spec, action, default=0):
                 gpu_set_values.append(1)
             elif type(field_value) is list:
                 gpu_set_values.append(len(set(field_value)))
-
     if gpu_set_values:
         return max(gpu_set_values)
     return 1
+
+
+def get_num_nodes_from_spec(spec, action, default=1):
+    """Validate the nodes requested
+
+    Args:
+        spec (dict): The specification dictionary containing configuration details.
+        action (str): The action key to look for in the spec dictionary.
+        default (int): The default number of nodes to return if none are specified.
+
+    Returns:
+        int: The maximum number of nodes specified in the spec, or the default value if none are found.
+    """
+    if not isinstance(spec, dict):
+        return default
+    node_set_values = []
+    # Accessing num_nodes under train['system']
+    node_param_name = "num_nodes"
+
+    if action in spec and "system" in spec[action]:
+        field_value = int(spec[action]["system"].get(node_param_name, 0))
+        if field_value != 0:
+            node_set_values.append(field_value)
+
+    if node_param_name in spec:
+        field_value = int(spec.get(node_param_name, 0))
+        if field_value != 0:
+            node_set_values.append(field_value)
+
+    if action in spec and node_param_name in spec[action]:
+        field_value = int(spec[action][node_param_name])
+        if field_value != 0:
+            node_set_values.append(field_value)
+
+    if node_set_values:
+        return max(node_set_values)
+    return default
 
 
 def validate_num_gpu(num_gpu=None, action: str = ""):
@@ -1036,6 +1075,22 @@ def get_cloud_metadata(workspace_ids, cloud_metadata):
         add_workspace_to_cloud_metadata(workspace_metadata, cloud_metadata)
 
 
+def get_statefulset_name(job_id):
+    """Get the statefulset name for the given job id"""
+    if os.getenv('STATEFULSET_NAME'):
+        return os.getenv('STATEFULSET_NAME')
+    release_name = os.getenv('RELEASE_NAME', default='tao-api')
+    return f"{release_name}-sts-{job_id}"
+
+
+def get_statefulset_service_name(job_id):
+    """Get the statefulset service name for the given job id"""
+    if os.getenv('STATEFULSET_SERVICE_NAME'):
+        return os.getenv('STATEFULSET_SERVICE_NAME')
+    release_name = os.getenv('RELEASE_NAME', default='tao-api')
+    return f"{release_name}-sts-svc-{job_id}"
+
+
 def send_microservice_request(
     api_endpoint,
     network,
@@ -1044,9 +1099,11 @@ def send_microservice_request(
     specs={},
     job_id="",
     nvcf_helm="",
-    docker_env_vars={}
+    docker_env_vars={},
+    statefulset_replica_index=0,
+    statefulset_replicas=1,
 ):
-    """Make a requests call to the microservice pod
+    """Make a requests call to the microservice within the statefulset
 
     Args:
         api_endpoint (str): The API endpoint to call, e.g. "get_job_status"
@@ -1057,7 +1114,8 @@ def send_microservice_request(
         job_id (str, optional): Job ID. Defaults to "".
         nvcf_helm (str, optional): NVCF helm configuration. Defaults to "".
         docker_env_vars (dict, optional): Docker environment variables. Defaults to {}.
-
+        statefulset_replicas (int, optional): StatefulSet replicas. Defaults to 1.
+        statefulset_replica_index (int, optional): StatefulSet replica index. Defaults to 0.
     Returns:
         requests.Response: The response from the microservice pod
     """
@@ -1071,6 +1129,7 @@ def send_microservice_request(
     if action == "retrain":
         action = "train"
 
+    docker_env_vars["CLOUD_BASED"] = "True"
     # Prepare request metadata
     request_metadata = {
         "neural_network_name": network,
@@ -1080,18 +1139,27 @@ def send_microservice_request(
         "docker_env_vars": docker_env_vars,
     }
 
-    request_metadata["docker_env_vars"]["CLOUD_BASED"] = "True"
-    request_metadata["docker_env_vars"]["JOB_ID"] = job_id
+    if job_id:
+        request_metadata["job_id"] = job_id
+        request_metadata["docker_env_vars"]["JOB_ID"] = job_id
 
-    # Construct base URL and endpoint
-    base_url = f"http://flask-service-{job_id}.default.svc.cluster.local:8000"
+    # Construct base URL and endpoint using StatefulSet FQDN
+    statefulset_name = get_statefulset_name(job_id)
+    statefulset_service_name = get_statefulset_service_name(job_id)
+    statefulset_namespace = os.getenv("NAMESPACE", "default")
+    base_url = (
+        f"http://{statefulset_name}-{statefulset_replica_index}."
+        f"{statefulset_service_name}.{statefulset_namespace}."
+        "svc.cluster.local:8000"
+    )
     endpoint = f"{base_url}/api/v1/internal/container_job"
 
     # Modify endpoint and request_metadata for get_job_status
     if api_endpoint == "get_job_status":
         endpoint = f"{base_url}/api/v1/internal/container_job:status"
         request_metadata = {"results_dir": specs.get("results_dir", "")}
-
+    elif api_endpoint == "post_action" and statefulset_replica_index == 0 and statefulset_replicas > 1:
+        request_metadata["statefulset_replicas"] = statefulset_replicas
     # Send request
     try:
         if api_endpoint == "get_job_status":
@@ -1102,7 +1170,6 @@ def send_microservice_request(
     except Exception as e:
         logger.error("Exception caught during sending a microservice request %s", e)
         raise e
-
     return response
 
 

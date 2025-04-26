@@ -49,7 +49,7 @@ def get_from_ngc(key, org_name: str, enable_telemetry: bool | None = None) -> tu
         if key.startswith("nvapi"):
             logger.info("Scoped key passed with and org %s", org_name)
             token = key
-            r = get_user_info(key, accept_encoding="True")
+            r = get_user_info(key, accept_encoding="identity")
         else:
             err = ('Credentials error: Invalid NGC_PERSONAL_KEY, NGC_API_KEYs are no longer valid, '
                    'generate a personal key with Cloud Functions, NGC Catalog and Private registry services '
