@@ -391,11 +391,14 @@ class BaseExperimentMetadata:
         file_paths = list(map(lambda x: x.path, model_files))
         spec_file = "experiment.yaml"
         if spec_file in file_paths:
-            dest_path = f"{self.rootdir}/{exp_id}/{model}_v{version}"
+            dest_path = f"{self.rootdir}/{exp_id}/"
             os.makedirs(dest_path, exist_ok=True)
             clt.registry.model.download_version(ngc_path, destination=dest_path, file_patterns=[spec_file])
-            spec_data = safe_load_file(dest_path + "/experiment.yaml", file_type="yaml")
-            logger.info("Successfully got spec data for %s", ngc_path)
+            spec_data = safe_load_file(dest_path + f"{model}_v{version}/experiment.yaml", file_type="yaml")
+            if spec_data:
+                logger.info("Successfully got spec data for %s", ngc_path)
+            else:
+                logger.error("Unable to get spec data for %s", ngc_path)
             return spec_data
         logger.error("Unable to get spec data for %s", ngc_path)
         return {}
