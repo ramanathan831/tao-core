@@ -16,6 +16,7 @@
 
 """API modules defining schemas and endpoints"""
 import ast
+import bson
 import sys
 import uuid
 import math
@@ -1523,11 +1524,39 @@ def metrics_upsert():
         metrics[f'gpu_{gpu}_action_{action}'] = metrics.get(f'gpu_{gpu}_action_{action}', 0) + 1
     metrics['last_updated'] = now.isoformat()
 
+    def sanitize_gpu_name(gpu_name):
+        # Convert to uppercase first, then sanitize
+        return re.sub("[^a-zA-Z0-9]", "-", gpu_name.upper())
+
+    def create_gpu_identifier(gpu_list):
+        # Count occurrences of each GPU type (case insensitive)
+        gpu_counts = {}
+        for gpu in map(sanitize_gpu_name, gpu_list):
+            gpu_counts[gpu] = gpu_counts.get(gpu, 0) + 1
+
+        # Format as "total_gpu1:count_gpu2:count..."
+        gpu_parts = [f"{gpu}:{count}" for gpu, count in sorted(gpu_counts.items())]
+        return f"{len(gpu_list)}_{'_'.join(gpu_parts)}"
+
+    # Build metric name with all attributes
+    status = "pass" if success else "fail"
+    metric_components = [
+        "network", network,
+        "action", action,
+        "version", version,
+        "status", status,
+        "gpu", create_gpu_identifier(gpus)
+    ]
+    full_metric_name = "_".join(metric_components)
+
+    # Update metric counter
+    metrics[full_metric_name] = metrics.get(full_metric_name, 0) + 1
+
     set_metrics(metrics)
 
     # success
 
-    return make_response(jsonify(metrics), 200)
+    return make_response(bson.json_util.dumps(metrics), 201)
 
 
 #
