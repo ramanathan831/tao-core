@@ -16,7 +16,6 @@
 
 from typing import Optional, Dict
 from dataclasses import dataclass
-from omegaconf import MISSING
 
 from nvidia_tao_core.config.utils.types import (
     BOOL_FIELD,
@@ -24,7 +23,6 @@ from nvidia_tao_core.config.utils.types import (
     DICT_FIELD,
     FLOAT_FIELD,
     INT_FIELD,
-    STR_FIELD
 )
 from nvidia_tao_core.config.common.common_config import (
     CommonExperimentConfig,
