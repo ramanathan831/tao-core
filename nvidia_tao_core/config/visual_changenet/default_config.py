@@ -687,6 +687,38 @@ class CNInferenceExpConfig(InferenceConfig):
 
 
 @dataclass
+class ExportExpConfig(ExportConfig):
+    """Export experiment config."""
+
+    serialize_nvdsinfer: bool = BOOL_FIELD(
+        value=False,
+        default_value=False,
+        display_name="Serialize DeepStream config.",
+        description=(
+            "Flag to enable serializing the required configs for integrating with DeepStream."
+        )
+    )
+    input_channel: int = INT_FIELD(
+        value=3,
+        default_value=3,
+        description="Input channel",
+        display_name="Input channel"
+    )
+    input_width: int = INT_FIELD(
+        value=224,
+        default_value=224,
+        description="Input width",
+        display_name="Input width",
+    )
+    input_height: int = INT_FIELD(
+        value=224,
+        default_value=224,
+        description="Input height",
+        display_name="Input height",
+    )
+
+
+@dataclass
 class CNTrtConfig(TrtConfig):
     """Trt config."""
 
@@ -725,12 +757,7 @@ class ExperimentConfig(CommonExperimentConfig):
     train: CNTrainExpConfig = DATACLASS_FIELD(CNTrainExpConfig())
     evaluate: CNEvalExpConfig = DATACLASS_FIELD(CNEvalExpConfig())
     inference: CNInferenceExpConfig = DATACLASS_FIELD(CNInferenceExpConfig())
-    export: ExportConfig = DATACLASS_FIELD(
-        ExportConfig(
-            input_channel=3,
-            input_height=224,
-            input_width=224,
-        ))
+    export: ExportConfig = DATACLASS_FIELD(ExportExpConfig())
     gen_trt_engine: CNGenTrtEngineExpConfig = DATACLASS_FIELD(CNGenTrtEngineExpConfig())
     task: Optional[str] = STR_FIELD(
         value="segment",
