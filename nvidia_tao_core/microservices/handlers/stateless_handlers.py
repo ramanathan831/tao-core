@@ -29,7 +29,6 @@ import logging
 from nvidia_tao_core.microservices.constants import CV_ACTION_CHAINED_ONLY, CV_ACTION_RULES
 from nvidia_tao_core.microservices.handlers.encrypt import NVVaultEncryption
 from nvidia_tao_core.microservices.handlers.mongo_handler import MongoHandler
-from nvidia_tao_core.microservices.utils import safe_load_file
 
 BACKEND = os.getenv("BACKEND", "local-k8s")
 tao_root = os.environ.get("TAO_ROOT", "/tmp/shared/orgs/")
