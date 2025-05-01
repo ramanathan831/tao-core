@@ -277,6 +277,9 @@ def create(
     dshm_volume = client.V1Volume(
         name="dshm",
         empty_dir=client.V1EmptyDirVolumeSource(medium='Memory'))
+    restart_policy = "Always"
+    if automl_brain:
+        restart_policy = "Never"
     template = client.V1PodTemplateSpec(
         metadata=client.V1ObjectMeta(
             labels={"purpose": "tao-toolkit-job"}
@@ -286,7 +289,7 @@ def create(
             containers=[container],
             volumes=[dshm_volume],
             node_selector=node_selector,
-            restart_policy="Always"))
+            restart_policy=restart_policy))
     spec = client.V1JobSpec(
         ttl_seconds_after_finished=100,
         template=template,
