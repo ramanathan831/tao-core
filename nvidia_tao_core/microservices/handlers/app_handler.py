@@ -1679,6 +1679,7 @@ class AppHandler:
                     check_and_convert(specs, default_spec)
             msg = ""
             if is_request_automl(handler_id, action, kind):
+                logger.info("Creating AutoML job %s", job_id)
                 AutoMLHandler.start(
                     user_id,
                     org_name,
@@ -1690,6 +1691,7 @@ class AppHandler:
                 )
                 msg = "AutoML "
             else:
+                logger.info("Creating job %s", job_id)
                 job_context = create_job_context(
                     parent_job_id,
                     action,
