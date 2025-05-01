@@ -60,6 +60,7 @@ from nvidia_tao_core.microservices.handlers.stateless_handlers import (
     get_job_specs,
     save_job_specs,
     get_automl_brain_info,
+    get_automl_best_rec_info,
     get_automl_controller_info,
     save_automl_controller_info,
     get_dnn_status,
@@ -797,19 +798,17 @@ class TrainVal(CLIPipeline):
                         spec_schema = default_spec_schema_response.data
                         default_spec = spec_schema["default"]
                         user_modified_values = find_differences(spec, default_spec)
-                    # automl = False
-                    # best_rec_id = get_automl_best_rec_number(
-                    #     self.job_context.user_id,
-                    #     self.job_context.org_name,
-                    #     parent_job_id
-                    # )
-                    # if best_rec_id != "-1":
-                    #     automl = True
-                    # parent_spec = get_job_specs(parent_job_id, automl=automl, automl_experiment_id=best_rec_id)
-                    # train_spec_path = os.path.join(self.handler_spec_root, f"{parent_job_id}-train-spec.json")
-                    # train_specs_passed_in_req_body = load_json_spec(train_spec_path)
-                    # modified_values = find_differences(parent_spec, train_specs_passed_in_req_body)
-                    # spec = merge_nested_dicts(spec, modified_values)
+                    automl = False
+                    best_rec_id, best_rec_job_id = get_automl_best_rec_info(parent_job_id)
+                    logger.info(f"Best rec id: {best_rec_id}, Best rec job id: {best_rec_job_id}")
+                    if best_rec_id != "-1":
+                        automl = True
+                        parent_spec = get_job_specs(best_rec_job_id, automl=automl, automl_experiment_id=best_rec_id)
+                    else:
+                        parent_spec = get_job_specs(parent_job_id)
+                    train_specs_passed_in_req_body = get_job_specs(parent_job_id)
+                    modified_values = find_differences(parent_spec, train_specs_passed_in_req_body)
+                    spec = merge_nested_dicts(spec, modified_values)
                     spec = merge_nested_dicts(spec, user_modified_values)
                     break
                 cur_job_id = parent_job_id

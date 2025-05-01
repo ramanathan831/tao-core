@@ -129,18 +129,6 @@ def get_base_experiments_metadata_path():
     return base_experiments_metadata_path
 
 
-def get_automl_best_rec_number(user_id, org_name, job_id):
-    """Return automl runs best experiment number"""
-    job_root = os.path.join(get_jobs_root(user_id, org_name), job_id)
-    automl_brain_metadata_json = os.path.join(job_root, "automl_metadata.json")
-    automl_metadata = safe_load_file(filepath=automl_brain_metadata_json)
-    if automl_metadata:
-        best_rec_id = automl_metadata.get("Best experiment number", -1) - 1
-        if best_rec_id >= 0:
-            return str(best_rec_id)
-    return "-1"
-
-
 def get_job_specs(job_id, automl=False, automl_experiment_id="0"):
     """Return specs used to run the job"""
     if automl:
@@ -453,6 +441,21 @@ def save_automl_current_rec(brain_job_id, current_rec):
     mongo_jobs = MongoHandler("tao", "automl_jobs")
     job_query = {'id': brain_job_id}
     mongo_jobs.upsert(job_query, {"current_rec": current_rec})
+
+
+def get_automl_best_rec_info(brain_job_id):
+    """Get automl best recommendation info"""
+    mongo_jobs = MongoHandler("tao", "automl_jobs")
+    job_query = {'id': brain_job_id}
+    automl_info = mongo_jobs.find_one(job_query)
+    return automl_info.get("best_rec_number", "-1"), automl_info.get("best_rec_id", "-1")
+
+
+def save_automl_best_rec_info(brain_job_id, best_rec_number, best_rec_job_id):
+    """Save automl best recommendation info"""
+    mongo_jobs = MongoHandler("tao", "automl_jobs")
+    job_query = {'id': brain_job_id}
+    mongo_jobs.upsert(job_query, {"best_rec_number": str(best_rec_number), "best_rec_id": str(best_rec_job_id)})
 
 
 def is_request_automl(handler_id, action, kind):
