@@ -60,6 +60,7 @@ from nvidia_tao_core.microservices.handlers.stateless_handlers import (
     get_job_specs,
     save_job_specs,
     get_automl_brain_info,
+    get_automl_best_rec_info,
     get_automl_controller_info,
     save_automl_controller_info,
     get_dnn_status,
@@ -437,7 +438,7 @@ class ActionPipeline:
         status_parser = StatusParser(self.job_context.network, outdir)
 
         total_epochs = 1
-        if self.job_context.action in ['train', 'retrain']:
+        if self.job_context.action in ['train', 'distill', 'retrain']:
             total_epochs = get_total_epochs(self.job_context, self.job_context.specs)
 
         metric = self.handler_metadata.get("metric", "")
@@ -487,7 +488,7 @@ class ActionPipeline:
                     self.detailed_print("Post running")
                     # If post run is done, make it done
                     self.post_run()
-                    if self.job_context.action in ['train', 'retrain']:
+                    if self.job_context.action in ['train', 'distill', 'retrain']:
                         _, best_checkpoint_epoch_number, latest_checkpoint_epoch_number = status_parser.read_metric(
                             results=new_results[self.job_name],
                             metric=metric,
@@ -783,7 +784,7 @@ class TrainVal(CLIPipeline):
                 parent_action = parent_job_metadata.get("action", "")
                 if not parent_action:
                     break
-                if parent_action == "train":
+                if parent_action in ("train", "distill"):
                     from nvidia_tao_core.microservices.handlers.app_handler import AppHandler  # pylint: disable=C0415
                     default_spec_schema_response = AppHandler.get_spec_schema(
                         self.job_context.user_id,
@@ -797,19 +798,17 @@ class TrainVal(CLIPipeline):
                         spec_schema = default_spec_schema_response.data
                         default_spec = spec_schema["default"]
                         user_modified_values = find_differences(spec, default_spec)
-                    # automl = False
-                    # best_rec_id = get_automl_best_rec_number(
-                    #     self.job_context.user_id,
-                    #     self.job_context.org_name,
-                    #     parent_job_id
-                    # )
-                    # if best_rec_id != "-1":
-                    #     automl = True
-                    # parent_spec = get_job_specs(parent_job_id, automl=automl, automl_experiment_id=best_rec_id)
-                    # train_spec_path = os.path.join(self.handler_spec_root, f"{parent_job_id}-train-spec.json")
-                    # train_specs_passed_in_req_body = load_json_spec(train_spec_path)
-                    # modified_values = find_differences(parent_spec, train_specs_passed_in_req_body)
-                    # spec = merge_nested_dicts(spec, modified_values)
+                    automl = False
+                    best_rec_id, best_rec_job_id = get_automl_best_rec_info(parent_job_id)
+                    logger.info(f"Best rec id: {best_rec_id}, Best rec job id: {best_rec_job_id}")
+                    if best_rec_id != "-1":
+                        automl = True
+                        parent_spec = get_job_specs(best_rec_job_id, automl=automl, automl_experiment_id=best_rec_id)
+                    else:
+                        parent_spec = get_job_specs(parent_job_id)
+                    train_specs_passed_in_req_body = get_job_specs(parent_job_id)
+                    modified_values = find_differences(parent_spec, train_specs_passed_in_req_body)
+                    spec = merge_nested_dicts(spec, modified_values)
                     spec = merge_nested_dicts(spec, user_modified_values)
                     break
                 cur_job_id = parent_job_id

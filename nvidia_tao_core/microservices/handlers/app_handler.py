@@ -34,6 +34,7 @@ from nvidia_tao_core.microservices.constants import (
     TAO_NETWORKS,
     MEDICAL_CUSTOM_ARCHITECT,
     MAXINE_NETWORKS,
+    MISSING_EPOCH_FORMAT_NETWORKS
 )
 from nvidia_tao_core.microservices.enum_constants import DatasetType, ExperimentNetworkArch
 from nvidia_tao_core.microservices.handlers import ngc_handler, stateless_handlers
@@ -331,12 +332,15 @@ def handler_level_access_control(user_id, org_name, handler_id="", handler_kind=
         bool: True if the user has access, False otherwise.
     """
     if base_experiment or is_maxine_request(handler_id, handler_kind, handler_metadata):
+        logger.info("Checking if user has MAXINE entitlement")
         if "MAXINE" not in ngc_handler.get_org_products(user_id, org_name):
+            logger.info("User does not have MAXINE entitlement")
             return False
         mongo = MongoHandler("tao", "users")
         user_metadata = mongo.find_one({'id': user_id})
         member_of = user_metadata.get('member_of', [])
         if f"{org_name}/:MAXINE_USER" not in member_of:
+            logger.info("User does not have MAXINE entitlement in NGC metadata")
             return False
     return True
 
@@ -1205,10 +1209,10 @@ class AppHandler:
             # Used for dataset jobs
             network = metadata.get("type", None)
 
-        microservices_network, action = get_microservices_network_and_action(network, action)
+        microservices_network, microservices_action = get_microservices_network_and_action(network, action)
 
         try:
-            json_schema = generate_schema(microservices_network, action)
+            json_schema = generate_schema(microservices_network, microservices_action)
         except Exception as e:
             logger.error("Exception thrown in get_spec_schema is %s", str(e))
             logger.error("Unable to fetch schema from tao_core")
@@ -1675,6 +1679,7 @@ class AppHandler:
                     check_and_convert(specs, default_spec)
             msg = ""
             if is_request_automl(handler_id, action, kind):
+                logger.info("Creating AutoML job %s", job_id)
                 AutoMLHandler.start(
                     user_id,
                     org_name,
@@ -1686,6 +1691,7 @@ class AppHandler:
                 )
                 msg = "AutoML "
             else:
+                logger.info("Creating job %s", job_id)
                 job_context = create_job_context(
                     parent_job_id,
                     action,
@@ -2028,7 +2034,7 @@ class AppHandler:
             return automl_response
 
         job_action = job_metadata.get("action", "")
-        if job_action not in ("train", "retrain"):
+        if job_action not in ("train", "distill", "retrain"):
             return Code(404, [], f"Only train or retrain jobs can be paused. The current action is {job_action}")
         job_status = job_metadata.get("status", "Error")
 
@@ -2230,11 +2236,11 @@ class AppHandler:
         if job_status not in ("Success", "Done"):
             return Code(404, {}, "Job is not in success or Done state")
         job_action = job_metadata.get("action", "")
-        if job_action not in ("train", "prune", "retrain", "export", "gen_trt_engine"):
+        if job_action not in ("train", "distill", "prune", "retrain", "export", "gen_trt_engine"):
             return Code(
                 404,
                 {},
-                "Publish model is available only for train, prune, retrain, export, gen_trt_engine actions"
+                "Publish model is available only for train, distill, prune, retrain, export, gen_trt_engine actions"
             )
 
         try:
@@ -2312,11 +2318,12 @@ class AppHandler:
         if job_status not in ("Success", "Done"):
             return Code(404, {}, "Job is not in success or Done state")
         job_action = job_metadata.get("action", "")
-        if job_action not in ("train", "prune", "retrain", "export", "gen_trt_engine"):
+        if job_action not in ("train", "distill", "prune", "retrain", "export", "gen_trt_engine"):
             return Code(
                 404,
                 {},
-                "Delete published model is available only for train, prune, retrain, export, gen_trt_engine actions"
+                "Delete published model is available only for train, distill, ",
+                "prune, retrain, export, gen_trt_engine actions"
             )
 
         try:
@@ -2467,13 +2474,14 @@ class AppHandler:
                 if (not best_model) and latest_model:
                     best_checkpoint_epoch_number = latest_checkpoint_epoch_number
                 network = handler_metadata.get("network_arch", "")
-                if network in ("classification_pyt", "detectnet_v2", "pointpillars", "unet"):
+                if network in MISSING_EPOCH_FORMAT_NETWORKS:
                     format_epoch_number = str(best_checkpoint_epoch_number)
                 else:
                     format_epoch_number = f"{best_checkpoint_epoch_number:03}"
                 if best_model or latest_model:
                     job_root = os.path.join(root, job_id)
-                    if handler_metadata.get("automl_settings", {}).get("automl_enabled") is True and action == "train":
+                    if (handler_metadata.get("automl_settings", {}).get("automl_enabled") is True and
+                       action in ("train", "distill")):
                         job_root = os.path.join(job_root, "best_model")
                     find_trained_tlt = (
                         glob.glob(f"{job_root}/*{format_epoch_number}.tlt") +
@@ -3453,8 +3461,8 @@ class AppHandler:
         status = job_metadata.get("status", "")
         if status != "Paused":
             return Code(400, [], f"Job status should be paused, not {status}")
-        if action not in ("train", "retrain"):
-            return Code(400, [], f"Action should be train, retrain, not {action}")
+        if action not in ("train", "distill", "retrain"):
+            return Code(400, [], f"Action should be train, distill, retrain, not {action}")
         network = handler_metadata.get("network_arch", None)
         if network in MAXINE_NETWORKS:
             return Code(400, [], "Maxine networks do not support resume.")

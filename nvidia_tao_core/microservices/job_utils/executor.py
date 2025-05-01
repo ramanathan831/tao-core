@@ -131,7 +131,7 @@ def create(
     if BACKEND == "NVCF" and nv_job_metadata:
         team_name = nv_job_metadata["teamName"]
         nvcf_backend_details = nv_job_metadata["nvcf_backend_details"]
-        ngc_key = nv_job_metadata["TAO_USER_KEY"]
+        ngc_key = nv_job_metadata["TAO_ADMIN_KEY"]
         docker_image_name = nv_job_metadata["dockerImageName"]
         deployment_string = nv_job_metadata.get("deployment_string", "")
         current_available = nvcf_backend_details.get("current_available", 1)
@@ -277,6 +277,9 @@ def create(
     dshm_volume = client.V1Volume(
         name="dshm",
         empty_dir=client.V1EmptyDirVolumeSource(medium='Memory'))
+    restart_policy = "Always"
+    if automl_brain:
+        restart_policy = "Never"
     template = client.V1PodTemplateSpec(
         metadata=client.V1ObjectMeta(
             labels={"purpose": "tao-toolkit-job"}
@@ -286,7 +289,7 @@ def create(
             containers=[container],
             volumes=[dshm_volume],
             node_selector=node_selector,
-            restart_policy="Always"))
+            restart_policy=restart_policy))
     spec = client.V1JobSpec(
         ttl_seconds_after_finished=100,
         template=template,
@@ -1065,6 +1068,7 @@ def status(
                         )
                         return "Error"
                     if nvcf_function_metadata.get("function", {}).get("status") == "ACTIVE":
+                        logger.info("NVCF function is active, creating microservice job on NVCF")
                         deployment_string = (
                             f"{nvcf_function_metadata['function']['id']}:"
                             f"{nvcf_function_metadata['function']['versionId']}"
@@ -1204,8 +1208,7 @@ def delete_nvcf_function(job_name):
         logger.warning(f"Deployment not active yet {job_name}")
         return
     function_id, version_id = deployment_string.split(":")
-    if org_name not in ["0544357712065245"]:
-        delete_function_version(org_name, team_name, function_id, version_id, ngc_key)
+    delete_function_version(org_name, team_name, function_id, version_id, ngc_key)
 
 
 def delete(job_name, use_ngc=True):
