@@ -23,7 +23,6 @@ import subprocess
 import sys
 import tarfile
 import time
-import json
 import traceback
 
 from nvidia_tao_core.microservices.handlers.cloud_storage import CloudStorage
@@ -530,7 +529,10 @@ def download_files_from_cloud(
         except Exception as e:
             logger.error("Error downloading public hosted file: %s", str(e))
             logger.error(traceback.format_exc())
-            callback_data = get_internal_job_status_update_data(automl_experiment_number=os.getenv("AUTOML_EXPERIMENT_NUMBER", "0"), message=f"Error downloading public hosted file {value}")
+            callback_data = get_internal_job_status_update_data(
+                automl_experiment_number=os.getenv("AUTOML_EXPERIMENT_NUMBER", "0"),
+                message=f"Error downloading public hosted file {value}"
+            )
             status_callback(callback_data)
             raise e
 
@@ -556,7 +558,10 @@ def download_files_from_cloud(
         except Exception as e:
             logger.error("Error downloading NGC model: %s", str(e))
             logger.error(traceback.format_exc())
-            callback_data = get_internal_job_status_update_data(automl_experiment_number=os.getenv("AUTOML_EXPERIMENT_NUMBER", "0"), message=f"Error downloading NGC model {value}")
+            callback_data = get_internal_job_status_update_data(
+                automl_experiment_number=os.getenv("AUTOML_EXPERIMENT_NUMBER", "0"),
+                message=f"Error downloading NGC model {value}"
+            )
             status_callback(callback_data)
             raise e
 
@@ -588,7 +593,10 @@ def download_files_from_cloud(
         except Exception as e:
             logger.error("Error downloading cloud file: %s", str(e))
             logger.error(traceback.format_exc())
-            callback_data = get_internal_job_status_update_data(automl_experiment_number=os.getenv("AUTOML_EXPERIMENT_NUMBER", "0"), message=f"Error downloading cloud file {value}")
+            callback_data = get_internal_job_status_update_data(
+                automl_experiment_number=os.getenv("AUTOML_EXPERIMENT_NUMBER", "0"),
+                message=f"Error downloading cloud file {value}"
+            )
             status_callback(callback_data)
             raise e
     return None

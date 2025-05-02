@@ -524,7 +524,10 @@ def get_internal_job_status_update_data(automl_experiment_number="0", message=""
 
 def internal_job_status_update(job_id, automl=False, automl_experiment_number="0", message="", logfile=""):
     """Post an status update to the job"""
-    data_string = get_internal_job_status_update_data(automl_experiment_number=automl_experiment_number, message=message)
+    data_string = get_internal_job_status_update_data(
+        automl_experiment_number=automl_experiment_number,
+        message=message
+    )
     callback_data = {
         "experiment_number": automl_experiment_number,
         "status": data_string,
