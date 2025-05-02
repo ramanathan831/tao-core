@@ -73,21 +73,12 @@ class Sparse4DOptimizerConfig:
     )
 
 @dataclass
-class Sparse4DLoggingConfig:
-    """Logging configuration."""
-
-    interval: int = INT_FIELD(value=50, default_value=50, valid_min=1, valid_max="inf", description="Logging interval")
-    tensorboard: bool = BOOL_FIELD(value=True, default_value=True, description="Enable tensorboard logging")
-
-
-@dataclass
 class Sparse4DTrainConfig(TrainConfig):
     """Training configuration for Sparse4D."""
 
     validation_interval: float = FLOAT_FIELD(value=0.5, default_value=0.5, valid_min=0, valid_max="inf", description="Validation interval in epochs")
     checkpoint_interval: float = FLOAT_FIELD(value=0.5, default_value=0.5, valid_min=0, valid_max="inf", description="Checkpoint interval in epochs")
     pretrained_model_path: Optional[str] = STR_FIELD(value=None, default_value="", description="Path to pretrained model")
-    logging: Sparse4DLoggingConfig = DATACLASS_FIELD(Sparse4DLoggingConfig())
     optim: Sparse4DOptimizerConfig = DATACLASS_FIELD(Sparse4DOptimizerConfig())
 
 
@@ -103,7 +94,11 @@ class Sparse4DBackboneConfig:
     style: str = STR_FIELD(value="pytorch", default_value="pytorch", description="ResNet style", valid_options="pytorch,caffe")
     with_cp: bool = BOOL_FIELD(value=True, default_value=True, description="Use checkpoint to save memory")
     out_indices: Tuple[int, ...] = LIST_FIELD(arrList=[0, 1, 2, 3], default_value=[0, 1, 2, 3], description="Output indices")
-    bn_frozen: bool = BOOL_FIELD(value=True, default_value=True, description="Freeze BatchNorm layers")
+    norm_cfg: Dict[str, Any] = DICT_FIELD(
+        hashMap={"type": "BN", "requires_grad": False},
+        description="Normalization configuration",
+        default_value={"type": "BN", "requires_grad": False}
+    )
     pretrained_backbone_path: Optional[str] = STR_FIELD(value=None, default_value="", description="Path to pretrained backbone weights")
 
 
@@ -111,7 +106,7 @@ class Sparse4DBackboneConfig:
 class Sparse4DNeckConfig:
     """Neck configuration for Sparse4D."""
 
-    type: str = STR_FIELD(value="fpn", default_value="fpn", description="Neck type", valid_options="fpn")
+    type: str = STR_FIELD(value="FPN", default_value="FPN", description="Neck type", valid_options="FPN")
     num_outs: int = INT_FIELD(value=4, default_value=4, valid_min=1, valid_max="inf", description="Number of output levels")
     start_level: int = INT_FIELD(value=0, default_value=0, valid_min=0, valid_max="inf", description="Start level for FPN")
     out_channels: int = INT_FIELD(value=256, default_value=256, valid_min=1, valid_max="inf", description="Output channels")
@@ -135,13 +130,27 @@ class Sparse4DInstanceBankConfig:
     """Instance bank configuration for Sparse4D."""
 
     num_anchor: int = INT_FIELD(value=900, default_value=900, valid_min=1, valid_max="inf", description="Number of anchors")
-    anchor: str = STR_FIELD(value=MISSING, default_value="", description="Path to anchor file")
+    anchor: str = STR_FIELD(value="", default_value="", description="Path to anchor file")
     num_temp_instances: int = INT_FIELD(value=600, default_value=600, valid_min=0, valid_max="inf", description="Number of temporal instances")
     confidence_decay: float = FLOAT_FIELD(value=0.8, default_value=0.8, valid_min=0, valid_max=1, description="Confidence decay factor")
     feat_grad: bool = BOOL_FIELD(value=False, default_value=False, description="Enable gradients for features")
     default_time_interval: float = FLOAT_FIELD(value=0.033333, default_value=0.033333, valid_min=0, valid_max="inf", description="Default time interval")
     embed_dims: int = INT_FIELD(value=256, default_value=256, valid_min=1, valid_max="inf", description="Embedding dimensions")
     use_temporal_align: bool = BOOL_FIELD(value=False, default_value=False, description="Use temporal alignment")
+
+@dataclass
+class Sparse4DAnchorEncoderConfig:
+    """Anchor encoder configuration for Sparse4D."""
+
+    type: str = STR_FIELD(value="SparseBox3DEncoder", default_value="SparseBox3DEncoder", description="Anchor encoder type")
+    vel_dims: int = INT_FIELD(value=3, default_value=3, valid_min=1, valid_max="inf", description="Velocity dimensions")
+    embed_dims: List[int] = LIST_FIELD(arrList=[128, 32, 32, 64], default_value=[128, 32, 32, 64], description="Embedding dimensions")
+    mode: str = STR_FIELD(value="cat", default_value="cat", description="Mode", valid_options="cat,add")
+    output_fc: bool = BOOL_FIELD(value=False, default_value=False, description="Output FC")
+    in_loops: int = INT_FIELD(value=1, default_value=1, valid_min=1, valid_max="inf", description="In loops")
+    out_loops: int = INT_FIELD(value=4, default_value=4, valid_min=1, valid_max="inf", description="Out loops")
+    pos_embed_only: bool = BOOL_FIELD(value=False, default_value=False, description="Pos embed only")
+
 
 @dataclass
 class Sparse4DKpsGeneratorConfig:
@@ -222,6 +231,16 @@ class Sparse4DLossConfig:
     id: Sparse4DLossIDConfig = DATACLASS_FIELD(Sparse4DLossIDConfig())
 
 
+
+@dataclass
+class Sparse4DDecoderConfig:
+    """Decoder configuration for Sparse4D."""
+
+    type: str = STR_FIELD(value="SparseBox3DDecoder", default_value="SparseBox3DDecoder", description="Decoder type")
+    score_threshold: float = FLOAT_FIELD(value=0.05, default_value=0.05, valid_min=0, valid_max=1, description="Score threshold")
+
+
+
 @dataclass
 class Sparse4DBNNeckConfig:
     """BNNeck configuration for Sparse4D."""
@@ -278,6 +297,56 @@ class Sparse4DDeformableModelConfig:
     attn_drop: float = FLOAT_FIELD(value=0.0, default_value=0.0, valid_min=0, valid_max=1, description="Attention dropout")
     kps_generator: Sparse4DKpsGeneratorConfig = DATACLASS_FIELD(Sparse4DKpsGeneratorConfig())
 
+@dataclass
+class Sparse4DRefineLayerConfig:
+    """Refine layer configuration for Sparse4D."""
+
+    type: str = STR_FIELD(value="sparse_box_3d_refinement_module", default_value="sparse_box_3d_refinement_module", description="Refine layer type")
+    embed_dims: int = INT_FIELD(value=256, default_value=256, valid_min=1, valid_max="inf", description="Embedding dimensions")
+    num_cls: int = INT_FIELD(value=8, default_value=8, valid_min=1, valid_max="inf", description="Number of classes")
+    refine_yaw: bool = BOOL_FIELD(value=True, default_value=True, description="Refine yaw")
+    with_quality_estimation: bool = BOOL_FIELD(value=True, default_value=True, description="With quality estimation")
+
+@dataclass  
+class Sparse4DGraphModelConfig:
+    """Graph model configuration for Sparse4D."""
+
+    type: str = STR_FIELD(value="multihead_attention", default_value="multihead_attention", description="Graph model type")
+    embed_dims: int = INT_FIELD(value=256, default_value=256, valid_min=1, valid_max="inf", description="Embedding dimensions")
+    num_heads: int = INT_FIELD(value=8, default_value=8, valid_min=1, valid_max="inf", description="Number of heads")
+    batch_first: bool = BOOL_FIELD(value=True, default_value=True, description="Batch first")
+    dropout: float = FLOAT_FIELD(value=0.1, default_value=0.1, valid_min=0, valid_max=1, description="Dropout rate")
+
+@dataclass
+class Sparse4DNormLayerConfig:
+    """Norm layer configuration for Sparse4D."""
+
+    type: str = STR_FIELD(value="ln", default_value="ln", description="Norm layer type")
+    normalized_shape: int = INT_FIELD(value=256, default_value=256, valid_min=1, valid_max="inf", description="Normalized shape")
+
+@dataclass
+class Sparse4DActConfig:
+    """Activation configuration for Sparse4D."""
+
+    type: str = STR_FIELD(value="relu", default_value="relu", description="Activation type")
+    inplace: bool = BOOL_FIELD(value=True, default_value=True, description="Inplace")
+
+
+
+@dataclass
+class Sparse4DFFNConfig:
+    """FFN configuration for Sparse4D."""
+
+    type: str = STR_FIELD(value="asymmetric_ffn", default_value="asymmetric_ffn", description="FFN type")
+    in_channels: int = INT_FIELD(value=512, default_value=512, valid_min=1, valid_max="inf", description="In channels")
+    pre_norm: Sparse4DNormLayerConfig = DATACLASS_FIELD(Sparse4DNormLayerConfig())
+    embed_dims: int = INT_FIELD(value=256, default_value=256, valid_min=1, valid_max="inf", description="Embedding dimensions")
+    feedforward_channels: int = INT_FIELD(value=1024, default_value=1024, valid_min=1, valid_max="inf", description="Feedforward channels")
+    num_fcs: int = INT_FIELD(value=2, default_value=2, valid_min=1, valid_max="inf", description="Number of feedforward channels")
+    ffn_drop: float = FLOAT_FIELD(value=0.1, default_value=0.1, valid_min=0, valid_max=1, description="FFN dropout")
+    act_cfg: Sparse4DActConfig = DATACLASS_FIELD(Sparse4DActConfig())
+
+
 
 @dataclass
 class Sparse4DHeadConfig:
@@ -300,6 +369,7 @@ class Sparse4DHeadConfig:
     operation_order: List[str] = LIST_FIELD(arrList=[], default_value=[], description="Operation order")
     visibility_net: Sparse4DVisibilityNetConfig = DATACLASS_FIELD(Sparse4DVisibilityNetConfig())
     instance_bank: Sparse4DInstanceBankConfig = DATACLASS_FIELD(Sparse4DInstanceBankConfig())
+    anchor_encoder: Sparse4DAnchorEncoderConfig = DATACLASS_FIELD(Sparse4DAnchorEncoderConfig())
     sampler: Sparse4DSamplerConfig = DATACLASS_FIELD(Sparse4DSamplerConfig())
     reg_weights: List[float] = LIST_FIELD(
         arrList=[2.0, 2.0, 2.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
@@ -309,7 +379,14 @@ class Sparse4DHeadConfig:
     loss: Sparse4DLossConfig = DATACLASS_FIELD(Sparse4DLossConfig())
     bnneck: Sparse4DBNNeckConfig = DATACLASS_FIELD(Sparse4DBNNeckConfig())
     deformable_model: Sparse4DDeformableModelConfig = DATACLASS_FIELD(Sparse4DDeformableModelConfig())
+    refine_layer: Sparse4DRefineLayerConfig = DATACLASS_FIELD(Sparse4DRefineLayerConfig())
     valid_vel_weight: float = FLOAT_FIELD(value=10.0, default_value=10.0, valid_min=0, valid_max="inf", description="Valid velocity weight")
+    graph_model: Sparse4DGraphModelConfig = DATACLASS_FIELD(Sparse4DGraphModelConfig())
+    temp_graph_model: Sparse4DGraphModelConfig = DATACLASS_FIELD(Sparse4DGraphModelConfig())
+    decoder: Sparse4DDecoderConfig = DATACLASS_FIELD(Sparse4DDecoderConfig())
+    norm_layer: Sparse4DNormLayerConfig = DATACLASS_FIELD(Sparse4DNormLayerConfig())
+    ffn: Sparse4DFFNConfig = DATACLASS_FIELD(Sparse4DFFNConfig())
+
 
 @dataclass
 class Sparse4DModelConfig:
@@ -353,7 +430,7 @@ class Sparse4DNormalizeConfig:
 class Sparse4DSequencesConfig:
     """Sequences configuration for Sparse4D."""
 
-    split_num: int = INT_FIELD(value=225, default_value=225, valid_min=1, valid_max="inf", description="Number of sequence splits")
+    split_num: int = INT_FIELD(value=100, default_value=100, valid_min=1, valid_max="inf", description="Number of sequence splits")
     keep_consistent_aug: bool = BOOL_FIELD(value=True, default_value=True, description="Keep consistent augmentation")
     same_scene_in_batch: bool = BOOL_FIELD(value=True, default_value=True, description="Keep same scene in batch")
 
