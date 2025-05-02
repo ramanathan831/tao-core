@@ -23,11 +23,13 @@ import subprocess
 import sys
 import tarfile
 import time
+import json
 import traceback
 
 from nvidia_tao_core.microservices.handlers.cloud_storage import CloudStorage
 from nvidia_tao_core.microservices.handlers.ngc_handler import download_ngc_model, split_ngc_path
 from nvidia_tao_core.microservices.handlers.nvcf_handler import invoke_function
+from nvidia_tao_core.microservices.handlers.stateless_handlers import get_internal_job_status_update_data
 
 
 logger = logging.getLogger(__name__)
@@ -517,57 +519,78 @@ def download_files_from_cloud(
 ):
     """Based on the cloud dype, download the file"""
     if "'link': 'https://" in value:
-        https_dictionary = ast.literal_eval(value)
-        link = https_dictionary.get("link", "")
-        destination_path = https_dictionary.get("destination_path", "ptm/download")
-        destination_folder = os.path.dirname(destination_path)
-        download_from_https_link(link, destination_folder)
-        dictionary[key] = destination_path
-        return destination_path
+        try:
+            https_dictionary = ast.literal_eval(value)
+            link = https_dictionary.get("link", "")
+            destination_path = https_dictionary.get("destination_path", "ptm/download")
+            destination_folder = os.path.dirname(destination_path)
+            download_from_https_link(link, destination_folder)
+            dictionary[key] = destination_path
+            return destination_path
+        except Exception as e:
+            logger.error("Error downloading public hosted file: %s", str(e))
+            logger.error(traceback.format_exc())
+            callback_data = get_internal_job_status_update_data(automl_experiment_number=os.getenv("AUTOML_EXPERIMENT_NUMBER", "0"), message=f"Error downloading public hosted file {value}")
+            status_callback(callback_data)
+            raise e
 
     if value.startswith("ngc://"):
-        if not ngc_key:
-            cleanup_cuda_contexts()
-            raise ValueError("NGC Personal key has not been provided")
-        ngc_model = value.split("ngc://")[-1]
-        org, team, model_name, model_version = split_ngc_path(ngc_model)
-        if not download_ngc_model(
-            ngc_model,
-            f"/ptm/{org}/{team}/{model_name}/{model_version}/model",
-            ngc_key,
-            is_cookie_set=tao_api_ui_cookie,
-            use_ngc_staging=use_ngc_staging
-        ):
-            cleanup_cuda_contexts()
-            raise ValueError("Unable to download the PTM")
-        ptm_path = search_for_ptm(f"/ptm/{org}/{team}/{model_name}/{model_version}/model", network_arch, key)
-        dictionary[key] = ptm_path
-        return ptm_path
+        try:
+            if not ngc_key:
+                cleanup_cuda_contexts()
+                raise ValueError("NGC Personal key has not been provided")
+            ngc_model = value.split("ngc://")[-1]
+            org, team, model_name, model_version = split_ngc_path(ngc_model)
+            if not download_ngc_model(
+                ngc_model,
+                f"/ptm/{org}/{team}/{model_name}/{model_version}/model",
+                ngc_key,
+                is_cookie_set=tao_api_ui_cookie,
+                use_ngc_staging=use_ngc_staging
+            ):
+                cleanup_cuda_contexts()
+                raise ValueError("Unable to download the PTM")
+            ptm_path = search_for_ptm(f"/ptm/{org}/{team}/{model_name}/{model_version}/model", network_arch, key)
+            dictionary[key] = ptm_path
+            return ptm_path
+        except Exception as e:
+            logger.error("Error downloading NGC model: %s", str(e))
+            logger.error(traceback.format_exc())
+            callback_data = get_internal_job_status_update_data(automl_experiment_number=os.getenv("AUTOML_EXPERIMENT_NUMBER", "0"), message=f"Error downloading NGC model {value}")
+            status_callback(callback_data)
+            raise e
 
     if "://" in value:
-        cloud_storage, cloud_file_path = get_cloud_storage_class_object(cloud_data, value)
-        local_path_of_dataset_file = f"/results/{job_id}/{cloud_file_path}"
-        if reset_value:
-            # Update the dictionary value with the local path
-            dictionary[key] = local_path_of_dataset_file.replace(".tar.gz", "")
-        destination_path = local_path_of_dataset_file
-        if cloud_file_path.startswith("/"):
-            cloud_file_path = cloud_file_path[1:]
+        try:
+            cloud_storage, cloud_file_path = get_cloud_storage_class_object(cloud_data, value)
+            local_path_of_dataset_file = f"/results/{job_id}/{cloud_file_path}"
+            if reset_value:
+                # Update the dictionary value with the local path
+                dictionary[key] = local_path_of_dataset_file.replace(".tar.gz", "")
+            destination_path = local_path_of_dataset_file
+            if cloud_file_path.startswith("/"):
+                cloud_file_path = cloud_file_path[1:]
 
-        if cloud_storage.is_file(cloud_file_path):
-            cloud_storage.download_file(cloud_file_path, destination_path)
-            if cloud_file_path.endswith(".tar") or cloud_file_path.endswith(".tar.gz"):
-                _extract_images(destination_path, os.path.dirname(destination_path))
-        else:
-            cloud_storage.download_folder(cloud_file_path, destination_path)
-            for root, _, files in os.walk(destination_path):
-                for file in files:
-                    abs_filepath = os.path.join(root, file)
-                    if abs_filepath.endswith(".tar") or abs_filepath.endswith(".tar.gz"):
-                        _extract_images(abs_filepath, os.path.dirname(abs_filepath))
+            if cloud_storage.is_file(cloud_file_path):
+                cloud_storage.download_file(cloud_file_path, destination_path)
+                if cloud_file_path.endswith(".tar") or cloud_file_path.endswith(".tar.gz"):
+                    _extract_images(destination_path, os.path.dirname(destination_path))
+            else:
+                cloud_storage.download_folder(cloud_file_path, destination_path)
+                for root, _, files in os.walk(destination_path):
+                    for file in files:
+                        abs_filepath = os.path.join(root, file)
+                        if abs_filepath.endswith(".tar") or abs_filepath.endswith(".tar.gz"):
+                            _extract_images(abs_filepath, os.path.dirname(abs_filepath))
 
-        logger.info("Downloaded: {}".format(cloud_file_path))  # noqa pylint: disable=C0209
-        return local_path_of_dataset_file.replace(".tar.gz", "")
+            logger.info("Downloaded: {}".format(cloud_file_path))  # noqa pylint: disable=C0209
+            return local_path_of_dataset_file.replace(".tar.gz", "")
+        except Exception as e:
+            logger.error("Error downloading cloud file: %s", str(e))
+            logger.error(traceback.format_exc())
+            callback_data = get_internal_job_status_update_data(automl_experiment_number=os.getenv("AUTOML_EXPERIMENT_NUMBER", "0"), message=f"Error downloading cloud file {value}")
+            status_callback(callback_data)
+            raise e
     return None
 
 
