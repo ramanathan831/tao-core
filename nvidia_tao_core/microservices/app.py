@@ -1525,7 +1525,7 @@ def metrics_upsert():
     metrics['last_updated'] = now.isoformat()
 
     def sanitize_gpu_name(gpu_name):
-        # Convert to uppercase first, then sanitize
+        # Convert to uppercase first, then replace all non-alphanumeric characters with -
         return re.sub("[^a-zA-Z0-9]", "-", gpu_name.upper())
 
     def create_gpu_identifier(gpu_list):
@@ -1534,8 +1534,8 @@ def metrics_upsert():
         for gpu in map(sanitize_gpu_name, gpu_list):
             gpu_counts[gpu] = gpu_counts.get(gpu, 0) + 1
 
-        # Format as "total_gpu1:count_gpu2:count..."
-        gpu_parts = [f"{gpu}:{count}" for gpu, count in sorted(gpu_counts.items())]
+        # Format as "gpu_count_gpu1_count_gpu2_count..."
+        gpu_parts = [f"{gpu}_{count}" for gpu, count in sorted(gpu_counts.items())]
         return f"{len(gpu_list)}_{'_'.join(gpu_parts)}"
 
     # Build metric name with all attributes
