@@ -86,7 +86,7 @@ class Sparse4DTrainConfig(TrainConfig):
 class Sparse4DBackboneConfig:
     """Backbone configuration for Sparse4D."""
 
-    type: str = STR_FIELD(value="resnet", default_value="resnet", description="Backbone type", valid_options="resnet")
+    type: str = STR_FIELD(value="ResNet", default_value="ResNet", description="Backbone type", valid_options="resnet")
     depth: int = INT_FIELD(value=101, default_value=101, valid_min=18, valid_max=152, description="ResNet depth", valid_options="18,34,50,101,152")
     num_stages: int = INT_FIELD(value=4, default_value=4, valid_min=1, valid_max=4, description="Number of stages")
     frozen_stages: int = INT_FIELD(value=-1, default_value=-1, valid_min=-1, valid_max=4, description="Frozen stages (-1 for none)")
@@ -174,7 +174,7 @@ class Sparse4DLossClsConfig:
 @dataclass
 class Sparse4DTrainDatasetConfig:
     """Training dataset configuration for Sparse4D."""
-    
+
     ann_file: str = STR_FIELD(value=MISSING, default_value="", description="Path to annotation file")
     test_mode: bool = BOOL_FIELD(value=False, default_value=False, description="Test mode")
     use_valid_flag: bool = BOOL_FIELD(value=True, default_value=True, description="Use valid flag")
@@ -186,7 +186,7 @@ class Sparse4DTrainDatasetConfig:
 @dataclass
 class Sparse4DValDatasetConfig:
     """Validation dataset configuration for Sparse4D."""
-    
+
     ann_file: str = STR_FIELD(value=MISSING, default_value="", description="Path to annotation file")
     test_mode: bool = BOOL_FIELD(value=False, default_value=False, description="Test mode")
     use_valid_flag: bool = BOOL_FIELD(value=True, default_value=True, description="Use valid flag")
@@ -197,7 +197,7 @@ class Sparse4DValDatasetConfig:
 @dataclass
 class Sparse4DTestDatasetConfig:
     """Test dataset configuration for Sparse4D."""
-    
+
     ann_file: str = STR_FIELD(value=MISSING, default_value="", description="Path to annotation file")
     test_mode: bool = BOOL_FIELD(value=True, default_value=True, description="Test mode")
     use_valid_flag: bool = BOOL_FIELD(value=True, default_value=True, description="Use valid flag")
@@ -265,8 +265,8 @@ class Sparse4DSamplerConfig:
     num_dn_groups: int = INT_FIELD(value=5, default_value=5, valid_min=1, valid_max="inf", description="Number of DN groups")
     num_temp_dn_groups: int = INT_FIELD(value=3, default_value=3, valid_min=0, valid_max="inf", description="Number of temporal DN groups")
     dn_noise_scale: List[float] = LIST_FIELD(
-        arrList=[2.0, 2.0, 2.0, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5], 
-        default_value=[2.0, 2.0, 2.0, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5], 
+        arrList=[2.0, 2.0, 2.0, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5],
+        default_value=[2.0, 2.0, 2.0, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5],
         description="DN noise scale"
     )
     max_dn_gt: int = INT_FIELD(value=32, default_value=32, valid_min=1, valid_max="inf", description="Maximum DN ground truth")
@@ -279,6 +279,7 @@ class Sparse4DSamplerConfig:
         description="Regression weights"
     )
     use_temporal_align: bool = BOOL_FIELD(value=False, default_value=False, description="Use temporal alignment")
+
 
 @dataclass
 class Sparse4DDeformableModelConfig:
@@ -297,6 +298,7 @@ class Sparse4DDeformableModelConfig:
     attn_drop: float = FLOAT_FIELD(value=0.0, default_value=0.0, valid_min=0, valid_max=1, description="Attention dropout")
     kps_generator: Sparse4DKpsGeneratorConfig = DATACLASS_FIELD(Sparse4DKpsGeneratorConfig())
 
+
 @dataclass
 class Sparse4DRefineLayerConfig:
     """Refine layer configuration for Sparse4D."""
@@ -307,30 +309,32 @@ class Sparse4DRefineLayerConfig:
     refine_yaw: bool = BOOL_FIELD(value=True, default_value=True, description="Refine yaw")
     with_quality_estimation: bool = BOOL_FIELD(value=True, default_value=True, description="With quality estimation")
 
-@dataclass  
+
+@dataclass
 class Sparse4DGraphModelConfig:
     """Graph model configuration for Sparse4D."""
 
-    type: str = STR_FIELD(value="multihead_attention", default_value="multihead_attention", description="Graph model type")
-    embed_dims: int = INT_FIELD(value=256, default_value=256, valid_min=1, valid_max="inf", description="Embedding dimensions")
+    type: str = STR_FIELD(value="MultiheadAttention", default_value="MultiheadAttention", description="Graph model type")
+    embed_dims: int = INT_FIELD(value=512, default_value=512, valid_min=1, valid_max="inf", description="Embedding dimensions")
     num_heads: int = INT_FIELD(value=8, default_value=8, valid_min=1, valid_max="inf", description="Number of heads")
     batch_first: bool = BOOL_FIELD(value=True, default_value=True, description="Batch first")
     dropout: float = FLOAT_FIELD(value=0.1, default_value=0.1, valid_min=0, valid_max=1, description="Dropout rate")
+
 
 @dataclass
 class Sparse4DNormLayerConfig:
     """Norm layer configuration for Sparse4D."""
 
-    type: str = STR_FIELD(value="ln", default_value="ln", description="Norm layer type")
+    type: str = STR_FIELD(value="LN", default_value="LN", description="Norm layer type")
     normalized_shape: int = INT_FIELD(value=256, default_value=256, valid_min=1, valid_max="inf", description="Normalized shape")
+
 
 @dataclass
 class Sparse4DActConfig:
     """Activation configuration for Sparse4D."""
 
-    type: str = STR_FIELD(value="relu", default_value="relu", description="Activation type")
+    type: str = STR_FIELD(value="ReLU", default_value="ReLU", description="Activation type")
     inplace: bool = BOOL_FIELD(value=True, default_value=True, description="Inplace")
-
 
 
 @dataclass
@@ -357,7 +361,7 @@ class Sparse4DHeadConfig:
     cls_threshold_to_reg: float = FLOAT_FIELD(value=0.05, default_value=0.05, valid_min=0, valid_max=1, description="Classification threshold for regression")
     decouple_attn: bool = BOOL_FIELD(value=True, default_value=True, description="Decouple attention")
     return_feature: bool = BOOL_FIELD(value=True, default_value=True, description="Return instance features")
-    use_reid_sampling: bool = BOOL_FIELD(value=True, default_value=True, description="Use Re-ID sampling")
+    use_reid_sampling: bool = BOOL_FIELD(value=False, default_value=False, description="Use Re-ID sampling")
     embed_dims: int = INT_FIELD(value=256, default_value=256, valid_min=1, valid_max="inf", description="Embedding dimensions")
     reid_dims: int = INT_FIELD(value=0, default_value=0, valid_min=1, valid_max="inf", description="Re-ID dimensions")
     num_groups: int = INT_FIELD(value=8, default_value=8, valid_min=1, valid_max="inf", description="Number of groups")
@@ -366,7 +370,7 @@ class Sparse4DHeadConfig:
     drop_out: float = FLOAT_FIELD(value=0.1, default_value=0.1, valid_min=0, valid_max=1, description="Dropout rate")
     temporal: bool = BOOL_FIELD(value=True, default_value=True, description="Enable temporal modeling")
     with_quality_estimation: bool = BOOL_FIELD(value=True, default_value=True, description="Enable quality estimation")
-    operation_order: List[str] = LIST_FIELD(arrList=[], default_value=[], description="Operation order")
+    operation_order: List[str] = LIST_FIELD(arrList=["deformable", "ffn", "norm", "refine", "temp_gnn", "gnn", "norm", "deformable", "ffn", "norm", "refine", "temp_gnn", "gnn", "norm", "deformable", "ffn", "norm", "refine", "temp_gnn", "gnn", "norm", "deformable", "ffn", "norm", "refine", "temp_gnn", "gnn", "norm", "deformable", "ffn", "norm", "refine"], default_value=["deformable", "ffn", "norm", "refine", "temp_gnn", "gnn", "norm", "deformable", "ffn", "norm", "refine", "temp_gnn", "gnn", "norm", "deformable", "ffn", "norm", "refine", "temp_gnn", "gnn", "norm", "deformable", "ffn", "norm", "refine", "temp_gnn", "gnn", "norm", "deformable", "ffn", "norm", "refine"], description="Operation order")
     visibility_net: Sparse4DVisibilityNetConfig = DATACLASS_FIELD(Sparse4DVisibilityNetConfig())
     instance_bank: Sparse4DInstanceBankConfig = DATACLASS_FIELD(Sparse4DInstanceBankConfig())
     anchor_encoder: Sparse4DAnchorEncoderConfig = DATACLASS_FIELD(Sparse4DAnchorEncoderConfig())
@@ -450,11 +454,12 @@ class Omniverse3DDetTrackDatasetConfig:
     type: str = STR_FIELD(value="omniverse_3d_det_track", default_value="omniverse_3d_det_track", description="Dataset type")
     batch_size: int = INT_FIELD(value=2, default_value=2, valid_min=1, valid_max="inf", description="Batch size")
     use_h5_file: bool = BOOL_FIELD(value=True, default_value=True, description="Use H5 file")
+    num_frames: int = INT_FIELD(value=200, default_value=200, valid_min=1, valid_max="inf", description="Number of frames")
     num_bev_groups: int = INT_FIELD(value=1, default_value=1, valid_min=1, valid_max="inf", description="Number of BEV groups")
     data_root: str = STR_FIELD(value=MISSING, default_value="", description="Path to data root")
     anno_root: str = STR_FIELD(value=MISSING, default_value="", description="Path to annotation root")
-    classes: List[str] = LIST_FIELD(arrList=["person", "nova_carter", "transporter", "forklift", "box", "pallet", "crate"], 
-                                  default_value=["person", "nova_carter", "transporter", "forklift", "box", "pallet", "crate"], 
+    classes: List[str] = LIST_FIELD(arrList=["person", "humanoid", "nova_carter", "transporter", "forklift", "box", "pallet", "crate"],
+                                  default_value=["person", "humanoid", "nova_carter", "transporter", "forklift", "box", "pallet", "crate"],
                                   description="Classes to detect")
     num_workers: int = INT_FIELD(value=4, default_value=4, valid_min=0, valid_max="inf", description="Number of workers")
     num_ids: int = INT_FIELD(value=70, default_value=70, valid_min=1, valid_max="inf", description="Number of IDs")
@@ -465,12 +470,14 @@ class Omniverse3DDetTrackDatasetConfig:
     val_dataset: Sparse4DValDatasetConfig = DATACLASS_FIELD(Sparse4DValDatasetConfig())
     test_dataset: Sparse4DTestDatasetConfig = DATACLASS_FIELD(Sparse4DTestDatasetConfig())
 
+
 @dataclass
 class Sparse4DEvaluateConfig(EvaluateConfig):
     """Evaluation configuration for Sparse4D."""
 
     metrics: List[str] = LIST_FIELD(arrList=["detection"], default_value=["detection"], description="Metrics to evaluate")
     tracking: Sparse4DTrackingConfig = DATACLASS_FIELD(Sparse4DTrackingConfig())
+
 
 @dataclass
 class Sparse4DInferenceConfig(InferenceConfig):
@@ -481,12 +488,14 @@ class Sparse4DInferenceConfig(InferenceConfig):
     output_nvschema: bool = BOOL_FIELD(value=True, default_value=True, description="Output NVSchema")
     tracking: Sparse4DTrackingConfig = DATACLASS_FIELD(Sparse4DTrackingConfig())
 
+
 @dataclass
 class Sparse4DExportConfig(ExportConfig):
     """Export configuration for Sparse4D."""
 
     gpu_id: int = INT_FIELD(value=0, default_value=0, valid_min=0, valid_max="inf", description="GPU ID for export")
     onnx_file: str = STR_FIELD(value=MISSING, default_value="${export.results_dir}/sparse4d.onnx", description="Path to output ONNX file")
+
 
 @dataclass
 class Sparse4DVisConfig:
@@ -497,7 +506,7 @@ class Sparse4DVisConfig:
     vis_score_threshold: float = FLOAT_FIELD(value=0.25, default_value=0.25, valid_min=0, valid_max=1, description="Visualization score threshold")
     n_images_col: int = INT_FIELD(value=6, default_value=6, valid_min=1, valid_max="inf", description="Number of images per column")
     viz_down_sample: int = INT_FIELD(value=3, default_value=3, valid_min=1, valid_max="inf", description="Visualization down sample")
-    
+
 
 @dataclass
 class ExperimentConfig(CommonExperimentConfig):
