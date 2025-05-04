@@ -160,23 +160,27 @@ class Sparse4DKpsGeneratorConfig:
 
     embed_dims: int = INT_FIELD(value=256, default_value=256, valid_min=1, valid_max="inf", description="Embedding dimensions")
     num_learnable_pts: int = INT_FIELD(value=6, default_value=6, valid_min=1, valid_max="inf", description="Number of learnable points")
-    fix_scale: List[List[Any]] = LIST_FIELD(arrList=[
-        [0, 0, 0],
-        [0.45, 0, 0],
-        [-0.45, 0, 0],
-        [0, 0.45, 0],
-        [0, -0.45, 0],
-        [0, 0, 0.45],
-        [0, 0, -0.45]
-    ], default_value=[
-        [0, 0, 0],
-        [0.45, 0, 0],
-        [-0.45, 0, 0],
-        [0, 0.45, 0],
-        [0, -0.45, 0],
-        [0, 0, 0.45],
-        [0, 0, -0.45]
-    ], description="Fixed scale")
+    fix_scale: List[List[Any]] = LIST_FIELD(
+        arrList=[
+            [0, 0, 0],
+            [0.45, 0, 0],
+            [-0.45, 0, 0],
+            [0, 0.45, 0],
+            [0, -0.45, 0],
+            [0, 0, 0.45],
+            [0, 0, -0.45]
+        ],
+        default_value=[
+            [0, 0, 0],
+            [0.45, 0, 0],
+            [-0.45, 0, 0],
+            [0, 0.45, 0],
+            [0, -0.45, 0],
+            [0, 0, 0.45],
+            [0, 0, -0.45]
+        ],
+        description="Fixed scale"
+    )
 
 
 @dataclass
@@ -389,21 +393,25 @@ class Sparse4DHeadConfig:
     drop_out: float = FLOAT_FIELD(value=0.1, default_value=0.1, valid_min=0, valid_max=1, description="Dropout rate")
     temporal: bool = BOOL_FIELD(value=True, default_value=True, description="Enable temporal modeling")
     with_quality_estimation: bool = BOOL_FIELD(value=True, default_value=True, description="Enable quality estimation")
-    operation_order: List[str] = LIST_FIELD(arrList=[
-        "deformable", "ffn", "norm", "refine", "temp_gnn", "gnn", "norm",
-        "deformable", "ffn", "norm", "refine", "temp_gnn", "gnn", "norm",
-        "deformable", "ffn", "norm", "refine", "temp_gnn", "gnn", "norm",
-        "deformable", "ffn", "norm", "refine", "temp_gnn", "gnn", "norm",
-        "deformable", "ffn", "norm", "refine", "temp_gnn", "gnn", "norm",
-        "deformable", "ffn", "norm", "refine"
-    ], default_value=[
-        "deformable", "ffn", "norm", "refine", "temp_gnn", "gnn", "norm",
-        "deformable", "ffn", "norm", "refine", "temp_gnn", "gnn", "norm",
-        "deformable", "ffn", "norm", "refine", "temp_gnn", "gnn", "norm",
-        "deformable", "ffn", "norm", "refine", "temp_gnn", "gnn", "norm",
-        "deformable", "ffn", "norm", "refine", "temp_gnn", "gnn", "norm",
-        "deformable", "ffn", "norm", "refine"
-    ], description="Operation order")
+    operation_order: List[str] = LIST_FIELD(
+        arrList=[
+            "deformable", "ffn", "norm", "refine", "temp_gnn", "gnn", "norm",
+            "deformable", "ffn", "norm", "refine", "temp_gnn", "gnn", "norm",
+            "deformable", "ffn", "norm", "refine", "temp_gnn", "gnn", "norm",
+            "deformable", "ffn", "norm", "refine", "temp_gnn", "gnn", "norm",
+            "deformable", "ffn", "norm", "refine", "temp_gnn", "gnn", "norm",
+            "deformable", "ffn", "norm", "refine"
+        ],
+        default_value=[
+            "deformable", "ffn", "norm", "refine", "temp_gnn", "gnn", "norm",
+            "deformable", "ffn", "norm", "refine", "temp_gnn", "gnn", "norm",
+            "deformable", "ffn", "norm", "refine", "temp_gnn", "gnn", "norm",
+            "deformable", "ffn", "norm", "refine", "temp_gnn", "gnn", "norm",
+            "deformable", "ffn", "norm", "refine", "temp_gnn", "gnn", "norm",
+            "deformable", "ffn", "norm", "refine"
+        ],
+        description="Operation order"
+    )
     visibility_net: Sparse4DVisibilityNetConfig = DATACLASS_FIELD(Sparse4DVisibilityNetConfig())
     instance_bank: Sparse4DInstanceBankConfig = DATACLASS_FIELD(Sparse4DInstanceBankConfig())
     anchor_encoder: Sparse4DAnchorEncoderConfig = DATACLASS_FIELD(Sparse4DAnchorEncoderConfig())
@@ -491,9 +499,11 @@ class Omniverse3DDetTrackDatasetConfig:
     num_bev_groups: int = INT_FIELD(value=1, default_value=1, valid_min=1, valid_max="inf", description="Number of BEV groups")
     data_root: str = STR_FIELD(value=MISSING, default_value="", description="Path to data root")
     anno_root: str = STR_FIELD(value=MISSING, default_value="", description="Path to annotation root")
-    classes: List[str] = LIST_FIELD(arrList=["person", "humanoid", "nova_carter", "transporter", "forklift", "box", "pallet", "crate"],
-                                  default_value=["person", "humanoid", "nova_carter", "transporter", "forklift", "box", "pallet", "crate"],
-                                  description="Classes to detect")
+    classes: List[str] = LIST_FIELD(
+        arrList=["person", "humanoid", "nova_carter", "transporter", "forklift", "box", "pallet", "crate"],
+        default_value=["person", "humanoid", "nova_carter", "transporter", "forklift", "box", "pallet", "crate"],
+        description="Classes to detect"
+    )
     num_workers: int = INT_FIELD(value=4, default_value=4, valid_min=0, valid_max="inf", description="Number of workers")
     num_ids: int = INT_FIELD(value=70, default_value=70, valid_min=1, valid_max="inf", description="Number of IDs")
     augmentation: Sparse4DAugmentationConfig = DATACLASS_FIELD(Sparse4DAugmentationConfig())
