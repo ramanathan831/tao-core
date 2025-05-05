@@ -95,7 +95,7 @@ def search_for_ptm(root, network="", parameter_name=""):
         glob.glob(root + "/**/*.pt", recursive=True)
     )
     # TODO: remove after next nvaie release, Varun and Subha
-    if network == "classification_pyt":
+    if network in ("classification_pyt", "visual_changenet"):
         models += glob.glob(root + "/**/*.ckpt", recursive=True)
     if network in ("classification_tf2", "efficientdet_tf2"):
         models = [os.path.join(root, os.listdir(root)[0])]

@@ -337,13 +337,6 @@ def download_ngc_model(ngc_path, ptm_root, key, is_cookie_set, use_ngc_staging):
     if ngc_path == "":
         logger.info("Invalid ngc path.")
         return False
-    if not key.startswith("nvapi"):
-        logger.info(
-            'Credentials error: Invalid NGC_PERSONAL_KEY, NGC_keys are no longer valid, '
-            'generate a personal key with Cloud Functions, NGC Catalog and Private registry services '
-            'https://org.ngc.nvidia.com/setup/personal-keys'
-        )
-        return False
     ngc_configs = ngc_path.split('/')
     org = ngc_configs[0]
     team = ""
@@ -457,3 +450,20 @@ def get_org_products(user_id, org_name):
             if product_enablement.get("productName", "") in ("TAO", "MONAI", "MAXINE"):
                 products.append(product_enablement.get("productName"))
     return products
+
+
+def get_ngc_token_from_api_key(ngc_api_key, org=None, team=None):
+    """Get NGC token from API key"""
+    url = "https://authn.nvidia.com/token"
+    params = {"service": "ngc", "scope": "group/ngc"}
+    if org:
+        params["scope"] = f"group/ngc:{org}"
+    if team:
+        params["scope"] += f"&group/ngc:{org}/{team}"
+    headers = {"Accept": "application/json"}
+    auth = ("$oauthtoken", ngc_api_key)
+    response = requests.get(url, headers=headers, auth=auth, params=params, timeout=TIMEOUT)
+    if response.status_code == 200:
+        return response.json()["token"]
+    logger.error(f"Failed to get NGC token from API key: {response.text}, {response.status_code}")
+    return None

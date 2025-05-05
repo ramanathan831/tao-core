@@ -22,7 +22,10 @@ import jwt
 import logging
 
 from nvidia_tao_core.microservices.auth_utils.session import __SESSION_EXPIRY_SECONDS__, _SESSION_REFRESH_SECONDS__
-from nvidia_tao_core.microservices.handlers.ngc_handler import get_user_key, get_user_info
+from nvidia_tao_core.microservices.handlers.ngc_handler import (
+    get_user_key,
+    get_user_info,
+)
 from nvidia_tao_core.microservices.handlers.encrypt import NVVaultEncryption
 from nvidia_tao_core.microservices.handlers.mongo_handler import MongoHandler
 
