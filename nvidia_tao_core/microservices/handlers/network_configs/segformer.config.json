@@ -49,6 +49,7 @@
     "spec_params":{
         "train": {
             "results_dir": "output_dir",
+            "model.backbone.pretrained_backbone_path":"ptm_if_no_resume_model",
             "train.pretrained_model_path": "ptm_if_no_resume_model",
             "train.resume_training_checkpoint_path":"resume_model",
             "encryption_key":"key"
@@ -81,6 +82,7 @@
 
     "automl_spec_params":{
         "results_dir":"automl_output_dir",
+        "model.backbone.pretrained_backbone_path":"automl_assign_ptm",
         "train.pretrained_model_path":"automl_assign_ptm",
         "train.resume_training_checkpoint_path":"automl_resume_model",
         "train.checkpoint_interval":"assign_const_value,train.num_epochs",
