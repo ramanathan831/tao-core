@@ -62,7 +62,10 @@ class RTDistillationConfig(DistillationConfig):
     bindings: List[DistillationBindingConfig] = LIST_FIELD(
         arrList=[],
         default_value=[],
-        description="List of bindings for distillation. Each element is an instance of RTModelDistillationBindingConfig.",
+        description=(
+            "List of bindings for distillation. Each element is an instance of "
+            "RTModelDistillationBindingConfig."
+        ),
         display_name="bindings"
     )
     results_dir: Optional[str] = STR_FIELD(

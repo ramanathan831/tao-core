@@ -40,8 +40,10 @@ class DDTrtConfig(TrtConfig):
     )
     calibration: CalibrationConfig = DATACLASS_FIELD(
         CalibrationConfig(),
-        description="""The configuration elements to define the
-                    TensorRT calibrator for int8 PTQ.""",
+        description=(
+            "The configuration elements to define the "
+            "TensorRT calibrator for int8 PTQ."
+        ),
     )
 
 

@@ -408,7 +408,24 @@ class Trainargs:
         display_name="ignore_tags"
     )
     pre_processes: Optional[List[Dict[Any, Any]]] = LIST_FIELD(
-        arrList=[{"args": {"keep_ratio": True, "max_tries": 50, "size": [640, 640]}, "type": "EastRandomCropData"}, {"args": {"shrink_ratio": 0.4, "thresh_max": 0.7, "thresh_min": 0.3}, "type": "MakeBorderMap"}, {"args": {"min_text_size": 8, "shrink_ratio": 0.4}, "type": "MakeShrinkMap"}],
+        arrList=[
+            {
+                "args": {
+                    "keep_ratio": True,
+                    "max_tries": 50,
+                    "size": [640, 640]
+                },
+                "type": "EastRandomCropData"
+            },
+            {
+                "args": {
+                    "shrink_ratio": 0.4,
+                    "thresh_max": 0.7,
+                    "thresh_min": 0.3
+                },
+                "type": "MakeBorderMap"
+            }
+        ],
         description="The pre-processing configuration.",
         display_name="pre_processes"
     )

@@ -237,7 +237,10 @@ class DINOModelConfig:
     dn_box_noise_scale: float = FLOAT_FIELD(
         value=1.0,
         default_value=1.0,
-        description="The scale of noise applied to boxes during contrastive de-noising. If this value is 0, noise is not applied.",
+        description=(
+            "The scale of noise applied to boxes during contrastive de-noising. "
+            "If this value is 0, noise is not applied."
+        ),
         display_name="Denoised boxes noise scaling",
         valid_min=0.0,
         valid_max="inf",

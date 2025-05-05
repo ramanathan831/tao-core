@@ -12,4 +12,4 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Classification_pyt config module."""
+"""Classification_pl config module."""

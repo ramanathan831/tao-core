@@ -114,7 +114,11 @@ class CenterPoseDatasetConfig:
         description="Eigenvalues for color data augmentation from CenterNet."
     )
     _eig_vec: List[List[float]] = LIST_FIELD(
-        arrList=[[-0.58752847, -0.69563484, 0.41340352], [-0.5832747, 0.00994535, -0.81221408], [-0.56089297, 0.71832671, 0.41158938]],
+        arrList=[
+            [-0.58752847, -0.69563484, 0.41340352],
+            [-0.5832747, 0.00994535, -0.81221408],
+            [-0.56089297, 0.71832671, 0.41158938]
+        ],
         description="Eigenvectors for color data augmentation from CenterNet."
     )
     category: str = STR_FIELD(

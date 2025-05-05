@@ -69,7 +69,9 @@ class DINODistillationConfig(DistillationConfig):
     bindings: List[DINOModelDistillationBindingConfig] = LIST_FIELD(
         arrList=[],
         default_value=[],
-        description="List of bindings for Distillation. Each element is an instance of DINOModelDistillationBindingConfig.",
+        description=(
+            "List of bindings for Distillation. Each element is an instance of DINOModelDistillationBindingConfig."
+        ),
         display_name="bindings"
     )
     results_dir: Optional[str] = STR_FIELD(

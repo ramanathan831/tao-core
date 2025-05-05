@@ -55,10 +55,22 @@ setuptools.setup(
     keywords=version_locals['__keywords__'],
     packages=setuptools_packages,
     package_data={
-        '': ['*.py', "*.pyc", "*.yaml", "*.so", "*.pdf"]
+        '': ['*.py', "*.pyc", "*.yaml", "*.so", "*.pdf"],
+        'nvidia_tao_core.microservices': [
+            'pretrained_models.csv',
+            '*.sh',
+            'uwsgi.ini',
+            'handlers/network_configs/*'
+        ]
     },
     include_package_data=True,
     zip_safe=False,
-    install_requires=read_requirements()
+    install_requires=read_requirements(),
+    entry_points={
+        'console_scripts': [
+            'finetuning-microservice=nvidia_tao_core.microservices.app:main',
+            'get-microservice-script=nvidia_tao_core.microservices.utils:print_start_script_path',
+        ],
+    },
 )
 

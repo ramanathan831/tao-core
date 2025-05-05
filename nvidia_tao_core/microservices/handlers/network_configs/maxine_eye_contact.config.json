@@ -1,0 +1,23 @@
+{
+    "api_params": {
+        "dataset_type":"maxine_eye_contact",
+        "actions": ["train", "dataset_convert"],
+        "formats":["default"],
+        "accepted_ds_intents": ["training", "evaluation"],
+        "image":"MAXINE_DLDK",
+        "spec_backend":"yaml",
+        "actions_pipe":{
+            "train":"train"
+        }
+    },
+    
+    "spec_params":{
+        "train":{
+            "results_dir":"output_dir",
+            "load_model_from_ckpt": "ptm_if_no_resume_model"
+        },
+        "dataset_convert":{
+            "results_dir":"output_dir"
+        }
+    }
+}

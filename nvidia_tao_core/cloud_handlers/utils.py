@@ -25,9 +25,9 @@ import tarfile
 import time
 import traceback
 
-from nvidia_tao_core.cloud_handlers.cloud_storage import CloudStorage
-from nvidia_tao_core.cloud_handlers.ngc_handler import download_ngc_model, split_ngc_path
-from nvidia_tao_core.cloud_handlers.nvcf_handler import invoke_function
+from nvidia_tao_core.microservices.handlers.cloud_storage import CloudStorage
+from nvidia_tao_core.microservices.handlers.ngc_handler import download_ngc_model, split_ngc_path
+from nvidia_tao_core.microservices.handlers.nvcf_handler import invoke_function
 
 
 logger = logging.getLogger(__name__)
@@ -86,7 +86,13 @@ def _extract_images(tar_path, dest):
 def search_for_ptm(root, network="", parameter_name=""):
     """Return path of the PTM file under the PTM root folder"""
     models = None
-    models = glob.glob(root + "/**/*.tlt", recursive=True) + glob.glob(root + "/**/*.hdf5", recursive=True) + glob.glob(root + "/**/*.pth", recursive=True) + glob.glob(root + "/**/*.pth.tar", recursive=True) + glob.glob(root + "/**/*.pt", recursive=True)
+    models = (
+        glob.glob(root + "/**/*.tlt", recursive=True) +
+        glob.glob(root + "/**/*.hdf5", recursive=True) +
+        glob.glob(root + "/**/*.pth", recursive=True) +
+        glob.glob(root + "/**/*.pth.tar", recursive=True) +
+        glob.glob(root + "/**/*.pt", recursive=True)
+    )
     # TODO: remove after next nvaie release, Varun and Subha
     if network == "classification_pyt":
         models += glob.glob(root + "/**/*.ckpt", recursive=True)
@@ -101,6 +107,10 @@ def search_for_ptm(root, network="", parameter_name=""):
         model_path = models[0]  # pick one arbitrarily
         logger.info("Found valid PTM at {}".format(model_path)) # noqa pylint: disable=C0209
         return model_path
+    if os.path.exists(root):
+        if network == "vila":
+            return os.path.join(root, "nvila_vnvila-15b-highres")
+        return root
     logger.info("PTM can't be found")
     return None
 
@@ -133,7 +143,11 @@ def download_from_https_link(download_url, destination_folder):
         download_url (str): The URL of the file to download.
         destination_folder (str): The destination folder where the file will be saved.
     """
-    cmnd = f"until wget --timeout=1 --tries=1 --retry-connrefused --no-verbose --directory-prefix={destination_folder}/ {download_url}; do sleep 10; done"
+    cmnd = (
+        f"until wget --timeout=1 --tries=1 --retry-connrefused "
+        f"--no-verbose --directory-prefix={destination_folder}/ {download_url}; "
+        f"do sleep 10; done"
+    )
     run_subprocess_command(cmnd)
     file_name = download_url.split("/")[-1]
     if file_name.endswith(".tar") or file_name.endswith(".tar.gz"):
@@ -198,12 +212,22 @@ def initialize_cloud_storage(cloud_type, bucket_name, region, access_key, secret
     Returns:
         CloudStorage: Initialized CloudStorage instance.
     """
-    return CloudStorage(cloud_type=cloud_type, bucket_name=bucket_name, region=region, access_key=access_key, secret_key=secret_key)
+    return CloudStorage(
+        cloud_type=cloud_type,
+        bucket_name=bucket_name,
+        region=region,
+        access_key=access_key,
+        secret_key=secret_key
+    )
 
 
 def search_for_dataset(root):
     """Return path of the dataset file"""
-    datasets = glob.glob(root + "/*.tar.gz", recursive=False) + glob.glob(root + "/*.tgz", recursive=False) + glob.glob(root + "/*.tar", recursive=False)
+    datasets = (
+        glob.glob(root + "/*.tar.gz", recursive=False) +
+        glob.glob(root + "/*.tgz", recursive=False) +
+        glob.glob(root + "/*.tar", recursive=False)
+    )
 
     if datasets:
         dataset_path = datasets[0]  # pick one arbitrarily
@@ -265,14 +289,45 @@ def upload_files(local_path, cloud_storage, file_last_modified):
             if current_last_modified:
 
                 # Check if the file is new or modified
-                if file_path not in file_last_modified or current_last_modified > file_last_modified[file_path]:
+                if (
+                    file_path not in file_last_modified or
+                    current_last_modified > file_last_modified[file_path]
+                ) and ("checkpoint-" not in file_path and "tmp" not in file_path):
                     logger.info("File event created/modified {}".format(file_path))  # noqa pylint: disable=C0209
-                    cloud_storage.upload_file(file_path, file_path)
+                    try:
+                        cloud_storage.upload_file(file_path, file_path)
+                    except Exception as e:  # pylint: disable=broad-except
+                        logger.error(
+                            "Failed to upload file: {} - Error: {}".format(  # noqa pylint: disable=C0209
+                                file_path, str(e)
+                            )
+                        )
+                    # Remove file after successful upload only if size > 50MB
+                    try:
+                        if cloud_storage.is_file(file_path):
+                            file_size_mb = os.path.getsize(file_path) / (1024 * 1024)  # Convert to MB
+                            if file_size_mb > 50:
+                                os.remove(file_path)
+                                logger.info(
+                                    "Large file (%.2f MB) successfully uploaded and removed: %s",
+                                    file_size_mb, file_path
+                                )
+                            else:
+                                logger.info(
+                                    "File (%.2f MB) successfully uploaded but retained (under 50MB): %s",
+                                    file_size_mb, file_path
+                                )
+                    except Exception as e:  # pylint: disable=broad-except
+                        logger.error(
+                            "Failed to remove file after upload: {} - Error: {}".format(  # noqa pylint: disable=C0209
+                                file_path, str(e)
+                            )
+                        )
 
                     # Update the last modification time for the file
                     file_last_modified[file_path] = current_last_modified
             else:
-                print("File could not be uploaded", file_path, flush=True)
+                logger.error("File could not be uploaded: %s", file_path)
 
 
 def get_log_file_name():
@@ -309,10 +364,17 @@ def send_logs_to_server(seek_position, retry=0):
                         }
                         if not nvcf_helm_deployment:
                             try:
-                                response = requests.post(log_callback_url, json=data, headers=headers, timeout=REQUESTS_TIMEOUT)
+                                response = requests.post(
+                                    log_callback_url,
+                                    json=data,
+                                    headers=headers,
+                                    timeout=REQUESTS_TIMEOUT
+                                )
                                 if response.ok:
                                     return seek_position
-                                logger.info("Failed to send logs. Status code: {}".format(response.status_code))  # noqa pylint: disable=C0209
+                                logger.info(
+                                    "Failed to send logs. Status code: {}".format(response.status_code)  # noqa pylint: disable=C0209
+                                )
                                 seek_position -= len(log_contents)
                                 retry += 1
 
@@ -353,25 +415,34 @@ def status_callback(data_string, retry=0):
                     kind = url_parts[7]
                     handler_id = url_parts[8]
                     job_id = url_parts[10]
+                    docker_env_vars = {
+                        "TAO_USER_KEY": ngc_key,
+                    }
                     invoke_function(
                         deployment_string=nvcf_helm_deployment,
-                        api_endpoint="status_update",
+                        microservice_action="status_update",
+                        docker_env_vars=docker_env_vars,
                         kind=kind,
                         handler_id=handler_id,
                         job_id=job_id,
                         request_body=data,
-                        ngc_key=ngc_key,
                     )
                 else:
                     try:
                         response = requests.post(status_url, json=data, headers=headers, timeout=REQUESTS_TIMEOUT)
                         if response.ok:
                             return
-                        logger.error("Failed to send status update. Status code: {}".format(response.status_code))  # noqa pylint: disable=C0209
+                        logger.error(
+                            "Failed to send status update. Status code: {}".format(  # noqa pylint: disable=C0209
+                                response.status_code
+                            )
+                        )
                         retry += 1
 
                     except requests.RequestException as e:
-                        logger.error("Exception during status update sending: {}".format(e))  # noqa pylint: disable=C0209
+                        logger.error(
+                            "Exception during status update sending: {}".format(e)  # noqa pylint: disable=C0209
+                        )
                         retry += 1
 
                     time.sleep(5)
@@ -389,7 +460,7 @@ def monitor_and_upload(local_path, cloud_storage, exit_event, seek_position=0):
     Returns:
         None
     """
-    print("monitor_and_upload :: Entering")
+    logger.info("monitor_and_upload :: Entering")
     file_last_modified = {}
 
     # Initialize file_last_modified with files that are already part of results dir
@@ -409,7 +480,7 @@ def monitor_and_upload(local_path, cloud_storage, exit_event, seek_position=0):
             time.sleep(30)  # Adjust the sleep interval as needed
 
     except (KeyboardInterrupt, SystemExit, Exception):
-        print("traceback", traceback.format_exc(), flush=True)
+        logger.error("traceback: %s", traceback.format_exc())
         exit_event.set()
 
 
@@ -428,7 +499,18 @@ def get_cloud_storage_class_object(cloud_data, cloud_string):
     return cloud_storage, cloud_file_path
 
 
-def download_files_from_cloud(cloud_data, dictionary, key, value, job_id, network_arch, ngc_key, tao_api_ui_cookie="", use_ngc_staging="", reset_value=False):
+def download_files_from_cloud(
+    cloud_data,
+    dictionary,
+    key,
+    value,
+    job_id,
+    network_arch,
+    ngc_key,
+    tao_api_ui_cookie="",
+    use_ngc_staging="",
+    reset_value=False
+):
     """Based on the cloud dype, download the file"""
     if "'link': 'https://" in value:
         https_dictionary = ast.literal_eval(value)
@@ -443,7 +525,13 @@ def download_files_from_cloud(cloud_data, dictionary, key, value, job_id, networ
             raise ValueError("NGC Personal key has not been provided")
         ngc_model = value.split("ngc://")[-1]
         org, team, model_name, model_version = split_ngc_path(ngc_model)
-        if not download_ngc_model(ngc_model, f"/ptm/{org}/{team}/{model_name}/{model_version}/model", ngc_key, is_cookie_set=tao_api_ui_cookie, use_ngc_staging=use_ngc_staging):
+        if not download_ngc_model(
+            ngc_model,
+            f"/ptm/{org}/{team}/{model_name}/{model_version}/model",
+            ngc_key,
+            is_cookie_set=tao_api_ui_cookie,
+            use_ngc_staging=use_ngc_staging
+        ):
             raise ValueError("Unable to download the PTM")
         ptm_path = search_for_ptm(f"/ptm/{org}/{team}/{model_name}/{model_version}/model", network_arch, key)
         dictionary[key] = ptm_path
@@ -475,21 +563,43 @@ def download_files_from_cloud(cloud_data, dictionary, key, value, job_id, networ
     return None
 
 
-def download_files_from_spec(cloud_data, data, job_id, network_arch=None, ngc_key=None, tao_api_ui_cookie="", use_ngc_staging=""):
-    """Recursively download files from a nested dictionary where values starting with "cloud://" are considered cloud file paths.
-
-    data: Nested dictionary.
-    cloud_storage: Instance of the CloudStorage class.
-    """
+def download_files_from_spec(
+    cloud_data,
+    data,
+    job_id,
+    network_arch=None,
+    ngc_key=None,
+    tao_api_ui_cookie="",
+    use_ngc_staging=""
+):
+    """Recursively download files from a nested dictionary."""
     if isinstance(data, dict):
         for key, value in data.items():
             if isinstance(value, dict):
-                download_files_from_spec(cloud_data, value, job_id, network_arch=network_arch, ngc_key=ngc_key, tao_api_ui_cookie=tao_api_ui_cookie, use_ngc_staging=use_ngc_staging)
+                download_files_from_spec(
+                    cloud_data,
+                    value,
+                    job_id,
+                    network_arch=network_arch,
+                    ngc_key=ngc_key,
+                    tao_api_ui_cookie=tao_api_ui_cookie,
+                    use_ngc_staging=use_ngc_staging
+                )
             elif isinstance(value, list):
                 override_list = []
                 for list_element in value:
                     if isinstance(list_element, str):
-                        override_value = download_files_from_cloud(cloud_data, data, key, list_element, job_id, network_arch, ngc_key, tao_api_ui_cookie=tao_api_ui_cookie, use_ngc_staging=use_ngc_staging)
+                        override_value = download_files_from_cloud(
+                            cloud_data,
+                            data,
+                            key,
+                            list_element,
+                            job_id,
+                            network_arch,
+                            ngc_key,
+                            tao_api_ui_cookie=tao_api_ui_cookie,
+                            use_ngc_staging=use_ngc_staging
+                        )
                         if not override_value:
                             override_value = list_element
                         override_list.append(override_value)
@@ -497,7 +607,17 @@ def download_files_from_spec(cloud_data, data, job_id, network_arch=None, ngc_ke
                         override_dict = {}
                         for list_dict_key, list_dict_value in list_element.items():
                             if isinstance(list_dict_value, str):
-                                override_value = download_files_from_cloud(cloud_data, data, key, list_dict_value, job_id, network_arch, ngc_key, tao_api_ui_cookie=tao_api_ui_cookie, use_ngc_staging=use_ngc_staging)
+                                override_value = download_files_from_cloud(
+                                    cloud_data,
+                                    data,
+                                    key,
+                                    list_dict_value,
+                                    job_id,
+                                    network_arch,
+                                    ngc_key,
+                                    tao_api_ui_cookie=tao_api_ui_cookie,
+                                    use_ngc_staging=use_ngc_staging
+                                )
                                 if not override_value:
                                     override_value = list_dict_value
                             else:
@@ -509,7 +629,18 @@ def download_files_from_spec(cloud_data, data, job_id, network_arch=None, ngc_ke
                 data[key] = override_list
             else:
                 if isinstance(value, str):
-                    download_files_from_cloud(cloud_data, data, key, value, job_id, network_arch, ngc_key, tao_api_ui_cookie=tao_api_ui_cookie, use_ngc_staging=use_ngc_staging, reset_value=True)
+                    download_files_from_cloud(
+                        cloud_data,
+                        data,
+                        key,
+                        value,
+                        job_id,
+                        network_arch,
+                        ngc_key,
+                        tao_api_ui_cookie=tao_api_ui_cookie,
+                        use_ngc_staging=use_ngc_staging,
+                        reset_value=True
+                    )
 
 
 def get_results_cloud_data(cloud_data, spec_data, dest_dir=None):

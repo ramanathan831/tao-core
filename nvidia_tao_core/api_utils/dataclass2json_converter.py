@@ -18,7 +18,15 @@ import requests
 import importlib
 import json
 import os
+import logging
 from dataclasses import asdict, fields, is_dataclass
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 __type_mapping = {
     "collection": "object",
@@ -144,10 +152,10 @@ def dataclass_to_json_without_metadata(dataclass_instance, filename):
             json.dump(dataclass_dict, output_file, indent=4)
 
     except TypeError as e:
-        print(f"Error during serialization: {e}")
+        logger.error("Error during serialization: %s", e)
 
     except IOError as e:
-        print(f"Error writing file: {e}")
+        logger.error("Error writing file: %s", e)
 
 
 def serialize_with_metadata(dataclass_instance):
@@ -198,10 +206,10 @@ def dataclass_to_json(dataclass_instance):
         return dataclass_dict
 
     except TypeError as e:
-        print(f"Error during serialization: {e}")
+        logger.error("Error during serialization: %s", e)
 
     except IOError as e:
-        print(f"Error writing file: {e}")
+        logger.error("Error writing file: %s", e)
 
     return None
 
@@ -370,10 +378,6 @@ def create_json_schema(json_data):
             return
         props[param_name] = {"type": param_meta.get("value_type"), "properties": {}, "default": {}}
 
-        # print("param_name :: ", param_name)
-        # print("parent_default :: ", parent_default)
-        # print("parameter_value :: ", param_value)
-
         # props[param_name]["default"] = default_value
         # if parent_default:
         #     parent_default[param_name] = default_value
@@ -493,17 +497,17 @@ def download_file_from_github(url, dir_path, file_name):
         file_name (str): Name for the saved file.
 
     Returns:
-        file_path (str or None): Path to the downloaded file if successful, or None. Status of operation is printed.
+        file_path (str or None): Path to the downloaded file if successful, or None. Status of operation is logged.
     """
     response = requests.get(url)   # noqa pylint: disable=W3101
     if response.status_code == 200:
         file_path = os.path.join(dir_path, file_name)
         with open(file_path, "wb") as file:
             file.write(response.content)
-        print(f"File downloaded successfully and saved to {dir_path}")
+        logger.info("File downloaded successfully and saved to %s", dir_path)
         return file_path
 
-    print(f"Failed to download the file. HTTP status code: {response.status_code}")
+    logger.error("Failed to download the file. HTTP status code: %s", response.status_code)
     return None
 
 
@@ -515,14 +519,14 @@ def import_module_from_path(module_name):
         path_to_module (str): Filesystem path of the module.
 
     Returns:
-        imported_module (module or None): The imported module if successful, or None. Status of operation is printed.
+        imported_module (module or None): The imported module if successful, or None. Status of operation is logged.
     """
     try:
         imported_module = importlib.import_module(module_name)
-        print(f"Module '{module_name}' imported successfully.")
+        logger.info("Module '%s' imported successfully.", module_name)
         return imported_module
     except ImportError as e:
-        print(f"Error importing module: {e}")
+        logger.error("Error importing module: %s", e)
         return None
 
 
