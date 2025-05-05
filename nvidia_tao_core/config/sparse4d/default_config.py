@@ -1292,9 +1292,9 @@ class Sparse4DHeadConfig:
         display_name="Refine layer config"
     )
     valid_vel_weight: float = FLOAT_FIELD(
-        value=10.0,
-        default_value=10.0,
-        valid_min=0,
+        value=-1,
+        default_value=-1,
+        valid_min=-1,
         valid_max="inf",
         description="Valid velocity weight",
         display_name="Valid velocity weight"
