@@ -81,6 +81,10 @@ class ContainerJobHandler:
                         f'/results/{job["job_id"]}'
                     )
 
+                    ngc_key = docker_env_vars.get("TAO_API_KEY")
+                    if not ngc_key:
+                        ngc_key = docker_env_vars.get("TAO_USER_KEY")
+
                     # Create results directory and download files
                     os.makedirs(specs["results_dir"], exist_ok=True)
                     reprocess_files = []
@@ -89,7 +93,7 @@ class ContainerJobHandler:
                         data=specs,
                         job_id=job["job_id"],
                         network_arch=job["neural_network_name"],
-                        ngc_key=docker_env_vars.get("TAO_USER_KEY"),
+                        ngc_key=ngc_key,
                         tao_api_ui_cookie=docker_env_vars.get('TAO_API_UI_COOKIE', ""),
                         use_ngc_staging=docker_env_vars.get('USE_NGC_STAGING', "False"),
                         reprocess_files=reprocess_files
@@ -111,7 +115,7 @@ class ContainerJobHandler:
                                     data=reprocess_file_data,
                                     job_id=job["job_id"],
                                     network_arch=job["neural_network_name"],
-                                    ngc_key=docker_env_vars.get("TAO_USER_KEY"),
+                                    ngc_key=ngc_key,
                                     tao_api_ui_cookie=docker_env_vars.get('TAO_API_UI_COOKIE', ""),
                                     use_ngc_staging=docker_env_vars.get('USE_NGC_STAGING', "False"),
                                 )
