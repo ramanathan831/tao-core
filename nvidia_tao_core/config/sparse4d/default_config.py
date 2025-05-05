@@ -56,12 +56,12 @@ class Sparse4DOptimizerConfig:
     )
     weight_decay: float = FLOAT_FIELD(
         value=0.001,
-        default_value=0.001, 
+        default_value=0.001,
         description="Weight decay coefficient",
         display_name="Weight decay coefficient"
     )
     momentum: float = FLOAT_FIELD(value=0.9,
-        default_value=0.9, 
+        default_value=0.9,
         description="Momentum for SGD",
         display_name="Momentum for SGD"
     )
@@ -121,7 +121,7 @@ class Sparse4DTrainConfig(TrainConfig):
         description="Path to pretrained model",
         display_name="Path to pretrained model"
     )
-    optim: Sparse4DOptimizerConfig = DATACLASS_FIELD(Sparse4DOptimizerConfig(), 
+    optim: Sparse4DOptimizerConfig = DATACLASS_FIELD(Sparse4DOptimizerConfig(),
         description="Optimizer configuration",
         display_name="Optimizer configuration"
     )
@@ -146,7 +146,7 @@ class Sparse4DBackboneConfig:
         display_name="ResNet depth"
     )
     num_stages: int = INT_FIELD(value=4,
-        default_value=4, 
+        default_value=4,
         valid_min=1,
         valid_max=4,
         description="Number of stages",
@@ -156,12 +156,12 @@ class Sparse4DBackboneConfig:
         default_value=-1,
         valid_min=-1,
         valid_max=4,
-        description="Frozen stages (-1 for none)", 
+        description="Frozen stages (-1 for none)",
         display_name="Frozen stages (-1 for none)"
     )
     norm_eval: bool = BOOL_FIELD(value=True,
-        default_value=True, 
-        description="Set BatchNorm layers to eval mode", 
+        default_value=True,
+        description="Set BatchNorm layers to eval mode",
         display_name="Set BatchNorm layers to eval mode"
     )
     style: str = STR_FIELD(
@@ -171,9 +171,9 @@ class Sparse4DBackboneConfig:
         valid_options="pytorch,caffe",
         display_name="ResNet style"
     )
-    with_cp: bool = BOOL_FIELD(value=True, 
-        default_value=True, 
-        description="Use checkpoint to save memory", 
+    with_cp: bool = BOOL_FIELD(value=True,
+        default_value=True,
+        description="Use checkpoint to save memory",
         display_name="Use checkpoint to save memory"
     )
     out_indices: Tuple[int, ...] = LIST_FIELD(
@@ -219,8 +219,8 @@ class Sparse4DNeckConfig:
         description="Start level for FPN",
         display_name="Start level for FPN")
     out_channels: int = INT_FIELD(
-        value=256, 
-        default_value=256, 
+        value=256,
+        default_value=256,
         valid_min=1,
         valid_max="inf",
         description="Output channels",
@@ -236,7 +236,7 @@ class Sparse4DNeckConfig:
         value="on_output",
         default_value="on_output",
         description="Type of extra conv",
-        valid_options="on_input,on_lateral,on_output,False", 
+        valid_options="on_input,on_lateral,on_output,False",
     display_name="Type of extra conv")
     relu_before_extra_convs: bool = BOOL_FIELD(
         value=True,
@@ -723,7 +723,7 @@ class Omniverse3DDetTrackDatasetConfig:
     normalize: Sparse4DNormalizeConfig = DATACLASS_FIELD(Sparse4DNormalizeConfig(), description="Normalize config", display_name="Normalize config")
     sequences: Sparse4DSequencesConfig = DATACLASS_FIELD(
         Sparse4DSequencesConfig(),
-        description="Sequences config", 
+        description="Sequences config",
         display_name="Sequences config"
     )
     train_dataset: Sparse4DTrainDatasetConfig = DATACLASS_FIELD(Sparse4DTrainDatasetConfig(), description="Train dataset config", display_name="Train dataset config")
