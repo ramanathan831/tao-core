@@ -40,10 +40,31 @@ from nvidia_tao_core.config.common.common_config import (
 class Sparse4DOptimizerConfig:
     """Optimizer config for Sparse4D."""
 
-    type: str = STR_FIELD(value="adamw", default_value="adamw", description="Optimizer type", valid_options="adamw,adam,sgd", display_name="Optimizer type")
-    lr: float = FLOAT_FIELD(value=5e-5, default_value=5e-5, valid_min=0, valid_max="inf", automl_enabled="TRUE", description="Learning rate", display_name="Learning rate")
-    weight_decay: float = FLOAT_FIELD(value=0.001, default_value=0.001, math_cond=">= 0.0", description="Weight decay coefficient", display_name="Weight decay coefficient")
-    momentum: float = FLOAT_FIELD(value=0.9, default_value=0.9, math_cond=">= 0.0", description="Momentum for SGD", display_name="Momentum for SGD")
+    type: str = STR_FIELD(value="adamw",
+        default_value="adamw",
+        description="Optimizer type",
+        valid_options="adamw,adam,sgd",
+        display_name="Optimizer type"
+    )
+    lr: float = FLOAT_FIELD(value=5e-5,
+        default_value=5e-5,
+        valid_min=0,
+        valid_max="inf",
+        automl_enabled="TRUE",
+        description="Learning rate",
+        display_name="Learning rate"
+    )
+    weight_decay: float = FLOAT_FIELD(
+        value=0.001,
+        default_value=0.001, 
+        description="Weight decay coefficient",
+        display_name="Weight decay coefficient"
+    )
+    momentum: float = FLOAT_FIELD(value=0.9,
+        default_value=0.9, 
+        description="Momentum for SGD",
+        display_name="Momentum for SGD"
+    )
     paramwise_cfg: Optional[Dict[str, Any]] = DICT_FIELD(
         hashMap={"custom_keys": {"img_backbone": {"lr_mult": 0.2}}},
         description="Parameters-wise configuration",
@@ -80,44 +101,149 @@ class Sparse4DOptimizerConfig:
 class Sparse4DTrainConfig(TrainConfig):
     """Training configuration for Sparse4D."""
 
-    validation_interval: float = FLOAT_FIELD(value=0.5, default_value=0.5, valid_min=0, valid_max="inf", description="Validation interval in epochs", display_name="Validation interval in epochs")
-    checkpoint_interval: float = FLOAT_FIELD(value=0.5, default_value=0.5, valid_min=0, valid_max="inf", description="Checkpoint interval in epochs", display_name="Checkpoint interval in epochs")
-    pretrained_model_path: Optional[str] = STR_FIELD(value=None, default_value="", description="Path to pretrained model", display_name="Path to pretrained model")
-    optim: Sparse4DOptimizerConfig = DATACLASS_FIELD(Sparse4DOptimizerConfig(), description="Optimizer configuration", display_name="Optimizer configuration")
+    validation_interval: float = FLOAT_FIELD(
+        value=0.5,
+        default_value=0.5,
+        valid_min=0,
+        valid_max="inf",
+        description="Validation interval in epochs",
+        display_name="Validation interval in epochs"
+    )
+    checkpoint_interval: float = FLOAT_FIELD(value=0.5,
+        default_value=0.5,
+        valid_min=0,
+        valid_max="inf",
+        description="Checkpoint interval in epochs",
+        display_name="Checkpoint interval in epochs"
+    )
+    pretrained_model_path: Optional[str] = STR_FIELD(value=None,
+        default_value="",
+        description="Path to pretrained model",
+        display_name="Path to pretrained model"
+    )
+    optim: Sparse4DOptimizerConfig = DATACLASS_FIELD(Sparse4DOptimizerConfig(), 
+        description="Optimizer configuration",
+        display_name="Optimizer configuration"
+    )
 
 
 @dataclass
 class Sparse4DBackboneConfig:
     """Backbone configuration for Sparse4D."""
 
-    type: str = STR_FIELD(value="ResNet", default_value="ResNet", description="Backbone type", valid_options="ResNet", display_name="Backbone type")
-    depth: int = INT_FIELD(value=101, default_value=101, valid_min=18, valid_max=152, description="ResNet depth", valid_options="18,34,50,101,152", display_name="ResNet depth")
-    num_stages: int = INT_FIELD(value=4, default_value=4, valid_min=1, valid_max=4, description="Number of stages", display_name="Number of stages")
-    frozen_stages: int = INT_FIELD(value=-1, default_value=-1, valid_min=-1, valid_max=4, description="Frozen stages (-1 for none)", display_name="Frozen stages (-1 for none)")
-    norm_eval: bool = BOOL_FIELD(value=True, default_value=True, description="Set BatchNorm layers to eval mode", display_name="Set BatchNorm layers to eval mode")
-    style: str = STR_FIELD(value="pytorch", default_value="pytorch", description="ResNet style", valid_options="pytorch,caffe", display_name="ResNet style")
-    with_cp: bool = BOOL_FIELD(value=True, default_value=True, description="Use checkpoint to save memory", display_name="Use checkpoint to save memory")
-    out_indices: Tuple[int, ...] = LIST_FIELD(arrList=[0, 1, 2, 3], default_value=[0, 1, 2, 3], description="Output indices", display_name="Output indices")
+    type: str = STR_FIELD(value="ResNet",
+        default_value="ResNet",
+        description="Backbone type",
+        valid_options="ResNet",
+        display_name="Backbone type"
+    )
+    depth: int = INT_FIELD(value=101,
+        default_value=101,
+        valid_min=18,
+        valid_max=152,
+        description="ResNet depth",
+        valid_options="18,34,50,101,152",
+        display_name="ResNet depth"
+    )
+    num_stages: int = INT_FIELD(value=4,
+        default_value=4, 
+        valid_min=1,
+        valid_max=4,
+        description="Number of stages",
+        display_name="Number of stages"
+    )
+    frozen_stages: int = INT_FIELD(value=-1,
+        default_value=-1,
+        valid_min=-1,
+        valid_max=4,
+        description="Frozen stages (-1 for none)", 
+        display_name="Frozen stages (-1 for none)"
+    )
+    norm_eval: bool = BOOL_FIELD(value=True,
+        default_value=True, 
+        description="Set BatchNorm layers to eval mode", 
+        display_name="Set BatchNorm layers to eval mode"
+    )
+    style: str = STR_FIELD(
+        value="pytorch",
+        default_value="pytorch",
+        description="ResNet style",
+        valid_options="pytorch,caffe",
+        display_name="ResNet style"
+    )
+    with_cp: bool = BOOL_FIELD(value=True, 
+        default_value=True, 
+        description="Use checkpoint to save memory", 
+        display_name="Use checkpoint to save memory"
+    )
+    out_indices: Tuple[int, ...] = LIST_FIELD(
+        arrList=[0, 1, 2, 3],
+        default_value=[0, 1, 2, 3],
+        description="Output indices",
+        display_name="Output indices"
+    )
     norm_cfg: Dict[str, Any] = DICT_FIELD(
         hashMap={"type": "BN", "requires_grad": False},
         description="Normalization configuration",
         default_value={"type": "BN", "requires_grad": False},
         display_name="Normalization configuration"
     )
-    pretrained_backbone_path: Optional[str] = STR_FIELD(value=None, default_value="", description="Path to pretrained backbone weights", display_name="Path to pretrained backbone weights")
+    pretrained_backbone_path: Optional[str] = STR_FIELD(
+        value=None,
+        default_value="",
+        description="Path to pretrained backbone weights",
+        display_name="Path to pretrained backbone weights"
+    )
 
 
 @dataclass
 class Sparse4DNeckConfig:
     """Neck configuration for Sparse4D."""
 
-    type: str = STR_FIELD(value="FPN", default_value="FPN", description="Neck type", valid_options="FPN", display_name="Neck type")
-    num_outs: int = INT_FIELD(value=4, default_value=4, valid_min=1, valid_max="inf", description="Number of output levels", display_name="Number of output levels")
-    start_level: int = INT_FIELD(value=0, default_value=0, valid_min=0, valid_max="inf", description="Start level for FPN", display_name="Start level for FPN")
-    out_channels: int = INT_FIELD(value=256, default_value=256, valid_min=1, valid_max="inf", description="Output channels", display_name="Output channels")
-    in_channels: List[int] = LIST_FIELD(arrList=[256, 512, 1024, 2048], default_value=[256, 512, 1024, 2048], description="Input channels", display_name="Input channels")
-    add_extra_convs: str = STR_FIELD(value="on_output", default_value="on_output", description="Type of extra conv", valid_options="on_input,on_lateral,on_output,False", display_name="Type of extra conv")
-    relu_before_extra_convs: bool = BOOL_FIELD(value=True, default_value=True, description="Apply ReLU before extra convs", display_name="Apply ReLU before extra convs")
+    type: str = STR_FIELD(value="FPN",
+        default_value="FPN",
+        description="Neck type",
+        valid_options="FPN",
+        display_name="Neck type"
+    )
+    num_outs: int = INT_FIELD(value=4,
+        default_value=4,
+        valid_min=1,
+        valid_max="inf",
+        display_name="Number of output levels"
+    )
+    start_level: int = INT_FIELD(value=0,
+        default_value=0,
+        valid_min=0,
+        valid_max="inf",
+        description="Start level for FPN",
+        display_name="Start level for FPN")
+    out_channels: int = INT_FIELD(
+        value=256, 
+        default_value=256, 
+        valid_min=1,
+        valid_max="inf",
+        description="Output channels",
+        display_name="Output channels"
+    )
+    in_channels: List[int] = LIST_FIELD(
+        arrList=[256, 512, 1024, 2048],
+        default_value=[256, 512, 1024, 2048],
+        description="Input channels",
+        display_name="Input channels"
+    )
+    add_extra_convs: str = STR_FIELD(
+        value="on_output",
+        default_value="on_output",
+        description="Type of extra conv",
+        valid_options="on_input,on_lateral,on_output,False", 
+    display_name="Type of extra conv")
+    relu_before_extra_convs: bool = BOOL_FIELD(
+        value=True,
+        default_value=True,
+        description="Apply ReLU before extra convs",
+        display_name="Apply ReLU before extra convs"
+    )
 
 
 @dataclass
@@ -136,10 +262,24 @@ class Sparse4DInstanceBankConfig:
 
     num_anchor: int = INT_FIELD(value=900, default_value=900, valid_min=1, valid_max="inf", description="Number of anchors", display_name="Number of anchors")
     anchor: str = STR_FIELD(value="", default_value="", description="Path to anchor file", display_name="Path to anchor file")
-    num_temp_instances: int = INT_FIELD(value=600, default_value=600, valid_min=0, valid_max="inf", description="Number of temporal instances", display_name="Number of temporal instances")
+    num_temp_instances: int = INT_FIELD(
+        value=600,
+        default_value=600,
+        valid_min=0,
+        valid_max="inf",
+        description="Number of temporal instances",
+        display_name="Number of temporal instances"
+    )
     confidence_decay: float = FLOAT_FIELD(value=0.8, default_value=0.8, valid_min=0, valid_max=1, description="Confidence decay factor", display_name="Confidence decay factor")
     feat_grad: bool = BOOL_FIELD(value=False, default_value=False, description="Enable gradients for features", display_name="Enable gradients for features")
-    default_time_interval: float = FLOAT_FIELD(value=0.033333, default_value=0.033333, valid_min=0, valid_max="inf", description="Default time interval", display_name="Default time interval")
+    default_time_interval: float = FLOAT_FIELD(
+        value=0.033333,
+        default_value=0.033333,
+        valid_min=0,
+        valid_max="inf",
+        description="Default time interval",
+        display_name="Default time interval"
+    )
     embed_dims: int = INT_FIELD(value=256, default_value=256, valid_min=1, valid_max="inf", description="Embedding dimensions", display_name="Embedding dimensions")
     use_temporal_align: bool = BOOL_FIELD(value=False, default_value=False, description="Use temporal alignment", display_name="Use temporal alignment")
 
@@ -163,7 +303,14 @@ class Sparse4DKpsGeneratorConfig:
     """KPS generator configuration for Sparse4D."""
 
     embed_dims: int = INT_FIELD(value=256, default_value=256, valid_min=1, valid_max="inf", description="Embedding dimensions", display_name="Embedding dimensions")
-    num_learnable_pts: int = INT_FIELD(value=6, default_value=6, valid_min=1, valid_max="inf", description="Number of learnable points", display_name="Number of learnable points")
+    num_learnable_pts: int = INT_FIELD(
+        value=6,
+        default_value=6,
+        valid_min=1,
+        valid_max="inf",
+        description="Number of learnable points",
+        display_name="Number of learnable points"
+    )
     fix_scale: List[List[Any]] = LIST_FIELD(
         arrList=[
             [0, 0, 0],
@@ -208,7 +355,11 @@ class Sparse4DTrainDatasetConfig:
     use_valid_flag: bool = BOOL_FIELD(value=True, default_value=True, description="Use valid flag", display_name="Use valid flag")
     with_seq_flag: bool = BOOL_FIELD(value=True, default_value=True, description="With sequence flag", display_name="With sequence flag")
     sequences_split_num: int = INT_FIELD(value=100, default_value=100, valid_min=1, valid_max="inf", description="Number of sequences", display_name="Number of sequences")
-    keep_consistent_seq_aug: bool = BOOL_FIELD(value=True, default_value=True, description="Keep consistent sequence augmentation", display_name="Keep consistent sequence augmentation")
+    keep_consistent_seq_aug: bool = BOOL_FIELD(value=True,
+        default_value=True,
+        description="Keep consistent sequence augmentation",
+        display_name="Keep consistent sequence augmentation"
+    )
     same_scene_in_batch: bool = BOOL_FIELD(value=True, default_value=True, description="Same scene in batch", display_name="Same scene in batch")
 
 
@@ -220,7 +371,13 @@ class Sparse4DValDatasetConfig:
     test_mode: bool = BOOL_FIELD(value=False, default_value=False, description="Test mode", display_name="Test mode")
     use_valid_flag: bool = BOOL_FIELD(value=True, default_value=True, description="Use valid flag", display_name="Use valid flag")
     tracking: bool = BOOL_FIELD(value=True, default_value=True, description="Tracking", display_name="Tracking")
-    tracking_threshold: float = FLOAT_FIELD(value=0.2, default_value=0.2, valid_min=0, valid_max=1, description="Tracking threshold", display_name="Tracking threshold")
+    tracking_threshold: float = FLOAT_FIELD(value=0.2,
+        default_value=0.2,
+        valid_min=0,
+        valid_max=1,
+        description="Tracking threshold",
+        display_name="Tracking threshold"
+    )
     same_scene_in_batch: bool = BOOL_FIELD(value=True, default_value=True, description="Same scene in batch", display_name="Same scene in batch")
 
 
@@ -232,7 +389,13 @@ class Sparse4DTestDatasetConfig:
     test_mode: bool = BOOL_FIELD(value=True, default_value=True, description="Test mode", display_name="Test mode")
     use_valid_flag: bool = BOOL_FIELD(value=True, default_value=True, description="Use valid flag", display_name="Use valid flag")
     tracking: bool = BOOL_FIELD(value=True, default_value=True, description="Tracking", display_name="Tracking")
-    tracking_threshold: float = FLOAT_FIELD(value=0.2, default_value=0.2, valid_min=0, valid_max=1, description="Tracking threshold", display_name="Tracking threshold")
+    tracking_threshold: float = FLOAT_FIELD(value=0.2,
+        default_value=0.2,
+        valid_min=0,
+        valid_max=1,
+        description="Tracking threshold",
+        display_name="Tracking threshold"
+    )
     same_scene_in_batch: bool = BOOL_FIELD(value=True, default_value=True, description="Same scene in batch", display_name="Same scene in batch")
 
 
@@ -241,7 +404,13 @@ class Sparse4DLossRegConfig:
     """Regression loss configuration for Sparse4D."""
 
     type: str = STR_FIELD(value="sparse_box_3d", default_value="sparse_box_3d", description="Regression loss type", display_name="Regression loss type")
-    box_weight: float = FLOAT_FIELD(value=0.25, default_value=0.25, valid_min=0, valid_max="inf", description="Box loss weight", display_name="Box loss weight")
+    box_weight: float = FLOAT_FIELD(value=0.25,
+        default_value=0.25,
+        valid_min=0,
+        valid_max="inf",
+        description="Box loss weight",
+        display_name="Box loss weight"
+    )
 
 
 @dataclass
@@ -292,7 +461,13 @@ class Sparse4DSamplerConfig:
     """Sampler configuration for Sparse4D."""
 
     num_dn_groups: int = INT_FIELD(value=5, default_value=5, valid_min=1, valid_max="inf", description="Number of DN groups", display_name="Number of DN groups")
-    num_temp_dn_groups: int = INT_FIELD(value=3, default_value=3, valid_min=0, valid_max="inf", description="Number of temporal DN groups", display_name="Number of temporal DN groups")
+    num_temp_dn_groups: int = INT_FIELD(value=3,
+        default_value=3,
+        valid_min=0,
+        valid_max="inf",
+        description="Number of temporal DN groups",
+        display_name="Number of temporal DN groups"
+    )
     dn_noise_scale: List[float] = LIST_FIELD(
         arrList=[2.0, 2.0, 2.0, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5],
         default_value=[2.0, 2.0, 2.0, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5],
@@ -376,7 +551,13 @@ class Sparse4DFFNConfig:
     in_channels: int = INT_FIELD(value=512, default_value=512, valid_min=1, valid_max="inf", description="In channels", display_name="In channels")
     pre_norm: Sparse4DNormLayerConfig = DATACLASS_FIELD(Sparse4DNormLayerConfig(), description="Pre-norm config", display_name="Pre-norm config")
     embed_dims: int = INT_FIELD(value=256, default_value=256, valid_min=1, valid_max="inf", description="Embedding dimensions", display_name="Embedding dimensions")
-    feedforward_channels: int = INT_FIELD(value=1024, default_value=1024, valid_min=1, valid_max="inf", description="Feedforward channels", display_name="Feedforward channels")
+    feedforward_channels: int = INT_FIELD(value=1024,
+        default_value=1024,
+        valid_min=1,
+        valid_max="inf",
+        description="Feedforward channels",
+        display_name="Feedforward channels"
+    )
     num_fcs: int = INT_FIELD(value=2, default_value=2, valid_min=1, valid_max="inf", description="Number of feedforward channels", display_name="Number of feedforward channels")
     ffn_drop: float = FLOAT_FIELD(value=0.1, default_value=0.1, valid_min=0, valid_max=1, description="FFN dropout", display_name="FFN dropout")
     act_cfg: Sparse4DActConfig = DATACLASS_FIELD(Sparse4DActConfig(), description="Activation config", display_name="Activation config")
@@ -446,7 +627,12 @@ class Sparse4DHeadConfig:
 class Sparse4DModelConfig:
     """Model configuration for Sparse4D."""
 
-    type: str = STR_FIELD(value="sparse4d", default_value="sparse4d", description="Model type", display_name="Model type")
+    type: str = STR_FIELD(
+        value="sparse4d",
+        default_value="sparse4d",
+        description="Model type",
+        display_name="Model type"
+    )
     embed_dims: int = INT_FIELD(value=256, default_value=256, valid_min=1, valid_max="inf", description="Embedding dimensions", display_name="Embedding dimensions")
     use_grid_mask: bool = BOOL_FIELD(value=True, default_value=True, description="Use grid mask", display_name="Use grid mask")
     use_deformable_func: bool = BOOL_FIELD(value=True, default_value=True, description="Use deformable function", display_name="Use deformable function")
@@ -468,7 +654,12 @@ class Sparse4DAugmentationConfig:
     rot_lim: List[float] = LIST_FIELD(arrList=[-5.4, 5.4], default_value=[-5.4, 5.4], description="Rotation limits in degrees", display_name="Rotation limits in degrees")
     image_size: List[int] = LIST_FIELD(arrList=[1080, 1920], default_value=[1080, 1920], description="Original image size", display_name="Original image size")
     rand_flip: bool = BOOL_FIELD(value=True, default_value=True, description="Random flip", display_name="Random flip")
-    rot3d_range: List[float] = LIST_FIELD(arrList=[-0.3925, 0.3925], default_value=[-0.3925, 0.3925], description="3D rotation range in radians", display_name="3D rotation range in radians")
+    rot3d_range: List[float] = LIST_FIELD(
+        arrList=[-0.3925, 0.3925],
+        default_value=[-0.3925, 0.3925],
+        description="3D rotation range in radians",
+        display_name="3D rotation range in radians"
+    )
 
 
 @dataclass
@@ -476,7 +667,12 @@ class Sparse4DNormalizeConfig:
     """Normalization configuration for Sparse4D."""
 
     mean: List[float] = LIST_FIELD(arrList=[123.675, 116.28, 103.53], default_value=[123.675, 116.28, 103.53], description="Mean values for normalization", display_name="Mean values for normalization")
-    std: List[float] = LIST_FIELD(arrList=[58.395, 57.12, 57.375], default_value=[58.395, 57.12, 57.375], description="Standard deviation values for normalization", display_name="Standard deviation values for normalization")
+    std: List[float] = LIST_FIELD(
+        arrList=[58.395, 57.12, 57.375],
+        default_value=[58.395, 57.12, 57.375],
+        description="Standard deviation values for normalization",
+        display_name="Standard deviation values for normalization"
+    )
     to_rgb: bool = BOOL_FIELD(value=True, default_value=True, description="Convert to RGB", display_name="Convert to RGB")
 
 
@@ -505,7 +701,14 @@ class Omniverse3DDetTrackDatasetConfig:
     batch_size: int = INT_FIELD(value=2, default_value=2, valid_min=1, valid_max="inf", description="Batch size", display_name="Batch size")
     use_h5_file: bool = BOOL_FIELD(value=True, default_value=True, description="Use H5 file", display_name="Use H5 file")
     num_frames: int = INT_FIELD(value=200, default_value=200, valid_min=1, valid_max="inf", description="Number of frames", display_name="Number of frames")
-    num_bev_groups: int = INT_FIELD(value=1, default_value=1, valid_min=1, valid_max="inf", description="Number of BEV groups", display_name="Number of BEV groups")
+    num_bev_groups: int = INT_FIELD(
+        value=1,
+        default_value=1,
+        valid_min=1,
+        valid_max="inf",
+        description="Number of BEV groups",
+        display_name="Number of BEV groups"
+    )
     data_root: str = STR_FIELD(value=MISSING, default_value="", description="Path to data root", display_name="Path to data root")
     anno_root: str = STR_FIELD(value=MISSING, default_value="", description="Path to annotation root", display_name="Path to annotation root")
     classes: List[str] = LIST_FIELD(
@@ -518,7 +721,11 @@ class Omniverse3DDetTrackDatasetConfig:
     num_ids: int = INT_FIELD(value=70, default_value=70, valid_min=1, valid_max="inf", description="Number of IDs", display_name="Number of IDs")
     augmentation: Sparse4DAugmentationConfig = DATACLASS_FIELD(Sparse4DAugmentationConfig(), description="Augmentation config", display_name="Augmentation config")
     normalize: Sparse4DNormalizeConfig = DATACLASS_FIELD(Sparse4DNormalizeConfig(), description="Normalize config", display_name="Normalize config")
-    sequences: Sparse4DSequencesConfig = DATACLASS_FIELD(Sparse4DSequencesConfig(), description="Sequences config", display_name="Sequences config")
+    sequences: Sparse4DSequencesConfig = DATACLASS_FIELD(
+        Sparse4DSequencesConfig(),
+        description="Sequences config", 
+        display_name="Sequences config"
+    )
     train_dataset: Sparse4DTrainDatasetConfig = DATACLASS_FIELD(Sparse4DTrainDatasetConfig(), description="Train dataset config", display_name="Train dataset config")
     val_dataset: Sparse4DValDatasetConfig = DATACLASS_FIELD(Sparse4DValDatasetConfig(), description="Val dataset config", display_name="Val dataset config")
     test_dataset: Sparse4DTestDatasetConfig = DATACLASS_FIELD(Sparse4DTestDatasetConfig(), description="Test dataset config", display_name="Test dataset config")
@@ -528,8 +735,17 @@ class Omniverse3DDetTrackDatasetConfig:
 class Sparse4DEvaluateConfig(EvaluateConfig):
     """Evaluation configuration for Sparse4D."""
 
-    metrics: List[str] = LIST_FIELD(arrList=["detection"], default_value=["detection"], description="Metrics to evaluate", display_name="Metrics to evaluate")
-    tracking: Sparse4DTrackingConfig = DATACLASS_FIELD(Sparse4DTrackingConfig(), description="Tracking config", display_name="Tracking config")
+    metrics: List[str] = LIST_FIELD(
+        arrList=["detection"],
+        default_value=["detection"],
+        description="Metrics to evaluate",
+        display_name="Metrics to evaluate"
+    )
+    tracking: Sparse4DTrackingConfig = DATACLASS_FIELD(
+        Sparse4DTrackingConfig(),
+        description="Tracking config",
+        display_name="Tracking config"
+    )
 
 
 @dataclass
@@ -537,7 +753,12 @@ class Sparse4DInferenceConfig(InferenceConfig):
     """Inference configuration for Sparse4D."""
 
     checkpoint: str = STR_FIELD(value=MISSING, default_value="", description="Path to checkpoint file", display_name="Path to checkpoint file")
-    jsonfile_prefix: str = STR_FIELD(value="sparse4d_pred", default_value="sparse4d_pred", description="JSON file prefix", display_name="JSON file prefix")
+    jsonfile_prefix: str = STR_FIELD(
+        value="sparse4d_pred",
+        default_value="sparse4d_pred",
+        description="JSON file prefix",
+        display_name="JSON file prefix"
+    )
     output_nvschema: bool = BOOL_FIELD(value=True, default_value=True, description="Output NVSchema", display_name="Output NVSchema")
     tracking: Sparse4DTrackingConfig = DATACLASS_FIELD(Sparse4DTrackingConfig())
 
@@ -546,8 +767,20 @@ class Sparse4DInferenceConfig(InferenceConfig):
 class Sparse4DExportConfig(ExportConfig):
     """Export configuration for Sparse4D."""
 
-    gpu_id: int = INT_FIELD(value=0, default_value=0, valid_min=0, valid_max="inf", description="GPU ID for export", display_name="GPU ID for export")
-    onnx_file: str = STR_FIELD(value=MISSING, default_value="${export.results_dir}/sparse4d.onnx", description="Path to output ONNX file", display_name="Path to output ONNX file")
+    gpu_id: int = INT_FIELD(
+        value=0,
+        default_value=0,
+        valid_min=0,
+        valid_max="inf",
+        description="GPU ID for export",
+        display_name="GPU ID for export"
+    )
+    onnx_file: str = STR_FIELD(
+        value=MISSING,
+        default_value="${export.results_dir}/sparse4d.onnx",
+        description="Path to output ONNX file",
+        display_name="Path to output ONNX file"
+    )
 
 
 @dataclass
@@ -556,7 +789,14 @@ class Sparse4DVisConfig:
 
     show: bool = BOOL_FIELD(value=True, default_value=True, description="Show visualization", display_name="Show visualization")
     vis_dir: str = STR_FIELD(value="./vis", default_value="./vis", description="Visualization directory", display_name="Visualization directory")
-    vis_score_threshold: float = FLOAT_FIELD(value=0.25, default_value=0.25, valid_min=0, valid_max=1, description="Visualization score threshold", display_name="Visualization score threshold")
+    vis_score_threshold: float = FLOAT_FIELD(
+        value=0.25,
+        default_value=0.25,
+        valid_min=0,
+        valid_max=1,
+        description="Visualization score threshold",
+        display_name="Visualization score threshold"
+    )
     n_images_col: int = INT_FIELD(value=6, default_value=6, valid_min=1, valid_max="inf", description="Number of images per column", display_name="Number of images per column")
     viz_down_sample: int = INT_FIELD(value=3, default_value=3, valid_min=1, valid_max="inf", description="Visualization down sample", display_name="Visualization down sample")
 
