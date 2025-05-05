@@ -101,8 +101,8 @@ class OptimConfig:
         description="layers names which do not need weight decay"
     )
     warmup_epochs: int = INT_FIELD(
-        value=20,
-        default_value=20,
+        value=0,
+        default_value=0,
         valid_min=0,
         valid_max="inf",
         description="Warmup epochs."
@@ -142,13 +142,6 @@ class HeadConfig:
         value=False,
         description="Flag to specify binary classification"
     )
-    num_classes: int = INT_FIELD(
-        value=1000,
-        default_value=20,
-        valid_min=2,
-        valid_max="inf",
-        description="Number of classes"
-    )
     in_channels: int = INT_FIELD(
         value=448,
         description="Number of backbone input channels to head"
@@ -176,15 +169,27 @@ class BackboneConfig:
         display_name="Backbone architectures",
         valid_options=",".join([
             "fan_tiny_8_p4_hybrid",
-            "fan_large_16_p4_hybrid",
             "fan_small_12_p4_hybrid",
             "fan_base_16_p4_hybrid",
-            "vit_large_nvdinov2",
-            "vit_giant_nvdinov2",
-            "vit_base_nvclip_16_siglip",
-            "vit_huge_nvclip_14_siglip"
+            "fan_large_16_p4_hybrid",
+            "fan_Xlarge_16_p4_hybrid",
+            "fan_base_18_p16_224",
+            "fan_tiny_12_p16_224",
+            "fan_small_12_p16_224_se_attn",
+            "fan_small_12_p16_224",
+            "fan_large_24_p16_224",
+            "vit_large_patch14_dinov2_swiglu",
+            "vit_giant_patch14_reg4_dinov2_swiglu",
+            "ViT-H-14-SigLIP-CLIPA-224",
+            "ViT-L-14-SigLIP-CLIPA-336",
+            "ViT-L-14-SigLIP-CLIPA-224",
+            "c_radio_p1_vit_huge_patch16_mlpnorm",
+            "c_radio_p2_vit_huge_patch16_mlpnorm",
+            "c_radio_p3_vit_huge_patch16_mlpnorm",
+            "c_radio_v2_vit_base_patch16",
+            "c_radio_v2_vit_large_patch16",
+            "c_radio_v2_vit_huge_patch16"
         ]),
-        automl_enabled="TRUE"
     )
     feat_downsample: bool = BOOL_FIELD(
         value=False,
@@ -396,8 +401,8 @@ class AugmentationConfig:
         display_name="Standard Deviation"
     )  # non configurable here
     mixup_cutmix: bool = BOOL_FIELD(
-        value=True,
-        default_value=True,
+        value=False,
+        default_value=False,
         description="Flag to enable mixup and cutmix. Not recommended for binary classification."
     )
     mixup_alpha: float = FLOAT_FIELD(
@@ -413,29 +418,12 @@ class AugmentationConfig:
 class DataPathFormat:
     """Dataset Path experiment config."""
 
-    csv_path: str = STR_FIELD(value=MISSING, default_value="", description="Path to csv file for dataset")
-    images_dir: str = STR_FIELD(value=MISSING, default_value="", description="Path to images directory for dataset")
-
-
-@dataclass
-class TrainData:
-    """Train Data Dataclass"""
-
-    data_prefix: Optional[str] = STR_FIELD(value="", default_value="", description="Dataset directory path")
-
-
-@dataclass
-class ValData:
-    """Validation Data Dataclass"""
-
-    data_prefix: Optional[str] = STR_FIELD(value=None, default_value="", description="Dataset directory path")
-
-
-@dataclass
-class TestData:
-    """Test Data Dataclass"""
-
-    data_prefix: Optional[str] = STR_FIELD(value=None, default_value="", description="Dataset directory path")
+    images_dir: str = STR_FIELD(
+        value="/data",
+        default_value="",
+        description="Path to images directory for dataset",
+        display_name="image directory"
+    )
 
 
 @dataclass
@@ -451,10 +439,11 @@ class UnstructuredTrainData:
 class DatasetConfig:
     """Classification Dataset Config."""
 
-    root_dir: Optional[str] = STR_FIELD(
+    root_dir: str = STR_FIELD(
         value="",
         default_value="",
-        description="Path to root directory for dataset"
+        description="Path to folder that contains classes.txt which indicate class name and train ID. \
+        Can be optional then the mapping will be generated from pipeline."
     )
     dataset: str = STR_FIELD(
         value="CLDataset",
@@ -463,8 +452,8 @@ class DatasetConfig:
         description="dataset class"
     )
     num_classes: int = INT_FIELD(
-        value=2,
-        default_value=2,
+        value=20,
+        default_value=20,
         description="The number of classes in the training data",
         math_cond=">0",
         valid_min=2,
@@ -499,10 +488,22 @@ class DatasetConfig:
         description="Shuffle dataloader"
     )
     augmentation: AugmentationConfig = DATACLASS_FIELD(AugmentationConfig())
-    train: TrainData = DATACLASS_FIELD(TrainData())
+    train_dataset: DataPathFormat = DATACLASS_FIELD(
+        DataPathFormat(),
+        description="Configuration for the training dataset path",
+        display_name="Training Dataset"
+    )
     train_nolabel: UnstructuredTrainData = DATACLASS_FIELD(UnstructuredTrainData())
-    val: ValData = DATACLASS_FIELD(ValData())
-    test: TestData = DATACLASS_FIELD(TestData())
+    val_dataset: DataPathFormat = DATACLASS_FIELD(
+        DataPathFormat(),
+        description="Configuration for the validation dataset path",
+        display_name="Validation Dataset"
+    )
+    test_dataset: DataPathFormat = DATACLASS_FIELD(
+        DataPathFormat(),
+        description="Configuration for the testing dataset path",
+        display_name="Testing Dataset"
+    )
 
 
 @dataclass

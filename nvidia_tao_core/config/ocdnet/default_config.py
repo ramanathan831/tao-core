@@ -424,6 +424,13 @@ class Trainargs:
                     "thresh_min": 0.3
                 },
                 "type": "MakeBorderMap"
+            },
+            {
+                "args": {
+                    "shrink_ratio": 0.4,
+                    "min_text_size": 8
+                },
+                "type": "MakeShrinkMap"
             }
         ],
         description="The pre-processing configuration.",

@@ -48,6 +48,12 @@ spec:
       def TARGET="sw-tao-pypi-local/nvidia-tao-core-dev/${VER}/${PYTHON_VERSION}/"
       def PROP="component_name=nvidia-tao-core;arch=x86_64;os=linux;build_source=None;version=${VER};branch=main;release_approver=vpraveen"
       
+      // GitLab Related
+      def GITLAB_PROJECT_ID = "140075" 
+      def TAG_NAME = "v${VER}"
+      def RELEASE_NAME = "Release ${VER}"
+      def RELEASE_DESCRIPTION = "Release ${VER} with third-party packages"
+      
       stage ('checkout') {
         gitlabCommitStatus(name: "checkout", connection: gitLabConnection('git-lab-master')) {
           checkout scm
@@ -88,6 +94,49 @@ spec:
           }
         }
       }
+
+      stage ('publish_release_artifacts') {
+        gitlabCommitStatus(name: "publish_release_artifacts", connection: gitLabConnection('git-lab-master')) {
+          withCredentials([string(credentialsId: 'gitlab-api-token', variable: 'GITLAB_TOKEN')]) {
+            def MAIN_WORKSPACE="${WORKSPACE}"
+
+            echo "Updating dependencies..."
+
+            sh """
+                    python3 -m pip install requests
+                """
+
+            echo "Publishing release artifacts..."
+
+            sh """
+              # Check if git is installed, if not install it
+              command -v git >/dev/null 2>&1 || { echo "Installing git..."; apt-get update && apt-get install -y git; }
+              
+              # Clone using GitLab token for authentication
+              git clone https://oauth2:\${GITLAB_TOKEN}@gitlab-master.nvidia.com/nvidia-tao-toolkit/tao-third-party-packages.git third-party-manager
+            """
+
+            sh """
+              cd third-party-manager
+              python3 manage_third_party.py \\
+                --enable-wheels \\
+                --python-requirements "${MAIN_WORKSPACE}/requirements.txt" \\
+                --gitlab-project-id ${GITLAB_PROJECT_ID} \\
+                --tag-name ${TAG_NAME} \\
+                --gitlab-token \${GITLAB_TOKEN} \\
+                --release-name "${RELEASE_NAME}" \\
+                --release-description "${RELEASE_DESCRIPTION}" \\
+                --wheels-dir "third_party_wheels" \\
+                --gitlab-timeout 60 \\
+                --gitlab-retries 3
+            """
+
+            echo "Cleaning up workspace..."
+            sh 'rm -rf third_party_wheels third_party_apt third_party_apt_sources || true'
+          }
+        }
+      }
+      
     }
     
     // container('docker') {

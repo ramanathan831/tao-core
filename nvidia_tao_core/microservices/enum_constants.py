@@ -96,17 +96,25 @@ def _get_network_architectures() -> list[str]:
     config_dir = pathlib.Path(__file__).parent / "handlers" / "network_configs"
 
     architectures = set()
+
     if config_dir.exists():
         for config_file in config_dir.glob("*.config.json"):
             arch_name = config_file.stem.replace(".config", "")
             try:
                 with open(config_file, 'r', encoding='utf-8') as f:
                     config = json.load(f)
-                    if "data_sources" in config:
-                        actions.update(arch_name)
+
+                    # Add the main architecture
+                    architectures.add(arch_name)
+
+                    # Add networks from action mappings
+                    actions_mapping = config.get("actions_mapping", {})
+                    for _, mapping in actions_mapping.items():
+                        if "network" in mapping:
+                            architectures.add(mapping["network"])
+
             except (json.JSONDecodeError, IOError):
                 continue
-            architectures.add(arch_name)
 
     return architectures
 
@@ -297,6 +305,7 @@ class BaseExperimentBackboneClass(enum.Enum):
     resnet = "resnet"
     stgcn = "st gcn"
     convnext = "convnext"
+    densenet = "densenet"
 
 
 class BaseExperimentLicense(enum.Enum):

@@ -17,6 +17,40 @@
         }
     },
 
+    "actions_mapping": {
+        "annotation_format_convert": {
+            "network": "annotations",
+            "action": "convert"
+        },
+        "auto_label": {
+            "network": "auto_label",
+            "action": "generate"
+        },
+        "auto_labeling": {
+            "network": "auto_label",
+            "action": "generate"
+        },
+        "augment": {
+            "network": "augmentation",
+            "action": "generate"
+        },
+        "analyze": {
+            "network": "analytics"
+        },
+        "validate_annotations": {
+            "network": "analytics",
+            "action": "validate"
+        },
+        "validate_images": {
+            "network": "image",
+            "action": "validate"
+        },
+        "convert_efficientdet_tf2": {
+            "network": "efficientdet_tf2",
+            "action": "dataset_convert"
+        }
+    },
+
     "dynamic_config": {
         "parent_action_rules": {
             "annotation_format_convert": {

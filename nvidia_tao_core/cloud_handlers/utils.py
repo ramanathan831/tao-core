@@ -109,7 +109,7 @@ def search_for_ptm(root, network="", parameter_name=""):
         return model_path
     if os.path.exists(root):
         if network == "vila":
-            return os.path.join(root, "nvila_vnvila-15b-highres")
+            return os.path.join(root, os.listdir(root)[0])
         return root
     logger.info("PTM can't be found")
     return None
@@ -251,11 +251,13 @@ def download_files(cloud_storage, cloud_file_path, local_path):
         dir_name = cloud_file_path.split("/")[-1].split(".")[0]
         destination_path = f"{local_path}{dir_name}"
         if not os.path.exists(destination_path):
+            cleanup_cuda_contexts()
             raise ValueError("Folder name not same as the file name")
     else:
         file_name = cloud_file_path.split("/")[-1]
         destination_path = f"{local_path}{file_name}"
         if not os.path.isfile(destination_path):
+            cleanup_cuda_contexts()
             raise ValueError("Unable to download the file")
     return destination_path
 
@@ -342,6 +344,7 @@ def send_logs_to_server(seek_position, retry=0):
     """Sends TTY logs back to Hosted API"""
     if os.getenv("CLOUD_BASED") == "True":
         if retry >= NUM_RETRY:
+            cleanup_cuda_contexts()
             raise ValueError("Log Callback was unsuccessfull")
 
         log_file = get_log_file_name()
@@ -397,6 +400,7 @@ def status_callback(data_string, retry=0):
     """
     if os.getenv("CLOUD_BASED") == "True":
         if retry >= NUM_RETRY:
+            cleanup_cuda_contexts()
             raise ValueError("Status Callback was unsuccessful after multiple retries")
 
         ngc_key = os.getenv("TAO_USER_KEY")
@@ -519,9 +523,11 @@ def download_files_from_cloud(
         destination_folder = os.path.dirname(destination_path)
         download_from_https_link(link, destination_folder)
         dictionary[key] = destination_path
+        return destination_path
 
-    elif value.startswith("ngc://"):
+    if value.startswith("ngc://"):
         if not ngc_key:
+            cleanup_cuda_contexts()
             raise ValueError("NGC Personal key has not been provided")
         ngc_model = value.split("ngc://")[-1]
         org, team, model_name, model_version = split_ngc_path(ngc_model)
@@ -532,11 +538,13 @@ def download_files_from_cloud(
             is_cookie_set=tao_api_ui_cookie,
             use_ngc_staging=use_ngc_staging
         ):
+            cleanup_cuda_contexts()
             raise ValueError("Unable to download the PTM")
         ptm_path = search_for_ptm(f"/ptm/{org}/{team}/{model_name}/{model_version}/model", network_arch, key)
         dictionary[key] = ptm_path
+        return ptm_path
 
-    elif "://" in value:
+    if "://" in value:
         cloud_storage, cloud_file_path = get_cloud_storage_class_object(cloud_data, value)
         local_path_of_dataset_file = f"/results/{job_id}/{cloud_file_path}"
         if reset_value:
@@ -570,7 +578,8 @@ def download_files_from_spec(
     network_arch=None,
     ngc_key=None,
     tao_api_ui_cookie="",
-    use_ngc_staging=""
+    use_ngc_staging="",
+    reprocess_files=None
 ):
     """Recursively download files from a nested dictionary."""
     if isinstance(data, dict):
@@ -583,7 +592,8 @@ def download_files_from_spec(
                     network_arch=network_arch,
                     ngc_key=ngc_key,
                     tao_api_ui_cookie=tao_api_ui_cookie,
-                    use_ngc_staging=use_ngc_staging
+                    use_ngc_staging=use_ngc_staging,
+                    reprocess_files=reprocess_files
                 )
             elif isinstance(value, list):
                 override_list = []
@@ -602,6 +612,9 @@ def download_files_from_spec(
                         )
                         if not override_value:
                             override_value = list_element
+                        if (reprocess_files is not None and override_value and
+                                (list_element.endswith(".yaml") or list_element.endswith(".json"))):
+                            reprocess_files.append(override_value)
                         override_list.append(override_value)
                     elif isinstance(list_element, dict):
                         override_dict = {}
@@ -618,6 +631,9 @@ def download_files_from_spec(
                                     tao_api_ui_cookie=tao_api_ui_cookie,
                                     use_ngc_staging=use_ngc_staging
                                 )
+                                if (reprocess_files is not None and override_value and
+                                        (list_dict_value.endswith(".yaml") or list_dict_value.endswith(".json"))):
+                                    reprocess_files.append(override_value)
                                 if not override_value:
                                     override_value = list_dict_value
                             else:
@@ -629,7 +645,7 @@ def download_files_from_spec(
                 data[key] = override_list
             else:
                 if isinstance(value, str):
-                    download_files_from_cloud(
+                    override_value = download_files_from_cloud(
                         cloud_data,
                         data,
                         key,
@@ -641,6 +657,9 @@ def download_files_from_spec(
                         use_ngc_staging=use_ngc_staging,
                         reset_value=True
                     )
+                    if (reprocess_files is not None and override_value and
+                            (value.endswith(".yaml") or value.endswith(".json"))):
+                        reprocess_files.append(override_value)
 
 
 def get_results_cloud_data(cloud_data, spec_data, dest_dir=None):
@@ -668,6 +687,31 @@ def get_results_cloud_data(cloud_data, spec_data, dest_dir=None):
         spec_data["results_dir"] = cloud_file_path
         return cloud_storage, spec_data
     if not dest_dir:
+        cleanup_cuda_contexts()
         raise ValueError("Destination directory is not provided")
     spec_data["results_dir"] = f'{dest_dir}/{spec_data["results_dir"]}'
     return None, spec_data
+
+
+def cleanup_cuda_contexts():
+    """Clean up any stale CUDA contexts.
+
+    Call this function in cleanup routines or when throwing exceptions.
+    """
+    try:
+        # Check if PyCUDA is imported in this environment
+        pycuda_imported = "pycuda" in sys.modules
+        if pycuda_imported:
+            import pycuda.driver as cuda
+
+            # Clean up any active contexts
+            if cuda.Context.get_current() is not None:
+                try:
+                    # Pop the current context
+                    logger.info("Found active CUDA context. Cleaning up...")
+                    cuda.Context.pop()
+                    logger.info("Active CUDA context cleaned up!")
+                except Exception as e:
+                    logger.warning(f"Error cleaning up CUDA context: {str(e)}")
+    except Exception as e:
+        logger.warning(f"Unexpected error during CUDA cleanup: {str(e)}")

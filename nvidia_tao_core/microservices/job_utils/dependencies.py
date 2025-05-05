@@ -28,7 +28,6 @@ import logging
 from nvidia_tao_core.microservices.constants import NO_PTM_MODELS, MONAI_NETWORKS
 from nvidia_tao_core.microservices.handlers.utilities import get_num_gpus_from_spec
 from nvidia_tao_core.microservices.handlers.stateless_handlers import (
-    get_root,
     get_handler_root,
     get_handler_log_root,
     update_job_status,
@@ -53,7 +52,6 @@ logger = logging.getLogger(__name__)
 def dependency_check_parent(job_context, dependency):
     """Check if parent job is valid and in Done status"""
     parent_job_id = job_context.parent_id
-    org_name = job_context.org_name
     # If no parent job, this is always True
     if parent_job_id is None:
         return True, ""
@@ -74,10 +72,12 @@ def dependency_check_parent(job_context, dependency):
     # Set current job to Error if parent err's out
     if parent_status == "Error":
         handler_kind = "experiments"
-        if job_context.handler_id in os.listdir(os.path.join(get_root(), org_name, "datasets")):
+        dataset_metadata = get_handler_metadata(job_context.handler_id, "datasets")
+        if dataset_metadata:
             handler_kind = "datasets"
         update_job_status(job_context.handler_id, job_context.id, parent_status, kind=handler_kind)
         handler_log_root = get_handler_log_root(job_context.user_id, job_context.org_name, job_context.handler_id)
+        os.makedirs(handler_log_root, exist_ok=True)
         logfile = os.path.join(handler_log_root, str(job_context.id) + ".txt")
         with open(logfile, "a", encoding='utf-8') as f:
             f.write(f"Error log: \nParent job {parent_job_id} errored out")

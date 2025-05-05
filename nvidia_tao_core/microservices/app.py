@@ -16,6 +16,7 @@
 
 """API modules defining schemas and endpoints"""
 import ast
+import bson
 import sys
 import uuid
 import math
@@ -61,7 +62,7 @@ from nvidia_tao_core.microservices.handlers.stateless_handlers import (
     get_metrics,
     set_metrics
 )
-from nvidia_tao_core.microservices.handlers.utilities import validate_uuid
+from nvidia_tao_core.microservices.handlers.utilities import validate_uuid, send_microservice_request
 from nvidia_tao_core.microservices.utils import (
     is_pvc_space_free,
     safe_load_file,
@@ -89,10 +90,13 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+NAMESPACE = os.getenv("NAMESPACE", "default")
 
 #
 # Utils
 #
+
+
 def sys_int_format():
     """Get integer format based on system."""
     if sys.maxsize > 2**31 - 1:
@@ -589,7 +593,14 @@ class AllowedDockerEnvVariables(Enum):
     """Allowed docker environment variables while launching DNN containers"""
 
     HF_TOKEN = "HF_TOKEN"
+
     WANDB_API_KEY = "WANDB_API_KEY"
+    WANDB_BASE_URL = "WANDB_BASE_URL"
+    WANDB_USERNAME = "WANDB_USERNAME"
+    WANDB_ENTITY = "WANDB_ENTITY"
+    WANDB_PROJECT = "WANDB_PROJECT"
+    WANDB_INSECURE_LOGGING = "WANDB_INSECURE_LOGGING"
+
     CLEARML_WEB_HOST = "CLEARML_WEB_HOST"
     CLEARML_API_HOST = "CLEARML_API_HOST"
     CLEARML_FILES_HOST = "CLEARML_FILES_HOST"
@@ -1124,6 +1135,11 @@ class ContainerJobSchema(Schema):
             allow_none=True
         )
     )
+    statefulset_replicas = fields.Int(
+        format="int64",
+        validate=fields.validate.Range(min=0, max=sys.maxsize),
+        allow_none=True
+    )
 
 
 @app.route('/api/v1/internal/container_job', methods=['POST'])
@@ -1199,6 +1215,21 @@ def container_job_run():
     try:
         if "job_id" not in job_dict:
             job_dict["job_id"] = str(uuid.uuid4())
+
+        statefulset_replicas = job_dict.get("statefulset_replicas")
+        if statefulset_replicas:  # proxy requests to all replicas from master
+            for replica_index in range(1, statefulset_replicas):
+                send_microservice_request(
+                    api_endpoint="post_action",
+                    network=job_dict["neural_network_name"],
+                    action=job_dict["action_name"],
+                    cloud_metadata=job_dict["cloud_metadata"],
+                    specs=job_dict["specs"],
+                    docker_env_vars=job_dict["docker_env_vars"],
+                    job_id=job_dict["job_id"],
+                    statefulset_replica_index=replica_index,
+                    statefulset_replicas=statefulset_replicas
+                )
 
         job_id = container_handler.entrypoint_wrapper(job_dict)
         if job_id:
@@ -1493,11 +1524,39 @@ def metrics_upsert():
         metrics[f'gpu_{gpu}_action_{action}'] = metrics.get(f'gpu_{gpu}_action_{action}', 0) + 1
     metrics['last_updated'] = now.isoformat()
 
+    def sanitize_gpu_name(gpu_name):
+        # Convert to uppercase first, then replace all non-alphanumeric characters with -
+        return re.sub("[^a-zA-Z0-9]", "-", gpu_name.upper())
+
+    def create_gpu_identifier(gpu_list):
+        # Count occurrences of each GPU type (case insensitive)
+        gpu_counts = {}
+        for gpu in map(sanitize_gpu_name, gpu_list):
+            gpu_counts[gpu] = gpu_counts.get(gpu, 0) + 1
+
+        # Format as "gpu_count_gpu1_count_gpu2_count..."
+        gpu_parts = [f"{gpu}_{count}" for gpu, count in sorted(gpu_counts.items())]
+        return f"{len(gpu_list)}_{'_'.join(gpu_parts)}"
+
+    # Build metric name with all attributes
+    status = "pass" if success else "fail"
+    metric_components = [
+        "network", network,
+        "action", action,
+        "version", version,
+        "status", status,
+        "gpu", create_gpu_identifier(gpus)
+    ]
+    full_metric_name = "_".join(metric_components)
+
+    # Update metric counter
+    metrics[full_metric_name] = metrics.get(full_metric_name, 0) + 1
+
     set_metrics(metrics)
 
     # success
 
-    return make_response(jsonify(metrics), 200)
+    return make_response(bson.json_util.dumps(metrics), 201)
 
 
 #
@@ -1591,6 +1650,17 @@ class DateTimeField(fields.DateTime):
         if isinstance(value, datetime):
             return value
         return super()._deserialize(value, attr, data, **kwargs)
+
+
+class WorkspaceBackupReqSchema(Schema):
+    """Class defining workspace backup schema"""
+
+    class Meta:
+        """Class enabling sorting field values by the order in which they are declared"""
+
+        ordered = True
+        unknown = EXCLUDE
+    backup_file_name = fields.Str(validate=validate.Length(max=2048), allow_none=True)
 
 
 class WorkspaceRspSchema(Schema):
@@ -2332,6 +2402,178 @@ def workspace_partial_update(org_name, workspace_id):
     schema_dict = schema.dump(schema.load(response.data))
     return make_response(jsonify(schema_dict), response.code)
 
+
+@app.route('/api/v1/orgs/<org_name>/workspaces/<workspace_id>/backup', methods=['POST'])
+@disk_space_check
+def workspace_backup(org_name, workspace_id):
+    """Backup MongoDB data for a specific workspace.
+
+    ---
+    post:
+      tags:
+      - WORKSPACE
+      summary: Backup MongoDB data for a specific workspace
+      description: Returns the backup file name
+      parameters:
+      - name: org_name
+        in: path
+        description: Org Name
+        required: true
+        schema:
+          type: string
+          maxLength: 255
+          pattern: '^[a-zA-Z0-9_-]+$'
+      - name: workspace_id
+        in: path
+        description: Workspace ID
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema: WorkspaceBackupReqSchema
+        description: Backup file name
+        required: true
+      responses:
+        200:
+          description: Message indicating if the backup was successful
+          content:
+            application/json:
+              schema: MessageOnlySchema
+          headers:
+            Access-Control-Allow-Origin:
+              $ref: '#/components/headers/Access-Control-Allow-Origin'
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/X-RateLimit-Limit'
+        400:
+          description: Bad request, see reply body for details
+          content:
+            application/json:
+              schema: ErrorRspSchema
+          headers:
+            Access-Control-Allow-Origin:
+              $ref: '#/components/headers/Access-Control-Allow-Origin'
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/X-RateLimit-Limit'
+        404:
+          description: User or Workspace not found
+          content:
+            application/json:
+              schema: ErrorRspSchema
+          headers:
+            Access-Control-Allow-Origin:
+              $ref: '#/components/headers/Access-Control-Allow-Origin'
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/X-RateLimit-Limit'
+    """
+    message = validate_uuid(workspace_id=workspace_id)
+    if message:
+        metadata = {"error_desc": message, "error_code": 1}
+        schema = ErrorRspSchema()
+        response = make_response(jsonify(schema.dump(schema.load(metadata))), 400)
+        return response
+    schema = WorkspaceBackupReqSchema()
+    request_dict = schema.dump(schema.load(request.get_json(force=True)))
+    # Get response
+    response = app_handler.mongo_backup(workspace_id, request_dict.get("backup_file_name"))
+    # Get schema
+    schema = None
+    if response.code == 200:
+        schema = MessageOnlySchema()
+    else:
+        schema = ErrorRspSchema()
+    # Load metadata in schema and return
+    schema_dict = schema.dump(schema.load(response.data))
+    return make_response(jsonify(schema_dict), response.code)
+
+
+@app.route('/api/v1/orgs/<org_name>/workspaces/<workspace_id>/restore', methods=['POST'])
+@disk_space_check
+def workspace_restore(org_name, workspace_id):
+    """Restore MongoDB data for a specific workspace.
+
+    ---
+    post:
+      tags:
+      - WORKSPACE
+      summary: Restore MongoDB data for a specific workspace
+      description: Returns the restore file name
+      parameters:
+      - name: org_name
+        in: path
+        description: Org Name
+        required: true
+        schema:
+          type: string
+          maxLength: 255
+          pattern: '^[a-zA-Z0-9_-]+$'
+      - name: workspace_id
+        in: path
+        description: Workspace ID
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema: WorkspaceReqSchema
+        description: Updated metadata for Workspace
+        required: true
+      responses:
+        200:
+          description: Returned the updated Workspace
+          content:
+            application/json:
+              schema: MessageOnlySchema
+          headers:
+            Access-Control-Allow-Origin:
+              $ref: '#/components/headers/Access-Control-Allow-Origin'
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/X-RateLimit-Limit'
+        400:
+          description: Bad request, see reply body for details
+          content:
+            application/json:
+              schema: ErrorRspSchema
+          headers:
+            Access-Control-Allow-Origin:
+              $ref: '#/components/headers/Access-Control-Allow-Origin'
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/X-RateLimit-Limit'
+        404:
+          description: User or Workspace not found
+          content:
+            application/json:
+              schema: ErrorRspSchema
+          headers:
+            Access-Control-Allow-Origin:
+              $ref: '#/components/headers/Access-Control-Allow-Origin'
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/X-RateLimit-Limit'
+    """
+    message = validate_uuid(workspace_id=workspace_id)
+    if message:
+        metadata = {"error_desc": message, "error_code": 1}
+        schema = ErrorRspSchema()
+        response = make_response(jsonify(schema.dump(schema.load(metadata))), 400)
+        return response
+    schema = WorkspaceBackupReqSchema()
+    request_dict = schema.dump(schema.load(request.get_json(force=True)))
+    # Get response
+    response = app_handler.mongo_restore(workspace_id, request_dict.get("backup_file_name"))
+    # Get schema
+    schema = None
+    if response.code == 200:
+        schema = MessageOnlySchema()
+    else:
+        schema = ErrorRspSchema()
+    # Load metadata in schema and return
+    schema_dict = schema.dump(schema.load(response.data))
+    return make_response(jsonify(schema_dict), response.code)
+
 #
 # DATASET API
 #
@@ -2420,6 +2662,13 @@ class DatasetReqSchema(Schema):
         fields.Str(format="uuid", validate=fields.validate.Length(max=36)),
         validate=validate.Length(max=2)
     )
+    skip_validation = fields.Bool(allow_none=True)
+    authorized_party_nca_id = fields.Str(
+        format="regex",
+        regex=r'.*',
+        validate=fields.validate.Length(max=2048),
+        allow_none=True
+    )
 
 
 class DatasetJobSchema(Schema):
@@ -2503,6 +2752,13 @@ class DatasetRspSchema(Schema):
     base_experiment = fields.List(
         fields.Str(format="uuid", validate=fields.validate.Length(max=36)),
         validate=validate.Length(max=2)
+    )
+    skip_validation = fields.Bool(allow_none=True)
+    authorized_party_nca_id = fields.Str(
+        format="regex",
+        regex=r'.*',
+        validate=fields.validate.Length(max=2048),
+        allow_none=True
     )
 
 
@@ -5135,6 +5391,12 @@ class ExperimentReqSchema(Schema):
         validate=validate.Length(max=16)
     )
     retry_experiment_id = fields.Str(format="uuid", validate=fields.validate.Length(max=36), allow_none=True)
+    authorized_party_nca_id = fields.Str(
+        format="regex",
+        regex=r'.*',
+        validate=fields.validate.Length(max=2048),
+        allow_none=True
+    )
 
 
 class ExperimentJobSchema(Schema):
@@ -5310,6 +5572,12 @@ class ExperimentRspSchema(Schema):
             validate=fields.validate.Length(max=36)
         ),
         validate=validate.Length(max=16)
+    )
+    authorized_party_nca_id = fields.Str(
+        format="regex",
+        regex=r'.*',
+        validate=fields.validate.Length(max=2048),
+        allow_none=True
     )
 
 
@@ -5657,7 +5925,8 @@ def base_experiment_list(org_name):
             X-RateLimit-Limit:
               $ref: '#/components/headers/X-RateLimit-Limit'
     """
-    experiments = app_handler.list_base_experiments()
+    user_id = authentication.get_user_id(request.headers.get('Authorization', ''), request.cookies, org_name)
+    experiments = app_handler.list_base_experiments(user_id, org_name)
     filtered_experiments = filtering.apply(request.args, experiments)
     paginated_experiments = pagination.apply(request.args, filtered_experiments)
     metadata = {"experiments": paginated_experiments}

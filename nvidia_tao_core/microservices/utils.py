@@ -101,6 +101,39 @@ def read_network_config(network):
     return cli_config
 
 
+def get_microservices_network_and_action(network, action):
+    """Maps a network and action to the appropriate microservices network and action.
+
+    Args:
+        network (str): The original network name.
+        action (str): The original action name.
+
+    Returns:
+        tuple: (microservices_network, microservices_action) - The mapped network and action names.
+    """
+    # Start with defaults (no change)
+    microservices_network = network
+    microservices_action = action
+
+    # Try to get the mapping from the network config
+    try:
+        network_config = read_network_config(network)
+        action_mapping = network_config.get("actions_mapping", {})
+
+        # If this action has a mapping defined
+        if action in action_mapping:
+            mapping = action_mapping[action]
+            if "network" in mapping:
+                microservices_network = mapping["network"]
+            if "action" in mapping:
+                microservices_action = mapping["action"]
+    except Exception:
+        # Fallback to the original values if any error occurs
+        pass
+
+    return microservices_network, microservices_action
+
+
 def get_monitoring_metric(network):
     """Get the monitoring metric for a specific network.
 
@@ -664,3 +697,8 @@ def is_cookie_request(request):
 def print_start_script_path():
     """Print the path to the start script."""
     print(os.path.join(os.path.dirname(__file__), 'app_start.sh'))
+
+
+def print_nginx_conf_path():
+    """Print the path to the nginx.conf file."""
+    print(os.path.join(os.path.dirname(__file__), 'nginx.conf'))

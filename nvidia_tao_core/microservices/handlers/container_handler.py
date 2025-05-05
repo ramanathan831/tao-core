@@ -28,9 +28,15 @@ import logging
 
 from nvidia_tao_core.api_utils import module_utils
 from nvidia_tao_core.api_utils.entrypoint_mimicker import vlm_entrypoint
-from nvidia_tao_core.cloud_handlers.utils import download_files_from_spec, get_results_cloud_data, monitor_and_upload
+from nvidia_tao_core.cloud_handlers.utils import (
+    download_files_from_spec,
+    get_results_cloud_data,
+    monitor_and_upload,
+    cleanup_cuda_contexts,
+)
 import nvidia_tao_core.loggers.logging as status_logging
 from nvidia_tao_core.api_utils.module_utils import entrypoint_paths, entry_points
+from nvidia_tao_core.microservices.utils import safe_load_file, safe_dump_file
 
 # Configure logging
 logging.basicConfig(
@@ -77,6 +83,7 @@ class ContainerJobHandler:
 
                     # Create results directory and download files
                     os.makedirs(specs["results_dir"], exist_ok=True)
+                    reprocess_files = []
                     download_files_from_spec(
                         cloud_data=job.get("cloud_metadata"),
                         data=specs,
@@ -84,13 +91,32 @@ class ContainerJobHandler:
                         network_arch=job["neural_network_name"],
                         ngc_key=docker_env_vars.get("TAO_USER_KEY"),
                         tao_api_ui_cookie=docker_env_vars.get('TAO_API_UI_COOKIE', ""),
-                        use_ngc_staging=docker_env_vars.get('USE_NGC_STAGING', "False")
+                        use_ngc_staging=docker_env_vars.get('USE_NGC_STAGING', "False"),
+                        reprocess_files=reprocess_files
                     )
 
                     # Save spec file
                     spec_path = os.path.join(specs["results_dir"], "spec.yaml")
                     with open(spec_path, 'w+', encoding='utf-8') as yaml_file:
                         yaml.dump(specs, yaml_file, default_flow_style=False)
+
+                    logger.info("reprocess_files: %s", reprocess_files)
+                    if reprocess_files:
+                        for file_name in reprocess_files:
+                            file_type = file_name.split(".")[-1]
+                            reprocess_file_data = safe_load_file(file_name, file_type=file_type)
+                            if reprocess_file_data:
+                                download_files_from_spec(
+                                    cloud_data=job.get("cloud_metadata"),
+                                    data=reprocess_file_data,
+                                    job_id=job["job_id"],
+                                    network_arch=job["neural_network_name"],
+                                    ngc_key=docker_env_vars.get("TAO_USER_KEY"),
+                                    tao_api_ui_cookie=docker_env_vars.get('TAO_API_UI_COOKIE', ""),
+                                    use_ngc_staging=docker_env_vars.get('USE_NGC_STAGING', "False"),
+                                )
+                                if reprocess_file_data:
+                                    safe_dump_file(file_name, reprocess_file_data, file_type=file_type)
 
                     # Start cloud upload monitoring if needed
                     if cloud_storage:
@@ -246,6 +272,8 @@ class ContainerJobHandler:
                 message=f"{job['action_name']} action {result} for {job['neural_network_name']}",
                 status_level=status
             )
+        # Clean up any stale CUDA contexts
+        cleanup_cuda_contexts()
 
     @staticmethod
     def get_status_file(results_dir, action_name=""):
@@ -271,6 +299,7 @@ class ContainerJobHandler:
             results_dir = results_dir[results_dir.find(bucket_name) + len(bucket_name):]
 
         if not results_dir:
+            cleanup_cuda_contexts()
             raise ValueError("Empty 'results_dir' in specs.")
         if not os.path.isdir(results_dir):
             logger.error("results_dir directory %s does not exist", results_dir)

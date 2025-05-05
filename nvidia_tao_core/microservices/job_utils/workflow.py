@@ -171,6 +171,7 @@ def report_healthy(message, clear=False):
     health_message = f"Healthy at {now.isoformat()}"
     if message:
         health_message += f"\n{message}"
+    logger.info(health_message)
     mongo_health.upsert({'id': health_id}, {'id': health_id, 'created_on': now,
                         'message': f"Healthy at {now.isoformat()}"})
     mongo_health.create_ttl_index('created_on', 86400)

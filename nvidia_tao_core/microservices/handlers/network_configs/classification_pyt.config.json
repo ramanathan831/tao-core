@@ -1,13 +1,14 @@
 {
     "api_params": {
         "dataset_type":"image_classification",
-        "actions": ["train","evaluate","export","gen_trt_engine","inference"],
+        "actions": ["train", "distill", "evaluate","export","gen_trt_engine","inference"],
         "formats":["classification_pyt"],
         "accepted_ds_intents": ["training", "evaluation", "testing"],
         "image":"TAO_PYTORCH",
         "spec_backend":"yaml",
         "actions_pipe":{
             "train":"train",
+            "distill":"train",
             "evaluate":"evaluate",
             "export":"export_with_spec",
             "gen_trt_engine":"gen_trt_engine",
@@ -17,90 +18,51 @@
 
     "data_sources": {
         "train": {
-            "dataset.data.train": {
+            "dataset.train_dataset.images_dir": {
                 "source": "train_datasets",
                 "multiple_sources": false,
-                "mapping": {
-                    "data_prefix": {
-                        "path": "images_train.tar.gz"
-                    },
-                    "classes": {
-                        "path": "classes.txt"
-                    }
-                }
+                "path": "images_train.tar.gz"
             },
-            "dataset.data.val": {
+            "dataset.val_dataset.images_dir": {
                 "source": "eval_dataset",
                 "multiple_sources": false,
-                "mapping": {
-                    "data_prefix": {
-                        "path": "images_val.tar.gz"
-                    },
-                    "classes": {
-                        "path": "classes.txt"
-                    }
-                }
+                "path": "images_val.tar.gz"
+            }
+        },
+        "distill": {
+            "dataset.train_dataset.images_dir": {
+                "source": "train_datasets",
+                "multiple_sources": false,
+                "path": "images_train.tar.gz"
+            },
+            "dataset.val_dataset.images_dir": {
+                "source": "eval_dataset",
+                "multiple_sources": false,
+                "path": "images_val.tar.gz"
             }
         },
         "evaluate": {
-            "dataset.data.val": {
+            "dataset.val_dataset.images_dir": {
                 "source": "eval_dataset",
                 "multiple_sources": false,
-                "mapping": {
-                    "data_prefix": {
-                        "path": "images_val.tar.gz"
-                    },
-                    "classes": {
-                        "path": "classes.txt"
-                    }
-                }
+                "path": "images_val.tar.gz"
             },
-            "dataset.data.test": {
+            "dataset.test_dataset.images_dir": {
                 "source": "inference_dataset",
                 "multiple_sources": false,
-                "mapping": {
-                    "data_prefix": {
-                        "path": "images_test.tar.gz"
-                    },
-                    "classes": {
-                        "path": "classes.txt"
-                    }
-                }
+                "path": "images_test.tar.gz"
             }
         },
         "inference": {
-            "dataset.data.val": {
+            "dataset.val_dataset.images_dir": {
                 "source": "eval_dataset",
                 "multiple_sources": false,
-                "mapping": {
-                    "data_prefix": {
-                        "path": "images_val.tar.gz"
-                    },
-                    "classes": {
-                        "path": "classes.txt"
-                    }
-                }
+                "path": "images_val.tar.gz"
             },
-            "dataset.data.test": {
+            "dataset.test_dataset.images_dir": {
                 "source": "inference_dataset",
                 "multiple_sources": false,
-                "mapping": {
-                    "data_prefix": {
-                        "path": "images_test.tar.gz"
-                    },
-                    "classes": {
-                        "path": "classes.txt"
-                    }
-                }
-            }
-        }
-    },
-
-    "dynamic_config": {
-        "model_type_key": "model.head.loss.type",
-        "rules": {
-            "LabelSmoothLoss": {
-                "remove": ["model.head.loss.use_soft"]
+                "path": "images_test.tar.gz"
             }
         }
     },
@@ -108,9 +70,13 @@
     "spec_params":{
         "train": {
             "results_dir":"output_dir",
-            "model.backbone.pretrained":"ptm_if_no_resume_model",
-            "model.init_cfg.checkpoint":"ptm_if_no_resume_model",
-            "train.train_config.resume_training_checkpoint_path":"resume_model"
+            "model.backbone.pretrained_backbone_path":"ptm_if_no_resume_model",
+            "train.pretrained_model_path":"ptm_if_no_resume_model",
+            "train.resume_training_checkpoint_path":"resume_model"
+        },
+        "distill": {
+            "results_dir":"output_dir",
+            "distill.pretrained_teacher_model_path":"resume_model"
         },
         "evaluate":{
             "results_dir":"output_dir",
@@ -135,12 +101,12 @@
 
     "automl_spec_params":{
         "results_dir":"automl_output_dir",
-        "model.backbone.pretrained":"automl_assign_ptm",
-        "model.init_cfg.checkpoint":"automl_assign_ptm",
-        "train.train_config.resume_training_checkpoint_path":"automl_resume_model",
-        "train.train_config.checkpoint_config.interval":"assign_const_value,train.train_config.runner.max_epochs",
-        "train.train_config.evaluation.interval":"assign_const_value,train.train_config.runner.max_epochs,train.train_config.checkpoint_config.interval",
-        "train.train_config.logging.interval":"assign_const_value"
+        "model.backbone.pretrained_backbone_path":"automl_assign_ptm",
+        "train.pretrained_model_path":"automl_assign_ptm",
+        "distill.teacher_model_path":"automl_resume_model",
+        "train.resume_training_checkpoint_path":"automl_resume_model",
+        "train.checkpoint_interval":"assign_const_value,train.num_epochs",
+        "train.validation_interval":"assign_const_value,train.num_epochs,train.checkpoint_interval"
     },
 
     "metrics": {

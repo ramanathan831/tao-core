@@ -122,12 +122,13 @@ def validate(url, token):
     for role in roles:
         org = role.get('org', {}).get('name', '')
         team = role.get('team', {}).get('name', '')
-        entitlements = role.get('orgRoles', [])
-        if not entitlements:
-            member_of.append(f"{org}/{team}")
-        else:
-            for entitlement in entitlements:
-                member_of.append(f"{org}/{team}:{entitlement}")
+        for role_type in ("orgRoles", "teamRoles"):
+            entitlements = role.get(role_type, [])
+            if not entitlements:
+                member_of.append(f"{org}/{team}")
+            else:
+                for entitlement in entitlements:
+                    member_of.append(f"{org}/{team}:{entitlement}")
     extra_user_metadata = {'member_of': member_of}
     if jwt_token:
         session.set_session(user_id, org_name, jwt_token, extra_user_metadata)

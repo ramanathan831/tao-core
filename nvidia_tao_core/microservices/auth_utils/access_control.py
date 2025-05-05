@@ -17,6 +17,7 @@
 
 """Authentication utils access control modeules"""
 import os
+# import re
 # from nvidia_tao_core.microservices.handlers.mongo_handler import MongoHandler
 
 
@@ -41,8 +42,7 @@ def validate(user_id, org_name, url):
     #     mongo = MongoHandler("tao", "users")
     #     user_metadata = mongo.find_one({'id': user_id})
     #     member_of = user_metadata.get('member_of', [])
-    #     if f"{org_name}/:TAO_USER" not in member_of:
-    #         if f"{org_name}/:MONAI_USER" not in member_of:
-    #             if f"{org_name}/:MAXINE_USER" not in member_of:
-    #                 err = AccessControlError("No access granted for user in org " + org_name)
+    #     pattern = fr"{org_name}/.*:(TAO_USER|MONAI_USER|MAXINE_USER)"
+    #     if not any(re.match(pattern, member) for member in member_of):
+    #         err = AccessControlError("No access granted for user in org " + org_name)
     return err

@@ -22,7 +22,8 @@ entrypoint_paths = {
     "nvidia_tao_pytorch": "nvidia_tao_pytorch.core.entrypoint",
     "nvidia_tao_deploy": "nvidia_tao_deploy.cv.common.entrypoint.entrypoint_hydra",
     "nvidia_tao_tf2": "nvidia_tao_tf2.common.entrypoint.entrypoint",
-    "nvidia_tao_ds": "nvidia_tao_ds.core.entrypoint.entrypoint"
+    "nvidia_tao_ds": "nvidia_tao_ds.core.entrypoint.entrypoint",
+    "maxine_eye_contact": "maxine_eye_contact.entrypoint.maxine_eye_contact"
 }
 
 entry_points = [
@@ -37,7 +38,6 @@ def get_entry_points():
     toml_path = "/home/pyproject.toml"
     with open(toml_path, "r", encoding="utf-8") as f:
         toml_data = toml.load(f)
-
     for ep_name in toml_data.get("project", {}).get("scripts", {}).keys():
         model = ep_name.split("-")
         if len(model) > 1:

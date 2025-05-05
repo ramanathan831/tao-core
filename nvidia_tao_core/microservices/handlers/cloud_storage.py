@@ -18,9 +18,11 @@ import io
 import copy
 import time
 import functools
+import fnmatch
 import logging
 
 from nvidia_tao_core.microservices.handlers.encrypt import NVVaultEncryption
+from nvidia_tao_core.distributed.decorators import master_node_only
 
 from libcloud.storage.types import Provider
 from libcloud.storage.providers import get_driver
@@ -145,57 +147,54 @@ class CloudStorage:
         self.driver = cls(access_key, secret_key, region=self.region)
         self.container = self.driver.get_container(container_name=self.bucket_name)
 
-    @retry_method
-    def upload_file(self, local_file_path, cloud_file_path):
-        """Upload a file from a local path to a specified path in the cloud storage bucket.
+    """GET Operations"""
 
-        :local_file_path: Local file path to be uploaded.
-        :cloud_file_path: Destination path in the cloud storage bucket.
+    @retry_method
+    def is_file(self, cloud_path):
+        """Check if the given cloud path represents a file.
+
+        :param cloud_path: Cloud path to be checked.
+        :return: True if the path represents a file, False otherwise.
         """
         try:
-            # Upload the file to cloud storage
-            if os.path.exists(local_file_path):
-                with open(local_file_path, 'rb') as file_stream:
-                    self.driver.upload_object_via_stream(
-                        file_stream,
-                        container=self.container,
-                        object_name=cloud_file_path
-                    )
-                if self.is_file(cloud_file_path):
-                    logger.info("File %s was uploaded successfully", cloud_file_path)
-                else:
-                    raise ValueError(f"File {cloud_file_path} was not uploaded successfully")
+            self.driver.get_object(container_name=self.bucket_name, object_name=cloud_path)
+        except (LibcloudError, ObjectDoesNotExistError):
+            logger.error("File %s doesn't exist in cloud storage", cloud_path)
+            return False
+        except Exception as e:
+            logger.error("Error checking cloud path: %s", e)
+            return False
+        return True
+
+    @retry_method
+    def is_folder(self, cloud_path):
+        """Check if the given cloud path represents a folder.
+
+        :param cloud_path: Cloud path to be checked.
+        :return: True if the path represents a folder, False otherwise.
+        """
+        try:
+            prefix = cloud_path.rstrip('/') + '/'
+
+            # List objects with the specified prefix
+            objects = self.driver.list_container_objects(container=self.container, ex_prefix=prefix)
+
+            # Check if there are any objects with the specified prefix
+            return any(objects)
         except Exception as e:
             raise e
 
     @retry_method
-    def upload_folder(self, local_folder, cloud_subfolder):
-        """Upload files from a local folder to a specified subfolder in the cloud storage bucket.
+    def glob_files(self, pattern):
+        """Search for files in the bucket that match the specified pattern.
 
-        local_folder: Local folder path.
-        cloud_subfolder: Target subfolder in the cloud storage bucket.
+        pattern: File pattern to match, e.g., "*.mp4".
+        Returns:
+            List of matching file names.
         """
-        try:
-            # Remove leading/trailing slashes from cloud_subfolder
-            cloud_subfolder = cloud_subfolder.strip("/")
-
-            for root, _, files in os.walk(local_folder):
-                for file in files:
-                    local_file_path = os.path.join(root, file)
-                    relative_path = os.path.relpath(local_file_path, local_folder)
-
-                    # Construct the cloud object name without a leading slash
-                    cloud_object_name = f"{cloud_subfolder}/{relative_path.replace(os.path.sep, '/')}"
-
-                    # Upload the file to cloud storage
-                    with open(local_file_path, 'rb') as file_stream:
-                        self.driver.upload_object_via_stream(
-                            file_stream,
-                            container=self.container,
-                            object_name=cloud_object_name
-                        )
-        except Exception as e:
-            raise e
+        all_files = self.driver.list_container_objects(self.container)
+        matching_files = [obj.name for obj in all_files if fnmatch.fnmatch(obj.name, pattern)]
+        return matching_files
 
     @retry_method
     def list_files_in_folder(self, folder):
@@ -252,7 +251,85 @@ class CloudStorage:
                 local_dest_wo_parent_root = os.path.join(local_destination, relative_path)
             self.download_file(obj.name, local_dest_wo_parent_root)
 
+    """CREATE Operations"""
+
     @retry_method
+    @master_node_only
+    def create_folder_in_bucket(self, folder):
+        """Create a folder in the cloud storage bucket.
+
+        Args:
+            folder (str): Folder path to be created in the cloud storage bucket.
+        """
+        try:
+            # Ensure the folder path ends with a trailing slash
+            if not folder.endswith('/'):
+                folder += '/'
+
+            # Upload an empty object to represent the folder
+            empty_data = io.BytesIO(b'')
+            self.driver.upload_object_via_stream(empty_data, container=self.container, object_name=folder)
+        except Exception as e:
+            raise e
+
+    @retry_method
+    @master_node_only
+    def upload_file(self, local_file_path, cloud_file_path):
+        """Upload a file from a local path to a specified path in the cloud storage bucket.
+
+        :local_file_path: Local file path to be uploaded.
+        :cloud_file_path: Destination path in the cloud storage bucket.
+        """
+        try:
+            # Upload the file to cloud storage
+            if os.path.exists(local_file_path):
+                with open(local_file_path, 'rb') as file_stream:
+                    self.driver.upload_object_via_stream(
+                        file_stream,
+                        container=self.container,
+                        object_name=cloud_file_path
+                    )
+                if self.is_file(cloud_file_path):
+                    logger.info("File %s was uploaded successfully", cloud_file_path)
+                else:
+                    raise ValueError(f"File {cloud_file_path} was not uploaded successfully")
+        except Exception as e:
+            raise e
+
+    @retry_method
+    @master_node_only
+    def upload_folder(self, local_folder, cloud_subfolder):
+        """Upload files from a local folder to a specified subfolder in the cloud storage bucket.
+
+        local_folder: Local folder path.
+        cloud_subfolder: Target subfolder in the cloud storage bucket.
+        """
+        try:
+            # Remove leading/trailing slashes from cloud_subfolder
+            cloud_subfolder = cloud_subfolder.strip("/")
+
+            for root, _, files in os.walk(local_folder):
+                for file in files:
+                    local_file_path = os.path.join(root, file)
+                    relative_path = os.path.relpath(local_file_path, local_folder)
+
+                    # Construct the cloud object name without a leading slash
+                    cloud_object_name = f"{cloud_subfolder}/{relative_path.replace(os.path.sep, '/')}"
+
+                    # Upload the file to cloud storage
+                    with open(local_file_path, 'rb') as file_stream:
+                        self.driver.upload_object_via_stream(
+                            file_stream,
+                            container=self.container,
+                            object_name=cloud_object_name
+                        )
+        except Exception as e:
+            raise e
+
+    """DELETE Operations"""
+
+    @retry_method
+    @master_node_only
     def delete_folder(self, folder):
         """Delete a folder and its contents from the cloud storage bucket.
 
@@ -266,6 +343,7 @@ class CloudStorage:
             raise e
 
     @retry_method
+    @master_node_only
     def delete_file(self, file_path):
         """Delete a file from the cloud storage bucket.
 
@@ -280,42 +358,10 @@ class CloudStorage:
         except Exception as e:
             raise e
 
-    @retry_method
-    def is_file(self, cloud_path):
-        """Check if the given cloud path represents a file.
-
-        :param cloud_path: Cloud path to be checked.
-        :return: True if the path represents a file, False otherwise.
-        """
-        try:
-            self.driver.get_object(container_name=self.bucket_name, object_name=cloud_path)
-        except (LibcloudError, ObjectDoesNotExistError):
-            logger.error("File %s doesn't exist in cloud storage", cloud_path)
-            return False
-        except Exception as e:
-            logger.error("Error checking cloud path: %s", e)
-            return False
-        return True
+    """UPDATE Operations"""
 
     @retry_method
-    def is_folder(self, cloud_path):
-        """Check if the given cloud path represents a folder.
-
-        :param cloud_path: Cloud path to be checked.
-        :return: True if the path represents a folder, False otherwise.
-        """
-        try:
-            prefix = cloud_path.rstrip('/') + '/'
-
-            # List objects with the specified prefix
-            objects = self.driver.list_container_objects(container=self.container, ex_prefix=prefix)
-
-            # Check if there are any objects with the specified prefix
-            return any(objects)
-        except Exception as e:
-            raise e
-
-    @retry_method
+    @master_node_only
     def move_file(self, source_path, destination_path):
         """Move a file within the cloud storage bucket.
 
@@ -329,6 +375,7 @@ class CloudStorage:
         self.delete_file(source_path)
 
     @retry_method
+    @master_node_only
     def move_folder(self, source_path, destination_path):
         """Move a folder within the cloud storage bucket.
 
@@ -350,6 +397,7 @@ class CloudStorage:
             self.delete_file(obj.name)
 
     @retry_method
+    @master_node_only
     def copy_file(self, source_object_name, destination_object_name):
         """Copy a file within the cloud storage bucket.
 
@@ -373,6 +421,7 @@ class CloudStorage:
                 raise ValueError(f"Error copying object {source_object_name}") from e
 
     @retry_method
+    @master_node_only
     def copy_folder(self, source_path, destination_path):
         """Copy a folder within the cloud storage bucket.
 
@@ -391,21 +440,3 @@ class CloudStorage:
             destination_object_name = f"{destination_path}/{relative_path.replace(os.path.sep, '/')}"
 
             self.copy_file(obj.name, destination_object_name)
-
-    @retry_method
-    def create_folder_in_bucket(self, folder):
-        """Create a folder in the cloud storage bucket.
-
-        Args:
-            folder (str): Folder path to be created in the cloud storage bucket.
-        """
-        try:
-            # Ensure the folder path ends with a trailing slash
-            if not folder.endswith('/'):
-                folder += '/'
-
-            # Upload an empty object to represent the folder
-            empty_data = io.BytesIO(b'')
-            self.driver.upload_object_via_stream(empty_data, container=self.container, object_name=folder)
-        except Exception as e:
-            raise e

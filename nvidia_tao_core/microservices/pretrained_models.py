@@ -142,6 +142,18 @@ class BaseExperimentMetadata:
     def get_ngc_token(self, org: str = "", team: str = ""):
         """Authenticate to NGC"""
         # Get the NGC login token
+        ngc_api_key = os.getenv("PTM_API_KEY")
+        if ngc_api_key:
+            url = "https://authn.nvidia.com/token"
+            params = {"service": "ngc", "scope": "group/ngc"}
+            if org:
+                params["scope"] = f"group/ngc:{org}"
+            if team:
+                params["scope"] += f"&group/ngc:{org}/{team}"
+            headers = {"Accept": "application/json"}
+            auth = ("$oauthtoken", ngc_api_key)
+            response = requests.get(url, headers=headers, auth=auth, params=params, timeout=TIMEOUT)
+            return response.json()["token"]
         if self.ngc_key.startswith("nvapi"):
             return self.ngc_key
         raise ValueError(
@@ -172,7 +184,11 @@ class BaseExperimentMetadata:
         logger.info("Getting accessible org/team for the provided NGC Personal key")
         logger.info("--------------------------------------------------------")
         ngc_token = self.get_ngc_token()
-        headers = {"Accept": "application/json", "Authorization": f"Bearer {ngc_token}"}
+        headers = {
+            "Accept": "application/json",
+            "Authorization": f"Bearer {ngc_token}",
+            "Accept-Encoding": "identity"
+        }
         url = f"{ngc_api_base_url}/orgs"
         try:
             response = requests.get(url, headers=headers, params={"page-size": 1000}, timeout=TIMEOUT)
@@ -242,7 +258,11 @@ class BaseExperimentMetadata:
             url += f"/org/{org}/models/{model_name}/versions/{model_version}"
         if file:
             url += f"/files/{file}"
-        headers = {"Accept": "application/json", "Authorization": f"Bearer {ngc_token}"}
+        headers = {
+            "Accept": "application/json",
+            "Authorization": f"Bearer {ngc_token}",
+            "Accept-Encoding": "identity"
+        }
         try:
             response = requests.get(url, headers=headers, params={"page-size": 1000}, timeout=TIMEOUT)
         except Exception as e:
@@ -289,7 +309,11 @@ class BaseExperimentMetadata:
         for org, team in self.org_team_list:
             logger.info(f"Querying base experiments from '{org}{'/' + team if team else ''}'")
             ngc_token = self.get_ngc_token(org, team)
-            headers = {"Accept": "application/json", "Authorization": f"Bearer {ngc_token}"}
+            headers = {
+                "Accept": "application/json",
+                "Authorization": f"Bearer {ngc_token}",
+                "Accept-Encoding": "identity"
+            }
             url = f"{ngc_api_base_url}/search/resources/MODEL"
 
             # Create the query to filter models and the required return fields
@@ -379,11 +403,14 @@ class BaseExperimentMetadata:
         file_paths = list(map(lambda x: x.path, model_files))
         spec_file = "experiment.yaml"
         if spec_file in file_paths:
-            dest_path = f"{self.rootdir}/{exp_id}/{model}_v{version}"
+            dest_path = f"{self.rootdir}/{exp_id}/"
             os.makedirs(dest_path, exist_ok=True)
             clt.registry.model.download_version(ngc_path, destination=dest_path, file_patterns=[spec_file])
-            spec_data = safe_load_file(dest_path + "/experiment.yaml", file_type="yaml")
-            logger.info("Successfully got spec data for %s", ngc_path)
+            spec_data = safe_load_file(dest_path + f"{model}_v{version}/experiment.yaml", file_type="yaml")
+            if spec_data:
+                logger.info("Successfully got spec data for %s", ngc_path)
+            else:
+                logger.error("Unable to get spec data for %s", ngc_path)
             return spec_data
         logger.error("Unable to get spec data for %s", ngc_path)
         return {}

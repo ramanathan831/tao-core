@@ -74,7 +74,9 @@ def infer_output_dir(job_context, handler_metadata):
     workspace_identifier = get_workspace_string_identifier(workspace_id, workspace_cache={})
     dnn_results_dir = f'{workspace_identifier}results/{job_context.id}'
     if job_context.network == "vila":
-        dnn_results_dir = f'{workspace_identifier}results/{job_context.id}/lora'
+        llm_mode = job_context.specs.get("train", {}).get("llm_mode", "lora")
+        vision_mode = job_context.specs.get("train", {}).get("vision_mode", "ft")
+        dnn_results_dir = f'{workspace_identifier}results/{job_context.id}/{vision_mode}_{llm_mode}'
     return dnn_results_dir
 
 
@@ -138,6 +140,12 @@ def infer_pruned_model(job_context, handler_metadata):
 def infer_parent_model(job_context, handler_metadata):
     """Returns path of the weight file of the parent job"""
     parent_model = get_model_results_path(handler_metadata, job_context.parent_id)
+    return parent_model
+
+
+def infer_parent_model_folder(job_context, handler_metadata):
+    """Returns path of the weight file of the parent job"""
+    parent_model = get_model_results_path(handler_metadata, job_context.parent_id, folder=True)
     return parent_model
 
 
@@ -398,6 +406,7 @@ CLI_CONFIG_TO_FUNCTIONS = {"output_dir": infer_output_dir,
                            "key": infer_key,
                            "pruned_model": infer_pruned_model,
                            "parent_model": infer_parent_model,
+                           "parent_model_folder": infer_parent_model_folder,
                            "parent_model_evaluate": infer_parent_model_evaluate,
                            "resume_model": infer_resume_model,
                            "resume_model_or_ptm": infer_resume_model_or_ptm,

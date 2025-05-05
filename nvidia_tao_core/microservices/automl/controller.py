@@ -53,6 +53,7 @@ from nvidia_tao_core.microservices.handlers.stateless_handlers import (
     save_automl_controller_info,
     get_automl_current_rec,
     save_automl_current_rec,
+    save_automl_best_rec_info,
     get_automl_brain_info,
     delete_dnn_status,
     update_automl_stats
@@ -732,7 +733,8 @@ class Controller:
 
                 self.cs_instance.move_folder(expt_folder[1:], cloud_best_model_folder)
                 best_specs = get_job_specs(job_name, automl=True, automl_experiment_id=str(rec.id))
-                save_job_specs(self.automl_context.id, best_specs)
+                save_automl_best_rec_info(self.automl_context.id, rec.id, rec.job_id)
+                save_job_specs(self.automl_context.id, specs=best_specs, automl=True, automl_experiment_id="-1")
                 (find_trained_tlt,
                  find_trained_hdf5,
                  find_trained_pth, _) = self.get_checkpoint_paths_matching_epoch_number(

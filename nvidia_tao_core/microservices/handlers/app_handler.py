@@ -34,6 +34,7 @@ from nvidia_tao_core.microservices.constants import (
     TAO_NETWORKS,
     MEDICAL_CUSTOM_ARCHITECT,
     MAXINE_NETWORKS,
+    MISSING_EPOCH_FORMAT_NETWORKS
 )
 from nvidia_tao_core.microservices.enum_constants import DatasetType, ExperimentNetworkArch
 from nvidia_tao_core.microservices.handlers import ngc_handler, stateless_handlers
@@ -58,6 +59,7 @@ from nvidia_tao_core.microservices.handlers.stateless_handlers import (
     check_write_access,
     get_base_experiment_metadata,
     get_job_specs,
+    get_root,
     infer_action_from_job,
     is_valid_uuid4,
     printc,
@@ -90,7 +92,11 @@ from nvidia_tao_core.microservices.handlers.utilities import (
     validate_num_gpu,
     get_num_gpus_from_spec
 )
-from nvidia_tao_core.microservices.handlers.mongo_handler import MongoHandler
+if os.getenv("BACKEND"):  # To see if the container is going to be used for Service pods or network jobs
+    from nvidia_tao_core.microservices.handlers.mongo_handler import (
+        MongoHandler,
+        mongo_connection_string,
+    )
 from nvidia_tao_core.microservices.job_utils import executor as jobDriver
 from nvidia_tao_core.microservices.job_utils.workflow_driver import create_job_context, on_delete_job, on_new_job
 from nvidia_tao_core.microservices.job_utils.automl_job_utils import on_delete_automl_job
@@ -103,7 +109,8 @@ from nvidia_tao_core.microservices.utils import (
     check_and_convert,
     safe_dump_file,
     log_monitor,
-    DataMonitorLogTypeEnum
+    get_microservices_network_and_action,
+    DataMonitorLogTypeEnum,
 )
 
 from nvidia_tao_core.scripts.generate_schema import generate_schema
@@ -285,6 +292,57 @@ def get_job_logs(log_file_path):
                 break
 
             yield log_line
+
+
+def is_maxine_request(handler_id, handler_kind, handler_metadata={}):
+    """Check if the request is related to Maxine.
+
+    Args:
+        handler_id (str): The ID of the handler.
+        handler_kind (str): The kind of handler.
+        handler_metadata (dict): The metadata of the handler.
+
+    Returns:
+        bool: True if the request is related to Maxine, False otherwise.
+    """
+    if not handler_metadata:
+        handler_metadata = stateless_handlers.get_handler_metadata(handler_id, handler_kind)
+    if handler_kind in ("workspaces", "workspace"):
+        return True
+    if handler_kind in ("datasets", "dataset"):
+        return handler_metadata.get("type", "") == "maxine_dataset"
+    if handler_kind in ("experiments", "experiment"):
+        return handler_metadata.get("network_arch", "") == "maxine_eye_contact"
+    return False
+
+
+def handler_level_access_control(user_id, org_name, handler_id="", handler_kind="",
+                                 handler_metadata={}, base_experiment=False):
+    """Control access to handlers based on user permissions and product entitlements.
+
+    Args:
+        user_id (str): The ID of the user.
+        org_name (str): The name of the organization.
+        handler_id (str, optional): The ID of the handler. Defaults to "".
+        handler_kind (str, optional): The kind of handler. Defaults to "".
+        handler_metadata (dict, optional): The metadata of the handler. Defaults to {}.
+        base_experiment (bool, optional): Whether this is a base experiment. Defaults to False.
+
+    Returns:
+        bool: True if the user has access, False otherwise.
+    """
+    if base_experiment or is_maxine_request(handler_id, handler_kind, handler_metadata):
+        logger.info("Checking if user has MAXINE entitlement")
+        if "MAXINE" not in ngc_handler.get_org_products(user_id, org_name):
+            logger.info("User does not have MAXINE entitlement")
+            return False
+        mongo = MongoHandler("tao", "users")
+        user_metadata = mongo.find_one({'id': user_id})
+        member_of = user_metadata.get('member_of', [])
+        if f"{org_name}/:MAXINE_USER" not in member_of:
+            logger.info("User does not have MAXINE entitlement in NGC metadata")
+            return False
+    return True
 
 
 class AppHandler:
@@ -696,7 +754,7 @@ class AppHandler:
 
         intention = request_dict.get("use_for", [])
         if ds_format in ("raw", "coco_raw") and intention:
-            if intention != ["testing"]:
+            if intention != ["testing"] and ds_type != "maxine_dataset":
                 msg = "raw or coco_raw's format should be associated with ['testing'] intent"
                 return Code(400, {}, msg)
 
@@ -737,6 +795,9 @@ class AppHandler:
                     "use_for": intention,
                     "base_experiment": request_dict.get("base_experiment", []),
                     }
+
+        if not handler_level_access_control(user_id, org_name, dataset_id, "datasets", handler_metadata=metadata):
+            return Code(403, {}, "Not allowed to work with this org")
 
         # Set status based on skip_validation flag
         skip_validation = request_dict.get("skip_validation", False)
@@ -856,6 +917,8 @@ class AppHandler:
             return Code(404, {}, "Dataset not found")
 
         user_id = metadata.get("user_id")
+        if not handler_level_access_control(user_id, org_name, dataset_id, "datasets", handler_metadata=metadata):
+            return Code(403, {}, "Not allowed to work with this org")
         if not check_write_access(user_id, org_name, dataset_id, kind="datasets"):
             return Code(404, {}, "Dataset not available")
         if request_dict.get("public", None):
@@ -1145,27 +1208,11 @@ class AppHandler:
         if not network:
             # Used for dataset jobs
             network = metadata.get("type", None)
-        microservices_network = network
-        if network == "object_detection":
-            if action == "annotation_format_convert":
-                microservices_network = "annotations"
-            if action == "auto_label":
-                microservices_network = "auto_label"
-            if action == "augment":
-                microservices_network = "augment"
-                action = "generate"
-            if action in ("analyze", "validate_annotations"):
-                microservices_network = "data_analytics"
-                if action == "validate_annotations":
-                    action = "validate"
-            if action == "validate_images":
-                microservices_network = "image"
-            if action == "convert_efficientdet_tf2":
-                microservices_network = "efficientdet_tf2"
-                action = "dataset_convert"
+
+        microservices_network, microservices_action = get_microservices_network_and_action(network, action)
 
         try:
-            json_schema = generate_schema(microservices_network, action)
+            json_schema = generate_schema(microservices_network, microservices_action)
         except Exception as e:
             logger.error("Exception thrown in get_spec_schema is %s", str(e))
             logger.error("Unable to fetch schema from tao_core")
@@ -1236,28 +1283,8 @@ class AppHandler:
         if not network:
             # Used for dataset jobs
             network = metadata.get("type", None)
-        microservices_network = network
-        microservices_action = action
-        if network == "object_detection":
-            if action == "annotation_format_convert":
-                microservices_network = "annotations"
-                microservices_action = "convert"
-            if action == "auto_label":
-                microservices_network = "auto_label"
-                microservices_action = "generate"
-            if action == "augment":
-                microservices_network = "augment"
-                microservices_action = "generate"
-            if action in ("analyze", "validate_annotations"):
-                microservices_network = "data_analytics"
-                if action == "validate_annotations":
-                    microservices_action = "validate"
-            if action == "validate_images":
-                microservices_network = "image"
-                microservices_action = "validate"
-            if action == "convert_efficientdet_tf2":
-                microservices_network = "efficientdet_tf2"
-                action = "dataset_convert"
+
+        microservices_network, microservices_action = get_microservices_network_and_action(network, action)
 
         try:
             json_schema = generate_schema(microservices_network, microservices_action)
@@ -1652,6 +1679,7 @@ class AppHandler:
                     check_and_convert(specs, default_spec)
             msg = ""
             if is_request_automl(handler_id, action, kind):
+                logger.info("Creating AutoML job %s", job_id)
                 AutoMLHandler.start(
                     user_id,
                     org_name,
@@ -1663,6 +1691,7 @@ class AppHandler:
                 )
                 msg = "AutoML "
             else:
+                logger.info("Creating job %s", job_id)
                 job_context = create_job_context(
                     parent_job_id,
                     action,
@@ -2005,7 +2034,7 @@ class AppHandler:
             return automl_response
 
         job_action = job_metadata.get("action", "")
-        if job_action not in ("train", "retrain"):
+        if job_action not in ("train", "distill", "retrain"):
             return Code(404, [], f"Only train or retrain jobs can be paused. The current action is {job_action}")
         job_status = job_metadata.get("status", "Error")
 
@@ -2207,16 +2236,29 @@ class AppHandler:
         if job_status not in ("Success", "Done"):
             return Code(404, {}, "Job is not in success or Done state")
         job_action = job_metadata.get("action", "")
-        if job_action not in ("train", "prune", "retrain", "export", "gen_trt_engine"):
+        if job_action not in ("train", "distill", "prune", "retrain", "export", "gen_trt_engine"):
             return Code(
                 404,
                 {},
-                "Publish model is available only for train, prune, retrain, export, gen_trt_engine actions"
+                "Publish model is available only for train, distill, prune, retrain, export, gen_trt_engine actions"
             )
 
         try:
-            source_file = resolve_checkpoint_root_and_search(handler_metadata, job_id)
-            if not source_file:
+            network_arch = handler_metadata.get('network_arch')
+            source_files = []
+            if job_action == 'gen_trt_engine' and network_arch in MAXINE_NETWORKS:
+                encoder_regex = r'.*encoder.*\.(engine|engine\.trtpkg)$'
+                encoder_file = resolve_checkpoint_root_and_search(handler_metadata, job_id, regex=encoder_regex)
+                if encoder_file:
+                    source_files.append(encoder_file)
+                decoder_regex = r'.*decoder.*\.(engine|engine\.trtpkg)$'
+                decoder_file = resolve_checkpoint_root_and_search(handler_metadata, job_id, regex=decoder_regex)
+                if decoder_file:
+                    source_files.append(decoder_file)
+            else:
+                source_file = resolve_checkpoint_root_and_search(handler_metadata, job_id)
+                source_files.append(source_file)
+            if not source_files:
                 return Code(404, [], "Unable to find a model for the given job")
 
             # Create NGC model
@@ -2225,7 +2267,7 @@ class AppHandler:
                 return Code(403, {}, "User does not have access to publish model")
 
             code, message = ngc_handler.create_model(
-                org_name, team_name, handler_metadata, source_file, ngc_key, use_cookie, display_name, description
+                org_name, team_name, handler_metadata, source_files[0], ngc_key, use_cookie, display_name, description
             )
             if code not in [200, 200]:
                 logger.error("Error while creating NGC model")
@@ -2233,7 +2275,7 @@ class AppHandler:
 
             # Upload model version
             response_code, response_message = ngc_handler.upload_model(
-                org_name, team_name, handler_metadata, source_file, ngc_key, job_id, job_action
+                org_name, team_name, handler_metadata, source_files, ngc_key, job_id, job_action
             )
             if "already exists" in response_message:
                 response_message = (
@@ -2276,11 +2318,12 @@ class AppHandler:
         if job_status not in ("Success", "Done"):
             return Code(404, {}, "Job is not in success or Done state")
         job_action = job_metadata.get("action", "")
-        if job_action not in ("train", "prune", "retrain", "export", "gen_trt_engine"):
+        if job_action not in ("train", "distill", "prune", "retrain", "export", "gen_trt_engine"):
             return Code(
                 404,
                 {},
-                "Delete published model is available only for train, prune, retrain, export, gen_trt_engine actions"
+                "Delete published model is available only for train, distill, ",
+                "prune, retrain, export, gen_trt_engine actions"
             )
 
         try:
@@ -2431,13 +2474,14 @@ class AppHandler:
                 if (not best_model) and latest_model:
                     best_checkpoint_epoch_number = latest_checkpoint_epoch_number
                 network = handler_metadata.get("network_arch", "")
-                if network in ("classification_pyt", "detectnet_v2", "pointpillars", "unet"):
+                if network in MISSING_EPOCH_FORMAT_NETWORKS:
                     format_epoch_number = str(best_checkpoint_epoch_number)
                 else:
                     format_epoch_number = f"{best_checkpoint_epoch_number:03}"
                 if best_model or latest_model:
                     job_root = os.path.join(root, job_id)
-                    if handler_metadata.get("automl_settings", {}).get("automl_enabled") is True and action == "train":
+                    if (handler_metadata.get("automl_settings", {}).get("automl_enabled") is True and
+                       action in ("train", "distill")):
                         job_root = os.path.join(job_root, "best_model")
                     find_trained_tlt = (
                         glob.glob(f"{job_root}/*{format_epoch_number}.tlt") +
@@ -2628,12 +2672,13 @@ class AppHandler:
                     handler_metadata["status"] = get_handler_status(handler_metadata)
                     metadatas.append(handler_metadata)
         if not user_only:
-            public_experiments_metadata = stateless_handlers.get_public_experiments()
+            maxine_request = handler_level_access_control(user_id, org_name, base_experiment=True)
+            public_experiments_metadata = stateless_handlers.get_public_experiments(maxine=maxine_request)
             metadatas += public_experiments_metadata
         return metadatas
 
     @staticmethod
-    def list_base_experiments():
+    def list_base_experiments(user_id, org_name):
         """Lists public base experiments.
 
         Returns:
@@ -2641,7 +2686,8 @@ class AppHandler:
         """
         # Collect all metadatas
         metadatas = []
-        public_experiments_metadata = stateless_handlers.get_public_experiments()
+        maxine_request = handler_level_access_control(user_id, org_name, base_experiment=True)
+        public_experiments_metadata = stateless_handlers.get_public_experiments(maxine=maxine_request)
         metadatas += public_experiments_metadata
         return metadatas
 
@@ -2735,6 +2781,9 @@ class AppHandler:
                     "experiment_actions": request_dict.get('experiment_actions', []),
                     "tags": list({t.lower(): t for t in request_dict.get("tags", [])}.values()),
                     }
+
+        if not handler_level_access_control(user_id, org_name, experiment_id, "experiments", handler_metadata=metadata):
+            return Code(403, {}, "Not allowed to work with this org")
 
         if metadata.get("automl_settings", {}).get("automl_enabled") and mdl_nw in AUTOML_DISABLED_NETWORKS:
             return Code(400, {}, "automl_enabled cannot be True for unsupported network")
@@ -3139,6 +3188,8 @@ class AppHandler:
             return Code(400, {}, "Experiment does not exist")
 
         user_id = metadata.get("user_id")
+        if not handler_level_access_control(user_id, org_name, experiment_id, "experiments", handler_metadata=metadata):
+            return Code(403, {}, "Not allowed to work with this org")
         if not check_write_access(user_id, org_name, experiment_id, kind="experiments"):
             return Code(400, {}, "User doesn't have write access to experiment")
 
@@ -3410,8 +3461,8 @@ class AppHandler:
         status = job_metadata.get("status", "")
         if status != "Paused":
             return Code(400, [], f"Job status should be paused, not {status}")
-        if action not in ("train", "retrain"):
-            return Code(400, [], f"Action should be train, retrain, not {action}")
+        if action not in ("train", "distill", "retrain"):
+            return Code(400, [], f"Action should be train, distill, retrain, not {action}")
         network = handler_metadata.get("network_arch", None)
         if network in MAXINE_NETWORKS:
             return Code(400, [], "Maxine networks do not support resume.")
@@ -3525,3 +3576,87 @@ class AppHandler:
             logger.error("Exception thrown in automl_details fetch is %s", str(e))
             logger.error(traceback.format_exc())
             return Code(400, [], "Error in constructing AutoML results")
+
+    @staticmethod
+    def mongo_backup(workspace_id, backup_file_name=None):
+        """Backup MongoDB data for a specific workspace.
+
+        Args:
+            workspace_id (str): ID of the workspace to backup.
+
+        Returns:
+            Response: A response indicating the outcome of the operation (200 for success, error responses for failure).
+        """
+        try:
+            # Get the workspace metadata
+            workspace_metadata = get_workspace(workspace_id)
+            if not workspace_metadata:
+                return Code(404, {}, "Workspace not found")
+            cloud_type = workspace_metadata.get("cloud_type")
+            if cloud_type not in ["aws", "azure"]:
+                return Code(400, {}, "MongoDB backup is only supported for AWS and Azure workspaces")
+            cs_instance, _ = create_cs_instance(workspace_metadata)
+            if not cs_instance:
+                return Code(404, {}, "Unable to create cloud storage instance for MongoDB backup")
+
+            logger.info("Starting MongoDB backup for workspace %s", workspace_id)
+
+            # Create dump directory if it doesn't exist
+            root = get_root()
+            dump_dir = os.path.join(root, "dump", "archive")
+            os.makedirs(dump_dir, exist_ok=True)
+
+            backup_file = backup_file_name if backup_file_name else "mongodb_backup.gz"
+            backup_file = os.path.join(dump_dir, backup_file)
+            backup_command = f'mongodump --uri="{mongo_connection_string}" --archive="{backup_file}" --gzip'
+            run_system_command(backup_command)
+
+            cs_instance.upload_file(backup_file, backup_file)
+
+            logger.info("Successfully backed up MongoDB to S3")
+            return Code(200, {"message": "MongoDB backup successful"}, "MongoDB backup successful")
+
+        except Exception as e:
+            logger.error("Exception thrown in mongo_backup is %s", str(e))
+            logger.error(traceback.format_exc())
+            return Code(400, {}, "Error in MongoDB backup")
+
+    @staticmethod
+    def mongo_restore(workspace_id, backup_file_name=None):
+        """Restore MongoDB data for a specific workspace.
+
+        Args:
+            workspace_id (str): ID of the workspace to restore.
+
+        Returns:
+            Response: A response indicating the outcome of the operation (200 for success, error responses for failure).
+        """
+        try:
+            # Get the workspace metadata
+            workspace_metadata = get_workspace(workspace_id)
+            if not workspace_metadata:
+                return Code(404, {}, "Workspace not found")
+
+            cloud_type = workspace_metadata.get("cloud_type")
+            if cloud_type not in ["aws", "azure"]:
+                return Code(400, {}, "MongoDB restore is only supported for AWS and Azure workspaces")
+            cs_instance, _ = create_cs_instance(workspace_metadata)
+            if not cs_instance:
+                return Code(404, {}, "Unable to create cloud storage instance for MongoDB restore")
+
+            root = get_root()
+            dump_dir = os.path.join(root, "dump", "archive")
+            backup_file = backup_file_name if backup_file_name else "mongodb_backup.gz"
+            backup_file = os.path.join(dump_dir, backup_file)
+            cs_instance.download_file(backup_file, backup_file)
+            logger.info(f"Downloaded backup file to {backup_file}")
+            restore_command = f'mongorestore --uri="{mongo_connection_string}" --archive="{backup_file}" --gzip'
+            run_system_command(restore_command)
+            logger.info("Restored DB from backup file")
+            os.remove(backup_file)
+            return Code(200, {"message": "MongoDB restore successful"}, "MongoDB restore successful")
+
+        except Exception as e:
+            logger.error("Exception thrown in mongo_restore is %s", str(e))
+            logger.error(traceback.format_exc())
+            return Code(400, {}, "Error in MongoDB restore")

@@ -37,13 +37,11 @@ _PYT_TAO_NETWORKS = set([
     "mal", "mask2former", "ml_recog", "ocdnet", "ocrnet", "optical_inspection", "pointpillars",
     "pose_classification", "re_identification", "rtdetr", "centerpose", "segformer", "visual_changenet"
 ])
-_PYT_PLAYGROUND_NETWORKS = set(["classification_pyt"])
-_PYT_CV_NETWORKS = _PYT_TAO_NETWORKS | _PYT_PLAYGROUND_NETWORKS
 _DATA_SERVICES_ACTIONS = set([
     "annotation_format_convert", "auto_label", "augment", "analyze",
     "validate_images", "validate_annotations"
 ])
-_DATA_GENERATE_ACTIONS = set(["augment", "validate_images"])
+_DATA_GENERATE_ACTIONS = set(["dataset_convert_gaze", "augment", "validate_images"])
 
 MEDICAL_CUSTOM_ARCHITECT = ["monai_custom", "monai_classification", "monai_detection", "monai_segmentation"]
 MEDICAL_NETWORK_ARCHITECT = [
@@ -52,7 +50,7 @@ MEDICAL_NETWORK_ARCHITECT = [
 MEDICAL_AUTOML_ARCHITECT = ["monai_automl", "monai_automl_generated"]
 MONAI_NETWORKS = set(MEDICAL_NETWORK_ARCHITECT + MEDICAL_AUTOML_ARCHITECT)  # Data_Service tasks.
 NO_SPEC_ACTIONS_MODEL = (
-    "evaluate", "retrain", "inference", "inference_seq", "inference_trt"
+    "dataset_convert_gaze", "evaluate", "retrain", "export", "gen_trt_engine", "inference"
 )  # Actions with **optional** specs
 NO_PTM_MODELS = set([])  # These networks don't have a pretrained model that can be downloaded from ngc model registry
 _ITER_MODELS = set([])  # These networks operate on iterations instead of epochs
@@ -73,7 +71,7 @@ TENSORBOARD_EXPERIMENT_LIMIT = 10  # Maximum number of Tensorboard enabled exper
 # only at end of training they run evaluation
 NO_VAL_METRICS_DURING_TRAINING_NETWORKS = set(["unet"])
 MISSING_EPOCH_FORMAT_NETWORKS = set([
-    "classification_pyt", "pointpillars", "bevfusion"
+    "pointpillars", "bevfusion"
 ])  # These networks have the epoch/iter number not following a format; ex: 1.pth instead of 001.pth
 STATUS_CALLBACK_MISMATCH_WITH_CHECKPOINT_EPOCH = set([
     "pointpillars", "detectnet_v2"
@@ -130,10 +128,12 @@ NETWORK_CONTAINER_MAPPING = {"action_recognition": "TAO_PYTORCH",
                              "unet": "TAO_TF2",
                              "visual_changenet": "TAO_PYTORCH",
                              "maxine_eye_contact": "MAXINE_DLDK",
+                             "mae": "TAO_PYTORCH",
                              "vila": "VILA"}
 
 CV_ACTION_RULES = {
     'train': [],
+    'distill': ["train", "retrain"],
     'evaluate': ["train", "prune", "retrain", "export", "gen_trt_engine", "trtexec"],
     'prune': ["train", "retrain"],
     'inference': ["train", "prune", "retrain", "export", "gen_trt_engine", "trtexec"],
@@ -143,4 +143,4 @@ CV_ACTION_RULES = {
     'trtexec': ['export'],
 }
 
-CV_ACTION_CHAINED_ONLY = {"prune", "retrain", "export", "gen_trt_engine", "trtexec"}
+CV_ACTION_CHAINED_ONLY = {"prune", "distill", "retrain", "export", "gen_trt_engine", "trtexec"}
