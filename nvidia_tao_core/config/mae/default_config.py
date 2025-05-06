@@ -142,21 +142,21 @@ class AugmentationConfig:
         display_name="Image standard deviation")
     min_scale: float = FLOAT_FIELD(
         value=0.1,
-        description="Min scale for augmentation",
+        description="Min scale for resizing augmentation",
         display_name="Min scale.")
     max_scale: float = FLOAT_FIELD(
         value=2.0,
-        description="Max scale for augmentation",
+        description="Max scale for resizing augmentation",
         display_name="Max scale.")
     min_ratio: float = FLOAT_FIELD(
-        value=0.1,
-        default_value=0.1,
-        description="Min ratio for augmentation",
+        value=0.75,
+        default_value=0.75,
+        description="Min ratio for resizing augmentation",
         display_name="Min ratio.")
     max_ratio: float = FLOAT_FIELD(
-        value=2.0,
-        default_value=2.0,
-        description="Max ratio for augmentation",
+        value=1.33,
+        default_value=1.33,
+        description="Max ratio for resizing augmentation",
         display_name="Max ratio.")
     hflip: float = FLOAT_FIELD(
         value=0.5,
@@ -252,7 +252,7 @@ class MAEModelConfig:
     """Model configuration template."""
 
     arch: str = STR_FIELD(
-        value='convnextv2_base', value_type="ordered", default_value="convnextv2_base",
+        value='convnextv2_base', default_value="convnextv2_base",
         valid_options=",".join([
             "convnextv2_atto",
             "convnextv2_femto",
@@ -261,7 +261,15 @@ class MAEModelConfig:
             "convnextv2_tiny",
             "convnextv2_base",
             "convnextv2_large",
-            "convnextv2_huge"
+            "convnextv2_huge",
+            "hiera_tiny_224",
+            "hiera_small_224",
+            "hiera_base_224",
+            "hiera_large_224",
+            "hiera_huge_224",
+            "vit_base_patch16",
+            "vit_large_patch16",
+            "vit_huge_patch14",
         ]),
         description="Model architecture.",
         display_name="Model arch")
