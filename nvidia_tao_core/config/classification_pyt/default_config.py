@@ -188,7 +188,22 @@ class BackboneConfig:
             "c_radio_p3_vit_huge_patch16_mlpnorm",
             "c_radio_v2_vit_base_patch16",
             "c_radio_v2_vit_large_patch16",
-            "c_radio_v2_vit_huge_patch16"
+            "c_radio_v2_vit_huge_patch16",
+            "convnextv2_atto",
+            "convnextv2_femto",
+            "convnextv2_pico",
+            "convnextv2_nano",
+            "convnextv2_tiny",
+            "convnextv2_base",
+            "convnextv2_large",
+            "convnextv2_huge",
+            "gc_vit_xxtiny",
+            "gc_vit_xtiny",
+            "gc_vit_tiny",
+            "gc_vit_small",
+            "gc_vit_base",
+            "gc_vit_large",
+            "gc_vit_large_384",
         ]),
     )
     feat_downsample: bool = BOOL_FIELD(
@@ -455,8 +470,8 @@ class DatasetConfig:
         value=20,
         default_value=20,
         description="The number of classes in the training data",
-        math_cond=">0",
-        valid_min=2,
+        math_cond=">=0",
+        valid_min=0,
         valid_max="inf"
     )
     img_size: int = INT_FIELD(
@@ -586,8 +601,14 @@ class ClassDistillationConfig(DistillationConfig):
     loss_type: str = STR_FIELD(
         value="KL",
         default_value="KL",
-        display_name="Distillation loss",
-        valid_options="KL,CE,L1,L2",
+        display_name="Distillation loss type",
+        valid_options="""
+        KL (KL divergence),
+        CE (cross entropy),
+        L1 (L1 loss),
+        L2 (L2 loss),
+        FD (smooth L1),
+        CS (cosine similarity)""",
         description="Loss function for logits distillation."
     )
     loss_lambda: Optional[float] = FLOAT_FIELD(
