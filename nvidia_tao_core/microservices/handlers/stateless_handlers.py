@@ -495,8 +495,8 @@ def status_lookup_job_id(job_id, automl=False, callback_data={}, experiment_numb
     return lookup_job_id
 
 
-def internal_job_status_update(job_id, automl=False, automl_experiment_number="0", message="", logfile=""):
-    """Post an status update to the job"""
+def get_internal_job_status_update_data(automl_experiment_number="0", message=""):
+    """Get internal job status update data"""
     date_time = datetime.now()
     date_object = date_time.date()
     time_object = date_time.time()
@@ -519,6 +519,15 @@ def internal_job_status_update(job_id, automl=False, automl_experiment_number="0
     if message:
         data["message"] = message
     data_string = json.dumps(data)
+    return data_string
+
+
+def internal_job_status_update(job_id, automl=False, automl_experiment_number="0", message="", logfile=""):
+    """Post an status update to the job"""
+    data_string = get_internal_job_status_update_data(
+        automl_experiment_number=automl_experiment_number,
+        message=message
+    )
     callback_data = {
         "experiment_number": automl_experiment_number,
         "status": data_string,
