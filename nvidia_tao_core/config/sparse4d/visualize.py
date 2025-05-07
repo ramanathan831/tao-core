@@ -21,7 +21,6 @@ from nvidia_tao_core.config.utils.types import (
     INT_FIELD,
     BOOL_FIELD,
     FLOAT_FIELD,
-    DATACLASS_FIELD
 )
 
 
