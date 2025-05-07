@@ -14,16 +14,12 @@
 
 """Configuration hyperparameter schema for the trainer."""
 
-from typing import Optional, List, Dict, Any, Tuple
+from typing import Optional, Dict, Any
 from dataclasses import dataclass
-from omegaconf import MISSING
 
 from nvidia_tao_core.config.utils.types import (
     STR_FIELD,
-    INT_FIELD,
-    BOOL_FIELD,
     FLOAT_FIELD,
-    LIST_FIELD,
     DICT_FIELD,
     DATACLASS_FIELD
 )

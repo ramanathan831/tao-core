@@ -16,7 +16,6 @@
 
 from typing import Optional, List, Dict, Any, Tuple
 from dataclasses import dataclass
-from omegaconf import MISSING
 
 from nvidia_tao_core.config.utils.types import (
     STR_FIELD,

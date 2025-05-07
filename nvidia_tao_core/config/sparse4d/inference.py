@@ -14,17 +14,12 @@
 
 """Configuration hyperparameter schema to run inference on model."""
 
-from typing import Optional, List, Dict, Any, Tuple
 from dataclasses import dataclass
 from omegaconf import MISSING
 
 from nvidia_tao_core.config.utils.types import (
     STR_FIELD,
-    INT_FIELD,
     BOOL_FIELD,
-    FLOAT_FIELD,
-    LIST_FIELD,
-    DICT_FIELD,
     DATACLASS_FIELD
 )
 from nvidia_tao_core.config.sparse4d.dataset import Sparse4DTrackingConfig

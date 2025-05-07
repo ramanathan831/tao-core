@@ -14,17 +14,9 @@
 
 """Default config file for Sparse4D."""
 
-from typing import Optional, List, Dict, Any, Tuple
 from dataclasses import dataclass
-from omegaconf import MISSING
 
 from nvidia_tao_core.config.utils.types import (
-    STR_FIELD,
-    INT_FIELD,
-    BOOL_FIELD,
-    FLOAT_FIELD,
-    LIST_FIELD,
-    DICT_FIELD,
     DATACLASS_FIELD
 )
 from nvidia_tao_core.config.common.common_config import (
