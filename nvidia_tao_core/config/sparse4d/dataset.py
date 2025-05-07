@@ -269,7 +269,7 @@ class Sparse4DTrackingConfig:
     """Tracking configuration for Sparse4D."""
 
     enabled: bool = BOOL_FIELD(
-    value=True,
+        value=True,
         default_value=True,
         description="Enable tracking",
         display_name="Enable tracking"
