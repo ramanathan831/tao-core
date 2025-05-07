@@ -23,7 +23,6 @@ from nvidia_tao_core.config.utils.types import (
     FLOAT_FIELD,
     DATACLASS_FIELD
 )
-from nvidia_tao_core.config.common.common_config import VisConfig
 
 
 @dataclass
