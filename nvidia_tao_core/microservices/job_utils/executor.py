@@ -1375,6 +1375,10 @@ def create_tensorboard_deployment(deployment_name, image, command, logs_image, l
         name="NAMESPACE",
         value=mongo_namespace
     )
+    backend_env = client.V1EnvVar(
+        name="BACKEND",
+        value=BACKEND,
+    )
     image_pull_secret = os.getenv('IMAGEPULLSECRET', default='imagepullsecret')
     tb_container = client.V1Container(
         name="tb-container",
@@ -1390,7 +1394,11 @@ def create_tensorboard_deployment(deployment_name, image, command, logs_image, l
     tb_logs_container = client.V1Container(
         name="tb-logs-container",
         image=logs_image,
-        env=[no_gpu, mongo_secret_env, mongo_operator_enabled_env, mongo_namespace_env],
+        env=[no_gpu,
+             mongo_secret_env,
+             mongo_operator_enabled_env,
+             mongo_namespace_env,
+             backend_env],
         command=["/bin/sh", "-c"],
         resources=resources,
         args=[logs_command],
