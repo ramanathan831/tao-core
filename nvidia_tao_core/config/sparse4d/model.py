@@ -256,6 +256,12 @@ class Sparse4DInstanceBankConfig:
         description="Use temporal alignment",
         display_name="Use temporal alignment"
     )
+    grid_size: Optional[float] = FLOAT_FIELD(
+        value=None,
+        default_value=None,
+        description="Grid size",
+        display_name="Grid size"
+    )
 
 
 @dataclass
@@ -727,14 +733,6 @@ class Sparse4DRefineLayerConfig:
         valid_max="inf",
         description="Embedding dimensions",
         display_name="Embedding dimensions"
-    )
-    num_cls: int = INT_FIELD(
-        value=8,
-        default_value=8,
-        valid_min=1,
-        valid_max="inf",
-        description="Number of classes",
-        display_name="Number of classes"
     )
     refine_yaw: bool = BOOL_FIELD(
         value=True,
