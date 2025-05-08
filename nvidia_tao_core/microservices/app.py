@@ -1527,8 +1527,8 @@ def metrics_upsert():
     metrics['last_updated'] = now.isoformat()
 
     def sanitize_gpu_name(gpu_name):
-        # Convert to uppercase first, then replace all non-alphanumeric characters with -
-        return re.sub("[^a-zA-Z0-9]", "-", gpu_name.upper())
+        # Convert to uppercase first, then replace all non-alphanumeric characters with _
+        return re.sub("[^a-zA-Z0-9]", "_", gpu_name.upper())
 
     def create_gpu_identifier(gpu_list):
         # Count occurrences of each GPU type (case insensitive)
