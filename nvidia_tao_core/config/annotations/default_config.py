@@ -76,6 +76,20 @@ class ODVGConfig:
 
 
 @dataclass
+class AICityConfig:
+    """Dataset configuration template."""
+
+    root: str = STR_FIELD(value=MISSING, default_value="<specify data root>")
+    version: str = STR_FIELD(value=MISSING, default_value="<specify version>")
+    split: str = STR_FIELD(value=MISSING, default_value="<specify split>")
+    class_config: str = STR_FIELD(value=MISSING, default_value="<specify class config>")
+    recentering: bool = BOOL_FIELD(value=False)
+    use_rgb_h5_file: bool = BOOL_FIELD(value=False)
+    use_depth_h5_file: bool = BOOL_FIELD(value=False)
+    camera_grouping_mode: str = STR_FIELD(value="", default_value="<specify camera grouping mode>")
+
+
+@dataclass
 class ExperimentConfig:
     """Experiment configuration template."""
 
@@ -83,6 +97,7 @@ class ExperimentConfig:
     kitti: KITTIConfig = DATACLASS_FIELD(KITTIConfig())
     coco: COCOConfig = DATACLASS_FIELD(COCOConfig())
     odvg: ODVGConfig = DATACLASS_FIELD(ODVGConfig())
+    aicity: AICityConfig = DATACLASS_FIELD(AICityConfig())
     results_dir: Optional[str] = STR_FIELD(
         value="/results", default_value="/results"
     )
