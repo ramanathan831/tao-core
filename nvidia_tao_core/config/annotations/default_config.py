@@ -22,6 +22,10 @@ from nvidia_tao_core.config.utils.types import (
     STR_FIELD,
     BOOL_FIELD,
     DATACLASS_FIELD,
+    LIST_FIELD,
+    DICT_FIELD,
+    INT_FIELD,
+    FLOAT_FIELD,
 )
 
 
@@ -76,6 +80,16 @@ class ODVGConfig:
 
 
 @dataclass
+class AnchorInitConfig:
+    """Anchor initialization configuration template."""
+
+    num_anchor: int = INT_FIELD(value=MISSING, default_value="<specify number of anchor>")
+    detection_range: float = FLOAT_FIELD(value=-1, default_value="<specify detection range>")
+    sample_ratio: int = INT_FIELD(value=-1, default_value="<specify sample ratio>")
+    output_file_name: str = STR_FIELD(value=MISSING, default_value="<specify output file name>")
+
+
+@dataclass
 class AICityConfig:
     """Dataset configuration template."""
 
@@ -83,10 +97,11 @@ class AICityConfig:
     version: str = STR_FIELD(value=MISSING, default_value="<specify version>")
     split: str = STR_FIELD(value=MISSING, default_value="<specify split>")
     class_config: str = STR_FIELD(value=MISSING, default_value="<specify class config>")
-    recentering: bool = BOOL_FIELD(value=False)
-    use_rgb_h5_file: bool = BOOL_FIELD(value=False)
-    use_depth_h5_file: bool = BOOL_FIELD(value=False)
+    recentering: bool = BOOL_FIELD(value=MISSING, default_value="<specify recentering>")
+    rgb_format: str = STR_FIELD(value=MISSING, default_value="<specify rgb format>")
+    depth_format: str = STR_FIELD(value=MISSING, default_value="<specify depth format>")
     camera_grouping_mode: str = STR_FIELD(value="", default_value="<specify camera grouping mode>")
+    anchor_init_config: AnchorInitConfig = DATACLASS_FIELD(AnchorInitConfig())
 
 
 @dataclass
