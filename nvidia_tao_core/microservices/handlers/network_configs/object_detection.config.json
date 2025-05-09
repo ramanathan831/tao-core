@@ -31,7 +31,7 @@
             "action": "generate"
         },
         "augment": {
-            "network": "augmentation",
+            "network": "augment",
             "action": "generate"
         },
         "analyze": {
