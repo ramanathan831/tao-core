@@ -1950,18 +1950,19 @@ class AppHandler:
                     "Current status should be one of Running, Pending, Resuming"
                 }
             )
+        specs = job_metadata.get("specs", None)
+        use_ngc = not (specs and "cluster" in specs and specs["cluster"] == "local")
 
         if job_status == "Pending":
             stateless_handlers.update_job_status(handler_id, job_id, status="Canceling", kind=kind + "s")
             on_delete_job(job_id)
+            jobDriver.delete(job_id, use_ngc=use_ngc)
             stateless_handlers.update_job_status(handler_id, job_id, status="Canceled", kind=kind + "s")
             return Code(200, {"message": f"Pending job {job_id} cancelled"})
 
         if job_status == "Running":
             try:
                 # Delete K8s job
-                specs = job_metadata.get("specs", None)
-                use_ngc = not (specs and "cluster" in specs and specs["cluster"] == "local")
                 stateless_handlers.update_job_status(handler_id, job_id, status="Canceling", kind=kind + "s")
                 jobDriver.delete(job_id, use_ngc=use_ngc)
                 k8s_status = jobDriver.status(
@@ -2047,18 +2048,19 @@ class AppHandler:
                     "Current status should be one of Running, Pending, Resuming"
                 }
             )
+        specs = job_metadata.get("specs", None)
+        use_ngc = not (specs and "cluster" in specs and specs["cluster"] == "local")
 
         if job_status == "Pending":
             stateless_handlers.update_job_status(handler_id, job_id, status="Pausing", kind=kind + "s")
             on_delete_job(job_id)
+            jobDriver.delete(job_id, use_ngc=use_ngc)
             stateless_handlers.update_job_status(handler_id, job_id, status="Paused", kind=kind + "s")
             return Code(200, {"message": f"Pending job {job_id} paused"})
 
         if job_status == "Running":
             try:
                 # Delete K8s job
-                specs = job_metadata.get("specs", None)
-                use_ngc = not (specs and "cluster" in specs and specs["cluster"] == "local")
                 stateless_handlers.update_job_status(handler_id, job_id, status="Pausing", kind=kind + "s")
                 jobDriver.delete(job_id, use_ngc=use_ngc)
                 k8s_status = jobDriver.status(
