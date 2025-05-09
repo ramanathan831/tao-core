@@ -522,6 +522,14 @@ class SFInferenceExpConfig(InferenceConfig):
 class SFExportExpConfig(ExportConfig):
     """Export experiment config."""
 
+    input_width: int = INT_FIELD(
+        value=544,
+        default_value=544,
+        description="Width of the input image tensor.",
+        display_name="input width",
+        valid_min=32,
+    )
+
     serialize_nvdsinfer: bool = BOOL_FIELD(
         value=False,
         default_value=False,
