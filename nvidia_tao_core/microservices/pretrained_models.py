@@ -393,21 +393,24 @@ class BaseExperimentMetadata:
                 "going to try download without configuring credentials".format(org, team)
             )  # noqa pylint: disable=C0209
         # Check and download experiment.yaml file
-        model_files = list(clt.registry.model.list_files(ngc_path))
-        file_paths = list(map(lambda x: x.path, model_files))
-        spec_file = "experiment.yaml"
-        if spec_file in file_paths:
-            dest_path = f"{self.rootdir}/{exp_id}/"
-            os.makedirs(dest_path, exist_ok=True)
-            clt.registry.model.download_version(ngc_path, destination=dest_path, file_patterns=[spec_file])
-            spec_data = safe_load_file(dest_path + f"{model}_v{version}/experiment.yaml", file_type="yaml")
-            if spec_data:
-                logger.info("Successfully got spec data for %s", ngc_path)
-            else:
-                logger.error("Unable to get spec data for %s", ngc_path)
-            return spec_data
-        logger.error("Unable to get spec data for %s", ngc_path)
-        return {}
+        try:
+            model_files = list(clt.registry.model.list_files(ngc_path))
+            file_paths = list(map(lambda x: x.path, model_files))
+            spec_file = "experiment.yaml"
+            if spec_file in file_paths:
+                dest_path = f"{self.rootdir}/{exp_id}/"
+                os.makedirs(dest_path, exist_ok=True)
+                clt.registry.model.download_version(ngc_path, destination=dest_path, file_patterns=[spec_file])
+                spec_data = safe_load_file(dest_path + f"{model}_v{version}/experiment.yaml", file_type="yaml")
+                if spec_data:
+                    logger.info("Successfully got spec data for %s", ngc_path)
+                else:
+                    logger.error("Unable to get spec data for %s", ngc_path)
+                return spec_data
+        except Exception as e:
+            logger.error("Unable to get spec data for %s", ngc_path)
+            logger.error(e)
+            return {}
 
     def convert_str_to_enum(self, string_value: str, enum_type: Enum):
         """Convert string to enum based on value."""
