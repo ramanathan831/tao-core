@@ -30,76 +30,13 @@ from nvidia_tao_core.config.utils.types import (
 
 @dataclass
 class Sparse4DBackboneConfig:
-    """Backbone configuration for Sparse4D."""
+    """Backbone configuration for Sparse4D, aligning with timm.ResNet and BackboneBase expectations."""
 
     type: str = STR_FIELD(
-        value="ResNet",
-        default_value="ResNet",
+        value="resnet_101",
+        default_value="resnet_101",
         description="Backbone type",
-        valid_options="ResNet",
         display_name="Backbone type"
-    )
-    depth: int = INT_FIELD(
-        value=101,
-        default_value=101,
-        valid_min=18,
-        valid_max=152,
-        description="ResNet depth",
-        valid_options="18,34,50,101,152",
-        display_name="ResNet depth"
-    )
-    num_stages: int = INT_FIELD(
-        value=4,
-        default_value=4,
-        valid_min=1,
-        valid_max=4,
-        description="Number of stages",
-        display_name="Number of stages"
-    )
-    frozen_stages: int = INT_FIELD(
-        value=-1,
-        default_value=-1,
-        valid_min=-1,
-        valid_max=4,
-        description="Frozen stages (-1 for none)",
-        display_name="Frozen stages (-1 for none)"
-    )
-    norm_eval: bool = BOOL_FIELD(
-        value=True,
-        default_value=True,
-        description="Set BatchNorm layers to eval mode",
-        display_name="Set BatchNorm layers to eval mode"
-    )
-    style: str = STR_FIELD(
-        value="pytorch",
-        default_value="pytorch",
-        description="ResNet style",
-        valid_options="pytorch,caffe",
-        display_name="ResNet style"
-    )
-    with_cp: bool = BOOL_FIELD(
-        value=True,
-        default_value=True,
-        description="Use checkpoint to save memory",
-        display_name="Use checkpoint to save memory"
-    )
-    out_indices: Tuple[int, ...] = LIST_FIELD(
-        arrList=[0, 1, 2, 3],
-        default_value=[0, 1, 2, 3],
-        description="Output indices",
-        display_name="Output indices"
-    )
-    norm_cfg: Dict[str, Any] = DICT_FIELD(
-        hashMap={"type": "BN", "requires_grad": False},
-        description="Normalization configuration",
-        default_value={"type": "BN", "requires_grad": False},
-        display_name="Normalization configuration"
-    )
-    pretrained_backbone_path: Optional[str] = STR_FIELD(
-        value=None,
-        default_value="",
-        description="Path to pretrained backbone weights",
-        display_name="Path to pretrained backbone weights"
     )
 
 
