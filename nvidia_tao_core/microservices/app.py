@@ -4745,8 +4745,7 @@ def dataset_job_files_list(org_name, dataset_id, job_id):
         response = make_response(jsonify(schema.dump(schema.load(metadata))), 400)
         return response
     # Get response
-    retrieve_logs = ast.literal_eval(request.args.get("retrieve_logs", "False"))
-    response = app_handler.job_list_files(org_name, dataset_id, job_id, retrieve_logs, "dataset")
+    response = app_handler.job_list_files(org_name, dataset_id, job_id, "dataset")
     # Get schema
     if response.code == 200:
         if isinstance(response.data, list) and (all(isinstance(f, str) for f in response.data) or response.data == []):
@@ -8865,8 +8864,7 @@ def experiment_job_files_list(org_name, experiment_id, job_id):
         response = make_response(jsonify(schema.dump(schema.load(metadata))), 400)
         return response
     # Get response
-    retrieve_logs = ast.literal_eval(request.args.get("retrieve_logs", "False"))
-    response = app_handler.job_list_files(org_name, experiment_id, job_id, retrieve_logs, "experiment")
+    response = app_handler.job_list_files(org_name, experiment_id, job_id, "experiment")
     # Get schema
     if response.code == 200:
         if isinstance(response.data, list) and (all(isinstance(f, str) for f in response.data) or response.data == []):
