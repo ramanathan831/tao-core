@@ -14,7 +14,7 @@
 
 """Configuration hyperparameter schema for the model."""
 
-from typing import Optional, List, Dict, Any, Tuple
+from typing import Optional, List, Any
 from dataclasses import dataclass
 
 from nvidia_tao_core.config.utils.types import (
@@ -23,7 +23,6 @@ from nvidia_tao_core.config.utils.types import (
     BOOL_FIELD,
     FLOAT_FIELD,
     LIST_FIELD,
-    DICT_FIELD,
     DATACLASS_FIELD
 )
 
