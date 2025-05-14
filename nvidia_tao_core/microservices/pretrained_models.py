@@ -410,7 +410,7 @@ class BaseExperimentMetadata:
         except Exception as e:
             logger.error("Unable to get spec data for %s", ngc_path)
             logger.error(e)
-            return {}
+        return {}
 
     def convert_str_to_enum(self, string_value: str, enum_type: Enum):
         """Convert string to enum based on value."""
