@@ -16,7 +16,6 @@
 import os
 import copy
 import json
-import glob
 import uuid
 import orjson
 import traceback
@@ -177,28 +176,6 @@ def get_handler_job_metadata(job_id):
         job_query = {'id': job_id}
         metadata = mongo_jobs.find_one(job_query)
     return metadata
-
-
-def get_job_files(user_id, org_name, handler_id, job_id, retrieve_logs=False):
-    """Return metadata info present in job_id.json inside jobs_metadata folder"""
-    # Only metadata of a particular job
-    logs_folder = ""
-    if retrieve_logs:
-        logs_folder = get_handler_log_root(user_id, org_name, handler_id)
-
-    job_root = get_jobs_root(user_id, org_name)
-    job_folder = os.path.join(job_root, job_id)
-    if not os.path.exists(job_folder) and (retrieve_logs and not os.path.exists(logs_folder)):
-        return []
-    files = glob.glob(f"{job_folder}/**", recursive=True)
-
-    # Get log and specs file for that job
-    log_file = os.path.join(logs_folder, f"{job_id}.txt")
-    if logs_folder and os.path.exists(log_file):
-        files += [log_file]
-
-    files = [os.path.relpath(file, job_root) for file in files if not file.endswith('/')]
-    return files
 
 
 def get_toolkit_status(job_id):
