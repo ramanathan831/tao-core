@@ -70,7 +70,9 @@
             },
             "auto_label": {
                 "set_value": {
-                    "data.ann_path": "results/{parent_id}/label.json"
+                    "data.ann_path": "results/{parent_id}/label.json",
+                    "spatial_aug.rotation.refine_box.gt_cache": "results/{parent_id}/label.json",
+                    "spatial_aug.rotation.refine_box.enabled": true
                 },
                 "conditional": {
                     "metadata_key": "format",
@@ -165,10 +167,6 @@
             "spatial_aug.rotation.refine_box.enabled": {
                 "source": "id",
                 "multiple_sources": false,
-                "conditional": {
-                    "metadata_key": "format",
-                    "equals": "kitti"
-                },
                 "value": false
             }
         },
