@@ -160,7 +160,7 @@ def create(
                         job_name,
                         automl=automl_exp_job,
                         automl_experiment_number=nv_job_metadata.get("AUTOML_EXPERIMENT_NUMBER", "0"),
-                        message="NVCF deployment intitiation error"
+                        message="NVCF function could not be deployed"
                     )
                     logger.error(f"Function deployment request failed for job {job_name}")
                     logger.error(f"Deployment response {deploy_response.text}")
@@ -1086,7 +1086,7 @@ def status(
                             job_name,
                             automl=automl_exp_job,
                             automl_experiment_number=nv_job_metadata.get("AUTOML_EXPERIMENT_NUMBER", "0"),
-                            message="NVCF deployment intitiation error"
+                            message="NVCF function details cant be retrieved"
                         )
                         return "Error"
                     if nvcf_function_metadata.get("function", {}).get("status") == "ACTIVE":
@@ -1120,7 +1120,7 @@ def status(
                             job_name,
                             automl=automl_exp_job,
                             automl_experiment_number=nv_job_metadata.get("AUTOML_EXPERIMENT_NUMBER", "0"),
-                            message="NVCF deployment intitiation error"
+                            message="NVCF function metadata has ERROR status"
                         )
                         return "Error"
 
