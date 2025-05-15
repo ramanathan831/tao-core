@@ -87,6 +87,26 @@ def _get_valid_actions():
     return actions
 
 
+def _get_valid_config_json_param_for_network(network_name: str, param: str):
+    """Get all valid actions from config files."""
+    config_file = pathlib.Path(__file__).parent / "handlers" / "network_configs" / f"{network_name}.config.json"
+    actions = set()
+
+    if config_file.exists():
+        try:
+            with open(config_file, 'r', encoding='utf-8') as f:
+                config = json.load(f)
+                if param in config.get("api_params", {}):
+                    if isinstance(config["api_params"][param], list):
+                        actions.update(config["api_params"][param])
+                    else:
+                        actions.add(config["api_params"][param])
+        except (json.JSONDecodeError, IOError):
+            pass
+
+    return actions
+
+
 def _get_network_architectures() -> list[str]:
     """Scan config directory for .config.json files to determine valid network architectures.
 
