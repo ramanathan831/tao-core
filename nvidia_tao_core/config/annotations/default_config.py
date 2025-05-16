@@ -80,6 +80,17 @@ class ODVGConfig:
 
 
 @dataclass
+class ClassConfig:
+    """Class configuration template."""
+
+    CLASS_LIST: list = LIST_FIELD(arrList=MISSING, default_value="<specify class list>")
+    SUB_CLASS_DICT: dict = DICT_FIELD(hashMap=MISSING, default_value="<specify sub class dict>")
+    MAP_CLASS_NAMES: dict = DICT_FIELD(hashMap=MISSING, default_value="<specify map class names>")
+    ATTRIBUTE_DICT: dict = DICT_FIELD(hashMap=MISSING, default_value="<specify attribute dict>")
+    CLASS_RANGE_DICT: dict = DICT_FIELD(hashMap=MISSING, default_value="<specify class range dict>")
+
+
+@dataclass
 class AnchorInitConfig:
     """Anchor initialization configuration template."""
 
@@ -96,7 +107,7 @@ class AICityConfig:
     root: str = STR_FIELD(value=MISSING, default_value="<specify data root>")
     version: str = STR_FIELD(value=MISSING, default_value="<specify version>")
     split: str = STR_FIELD(value=MISSING, default_value="<specify split>")
-    class_config: str = STR_FIELD(value=MISSING, default_value="<specify class config>")
+    class_config: ClassConfig = DATACLASS_FIELD(ClassConfig())
     recentering: bool = BOOL_FIELD(value=MISSING, default_value="<specify recentering>")
     rgb_format: str = STR_FIELD(value=MISSING, default_value="<specify rgb format>")
     depth_format: str = STR_FIELD(value=MISSING, default_value="<specify depth format>")
