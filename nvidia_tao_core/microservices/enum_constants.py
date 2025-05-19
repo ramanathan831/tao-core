@@ -100,12 +100,17 @@ def _get_network_architectures() -> list[str]:
     if config_dir.exists():
         for config_file in config_dir.glob("*.config.json"):
             arch_name = config_file.stem.replace(".config", "")
+
             try:
                 with open(config_file, 'r', encoding='utf-8') as f:
                     config = json.load(f)
 
                     # Add the main architecture
-                    architectures.add(arch_name)
+                    if arch_name not in ["image_classification",
+                                         "object_detection",
+                                         "segmentation",
+                                         "character_recognition"]:
+                        architectures.add(arch_name)
 
                     # Add networks from action mappings
                     actions_mapping = config.get("actions_mapping", {})
