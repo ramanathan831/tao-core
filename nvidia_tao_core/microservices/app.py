@@ -16,6 +16,8 @@
 
 """API modules defining schemas and endpoints"""
 import ast
+
+import pkg_resources
 import bson
 import sys
 import uuid
@@ -129,7 +131,12 @@ def disk_space_check(f):
 #
 # Create an APISpec
 #
-tao_version = os.environ.get('TAO_VERSION', 'unknown')
+
+try:
+    tao_version = pkg_resources.get_distribution('nvidia_tao_core').version
+except Exception:
+    tao_version = os.getenv('TAO_VERSION', '6.0.0')
+
 spec = APISpec(
     title='NVIDIA TAO API',
     version=tao_version,
