@@ -19,12 +19,44 @@
 from abc import abstractmethod
 from datetime import datetime
 import json
-import logging
+import logging as _logging
 import os
 
 from nvidia_tao_core.cloud_handlers.utils import status_callback
 
-logger = logging.getLogger(__name__)
+
+class MessageFormatter(_logging.Formatter):
+    """Formatter that supports colored logs."""
+
+    grey = "\x1b[38;20m"
+    yellow = "\x1b[33;20m"
+    red = "\x1b[31;20m"
+    bold_red = "\x1b[31;1m"
+    reset = "\x1b[0m"
+    fmt = "%(asctime)s - [%(name)s] - %(levelname)s - %(message)s (%(filename)s:%(lineno)d)"
+
+    FORMATS = {
+        _logging.DEBUG: grey + fmt + reset,
+        _logging.INFO: grey + fmt + reset,
+        _logging.WARNING: yellow + fmt + reset,
+        _logging.ERROR: red + fmt + reset,
+        _logging.CRITICAL: bold_red + fmt + reset
+    }
+
+    def format(self, record):
+        """Format the log message."""
+        log_fmt = self.FORMATS.get(record.levelno)
+        formatter = _logging.Formatter(log_fmt)
+        return formatter.format(record)
+
+
+logger = _logging.getLogger('TAO Toolkit')
+logger.setLevel(_logging.DEBUG)
+ch = _logging.StreamHandler()
+ch.setLevel(_logging.DEBUG)
+ch.setFormatter(MessageFormatter())
+logger.addHandler(ch)
+logging = logger
 
 
 class Verbosity():
@@ -137,7 +169,7 @@ class BaseLogger(object):
     def log(self, level, string):
         """Log the data string."""
         if level >= self.verbosity:
-            logging.log(level, string)
+            logger.log(level, string)
 
     @abstractmethod
     def write(self, data=None,
@@ -156,7 +188,7 @@ class BaseLogger(object):
 
             if message:
                 data["message"] = message
-            logging.log(verbosity_level, message)
+            logger.log(verbosity_level, message)
 
             if self.categorical:
                 data["categorical"] = self.categorical
