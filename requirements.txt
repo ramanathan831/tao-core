@@ -45,6 +45,6 @@ toml
 timeloop==1.0.2
 transformers==4.46.0
 tritonclient[all]==2.55.0
-uWSGI==2.0.23
+uWSGI
 validators==0.21.0
 Werkzeug==3.0.3
