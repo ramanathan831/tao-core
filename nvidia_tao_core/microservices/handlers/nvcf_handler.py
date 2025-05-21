@@ -241,13 +241,13 @@ def deploy_function(org_name, team_name, function_details, nvcf_backend_details,
     payload = {
         "deploymentSpecifications": [
             {
-                "image": image,
                 "gpu": nvcf_backend_details["gpu_type"],
                 "backend": nvcf_backend_details["cluster"],
                 "maxInstances": 1,
                 "minInstances": 1,
                 "instanceType": instanceType,
                 "configuration": {
+                    "image": image,
                     "numGpuPerNode": num_gpu_per_node,
                     "numNodes": num_nodes,
                     "jobId": job_id,
