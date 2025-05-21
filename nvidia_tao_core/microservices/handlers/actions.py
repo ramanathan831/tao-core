@@ -331,7 +331,10 @@ class ActionPipeline:
             }
             for gpu_postfix in ["2x", "4x", "8x"]:
                 if gpu_postfix in instance_type:
-                    nv_job_metadata["nvcf_backend_details"]["num_gpu_per_node"] = int(gpu_postfix[:-1])
+                    dividing_factor = 1
+                    if available_nvcf_instances[self.platform_id]["cluster"] == "GFN":
+                        dividing_factor = 2
+                    nv_job_metadata["nvcf_backend_details"]["num_gpu_per_node"] = int(int(gpu_postfix[:-1]) / dividing_factor)
                     break
 
             if self.tao_deploy_actions:
