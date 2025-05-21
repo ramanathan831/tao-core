@@ -95,8 +95,8 @@ class AnchorInitConfig:
     """Anchor initialization configuration template."""
 
     num_anchor: int = INT_FIELD(value=MISSING, default_value="<specify number of anchor>")
-    detection_range: float = FLOAT_FIELD(value=-1, default_value="<specify detection range>")
-    sample_ratio: int = INT_FIELD(value=-1, default_value="<specify sample ratio>")
+    detection_range: float = FLOAT_FIELD(value=MISSING, default_value="<specify detection range>")
+    sample_ratio: int = INT_FIELD(value=MISSING, default_value="<specify sample ratio>")
     output_file_name: str = STR_FIELD(value=MISSING, default_value="<specify output file name>")
 
 
@@ -111,7 +111,7 @@ class AICityConfig:
     recentering: bool = BOOL_FIELD(value=MISSING, default_value="<specify recentering>")
     rgb_format: str = STR_FIELD(value=MISSING, default_value="<specify rgb format>")
     depth_format: str = STR_FIELD(value=MISSING, default_value="<specify depth format>")
-    camera_grouping_mode: str = STR_FIELD(value="", default_value="<specify camera grouping mode>")
+    camera_grouping_mode: str = STR_FIELD(value=MISSING, default_value="<specify camera grouping mode>")
     anchor_init_config: AnchorInitConfig = DATACLASS_FIELD(AnchorInitConfig())
 
 
