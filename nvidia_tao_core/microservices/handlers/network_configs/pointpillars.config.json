@@ -1,7 +1,7 @@
 {
     "api_params": {
         "dataset_type":"pointpillars",
-        "actions": ["dataset_convert","train","prune","evaluate","retrain","export","inference"],
+        "actions": ["dataset_convert","train","prune","evaluate","retrain","export","inference","gen_trt_engine"],
         "formats":["default"],
         "accepted_ds_intents": ["training"],
         "image":"TAO_PYTORCH",
@@ -13,7 +13,8 @@
             "prune":"prune_with_spec",
             "retrain":"retrain",
             "export":"export_with_spec",
-            "inference":"inference"
+            "inference":"inference",
+            "gen_trt_engine":"gen_trt_engine"
         }
     },
 
@@ -158,7 +159,8 @@
         "inference":{
             "key":"key",
             "results_dir":"output_dir",
-            "inference.checkpoint":"parent_model"
+            "inference.checkpoint":"parent_model",
+            "inference.trt_engine":"parent_model"
         },
         "retrain":{
             "key":"key",
@@ -171,8 +173,14 @@
             "export.save_engine":"create_engine_file",
             "export.checkpoint":"parent_model",
             "export.onnx_file":"create_onnx_file"
+        },
+        "gen_trt_engine":{
+            "key":"key",
+            "results_dir":"output_dir",
+            "gen_trt_engine.onnx_file":"parent_model",
+            "gen_trt_engine.save_engine":"create_engine_file"
         }
-    },
+   },
 
     "automl_spec_params":{
         "key":"key",

@@ -1,6 +1,7 @@
 {
     "api_params": {
         "dataset_type":"vlm",
+        "recursive_dataset_file_download": true,
         "actions": ["train","evaluate","inference"],
         "formats":["default", "raw"],
         "accepted_ds_intents": ["training", "evaluation", "testing"],

@@ -139,7 +139,6 @@ class BackboneConfig:
             "vit_base_nvclip_16_siglip",
             "vit_huge_nvclip_14_siglip"
         ]),
-        automl_enabled="TRUE"
     )
     feat_downsample: bool = BOOL_FIELD(
         value=False,
@@ -365,7 +364,6 @@ class SFDatasetSegmentConfig:
         valid_max="inf",
         description="Workers",
         display_name="Workers",
-        automl_enabled="TRUE"
     )
     shuffle: bool = BOOL_FIELD(
         value=True,
@@ -523,6 +521,14 @@ class SFInferenceExpConfig(InferenceConfig):
 @dataclass
 class SFExportExpConfig(ExportConfig):
     """Export experiment config."""
+
+    input_width: int = INT_FIELD(
+        value=544,
+        default_value=544,
+        description="Width of the input image tensor.",
+        display_name="input width",
+        valid_min=32,
+    )
 
     serialize_nvdsinfer: bool = BOOL_FIELD(
         value=False,

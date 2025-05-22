@@ -64,6 +64,15 @@ class SystemConfig:
         description="Port number. Default is 24501",
         display_name="Port number"
     )
+    save_on_each_node: Optional[str] = STR_FIELD(
+        value="False",
+        default_value="False",
+        description='''
+        Whether or not to save checkpoint on each node.
+        Only set if using multinode without shared storage.
+        Default is False''',
+        display_name="Save on each Node"
+    )
 
 
 @dataclass

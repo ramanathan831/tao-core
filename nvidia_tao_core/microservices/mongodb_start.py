@@ -246,6 +246,9 @@ if __name__ == "__main__":
                     logger.debug("Output: %s", out)
                     break
                 except Exception as e:
+                    if 'already initialized' in str(e):
+                        logger.info("Replicaset already initialized")
+                        break
                     logger.error("Error initializing replicaset! %s", e)
                     retry += 1
                     logger.info("Retrying %s", retry)

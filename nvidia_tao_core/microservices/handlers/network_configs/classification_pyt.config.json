@@ -1,13 +1,14 @@
 {
     "api_params": {
         "dataset_type":"image_classification",
-        "actions": ["train","evaluate","export","gen_trt_engine","inference"],
+        "actions": ["train", "distill", "evaluate","export","gen_trt_engine","inference"],
         "formats":["classification_pyt"],
         "accepted_ds_intents": ["training", "evaluation", "testing"],
         "image":"TAO_PYTORCH",
         "spec_backend":"yaml",
         "actions_pipe":{
             "train":"train",
+            "distill":"train",
             "evaluate":"evaluate",
             "export":"export_with_spec",
             "gen_trt_engine":"gen_trt_engine",
@@ -17,6 +18,18 @@
 
     "data_sources": {
         "train": {
+            "dataset.train_dataset.images_dir": {
+                "source": "train_datasets",
+                "multiple_sources": false,
+                "path": "images_train.tar.gz"
+            },
+            "dataset.val_dataset.images_dir": {
+                "source": "eval_dataset",
+                "multiple_sources": false,
+                "path": "images_val.tar.gz"
+            }
+        },
+        "distill": {
             "dataset.train_dataset.images_dir": {
                 "source": "train_datasets",
                 "multiple_sources": false,
@@ -40,6 +53,13 @@
                 "path": "images_test.tar.gz"
             }
         },
+        "export": {
+            "dataset.root_dir": {
+                "source": "train_datasets",
+                "multiple_sources": false,
+                "path": ""
+            }
+        },
         "inference": {
             "dataset.val_dataset.images_dir": {
                 "source": "eval_dataset",
@@ -59,8 +79,11 @@
             "results_dir":"output_dir",
             "model.backbone.pretrained_backbone_path":"ptm_if_no_resume_model",
             "train.pretrained_model_path":"ptm_if_no_resume_model",
-            "distill.teacher_model_path":"resume_model",
             "train.resume_training_checkpoint_path":"resume_model"
+        },
+        "distill": {
+            "results_dir":"output_dir",
+            "distill.pretrained_teacher_model_path":"resume_model"
         },
         "evaluate":{
             "results_dir":"output_dir",
@@ -94,7 +117,7 @@
     },
 
     "metrics": {
-        "available_metrics": ["accuracy_top-1"],
-        "monitoring_metric": "accuracy_top-1"
+        "available_metrics": ["val_acc_1"],
+        "monitoring_metric": "val_acc_1"
     }
 }

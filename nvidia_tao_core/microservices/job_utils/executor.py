@@ -32,7 +32,11 @@ from nvidia_tao_core.microservices.handlers.stateless_handlers import (
     update_job_message,
     get_job_specs
 )
-from nvidia_tao_core.microservices.handlers.utilities import send_microservice_request
+from nvidia_tao_core.microservices.handlers.utilities import (
+    get_statefulset_name,
+    get_statefulset_service_name,
+    send_microservice_request
+)
 from nvidia_tao_core.microservices.handlers.nvcf_handler import (
     create_function,
     deploy_function,
@@ -106,6 +110,7 @@ def create(
     image,
     command,
     num_gpu=-1,
+    num_nodes=1,
     accelerator=None,
     docker_env_vars=None,
     port=False,
@@ -126,10 +131,11 @@ def create(
     if BACKEND == "NVCF" and nv_job_metadata:
         team_name = nv_job_metadata["teamName"]
         nvcf_backend_details = nv_job_metadata["nvcf_backend_details"]
-        ngc_key = nv_job_metadata["TAO_USER_KEY"]
+        ngc_key = nv_job_metadata["TAO_ADMIN_KEY"]
         docker_image_name = nv_job_metadata["dockerImageName"]
         deployment_string = nv_job_metadata.get("deployment_string", "")
-
+        current_available = nvcf_backend_details.get("current_available", 1)
+        num_nodes = min(num_nodes, current_available)
         if not deployment_string:
             create_response = create_function(org_name, team_name, job_name, docker_image_name, ngc_key)
             if create_response.ok:
@@ -137,7 +143,15 @@ def create(
                 function_metadata = create_response.json()
                 function_id = function_metadata["function"]["id"]
                 version_id = function_metadata["function"]["versionId"]
-                deploy_response = deploy_function(org_name, team_name, function_metadata, nvcf_backend_details, ngc_key)
+                deploy_response = deploy_function(
+                    org_name,
+                    team_name,
+                    function_metadata,
+                    nvcf_backend_details,
+                    ngc_key,
+                    image=docker_image_name,
+                    num_nodes=num_nodes
+                )
                 if deploy_response.ok:
                     deployment_string = f"{function_id}:{version_id}"
                     logger.info(f"Function deployment initiated successfully for job {job_name}")
@@ -146,10 +160,11 @@ def create(
                         job_name,
                         automl=automl_exp_job,
                         automl_experiment_number=nv_job_metadata.get("AUTOML_EXPERIMENT_NUMBER", "0"),
-                        message="NVCF deployment intitiation error"
+                        message="NVCF function could not be deployed"
                     )
                     logger.error(f"Function deployment request failed for job {job_name}")
-                    return
+                    logger.error(f"Deployment response {deploy_response.text}")
+                    raise ValueError(f"Function deployment request failed for job {job_name}")
             else:
                 internal_job_status_update(
                     job_name,
@@ -158,7 +173,7 @@ def create(
                     message="NVCF function couldn't be created, retry job again"
                 )
                 logger.error(f"Function creation request failed for job {job_name}")
-                return
+                raise ValueError("NVCF function couldn't be created, retry job again")
 
         job_metadata = get_handler_job_metadata(job_name)
         job_metadata["backend_details"] = {}
@@ -262,6 +277,9 @@ def create(
     dshm_volume = client.V1Volume(
         name="dshm",
         empty_dir=client.V1EmptyDirVolumeSource(medium='Memory'))
+    restart_policy = "Always"
+    if automl_brain:
+        restart_policy = "Never"
     template = client.V1PodTemplateSpec(
         metadata=client.V1ObjectMeta(
             labels={"purpose": "tao-toolkit-job"}
@@ -271,7 +289,7 @@ def create(
             containers=[container],
             volumes=[dshm_volume],
             node_selector=node_selector,
-            restart_policy="Never"))
+            restart_policy=restart_policy))
     spec = client.V1JobSpec(
         ttl_seconds_after_finished=100,
         template=template,
@@ -293,36 +311,256 @@ def create(
         return
 
 
-def create_flask_service(job_id):
-    """Create a service for a microservice pod"""
+def create_service(service_name, selector, service_port, target_port, labels={}):
+    """Create a service"""
     try:
         name_space = _get_name_space()
         core_v1 = client.CoreV1Api()
         service = client.V1Service(
             api_version="v1",
             kind="Service",
-            metadata=client.V1ObjectMeta(name=f"flask-service-{job_id}"),
+            metadata=client.V1ObjectMeta(name=service_name, labels=labels, owner_references=[_get_owner_reference()]),
             spec=client.V1ServiceSpec(
                 cluster_ip=None,  # Headless service
-                selector={
-                    "app": "flask",
-                    "job-id": job_id
-                },
-                ports=[client.V1ServicePort(port=8000, target_port=8000)]
+                selector=selector,
+                ports=[client.V1ServicePort(port=service_port, target_port=target_port)]
             )
         )
         core_v1.create_namespaced_service(namespace=name_space, body=service)
     except Exception as e:
-        logger.error(f"Exception thrown in create_flask_service is {str(e)}")
+        logger.error(f"Exception thrown in create_service is {str(e)}")
         logger.error(traceback.format_exc())
 
 
-def delete_service(job_id):
+def create_flask_service(job_id):
+    """Create a service for a microservice pod"""
+    service_name = f"flask-service-{job_id}"
+    selector = {
+        "app": "flask",
+        "job-id": job_id
+    }
+    create_service(service_name, selector, 8000, 8000)
+
+
+def create_statefulset_service(job_id):
+    """Create a service for a statefulset"""
+    service_name = get_statefulset_service_name(job_id)
+    selector = {
+        "app": "multinode",
+        "job-id": job_id
+    }
+    labels = {
+        "app": "multinode",
+        "job-id": job_id
+    }
+    create_service(service_name, selector, 8000, 8000, labels=labels)
+
+
+def _get_owner_reference():
+    """Get the owner reference for K8s resources"""
+    api_instance = client.AppsV1Api()
+    name_space = _get_name_space()
+    workflow_deployment = api_instance.read_namespaced_deployment(
+        name=f"{release_name}-workflow-pod",
+        namespace=name_space)
+    owner_reference = client.V1OwnerReference(
+        api_version=workflow_deployment.api_version,
+        kind=workflow_deployment.kind,
+        controller=True,
+        name=workflow_deployment.metadata.name,
+        uid=workflow_deployment.metadata.uid
+    )
+    return owner_reference
+
+
+def create_statefulset(job_id, num_gpu_per_node, num_nodes, image, api_port=8000, master_port=29500, accelerator=None):
+    """Create statefulset"""
+    try:
+        create_statefulset_service(job_id)
+        name_space = _get_name_space()
+        api_instance = client.AppsV1Api()
+        statefulset_name = get_statefulset_name(job_id)
+        service_name = get_statefulset_service_name(job_id)
+        labels = {
+            "app": "multinode",
+            "job-id": job_id
+        }
+        release_name_env_var = client.V1EnvVar(name="RELEASE_NAME", value=release_name)
+        namespace_env_var = client.V1EnvVar(name="NAMESPACE", value=name_space)
+        num_gpu_env_var = client.V1EnvVar(name="NUM_GPU_PER_NODE", value=str(num_gpu_per_node))
+        world_size_env_var = client.V1EnvVar(name="WORLD_SIZE", value=str(num_nodes))
+        node_rank_env_var = client.V1EnvVar(name="NODE_RANK", value_from=client.V1EnvVarSource(
+            field_ref=client.V1ObjectFieldSelector(
+                field_path="metadata.labels['apps.kubernetes.io/pod-index']"
+            )
+        ))
+        master_address_env_var = client.V1EnvVar(
+            name="MASTER_ADDR",
+            value=f"{statefulset_name}-0.{service_name}.{name_space}.svc.cluster.local"
+        )
+        master_port_env_var = client.V1EnvVar(name="MASTER_PORT", value=str(master_port))
+        save_on_each_node_env_var = client.V1EnvVar("SAVE_ON_EACH_NODE", value="True")
+        nccl_ib_disable_env_var = client.V1EnvVar(
+            "NCCL_IB_DISABLE",
+            value=os.getenv("NCCL_IB_DISABLE", default="0")
+        )
+        nccl_ib_ext_disable_env_var = client.V1EnvVar(
+            "NCCL_IBEXT_DISABLE",
+            value=os.getenv("NCCL_IBEXT_DISABLE", default="0")
+        )
+        container_port = client.V1ContainerPort(container_port=api_port)
+        dshm_volume_mount = client.V1VolumeMount(name="dshm", mount_path="/dev/shm")
+        dshm_volume = client.V1Volume(
+            name="dshm",
+            empty_dir=client.V1EmptyDirVolumeSource(medium="Memory")
+        )
+        capabilities = client.V1Capabilities(
+            add=['SYS_PTRACE']
+        )
+        security_context = client.V1SecurityContext(
+            capabilities=capabilities
+        )
+        image_pull_secret = os.getenv('IMAGEPULLSECRET', default='imagepullsecret')
+        node_selector = None
+        if accelerator:
+            available_gpus = get_available_local_k8s_gpus()
+            gpu_to_be_run_on = None
+            if available_gpus:
+                gpu_to_be_run_on = available_gpus.get(accelerator, {}).get("gpu_type")
+            node_selector = {'accelerator': gpu_to_be_run_on}
+        stateful_set = client.V1StatefulSet(
+            api_version="apps/v1",
+            kind="StatefulSet",
+            metadata=client.V1ObjectMeta(
+                name=statefulset_name,
+                owner_references=[_get_owner_reference()]
+            ),
+            spec=client.V1StatefulSetSpec(
+                replicas=num_nodes,
+                selector=client.V1LabelSelector(
+                    match_labels=labels
+                ),
+                service_name=service_name,
+                template=client.V1PodTemplateSpec(
+                    metadata=client.V1ObjectMeta(
+                        labels=labels
+                    ),
+                    spec=client.V1PodSpec(
+                        image_pull_secrets=[client.V1LocalObjectReference(name=image_pull_secret)],
+                        containers=[
+                            client.V1Container(
+                                name="multinode-container",
+                                image=image,
+                                command=["/bin/bash", "-c"],
+                                args=["flask run --host 0.0.0.0 --port 8000"],
+                                resources=client.V1ResourceRequirements(
+                                    limits={
+                                        "nvidia.com/gpu": num_gpu_per_node
+                                    }
+                                ),
+                                env=[namespace_env_var,
+                                     num_gpu_env_var,
+                                     world_size_env_var,
+                                     node_rank_env_var,
+                                     master_address_env_var,
+                                     master_port_env_var,
+                                     save_on_each_node_env_var,
+                                     nccl_ib_disable_env_var,
+                                     nccl_ib_ext_disable_env_var,
+                                     release_name_env_var],
+                                ports=[container_port],
+                                readiness_probe=client.V1Probe(
+                                    http_get=client.V1HTTPGetAction(
+                                        path="/api/v1/health/readiness",
+                                        port=8000
+                                    ),
+                                    initial_delay_seconds=10,
+                                    period_seconds=10,
+                                    timeout_seconds=5,
+                                    failure_threshold=3
+                                ),
+                                liveness_probe=client.V1Probe(
+                                    http_get=client.V1HTTPGetAction(
+                                        path="/api/v1/health/liveness",
+                                        port=8000
+                                    ),
+                                    initial_delay_seconds=10,
+                                    period_seconds=10,
+                                    timeout_seconds=5,
+                                    failure_threshold=3
+                                ),
+                                volume_mounts=[dshm_volume_mount],
+                                security_context=security_context
+                            )
+                        ],
+                        volumes=[dshm_volume],
+                        node_selector=node_selector,
+                        restart_policy="Always",
+                        affinity=client.V1Affinity(
+                            pod_anti_affinity=client.V1PodAntiAffinity(
+                                preferred_during_scheduling_ignored_during_execution=[
+                                    client.V1WeightedPodAffinityTerm(
+                                        weight=100,
+                                        pod_affinity_term=client.V1PodAffinityTerm(
+                                            label_selector=client.V1LabelSelector(
+                                                match_expressions=[
+                                                    client.V1LabelSelectorRequirement(
+                                                        key="app",
+                                                        operator="In",
+                                                        values=["multinode"]
+                                                    )
+                                                ]
+                                            ),
+                                            topology_key="kubernetes.io/hostname"
+                                        )
+                                    )
+                                ]
+                            )
+                        )
+                    )
+                )
+            )
+        )
+        api_instance.create_namespaced_stateful_set(
+            namespace=name_space,
+            body=stateful_set
+        )
+        # Ensure the statefulset is ready
+        stateful_set_ready = False
+        while not stateful_set_ready:
+            statefulset_response = api_instance.read_namespaced_stateful_set(
+                statefulset_name,
+                name_space
+            )
+            if statefulset_response:
+                desired_replicas = statefulset_response.spec.replicas
+                ready_replicas = statefulset_response.status.ready_replicas or 0
+                if desired_replicas == ready_replicas:
+                    logger.info(f"Statefulset {statefulset_name} is ready with {ready_replicas} replicas")
+                    stateful_set_ready = True
+                else:
+                    logger.info(
+                        f"Statefulset {statefulset_name} pending with "
+                        f"{ready_replicas}/{desired_replicas} ready"
+                    )
+                    time.sleep(10)
+            else:
+                logger.info(f"{statefulset_name} not found.")
+                time.sleep(10)
+    except Exception as e:
+        logger.error(f"Exception thrown in create_service is {str(e)}")
+        logger.error(traceback.format_exc())
+
+
+def delete_service(job_id, service_name):
     """Delete a microservice pod's service"""
     try:
         name_space = _get_name_space()
-        service_name = f"flask-service-{job_id}"
         core_v1 = client.CoreV1Api()
+        service = core_v1.read_namespaced_service(name=service_name, namespace=name_space)
+        if not service:
+            logger.info(f"Service {service_name} not found in namespace {name_space}")
+            return
         core_v1.delete_namespaced_service(name=service_name, namespace=name_space)
     except Exception as e:
         logger.error(f"Exception thrown in delete_service is {str(e)}")
@@ -372,6 +610,26 @@ def create_microservice_pod(job_name, image, num_gpu=-1, accelerator=None):
         resources=resources,
         volume_mounts=[dshm_volume_mount],
         ports=[],
+        readiness_probe=client.V1Probe(
+            http_get=client.V1HTTPGetAction(
+                path="/api/v1/health/readiness",
+                port=8000
+            ),
+            initial_delay_seconds=10,
+            period_seconds=10,
+            timeout_seconds=5,
+            failure_threshold=3
+        ),
+        liveness_probe=client.V1Probe(
+            http_get=client.V1HTTPGetAction(
+                path="/api/v1/health/liveness",
+                port=8000
+            ),
+            initial_delay_seconds=10,
+            period_seconds=10,
+            timeout_seconds=5,
+            failure_threshold=3
+        ),
         security_context=security_context)
 
     template = client.V1PodTemplateSpec(
@@ -387,7 +645,7 @@ def create_microservice_pod(job_name, image, num_gpu=-1, accelerator=None):
             containers=[container],
             volumes=[dshm_volume],
             node_selector=node_selector,
-            restart_policy="Never"))
+            restart_policy="Always"))
 
     spec = client.V1JobSpec(
         ttl_seconds_after_finished=100,
@@ -479,7 +737,7 @@ def check_endpoints_ready(service_name, namespace):
         raise e
 
 
-def wait_for_service(org_name, handler_id, job_id, handler_kind):
+def wait_for_service(job_id, service_name=None):
     """Wait until the specified service is ready or timeout is reached.
 
     Args:
@@ -491,7 +749,8 @@ def wait_for_service(org_name, handler_id, job_id, handler_kind):
     Returns:
         bool: True if the service is ready within the timeout period, False otherwise.
     """
-    service_name = f"flask-service-{job_id}"
+    if not service_name:
+        service_name = get_statefulset_service_name(job_id)
     namespace = _get_name_space()
     start_time = time.time()
     while time.time() - start_time < 300:
@@ -521,7 +780,8 @@ def create_microservice_and_send_request(
     handler_id="",
     handler_kind="",
     accelerator=None,
-    docker_env_vars={}
+    docker_env_vars={},
+    num_nodes=1,
 ):
     """Create a DNN container microservice pod and send request to the POD IP"""
     try:
@@ -533,16 +793,32 @@ def create_microservice_and_send_request(
             microservice_container = os.getenv(f'IMAGE_{NETWORK_CONTAINER_MAPPING[network]}')
             if action == "gen_trt_engine":
                 microservice_container = os.getenv('IMAGE_TAO_DEPLOY')
-        create_microservice_pod(microservice_pod_id, microservice_container, num_gpu=num_gpu, accelerator=accelerator)
-        if wait_for_service(org_name, handler_id, microservice_pod_id, handler_kind):
-            response = send_microservice_request(api_endpoint,
-                                                 network,
-                                                 action,
-                                                 cloud_metadata=cloud_metadata,
-                                                 specs=specs,
-                                                 job_id=microservice_pod_id,
-                                                 nvcf_helm=nvcf_helm,
-                                                 docker_env_vars=docker_env_vars)
+
+        service_name = get_statefulset_service_name(microservice_pod_id)
+
+        create_statefulset(
+            microservice_pod_id,
+            num_gpu,
+            num_nodes,
+            microservice_container,
+            accelerator=accelerator
+        )
+        if wait_for_service(microservice_pod_id, service_name=service_name):
+            response = send_microservice_request(
+                api_endpoint,
+                network,
+                action,
+                cloud_metadata=cloud_metadata,
+                specs=specs,
+                job_id=microservice_pod_id,
+                nvcf_helm=nvcf_helm,
+                docker_env_vars=docker_env_vars,
+                statefulset_replicas=num_nodes
+            )
+            if response.status_code != 200 and response.text:
+                logger.error(f"Error when sending microservice request {response.text}")
+                delete(microservice_pod_id, use_ngc=False)
+                return None
             if api_endpoint != "post_action":
                 delete(microservice_pod_id, use_ngc=False)
             return response
@@ -810,10 +1086,11 @@ def status(
                             job_name,
                             automl=automl_exp_job,
                             automl_experiment_number=nv_job_metadata.get("AUTOML_EXPERIMENT_NUMBER", "0"),
-                            message="NVCF deployment intitiation error"
+                            message="NVCF function details cant be retrieved"
                         )
                         return "Error"
                     if nvcf_function_metadata.get("function", {}).get("status") == "ACTIVE":
+                        logger.info("NVCF function is active, creating microservice job on NVCF")
                         deployment_string = (
                             f"{nvcf_function_metadata['function']['id']}:"
                             f"{nvcf_function_metadata['function']['versionId']}"
@@ -843,7 +1120,7 @@ def status(
                             job_name,
                             automl=automl_exp_job,
                             automl_experiment_number=nv_job_metadata.get("AUTOML_EXPERIMENT_NUMBER", "0"),
-                            message="NVCF deployment intitiation error"
+                            message="NVCF function metadata has ERROR status"
                         )
                         return "Error"
 
@@ -866,7 +1143,8 @@ def status(
 
     # For local cluster jobs
     if network not in MONAI_NETWORKS:
-        service_status = wait_for_service(org_name, handler_id, job_name, handler_kind)
+
+        service_status = wait_for_service(job_name)
         if service_status == "Running":
             specs = get_job_specs(job_name, automl=automl_exp_job, automl_experiment_id=automl_experiment_id)
             if specs:
@@ -875,7 +1153,7 @@ def status(
                     network=network,
                     action=action,
                     job_id=job_name,
-                    specs=specs
+                    specs=specs,
                 )
                 if response and response.ok:
                     job_status = response.json()
@@ -940,7 +1218,60 @@ def delete_tis_service(tis_service_name):
         return
 
 
+def delete_nvcf_function(job_name):
+    """Deletes an NVCF Function"""
+    job_metadata = get_handler_job_metadata(job_name)
+    org_name = job_metadata.get("org_name")
+    nv_job_metadata = job_metadata.get("backend_details", {}).get("nvcf_metadata", {})
+    team_name = nv_job_metadata["teamName"]
+    ngc_key = nv_job_metadata["TAO_USER_KEY"]
+    deployment_string = nv_job_metadata.get("deployment_string", "")
+    if deployment_string.find(":") == -1:
+        logger.warning(f"Deployment not active yet {job_name}")
+        return
+    function_id, version_id = deployment_string.split(":")
+    delete_function_version(org_name, team_name, function_id, version_id, ngc_key)
+
+
 def delete(job_name, use_ngc=True):
+    """Deletes a kubernetes statefulset"""
+    name_space = _get_name_space()
+    if os.getenv("DEV_MODE", "False").lower() in ("true", "1"):
+        config.load_kube_config()
+    else:
+        config.load_incluster_config()
+    if BACKEND == "NVCF" and use_ngc:
+        delete_nvcf_function(job_name)
+        return
+    api_instance = client.AppsV1Api()
+    try:
+        service_name = get_statefulset_service_name(job_name)
+        stateful_set_name = get_statefulset_name(job_name)
+        delete_service(job_name, service_name=service_name)
+        stateful_set = api_instance.read_namespaced_stateful_set(
+            name=stateful_set_name,
+            namespace=name_space
+        )
+        if not stateful_set:
+            logger.info(f"Statefulset {stateful_set_name} not found in namespace {name_space}")
+            return
+        api_response = api_instance.delete_namespaced_stateful_set(
+            name=stateful_set_name,
+            namespace=name_space,
+            body=client.V1DeleteOptions(
+                propagation_policy='Foreground',
+                grace_period_seconds=5
+            )
+        )
+        logger.info(f"Statefulset deleted. status='{str(api_response.status)}'")
+        return
+    except Exception as e:
+        logger.error(f"Exception caught in delete_statefulset {str(e)}")
+        logger.error("Statefulset failed to delete.")
+        return
+
+
+def delete_job(job_name, use_ngc=True):
     """Deletes a kubernetes job"""
     name_space = _get_name_space()
     if os.getenv("DEV_MODE", "False").lower() in ("true", "1"):
@@ -949,23 +1280,13 @@ def delete(job_name, use_ngc=True):
         config.load_incluster_config()
 
     if BACKEND == "NVCF" and use_ngc:
-        job_metadata = get_handler_job_metadata(job_name)
-        org_name = job_metadata.get("org_name")
-        nv_job_metadata = job_metadata.get("backend_details", {}).get("nvcf_metadata", {})
-        team_name = nv_job_metadata["teamName"]
-        ngc_key = nv_job_metadata["TAO_USER_KEY"]
-        deployment_string = nv_job_metadata.get("deployment_string", "")
-        if deployment_string.find(":") == -1:
-            logger.warning(f"Deployment not active yet {job_name}")
-            return
-        function_id, version_id = deployment_string.split(":")
-        if org_name not in ["0544357712065245"]:
-            delete_function_version(org_name, team_name, function_id, version_id, ngc_key)
+        delete_nvcf_function(job_name)
         return
 
     api_instance = client.BatchV1Api()
     try:
-        delete_service(job_name)
+        service_name = f"flask-service-{job_name}"
+        delete_service(job_name, service_name=service_name)
         api_response = api_instance.delete_namespaced_job(
             name=job_name,
             namespace=name_space,
@@ -1083,6 +1404,10 @@ def create_tensorboard_deployment(deployment_name, image, command, logs_image, l
         name="NAMESPACE",
         value=mongo_namespace
     )
+    backend_env = client.V1EnvVar(
+        name="BACKEND",
+        value=BACKEND,
+    )
     image_pull_secret = os.getenv('IMAGEPULLSECRET', default='imagepullsecret')
     tb_container = client.V1Container(
         name="tb-container",
@@ -1098,7 +1423,11 @@ def create_tensorboard_deployment(deployment_name, image, command, logs_image, l
     tb_logs_container = client.V1Container(
         name="tb-logs-container",
         image=logs_image,
-        env=[no_gpu, mongo_secret_env, mongo_operator_enabled_env, mongo_namespace_env],
+        env=[no_gpu,
+             mongo_secret_env,
+             mongo_operator_enabled_env,
+             mongo_namespace_env,
+             backend_env],
         command=["/bin/sh", "-c"],
         resources=resources,
         args=[logs_command],
@@ -1133,8 +1462,8 @@ def create_tensorboard_deployment(deployment_name, image, command, logs_image, l
         api_version="apps/v1",
         kind="Deployment",
         metadata=client.V1ObjectMeta(name=deployment_name, labels={
-            "resource-type": "tensorboard"
-        }),
+            "resource-type": "tensorboard",
+        }, owner_references=[_get_owner_reference()]),
         spec=spec)
 
     logger.info("Prepared deployment configs")
@@ -1158,15 +1487,19 @@ def create_tensorboard_service(tb_service_name, deploy_label):
     spec = client.V1ServiceSpec(ports=tb_port, selector={"app": deploy_label})
     # add annotation, it will only works in Azure, but will not affect other cloud
     annotation = {
-        "service.beta.kubernetes.io/azure-load-balancer-internal": "true"
+        "service.beta.kubernetes.io/azure-load-balancer-internal": "true",
     }
     service = client.V1Service(
         api_version="v1",
         kind="Service",
-        metadata=client.V1ObjectMeta(name=tb_service_name, labels={
-            "app": tb_service_name,
-            "resource-type": "tensorboard"
-        }, annotations=annotation),
+        metadata=client.V1ObjectMeta(
+            name=tb_service_name,
+            labels={
+                "app": tb_service_name,
+                "resource-type": "tensorboard",
+            },
+            owner_references=[_get_owner_reference()],
+            annotations=annotation),
         spec=spec,
     )
     api_instance = client.CoreV1Api()
@@ -1190,20 +1523,27 @@ def create_tensorboard_ingress(tb_service_name, tb_ingress_name, tb_ingress_path
     ingress = client.V1Ingress(
         api_version="networking.k8s.io/v1",
         kind="Ingress",
-        metadata=client.V1ObjectMeta(name=tb_ingress_name, namespace=name_space, labels={
-            "resource-type": "tensorboard"
-        }, annotations={
-            "kubernetes.io/ingress.class": "nginx",
-            "nginx.ingress.kubernetes.io/client-max-body-size": "0m",
-            "nginx.ingress.kubernetes.io/proxy-body-size": "0m",
-            "nginx.ingress.kubernetes.io/body-size": "0m",
-            "nginx.ingress.kubernetes.io/client-body-buffer-size": "50m",
-            "nginx.ingress.kubernetes.io/proxy-buffer-size": "128k",
-            "nginx.ingress.kubernetes.io/proxy-buffers-number": "4",
-            "nginx.ingress.kubernetes.io/proxy-connect-timeout": "3600",
-            "nginx.ingress.kubernetes.io/proxy-read-timeout": "3600",
-            "nginx.ingress.kubernetes.io/proxy-send-timeout": "3600",
-        }),
+        metadata=client.V1ObjectMeta(
+            name=tb_ingress_name,
+            namespace=name_space,
+            labels={
+                "resource-type": "tensorboard",
+            },
+            annotations={
+                "kubernetes.io/ingress.class": "nginx",
+                "nginx.ingress.kubernetes.io/client-max-body-size": "0m",
+                "nginx.ingress.kubernetes.io/proxy-body-size": "0m",
+                "nginx.ingress.kubernetes.io/body-size": "0m",
+                "nginx.ingress.kubernetes.io/client-body-buffer-size": "50m",
+                "nginx.ingress.kubernetes.io/proxy-buffer-size": "128k",
+                "nginx.ingress.kubernetes.io/proxy-buffers-number": "4",
+                "nginx.ingress.kubernetes.io/proxy-connect-timeout": "3600",
+                "nginx.ingress.kubernetes.io/proxy-read-timeout": "3600",
+                "nginx.ingress.kubernetes.io/proxy-send-timeout": "3600",
+                "meta.helm.sh/release-name": release_name,
+                "meta.helm.sh/release-namespace": name_space
+            },
+            owner_references=[_get_owner_reference()]),
         spec=client.V1IngressSpec(
             rules=[client.V1IngressRule(
                 http=client.V1HTTPIngressRuleValue(

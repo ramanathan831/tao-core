@@ -22,7 +22,10 @@ import jwt
 import logging
 
 from nvidia_tao_core.microservices.auth_utils.session import __SESSION_EXPIRY_SECONDS__, _SESSION_REFRESH_SECONDS__
-from nvidia_tao_core.microservices.handlers.ngc_handler import get_user_key, get_user_info
+from nvidia_tao_core.microservices.handlers.ngc_handler import (
+    get_user_key,
+    get_user_info,
+)
 from nvidia_tao_core.microservices.handlers.encrypt import NVVaultEncryption
 from nvidia_tao_core.microservices.handlers.mongo_handler import MongoHandler
 
@@ -49,7 +52,7 @@ def get_from_ngc(key, org_name: str, enable_telemetry: bool | None = None) -> tu
         if key.startswith("nvapi"):
             logger.info("Scoped key passed with and org %s", org_name)
             token = key
-            r = get_user_info(key, accept_encoding="True")
+            r = get_user_info(key, accept_encoding="identity")
         else:
             err = ('Credentials error: Invalid NGC_PERSONAL_KEY, NGC_API_KEYs are no longer valid, '
                    'generate a personal key with Cloud Functions, NGC Catalog and Private registry services '

@@ -142,12 +142,40 @@ class AugmentationConfig:
         display_name="Image standard deviation")
     min_scale: float = FLOAT_FIELD(
         value=0.1,
-        description="Min scale for augmentation",
+        description="Min scale for resizing augmentation",
         display_name="Min scale.")
     max_scale: float = FLOAT_FIELD(
         value=2.0,
-        description="Max scale for augmentation",
+        description="Max scale for resizing augmentation",
         display_name="Max scale.")
+    min_ratio: float = FLOAT_FIELD(
+        value=0.75,
+        default_value=0.75,
+        description="Min ratio for resizing augmentation",
+        display_name="Min ratio.")
+    max_ratio: float = FLOAT_FIELD(
+        value=1.33,
+        default_value=1.33,
+        description="Max ratio for resizing augmentation",
+        display_name="Max ratio.")
+    hflip: float = FLOAT_FIELD(
+        value=0.5,
+        default_value=0.5,
+        description="Horizontal flip probability",
+        display_name="Horizontal flip probability.")
+    re_prob: float = FLOAT_FIELD(
+        value=0.0,
+        default_value=0.0,
+        description="Random erasing probability",
+        display_name="Random erasing probability.")
+    interpolation: str = STR_FIELD(
+        value="bilinear",
+        default_value="bilinear",
+        description="Interpolation mode during training",
+        display_name="Interpolation mode.",
+        valid_options=",".join([
+            "bilinear", "bicubic", "random"
+        ]))
     smoothing: float = FLOAT_FIELD(
         value=0.1, default_value=0.1,
         description="Label smoothing",
@@ -156,7 +184,7 @@ class AugmentationConfig:
         value=0.0,
         description="Color jittering",
         display_name="Color jittering.")
-    auto_aug: str = STR_FIELD(
+    auto_aug: Optional[str] = STR_FIELD(
         value='rand-m9-mstd0.5-inc1',
         default_value='rand-m9-mstd0.5-inc1',
         description="Auto augmentation settings",
@@ -224,7 +252,7 @@ class MAEModelConfig:
     """Model configuration template."""
 
     arch: str = STR_FIELD(
-        value='convnextv2_base', value_type="ordered", default_value="convnextv2_base",
+        value='convnextv2_base', default_value="convnextv2_base",
         valid_options=",".join([
             "convnextv2_atto",
             "convnextv2_femto",
@@ -233,7 +261,15 @@ class MAEModelConfig:
             "convnextv2_tiny",
             "convnextv2_base",
             "convnextv2_large",
-            "convnextv2_huge"
+            "convnextv2_huge",
+            "hiera_tiny_224",
+            "hiera_small_224",
+            "hiera_base_224",
+            "hiera_large_224",
+            "hiera_huge_224",
+            "vit_base_patch16",
+            "vit_large_patch16",
+            "vit_huge_patch14",
         ]),
         description="Model architecture.",
         display_name="Model arch")
@@ -283,7 +319,7 @@ class MAETrainExpConfig(TrainConfig):
         description="Precision to run the training on.",
         display_name="precision",
         valid_options=",".join([
-            "32-true", "bf16-true", "bf16-mixed"
+            "fp16", "bf16", "fp32"
         ])
     )
     distributed_strategy: str = STR_FIELD(
@@ -302,12 +338,14 @@ class MAETrainExpConfig(TrainConfig):
         display_name="optimizer",
         description="Hyper parameters to configure the optimizer."
     )
-    norm_pix_loss: bool = BOOL_FIELD(value=True, default_value=True)
+    norm_pix_loss: bool = BOOL_FIELD(
+        value=True, default_value=True,
+        description="Whether to normalize pixel loss",
+        display_name="Normalize pixel loss")
     # freeze
     freeze: Optional[List[str]] = LIST_FIELD(
         arrList=[],
-        description="""
-        List of layer names to freeze.""",
+        description="""List of layer names to freeze.""",
         display_name="freeze"
     )
     mask_ratio: float = FLOAT_FIELD(

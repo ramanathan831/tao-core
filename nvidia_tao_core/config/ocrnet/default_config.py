@@ -292,7 +292,7 @@ class OCRNetDatasetConfig:
 
     train_dataset_dir: Optional[List[str]] = LIST_FIELD(
         arrList=None,
-        default_value="",
+        default_value=[],
         description="The absolute path to the train dataset directory.",
         display="train dataset dir"
     )

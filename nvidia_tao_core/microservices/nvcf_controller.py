@@ -369,8 +369,7 @@ def delete_nvcf_job(nvcf_cr):
         logger.info("Deployment not active yet for custom resource %s", nvcf_cr['metadata']['name'])
         return
     function_id, version_id = deployment_string.split(":")
-    if org_name not in ["0544357712065245"]:
-        delete_function_version(org_name, team_name, function_id, version_id, ngc_key)
+    delete_function_version(org_name, team_name, function_id, version_id, ngc_key)
 
 
 def get_job_logs(user_id, job_id, orgName):
@@ -544,8 +543,7 @@ def get_nvcf_job_status(nvcf_cr, status="", function_id="", version_id=""):
             custom_resource_name
         )
         if function_id and version_id:
-            if org_name not in ["0544357712065245"]:
-                delete_function_version(org_name, team_name, function_id, version_id, ngc_key)
+            delete_function_version(org_name, team_name, function_id, version_id, ngc_key)
 
     if not status:
         logger.error("Status couldn't be inferred for %s", custom_resource_name)

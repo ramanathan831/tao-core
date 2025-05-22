@@ -16,7 +16,6 @@
 import os
 import copy
 import json
-import glob
 import uuid
 import orjson
 import traceback
@@ -29,7 +28,6 @@ import logging
 from nvidia_tao_core.microservices.constants import CV_ACTION_CHAINED_ONLY, CV_ACTION_RULES
 from nvidia_tao_core.microservices.handlers.encrypt import NVVaultEncryption
 from nvidia_tao_core.microservices.handlers.mongo_handler import MongoHandler
-from nvidia_tao_core.microservices.utils import safe_load_file
 
 BACKEND = os.getenv("BACKEND", "local-k8s")
 tao_root = os.environ.get("TAO_ROOT", "/tmp/shared/orgs/")
@@ -129,18 +127,6 @@ def get_base_experiments_metadata_path():
     return base_experiments_metadata_path
 
 
-def get_automl_best_rec_number(user_id, org_name, job_id):
-    """Return automl runs best experiment number"""
-    job_root = os.path.join(get_jobs_root(user_id, org_name), job_id)
-    automl_brain_metadata_json = os.path.join(job_root, "automl_metadata.json")
-    automl_metadata = safe_load_file(filepath=automl_brain_metadata_json)
-    if automl_metadata:
-        best_rec_id = automl_metadata.get("Best experiment number", -1) - 1
-        if best_rec_id >= 0:
-            return str(best_rec_id)
-    return "-1"
-
-
 def get_job_specs(job_id, automl=False, automl_experiment_id="0"):
     """Return specs used to run the job"""
     if automl:
@@ -190,28 +176,6 @@ def get_handler_job_metadata(job_id):
         job_query = {'id': job_id}
         metadata = mongo_jobs.find_one(job_query)
     return metadata
-
-
-def get_job_files(user_id, org_name, handler_id, job_id, retrieve_logs=False):
-    """Return metadata info present in job_id.json inside jobs_metadata folder"""
-    # Only metadata of a particular job
-    logs_folder = ""
-    if retrieve_logs:
-        logs_folder = get_handler_log_root(user_id, org_name, handler_id)
-
-    job_root = get_jobs_root(user_id, org_name)
-    job_folder = os.path.join(job_root, job_id)
-    if not os.path.exists(job_folder) and (retrieve_logs and not os.path.exists(logs_folder)):
-        return []
-    files = glob.glob(f"{job_folder}/**", recursive=True)
-
-    # Get log and specs file for that job
-    log_file = os.path.join(logs_folder, f"{job_id}.txt")
-    if logs_folder and os.path.exists(log_file):
-        files += [log_file]
-
-    files = [os.path.relpath(file, job_root) for file in files if not file.endswith('/')]
-    return files
 
 
 def get_toolkit_status(job_id):
@@ -455,6 +419,21 @@ def save_automl_current_rec(brain_job_id, current_rec):
     mongo_jobs.upsert(job_query, {"current_rec": current_rec})
 
 
+def get_automl_best_rec_info(brain_job_id):
+    """Get automl best recommendation info"""
+    mongo_jobs = MongoHandler("tao", "automl_jobs")
+    job_query = {'id': brain_job_id}
+    automl_info = mongo_jobs.find_one(job_query)
+    return automl_info.get("best_rec_number", "-1"), automl_info.get("best_rec_id", "-1")
+
+
+def save_automl_best_rec_info(brain_job_id, best_rec_number, best_rec_job_id):
+    """Save automl best recommendation info"""
+    mongo_jobs = MongoHandler("tao", "automl_jobs")
+    job_query = {'id': brain_job_id}
+    mongo_jobs.upsert(job_query, {"best_rec_number": str(best_rec_number), "best_rec_id": str(best_rec_job_id)})
+
+
 def is_request_automl(handler_id, action, kind):
     """Returns if the job requested is automl based train or not"""
     handler_metadata = resolve_metadata(kind, handler_id)
@@ -493,8 +472,8 @@ def status_lookup_job_id(job_id, automl=False, callback_data={}, experiment_numb
     return lookup_job_id
 
 
-def internal_job_status_update(job_id, automl=False, automl_experiment_number="0", message="", logfile=""):
-    """Post an status update to the job"""
+def get_internal_job_status_update_data(automl_experiment_number="0", message=""):
+    """Get internal job status update data"""
     date_time = datetime.now()
     date_object = date_time.date()
     time_object = date_time.time()
@@ -517,6 +496,15 @@ def internal_job_status_update(job_id, automl=False, automl_experiment_number="0
     if message:
         data["message"] = message
     data_string = json.dumps(data)
+    return data_string
+
+
+def internal_job_status_update(job_id, automl=False, automl_experiment_number="0", message="", logfile=""):
+    """Post an status update to the job"""
+    data_string = get_internal_job_status_update_data(
+        automl_experiment_number=automl_experiment_number,
+        message=message
+    )
     callback_data = {
         "experiment_number": automl_experiment_number,
         "status": data_string,

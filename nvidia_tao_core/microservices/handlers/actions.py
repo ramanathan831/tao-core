@@ -60,6 +60,7 @@ from nvidia_tao_core.microservices.handlers.stateless_handlers import (
     get_job_specs,
     save_job_specs,
     get_automl_brain_info,
+    get_automl_best_rec_info,
     get_automl_controller_info,
     save_automl_controller_info,
     get_dnn_status,
@@ -73,6 +74,7 @@ from nvidia_tao_core.microservices.handlers.utilities import (
     StatusParser,
     build_cli_command,
     generate_cl_script,
+    get_num_nodes_from_spec,
     get_total_epochs,
     read_nested_dict,
     search_for_base_experiment,
@@ -210,6 +212,8 @@ class ActionPipeline:
             self.job_context.specs.get("num_gpu", self.job_context.num_gpu)
             if self.job_context.specs else self.job_context.num_gpu
         )
+        self.num_nodes = get_num_nodes_from_spec(self.job_context.specs, self.action)
+        self.recursive_dataset_file_download = self.api_params.get("recursive_dataset_file_download", False)
         # add an entry on the docker image mapper for trt engine generation MAXINE DEPLOY
         # if action is trt engine generation and network is a maxine network, override image from docker image mapper
         # TODO: robbie add image mpping fix for trt engine gen
@@ -292,6 +296,7 @@ class ActionPipeline:
             admin_key_override=True
         )
         self.job_env_variables["TAO_USER_KEY"] = user_key
+        self.job_env_variables["RECURSIVE_DATASET_FILE_DOWNLOAD"] = str(self.recursive_dataset_file_download)
         self.job_env_variables["TAO_COOKIE_SET"] = str(ngc_cookie)
         self.job_env_variables["TAO_ADMIN_KEY"] = get_admin_key()
         self.job_env_variables["TAO_API_SERVER"] = host_base_url
@@ -317,11 +322,23 @@ class ActionPipeline:
                 "gpu_type": "L40S",
                 "instance_type": "gl40s_1x2.br25_4xlarge"
             }
+            instance_type = available_nvcf_instances[self.platform_id]["instance_type"]
             nv_job_metadata["nvcf_backend_details"] = {
                 "cluster": available_nvcf_instances[self.platform_id]["cluster"],
                 "gpu_type": available_nvcf_instances[self.platform_id]["gpu_type"],
-                "instance_type": available_nvcf_instances[self.platform_id]["instance_type"]
+                "instance_type": instance_type,
+                "current_available": available_nvcf_instances[self.platform_id]["current_available"]
             }
+            for gpu_postfix in ["2x", "4x", "8x"]:
+                if gpu_postfix in instance_type:
+                    dividing_factor = 1
+                    if available_nvcf_instances[self.platform_id]["cluster"] == "GFN":
+                        dividing_factor = 2
+                    nv_job_metadata["nvcf_backend_details"]["num_gpu_per_node"] = int(
+                        int(gpu_postfix[:-1]) / dividing_factor
+                    )
+                    break
+
             if self.tao_deploy_actions:
                 team = "TAO"
                 if "maxine" in self.network:
@@ -409,7 +426,9 @@ class ActionPipeline:
                                                                   handler_id=self.handler_id,
                                                                   handler_kind=self.handler_kind,
                                                                   accelerator=self.platform_id,
-                                                                  docker_env_vars=self.job_env_variables)
+                                                                  docker_env_vars=self.job_env_variables,
+                                                                  num_nodes=self.num_nodes
+                                                                  )
         if response and not response.ok:
             update_job_details_with_microservices_response(response.json().get("error", ""), job_id, self.job_name)
 
@@ -426,7 +445,7 @@ class ActionPipeline:
         status_parser = StatusParser(self.job_context.network, outdir)
 
         total_epochs = 1
-        if self.job_context.action in ['train', 'retrain']:
+        if self.job_context.action in ['train', 'distill', 'retrain']:
             total_epochs = get_total_epochs(self.job_context, self.job_context.specs)
 
         metric = self.handler_metadata.get("metric", "")
@@ -476,7 +495,7 @@ class ActionPipeline:
                     self.detailed_print("Post running")
                     # If post run is done, make it done
                     self.post_run()
-                    if self.job_context.action in ['train', 'retrain']:
+                    if self.job_context.action in ['train', 'distill', 'retrain']:
                         _, best_checkpoint_epoch_number, latest_checkpoint_epoch_number = status_parser.read_metric(
                             results=new_results[self.job_name],
                             metric=metric,
@@ -581,6 +600,8 @@ class ActionPipeline:
             self.run_command, outdir = self.generate_run_command()
             if self.network not in MONAI_NETWORKS and self.spec:
                 self.num_gpu = get_num_gpus_from_spec(self.spec, self.job_context.action, default=self.num_gpu)
+                self.num_nodes = get_num_nodes_from_spec(self.spec, self.job_context.action, default=self.num_nodes)
+                self.detailed_print(f"Job {self.job_name} running with {self.num_gpu} GPUs and {self.num_nodes} nodes")
             if not outdir:
                 outdir = f"/results/{self.job_name}"
             # Pipe stdout and stderr to logfile
@@ -636,11 +657,12 @@ class ActionPipeline:
                     self.image,
                     self.run_command,
                     num_gpu=self.num_gpu,
+                    num_nodes=self.num_nodes,
                     accelerator=self.platform_id,
                     docker_env_vars=self.job_env_variables,
                     nv_job_metadata=nv_job_metadata,
                     local_cluster=self.local_cluster,
-                    automl_exp_job=False
+                    automl_exp_job=False,
                 )
             self.detailed_print("Job created", self.job_name)
             self.monitor_job()
@@ -769,7 +791,7 @@ class TrainVal(CLIPipeline):
                 parent_action = parent_job_metadata.get("action", "")
                 if not parent_action:
                     break
-                if parent_action == "train":
+                if parent_action in ("train", "distill"):
                     from nvidia_tao_core.microservices.handlers.app_handler import AppHandler  # pylint: disable=C0415
                     default_spec_schema_response = AppHandler.get_spec_schema(
                         self.job_context.user_id,
@@ -783,19 +805,17 @@ class TrainVal(CLIPipeline):
                         spec_schema = default_spec_schema_response.data
                         default_spec = spec_schema["default"]
                         user_modified_values = find_differences(spec, default_spec)
-                    # automl = False
-                    # best_rec_id = get_automl_best_rec_number(
-                    #     self.job_context.user_id,
-                    #     self.job_context.org_name,
-                    #     parent_job_id
-                    # )
-                    # if best_rec_id != "-1":
-                    #     automl = True
-                    # parent_spec = get_job_specs(parent_job_id, automl=automl, automl_experiment_id=best_rec_id)
-                    # train_spec_path = os.path.join(self.handler_spec_root, f"{parent_job_id}-train-spec.json")
-                    # train_specs_passed_in_req_body = load_json_spec(train_spec_path)
-                    # modified_values = find_differences(parent_spec, train_specs_passed_in_req_body)
-                    # spec = merge_nested_dicts(spec, modified_values)
+                    automl = False
+                    best_rec_id, best_rec_job_id = get_automl_best_rec_info(parent_job_id)
+                    logger.info(f"Best rec id: {best_rec_id}, Best rec job id: {best_rec_job_id}")
+                    if best_rec_id != "-1":
+                        automl = True
+                        parent_spec = get_job_specs(best_rec_job_id, automl=automl, automl_experiment_id=best_rec_id)
+                    else:
+                        parent_spec = get_job_specs(parent_job_id)
+                    train_specs_passed_in_req_body = get_job_specs(parent_job_id)
+                    modified_values = find_differences(parent_spec, train_specs_passed_in_req_body)
+                    spec = merge_nested_dicts(spec, modified_values)
                     spec = merge_nested_dicts(spec, user_modified_values)
                     break
                 cur_job_id = parent_job_id
@@ -961,6 +981,7 @@ class AutoMLPipeline(ActionPipeline):
         for param_name, param_value in recommended_values.items():
             write_nested_dict(spec, param_name, param_value)
         self.num_gpu = get_num_gpus_from_spec(spec, "train", default=self.num_gpu)
+        self.num_nodes = get_num_nodes_from_spec(spec, "train", default=self.num_nodes)
 
         return spec
 
@@ -1051,6 +1072,7 @@ class AutoMLPipeline(ActionPipeline):
                         self.image,
                         run_command,
                         num_gpu=self.num_gpu,
+                        num_nodes=self.num_nodes,
                         docker_env_vars=self.job_env_variables,
                         nv_job_metadata=nv_job_metadata,
                         automl_exp_job=True
@@ -1112,6 +1134,7 @@ class AutoMLPipeline(ActionPipeline):
                     self.image,
                     run_command,
                     num_gpu=self.num_gpu,
+                    num_nodes=self.num_nodes,
                     docker_env_vars=self.job_env_variables,
                     nv_job_metadata=nv_job_metadata,
                     automl_exp_job=False

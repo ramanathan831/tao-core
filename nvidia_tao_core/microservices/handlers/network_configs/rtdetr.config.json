@@ -1,7 +1,7 @@
 {
     "api_params": {
         "dataset_type":"object_detection",
-        "actions": ["train","evaluate","export","inference","gen_trt_engine"],
+        "actions": ["train", "distill", "evaluate","export","inference","gen_trt_engine"],
         "formats":["coco", "coco_raw"],
         "accepted_ds_intents": ["training", "evaluation", "testing"],
         "image":"TAO_PYTORCH",
@@ -9,6 +9,7 @@
         "classwise":"False",
         "actions_pipe":{
             "train":"train",
+            "distill":"train",
             "evaluate":"evaluate",
             "export":"export_with_spec",
             "inference":"inference",
@@ -18,6 +19,34 @@
 
     "data_sources": {
         "train": {
+            "dataset.train_data_sources": {
+                "source": "train_datasets",
+                "multiple_sources": true,
+                "mapping": {
+                    "image_dir": {
+                        "path": "images.tar.gz",
+                        "transform": "data_services_as_parent_possible"
+                    },
+                    "json_file": {
+                        "path": "annotations.json"
+                    }
+                }
+            },
+            "dataset.val_data_sources": {
+                "source": "eval_dataset",
+                "multiple_sources": false,
+                "mapping": {
+                    "image_dir": {
+                        "path": "images.tar.gz",
+                        "transform": "data_services_as_parent_possible"
+                    },
+                    "json_file": {
+                        "path": "annotations.json"
+                    }
+                }
+            }
+        },
+        "distill": {
             "dataset.train_data_sources": {
                 "source": "train_datasets",
                 "multiple_sources": true,
@@ -120,6 +149,11 @@
             "model.pretrained_backbone_path":"ptm_if_no_resume_model",
             "train.pretrained_model_path":"ptm_if_no_resume_model",
             "train.resume_training_checkpoint_path":"resume_model",
+            "encryption_key":"key"
+        },
+        "distill": {
+            "results_dir":"output_dir",
+            "distill.pretrained_teacher_model_path":"resume_model",
             "encryption_key":"key"
         },
         "evaluate":{

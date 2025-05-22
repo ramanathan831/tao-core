@@ -2,7 +2,7 @@
     "api_params": {
         "dataset_type":"object_detection",
         "actions": ["train","evaluate","export","inference","gen_trt_engine"],
-        "formats":["odvg", "coco", "coco_raw"],
+        "formats":["odvg", "coco", "raw"],
         "accepted_ds_intents": ["training", "evaluation", "testing"],
         "image":"TAO_PYTORCH",
         "spec_backend":"yaml",

@@ -34,6 +34,7 @@ from nvidia_tao_core.microservices.constants import (
     TAO_NETWORKS,
     MEDICAL_CUSTOM_ARCHITECT,
     MAXINE_NETWORKS,
+    MISSING_EPOCH_FORMAT_NETWORKS
 )
 from nvidia_tao_core.microservices.enum_constants import DatasetType, ExperimentNetworkArch
 from nvidia_tao_core.microservices.handlers import ngc_handler, stateless_handlers
@@ -58,6 +59,7 @@ from nvidia_tao_core.microservices.handlers.stateless_handlers import (
     check_write_access,
     get_base_experiment_metadata,
     get_job_specs,
+    get_root,
     infer_action_from_job,
     is_valid_uuid4,
     printc,
@@ -90,7 +92,11 @@ from nvidia_tao_core.microservices.handlers.utilities import (
     validate_num_gpu,
     get_num_gpus_from_spec
 )
-from nvidia_tao_core.microservices.handlers.mongo_handler import MongoHandler
+if os.getenv("BACKEND"):  # To see if the container is going to be used for Service pods or network jobs
+    from nvidia_tao_core.microservices.handlers.mongo_handler import (
+        MongoHandler,
+        mongo_connection_string,
+    )
 from nvidia_tao_core.microservices.job_utils import executor as jobDriver
 from nvidia_tao_core.microservices.job_utils.workflow_driver import create_job_context, on_delete_job, on_new_job
 from nvidia_tao_core.microservices.job_utils.automl_job_utils import on_delete_automl_job
@@ -326,12 +332,15 @@ def handler_level_access_control(user_id, org_name, handler_id="", handler_kind=
         bool: True if the user has access, False otherwise.
     """
     if base_experiment or is_maxine_request(handler_id, handler_kind, handler_metadata):
+        logger.info("Checking if user has MAXINE entitlement")
         if "MAXINE" not in ngc_handler.get_org_products(user_id, org_name):
+            logger.info("User does not have MAXINE entitlement")
             return False
         mongo = MongoHandler("tao", "users")
         user_metadata = mongo.find_one({'id': user_id})
         member_of = user_metadata.get('member_of', [])
         if f"{org_name}/:MAXINE_USER" not in member_of:
+            logger.info("User does not have MAXINE entitlement in NGC metadata")
             return False
     return True
 
@@ -1200,10 +1209,10 @@ class AppHandler:
             # Used for dataset jobs
             network = metadata.get("type", None)
 
-        microservices_network, action = get_microservices_network_and_action(network, action)
+        microservices_network, microservices_action = get_microservices_network_and_action(network, action)
 
         try:
-            json_schema = generate_schema(microservices_network, action)
+            json_schema = generate_schema(microservices_network, microservices_action)
         except Exception as e:
             logger.error("Exception thrown in get_spec_schema is %s", str(e))
             logger.error("Unable to fetch schema from tao_core")
@@ -1670,6 +1679,7 @@ class AppHandler:
                     check_and_convert(specs, default_spec)
             msg = ""
             if is_request_automl(handler_id, action, kind):
+                logger.info("Creating AutoML job %s", job_id)
                 AutoMLHandler.start(
                     user_id,
                     org_name,
@@ -1681,6 +1691,7 @@ class AppHandler:
                 )
                 msg = "AutoML "
             else:
+                logger.info("Creating job %s", job_id)
                 job_context = create_job_context(
                     parent_job_id,
                     action,
@@ -1939,18 +1950,19 @@ class AppHandler:
                     "Current status should be one of Running, Pending, Resuming"
                 }
             )
+        specs = job_metadata.get("specs", None)
+        use_ngc = not (specs and "cluster" in specs and specs["cluster"] == "local")
 
         if job_status == "Pending":
             stateless_handlers.update_job_status(handler_id, job_id, status="Canceling", kind=kind + "s")
             on_delete_job(job_id)
+            jobDriver.delete(job_id, use_ngc=use_ngc)
             stateless_handlers.update_job_status(handler_id, job_id, status="Canceled", kind=kind + "s")
             return Code(200, {"message": f"Pending job {job_id} cancelled"})
 
         if job_status == "Running":
             try:
                 # Delete K8s job
-                specs = job_metadata.get("specs", None)
-                use_ngc = not (specs and "cluster" in specs and specs["cluster"] == "local")
                 stateless_handlers.update_job_status(handler_id, job_id, status="Canceling", kind=kind + "s")
                 jobDriver.delete(job_id, use_ngc=use_ngc)
                 k8s_status = jobDriver.status(
@@ -2023,7 +2035,7 @@ class AppHandler:
             return automl_response
 
         job_action = job_metadata.get("action", "")
-        if job_action not in ("train", "retrain"):
+        if job_action not in ("train", "distill", "retrain"):
             return Code(404, [], f"Only train or retrain jobs can be paused. The current action is {job_action}")
         job_status = job_metadata.get("status", "Error")
 
@@ -2036,18 +2048,19 @@ class AppHandler:
                     "Current status should be one of Running, Pending, Resuming"
                 }
             )
+        specs = job_metadata.get("specs", None)
+        use_ngc = not (specs and "cluster" in specs and specs["cluster"] == "local")
 
         if job_status == "Pending":
             stateless_handlers.update_job_status(handler_id, job_id, status="Pausing", kind=kind + "s")
             on_delete_job(job_id)
+            jobDriver.delete(job_id, use_ngc=use_ngc)
             stateless_handlers.update_job_status(handler_id, job_id, status="Paused", kind=kind + "s")
             return Code(200, {"message": f"Pending job {job_id} paused"})
 
         if job_status == "Running":
             try:
                 # Delete K8s job
-                specs = job_metadata.get("specs", None)
-                use_ngc = not (specs and "cluster" in specs and specs["cluster"] == "local")
                 stateless_handlers.update_job_status(handler_id, job_id, status="Pausing", kind=kind + "s")
                 jobDriver.delete(job_id, use_ngc=use_ngc)
                 k8s_status = jobDriver.status(
@@ -2225,11 +2238,11 @@ class AppHandler:
         if job_status not in ("Success", "Done"):
             return Code(404, {}, "Job is not in success or Done state")
         job_action = job_metadata.get("action", "")
-        if job_action not in ("train", "prune", "retrain", "export", "gen_trt_engine"):
+        if job_action not in ("train", "distill", "prune", "retrain", "export", "gen_trt_engine"):
             return Code(
                 404,
                 {},
-                "Publish model is available only for train, prune, retrain, export, gen_trt_engine actions"
+                "Publish model is available only for train, distill, prune, retrain, export, gen_trt_engine actions"
             )
 
         try:
@@ -2307,11 +2320,12 @@ class AppHandler:
         if job_status not in ("Success", "Done"):
             return Code(404, {}, "Job is not in success or Done state")
         job_action = job_metadata.get("action", "")
-        if job_action not in ("train", "prune", "retrain", "export", "gen_trt_engine"):
+        if job_action not in ("train", "distill", "prune", "retrain", "export", "gen_trt_engine"):
             return Code(
                 404,
                 {},
-                "Delete published model is available only for train, prune, retrain, export, gen_trt_engine actions"
+                "Delete published model is available only for train, distill, ",
+                "prune, retrain, export, gen_trt_engine actions"
             )
 
         try:
@@ -2462,13 +2476,14 @@ class AppHandler:
                 if (not best_model) and latest_model:
                     best_checkpoint_epoch_number = latest_checkpoint_epoch_number
                 network = handler_metadata.get("network_arch", "")
-                if network in ("classification_pyt", "detectnet_v2", "pointpillars", "unet"):
+                if network in MISSING_EPOCH_FORMAT_NETWORKS:
                     format_epoch_number = str(best_checkpoint_epoch_number)
                 else:
                     format_epoch_number = f"{best_checkpoint_epoch_number:03}"
                 if best_model or latest_model:
                     job_root = os.path.join(root, job_id)
-                    if handler_metadata.get("automl_settings", {}).get("automl_enabled") is True and action == "train":
+                    if (handler_metadata.get("automl_settings", {}).get("automl_enabled") is True and
+                       action in ("train", "distill")):
                         job_root = os.path.join(job_root, "best_model")
                     find_trained_tlt = (
                         glob.glob(f"{job_root}/*{format_epoch_number}.tlt") +
@@ -2535,14 +2550,13 @@ class AppHandler:
             return Code(404, None, "job output not found")
 
     @staticmethod
-    def job_list_files(org_name, handler_id, job_id, retrieve_logs, kind):
+    def job_list_files(org_name, handler_id, job_id, kind):
         """Lists the files associated with a specific job.
 
         Args:
             org_name (str): The name of the organization.
             handler_id (str): The UUID corresponding to the experiment or dataset.
             job_id (str): The UUID of the job whose files need to be listed.
-            retrieve_logs (bool): Flag indicating whether to retrieve logs.
             kind (str): The type of handler, either 'experiment' or 'dataset'.
 
         Returns:
@@ -2562,7 +2576,7 @@ class AppHandler:
         if not job:
             return Code(404, None, "job trying to view not found")
 
-        files = stateless_handlers.get_job_files(user_id, org_name, handler_id, job_id, retrieve_logs)
+        files, _, _, _ = get_files_from_cloud(handler_metadata, job_id)
         if files:
             return Code(200, files, "Job files retrieved")
         return Code(200, files, "No downloadable files for this job is found")
@@ -3448,8 +3462,8 @@ class AppHandler:
         status = job_metadata.get("status", "")
         if status != "Paused":
             return Code(400, [], f"Job status should be paused, not {status}")
-        if action not in ("train", "retrain"):
-            return Code(400, [], f"Action should be train, retrain, not {action}")
+        if action not in ("train", "distill", "retrain"):
+            return Code(400, [], f"Action should be train, distill, retrain, not {action}")
         network = handler_metadata.get("network_arch", None)
         if network in MAXINE_NETWORKS:
             return Code(400, [], "Maxine networks do not support resume.")
@@ -3563,3 +3577,87 @@ class AppHandler:
             logger.error("Exception thrown in automl_details fetch is %s", str(e))
             logger.error(traceback.format_exc())
             return Code(400, [], "Error in constructing AutoML results")
+
+    @staticmethod
+    def mongo_backup(workspace_id, backup_file_name=None):
+        """Backup MongoDB data for a specific workspace.
+
+        Args:
+            workspace_id (str): ID of the workspace to backup.
+
+        Returns:
+            Response: A response indicating the outcome of the operation (200 for success, error responses for failure).
+        """
+        try:
+            # Get the workspace metadata
+            workspace_metadata = get_workspace(workspace_id)
+            if not workspace_metadata:
+                return Code(404, {}, "Workspace not found")
+            cloud_type = workspace_metadata.get("cloud_type")
+            if cloud_type not in ["aws", "azure"]:
+                return Code(400, {}, "MongoDB backup is only supported for AWS and Azure workspaces")
+            cs_instance, _ = create_cs_instance(workspace_metadata)
+            if not cs_instance:
+                return Code(404, {}, "Unable to create cloud storage instance for MongoDB backup")
+
+            logger.info("Starting MongoDB backup for workspace %s", workspace_id)
+
+            # Create dump directory if it doesn't exist
+            root = get_root()
+            dump_dir = os.path.join(root, "dump", "archive")
+            os.makedirs(dump_dir, exist_ok=True)
+
+            backup_file = backup_file_name if backup_file_name else "mongodb_backup.gz"
+            backup_file = os.path.join(dump_dir, backup_file)
+            backup_command = f'mongodump --uri="{mongo_connection_string}" --archive="{backup_file}" --gzip'
+            run_system_command(backup_command)
+
+            cs_instance.upload_file(backup_file, backup_file)
+
+            logger.info("Successfully backed up MongoDB to S3")
+            return Code(200, {"message": "MongoDB backup successful"}, "MongoDB backup successful")
+
+        except Exception as e:
+            logger.error("Exception thrown in mongo_backup is %s", str(e))
+            logger.error(traceback.format_exc())
+            return Code(400, {}, "Error in MongoDB backup")
+
+    @staticmethod
+    def mongo_restore(workspace_id, backup_file_name=None):
+        """Restore MongoDB data for a specific workspace.
+
+        Args:
+            workspace_id (str): ID of the workspace to restore.
+
+        Returns:
+            Response: A response indicating the outcome of the operation (200 for success, error responses for failure).
+        """
+        try:
+            # Get the workspace metadata
+            workspace_metadata = get_workspace(workspace_id)
+            if not workspace_metadata:
+                return Code(404, {}, "Workspace not found")
+
+            cloud_type = workspace_metadata.get("cloud_type")
+            if cloud_type not in ["aws", "azure"]:
+                return Code(400, {}, "MongoDB restore is only supported for AWS and Azure workspaces")
+            cs_instance, _ = create_cs_instance(workspace_metadata)
+            if not cs_instance:
+                return Code(404, {}, "Unable to create cloud storage instance for MongoDB restore")
+
+            root = get_root()
+            dump_dir = os.path.join(root, "dump", "archive")
+            backup_file = backup_file_name if backup_file_name else "mongodb_backup.gz"
+            backup_file = os.path.join(dump_dir, backup_file)
+            cs_instance.download_file(backup_file, backup_file)
+            logger.info(f"Downloaded backup file to {backup_file}")
+            restore_command = f'mongorestore --uri="{mongo_connection_string}" --archive="{backup_file}" --gzip'
+            run_system_command(restore_command)
+            logger.info("Restored DB from backup file")
+            os.remove(backup_file)
+            return Code(200, {"message": "MongoDB restore successful"}, "MongoDB restore successful")
+
+        except Exception as e:
+            logger.error("Exception thrown in mongo_restore is %s", str(e))
+            logger.error(traceback.format_exc())
+            return Code(400, {}, "Error in MongoDB restore")

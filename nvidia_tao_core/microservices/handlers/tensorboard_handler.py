@@ -19,6 +19,7 @@ import os
 from time import sleep
 from copy import deepcopy
 import logging
+import sysconfig
 
 from nvidia_tao_core.microservices.constants import TENSORBOARD_EXPERIMENT_LIMIT
 from nvidia_tao_core.microservices.handlers.mongo_handler import MongoHandler
@@ -64,8 +65,10 @@ class TensorboardHandler:
         decrypted_workspace_metadata = deepcopy(workspace_metadata)
         decrypt_handler_metadata(decrypted_workspace_metadata)
         decrypted_workspace_metadata.pop('_id', None)
+        python_lib_path = sysconfig.get_path('purelib')
+        tensorboard_script_path = os.path.join(python_lib_path, "nvidia_tao_core/microservices/tb_events_pull_start.py")
         logs_command = (
-            f"umask 0 && python3 tb_events_pull_start.py "
+            f"umask 0 && python3 {tensorboard_script_path} "
             f"--experiment_id={experiment_id} "
             f"--org_name={org} "
             f"--decrypted_workspace_metadata='{json.dumps(decrypted_workspace_metadata, default=serialize_object)}'"
