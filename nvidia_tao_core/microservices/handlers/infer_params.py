@@ -80,6 +80,12 @@ def infer_output_dir(job_context, handler_metadata):
     return dnn_results_dir
 
 
+def infer_stylegan_dsconvert_output(job_context, handler_metadata):
+    """Returns path of label.json for auto_labeling"""
+    zip_file = f"/results/{job_context.id}/ds_convert.zip"
+    return zip_file
+
+
 def infer_automl_output_dir(
     job_context,
     handler_metadata,
@@ -441,4 +447,5 @@ CLI_CONFIG_TO_FUNCTIONS = {"output_dir": infer_output_dir,
                            "output_dir_inference_json": lambda a, b: infer_output_dir(a, b) + "/annotations_mal.json",
                            "from_csv": lambda a, b: None,  # Used to infer the param from spec sheet
                            "auto_label_output": infer_label_output,
+                           "stylegan_dsconvert_output": infer_stylegan_dsconvert_output,
                            "monai_output_dir": infer_monai_output_dir}
