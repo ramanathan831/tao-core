@@ -101,6 +101,16 @@ def _get_valid_config_json_param_for_network(network_name: str, param: str):
                         actions.update(config["api_params"][param])
                     else:
                         actions.add(config["api_params"][param])
+            if param == "actions":
+                dataset_config_file = (pathlib.Path(__file__).parent /
+                                       "handlers" / "network_configs" /
+                                       f"{config['api_params']['dataset_type']}.config.json")
+                with open(dataset_config_file, 'r', encoding='utf-8') as f:
+                    dataset_config = json.load(f)
+                    actions_mapping = dataset_config.get("actions_mapping", {})
+                    for api_action_name, mapping in actions_mapping.items():
+                        if "network" in mapping and mapping["network"] == network_name:
+                            actions.add(api_action_name)
         except (json.JSONDecodeError, IOError):
             pass
 
