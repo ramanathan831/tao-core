@@ -65,9 +65,9 @@ class Sparse4DOptimizerConfig:
         display_name="Parameters-wise configuration"
     )
     grad_clip: Optional[Dict[str, Any]] = DICT_FIELD(
-        hashMap={"max_norm": 25, "norm_type": 2},
+        hashMap={"max_norm": 25, "norm_type": "L2"},
         description="Gradient clipping configuration",
-        default_value={"max_norm": 25, "norm_type": 2},
+        default_value={"max_norm": 25, "norm_type": "L2"},
         display_name="Gradient clipping configuration"
     )
     lr_scheduler: Dict[str, Any] = DICT_FIELD(
@@ -120,4 +120,11 @@ class Sparse4DTrainConfig(TrainConfig):
         Sparse4DOptimizerConfig(),
         description="Optimizer configuration",
         display_name="Optimizer configuration"
+    )
+    precision: str = STR_FIELD(
+        value="bf16",
+        default_value="bf16",
+        description="Precision",
+        display_name="Precision",
+        valid_options="bf16,fp16,fp32",
     )
