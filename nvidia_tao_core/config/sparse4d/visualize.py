@@ -25,12 +25,12 @@ from nvidia_tao_core.config.utils.types import (
 
 
 @dataclass
-class Sparse4DVisConfig:
+class Sparse4DVisualizeConfig:
     """Visualization configuration for Sparse4D."""
 
     show: bool = BOOL_FIELD(
-        value=True,
-        default_value=True,
+        value=False,
+        default_value=False,
         description="Show visualization",
         display_name="Show visualization"
     )

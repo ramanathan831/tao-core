@@ -28,7 +28,7 @@ from nvidia_tao_core.config.sparse4d.dataset import Omniverse3DDetTrackDatasetCo
 from nvidia_tao_core.config.sparse4d.train import Sparse4DTrainConfig
 from nvidia_tao_core.config.sparse4d.inference import Sparse4DInferenceConfig
 from nvidia_tao_core.config.sparse4d.evaluate import Sparse4DEvaluateConfig
-from nvidia_tao_core.config.sparse4d.visualize import Sparse4DVisConfig
+from nvidia_tao_core.config.sparse4d.visualize import Sparse4DVisualizeConfig
 
 
 @dataclass
@@ -72,8 +72,8 @@ class ExperimentConfig(CommonExperimentConfig):
         description="Export config",
         display_name="Export config"
     )
-    vis: Sparse4DVisConfig = DATACLASS_FIELD(
-        Sparse4DVisConfig(),
-        description="Vis config",
-        display_name="Vis config"
+    visualize: Sparse4DVisualizeConfig = DATACLASS_FIELD(
+        Sparse4DVisualizeConfig(),
+        description="Visualize config",
+        display_name="Visualize config"
     )
