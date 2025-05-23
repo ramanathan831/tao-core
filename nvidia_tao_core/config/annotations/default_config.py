@@ -83,21 +83,21 @@ class ODVGConfig:
 class ClassConfig:
     """Class configuration template."""
 
-    CLASS_LIST: list = LIST_FIELD(arrList=MISSING, default_value="<specify class list>")
-    SUB_CLASS_DICT: dict = DICT_FIELD(hashMap=MISSING, default_value="<specify sub class dict>")
-    MAP_CLASS_NAMES: dict = DICT_FIELD(hashMap=MISSING, default_value="<specify map class names>")
-    ATTRIBUTE_DICT: dict = DICT_FIELD(hashMap=MISSING, default_value="<specify attribute dict>")
-    CLASS_RANGE_DICT: dict = DICT_FIELD(hashMap=MISSING, default_value="<specify class range dict>")
+    CLASS_LIST: list = LIST_FIELD(arrList=[], default_value="<specify class list>")
+    SUB_CLASS_DICT: dict = DICT_FIELD(hashMap={}, default_value="<specify sub class dict>")
+    MAP_CLASS_NAMES: dict = DICT_FIELD(hashMap={}, default_value="<specify map class names>")
+    ATTRIBUTE_DICT: dict = DICT_FIELD(hashMap={}, default_value="<specify attribute dict>")
+    CLASS_RANGE_DICT: dict = DICT_FIELD(hashMap={}, default_value="<specify class range dict>")
 
 
 @dataclass
 class AnchorInitConfig:
     """Anchor initialization configuration template."""
 
-    num_anchor: int = INT_FIELD(value=MISSING, default_value="<specify number of anchor>")
-    detection_range: float = FLOAT_FIELD(value=MISSING, default_value="<specify detection range>")
-    sample_ratio: int = INT_FIELD(value=MISSING, default_value="<specify sample ratio>")
-    output_file_name: str = STR_FIELD(value=MISSING, default_value="<specify output file name>")
+    num_anchor: int = INT_FIELD(value=900, default_value="900")
+    detection_range: float = FLOAT_FIELD(value=-1, default_value="-1")
+    sample_ratio: int = INT_FIELD(value=-1, default_value="-1")
+    output_file_name: str = STR_FIELD(value="anchor_init.json", default_value="anchor_init.json")
 
 
 @dataclass
