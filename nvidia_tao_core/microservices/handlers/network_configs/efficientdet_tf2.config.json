@@ -2,7 +2,7 @@
     "api_params": {
         "dataset_type":"object_detection",
         "actions": ["train","evaluate","prune","retrain","export","gen_trt_engine","inference"],
-        "formats":["coco"],
+        "formats":["coco", "raw"],
         "accepted_ds_intents": ["training", "evaluation", "testing"],
         "image":"TAO_TF2",
         "spec_backend":"yaml",

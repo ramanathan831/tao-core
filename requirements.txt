@@ -38,12 +38,13 @@ requests==2.32.3
 requests_toolbelt==1.0.0
 ruamel.yaml==0.18.6
 setuptools==75.8.0
-scikit-learn
+scikit-learn>=1.3.0
 scipy
+six==1.16.0
 toml
 timeloop==1.0.2
 transformers==4.46.0
 tritonclient[all]==2.55.0
-uWSGI==2.0.23
+uWSGI
 validators==0.21.0
 Werkzeug==3.0.3

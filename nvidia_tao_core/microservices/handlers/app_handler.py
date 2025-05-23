@@ -1950,18 +1950,19 @@ class AppHandler:
                     "Current status should be one of Running, Pending, Resuming"
                 }
             )
+        specs = job_metadata.get("specs", None)
+        use_ngc = not (specs and "cluster" in specs and specs["cluster"] == "local")
 
         if job_status == "Pending":
             stateless_handlers.update_job_status(handler_id, job_id, status="Canceling", kind=kind + "s")
             on_delete_job(job_id)
+            jobDriver.delete(job_id, use_ngc=use_ngc)
             stateless_handlers.update_job_status(handler_id, job_id, status="Canceled", kind=kind + "s")
             return Code(200, {"message": f"Pending job {job_id} cancelled"})
 
         if job_status == "Running":
             try:
                 # Delete K8s job
-                specs = job_metadata.get("specs", None)
-                use_ngc = not (specs and "cluster" in specs and specs["cluster"] == "local")
                 stateless_handlers.update_job_status(handler_id, job_id, status="Canceling", kind=kind + "s")
                 jobDriver.delete(job_id, use_ngc=use_ngc)
                 k8s_status = jobDriver.status(
@@ -2047,18 +2048,19 @@ class AppHandler:
                     "Current status should be one of Running, Pending, Resuming"
                 }
             )
+        specs = job_metadata.get("specs", None)
+        use_ngc = not (specs and "cluster" in specs and specs["cluster"] == "local")
 
         if job_status == "Pending":
             stateless_handlers.update_job_status(handler_id, job_id, status="Pausing", kind=kind + "s")
             on_delete_job(job_id)
+            jobDriver.delete(job_id, use_ngc=use_ngc)
             stateless_handlers.update_job_status(handler_id, job_id, status="Paused", kind=kind + "s")
             return Code(200, {"message": f"Pending job {job_id} paused"})
 
         if job_status == "Running":
             try:
                 # Delete K8s job
-                specs = job_metadata.get("specs", None)
-                use_ngc = not (specs and "cluster" in specs and specs["cluster"] == "local")
                 stateless_handlers.update_job_status(handler_id, job_id, status="Pausing", kind=kind + "s")
                 jobDriver.delete(job_id, use_ngc=use_ngc)
                 k8s_status = jobDriver.status(
@@ -2548,14 +2550,13 @@ class AppHandler:
             return Code(404, None, "job output not found")
 
     @staticmethod
-    def job_list_files(org_name, handler_id, job_id, retrieve_logs, kind):
+    def job_list_files(org_name, handler_id, job_id, kind):
         """Lists the files associated with a specific job.
 
         Args:
             org_name (str): The name of the organization.
             handler_id (str): The UUID corresponding to the experiment or dataset.
             job_id (str): The UUID of the job whose files need to be listed.
-            retrieve_logs (bool): Flag indicating whether to retrieve logs.
             kind (str): The type of handler, either 'experiment' or 'dataset'.
 
         Returns:
@@ -2575,7 +2576,7 @@ class AppHandler:
         if not job:
             return Code(404, None, "job trying to view not found")
 
-        files = stateless_handlers.get_job_files(user_id, org_name, handler_id, job_id, retrieve_logs)
+        files, _, _, _ = get_files_from_cloud(handler_metadata, job_id)
         if files:
             return Code(200, files, "Job files retrieved")
         return Code(200, files, "No downloadable files for this job is found")

@@ -43,17 +43,67 @@
                 "multiple_sources": false,
                 "path": "results/{dataset_convert_job_id}/ds_convert.zip",
                 "transform": "use_dataset_convert_job"
+            },
+            "dataset.stylegan.test_dataset.images_dir": {
+                "source": "inference_dataset",
+                "multiple_sources": false,
+                "path": "results/{dataset_convert_job_id}/ds_convert.zip",
+                "transform": "use_dataset_convert_job"
             }
         },
         "evaluate": {
+            "dataset.stylegan.train_dataset.images_dir": {
+                "source": "train_datasets",
+                "multiple_sources": false,
+                "path": "results/{dataset_convert_job_id}/ds_convert.zip",
+                "transform": "use_dataset_convert_job"
+            },
             "dataset.stylegan.validation_dataset.images_dir": {
                 "source": "eval_dataset",
+                "multiple_sources": false,
+                "path": "results/{dataset_convert_job_id}/ds_convert.zip",
+                "transform": "use_dataset_convert_job"
+            },
+            "dataset.stylegan.test_dataset.images_dir": {
+                "source": "inference_dataset",
+                "multiple_sources": false,
+                "path": "results/{dataset_convert_job_id}/ds_convert.zip",
+                "transform": "use_dataset_convert_job"
+            }
+        },
+        "export": {
+            "dataset.stylegan.train_dataset.images_dir": {
+                "source": "train_datasets",
+                "multiple_sources": false,
+                "path": "results/{dataset_convert_job_id}/ds_convert.zip",
+                "transform": "use_dataset_convert_job"
+            },
+            "dataset.stylegan.validation_dataset.images_dir": {
+                "source": "eval_dataset",
+                "multiple_sources": false,
+                "path": "results/{dataset_convert_job_id}/ds_convert.zip",
+                "transform": "use_dataset_convert_job"
+            },
+            "dataset.stylegan.test_dataset.images_dir": {
+                "source": "inference_dataset",
                 "multiple_sources": false,
                 "path": "results/{dataset_convert_job_id}/ds_convert.zip",
                 "transform": "use_dataset_convert_job"
             }
         },
         "inference": {
+            "dataset.stylegan.train_dataset.images_dir": {
+                "source": "train_datasets",
+                "multiple_sources": false,
+                "path": "results/{dataset_convert_job_id}/ds_convert.zip",
+                "transform": "use_dataset_convert_job"
+            },
+            "dataset.stylegan.validation_dataset.images_dir": {
+                "source": "eval_dataset",
+                "multiple_sources": false,
+                "path": "results/{dataset_convert_job_id}/ds_convert.zip",
+                "transform": "use_dataset_convert_job"
+            },
             "dataset.stylegan.test_dataset.images_dir": {
                 "source": "inference_dataset",
                 "multiple_sources": false,

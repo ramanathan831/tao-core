@@ -16,6 +16,8 @@
 
 """API modules defining schemas and endpoints"""
 import ast
+
+import pkg_resources
 import bson
 import sys
 import uuid
@@ -129,7 +131,12 @@ def disk_space_check(f):
 #
 # Create an APISpec
 #
-tao_version = os.environ.get('TAO_VERSION', 'unknown')
+
+try:
+    tao_version = pkg_resources.get_distribution('nvidia_tao_core').version
+except Exception:
+    tao_version = os.getenv('TAO_VERSION', '6.0.0')
+
 spec = APISpec(
     title='NVIDIA TAO API',
     version=tao_version,
@@ -610,11 +617,13 @@ class AllowedDockerEnvVariables(Enum):
     CLOUD_BASED = "CLOUD_BASED"
     NVCF_HELM = "NVCF_HELM"
     TELEMETRY_OPT_OUT = "TELEMETRY_OPT_OUT"
+    TAO_API_KEY = "TAO_API_KEY"
     TAO_USER_KEY = "TAO_USER_KEY"
     TAO_ADMIN_KEY = "TAO_ADMIN_KEY"
     TAO_COOKIE_SET = "TAO_COOKIE_SET"
     TAO_API_SERVER = "TAO_API_SERVER"
     TAO_LOGGING_SERVER_URL = "TAO_LOGGING_SERVER_URL"
+    RECURSIVE_DATASET_FILE_DOWNLOAD = "RECURSIVE_DATASET_FILE_DOWNLOAD"
     AUTOML_EXPERIMENT_NUMBER = "AUTOML_EXPERIMENT_NUMBER"
     JOB_ID = "JOB_ID"
     TAO_API_JOB_ID = "TAO_API_JOB_ID"  # Automl brain job id
@@ -1525,8 +1534,8 @@ def metrics_upsert():
     metrics['last_updated'] = now.isoformat()
 
     def sanitize_gpu_name(gpu_name):
-        # Convert to uppercase first, then replace all non-alphanumeric characters with -
-        return re.sub("[^a-zA-Z0-9]", "-", gpu_name.upper())
+        # Convert to uppercase first, then replace all non-alphanumeric characters with _
+        return re.sub("[^a-zA-Z0-9]", "_", gpu_name.upper())
 
     def create_gpu_identifier(gpu_list):
         # Count occurrences of each GPU type (case insensitive)
@@ -4743,8 +4752,7 @@ def dataset_job_files_list(org_name, dataset_id, job_id):
         response = make_response(jsonify(schema.dump(schema.load(metadata))), 400)
         return response
     # Get response
-    retrieve_logs = ast.literal_eval(request.args.get("retrieve_logs", "False"))
-    response = app_handler.job_list_files(org_name, dataset_id, job_id, retrieve_logs, "dataset")
+    response = app_handler.job_list_files(org_name, dataset_id, job_id, "dataset")
     # Get schema
     if response.code == 200:
         if isinstance(response.data, list) and (all(isinstance(f, str) for f in response.data) or response.data == []):
@@ -8863,8 +8871,7 @@ def experiment_job_files_list(org_name, experiment_id, job_id):
         response = make_response(jsonify(schema.dump(schema.load(metadata))), 400)
         return response
     # Get response
-    retrieve_logs = ast.literal_eval(request.args.get("retrieve_logs", "False"))
-    response = app_handler.job_list_files(org_name, experiment_id, job_id, retrieve_logs, "experiment")
+    response = app_handler.job_list_files(org_name, experiment_id, job_id, "experiment")
     # Get schema
     if response.code == 200:
         if isinstance(response.data, list) and (all(isinstance(f, str) for f in response.data) or response.data == []):

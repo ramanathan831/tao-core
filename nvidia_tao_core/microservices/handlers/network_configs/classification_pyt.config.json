@@ -53,6 +53,13 @@
                 "path": "images_test.tar.gz"
             }
         },
+        "export": {
+            "dataset.root_dir": {
+                "source": "train_datasets",
+                "multiple_sources": false,
+                "path": ""
+            }
+        },
         "inference": {
             "dataset.val_dataset.images_dir": {
                 "source": "eval_dataset",
@@ -110,7 +117,7 @@
     },
 
     "metrics": {
-        "available_metrics": ["accuracy_top-1"],
-        "monitoring_metric": "accuracy_top-1"
+        "available_metrics": ["val_acc_1"],
+        "monitoring_metric": "val_acc_1"
     }
 }

@@ -94,13 +94,13 @@ class MLDatasetConfig:
 
     train_dataset: Optional[str] = STR_FIELD(
         value=None,
-        default_value=None,
+        default_value="",
         display_name="train dataset",
         description="The path to the train dataset. This field is only required for the train task.",
     )
     val_dataset: Optional[Dict[str, str]] = DICT_FIELD(
         hashMap=None,
-        default_value=None,
+        default_value={},
         description="""The map of reference set and query set addresses:
                     * reference : The directory that contains the ImageNet format reference images
                     * query : The directory that contains the ImageNet format query images""",

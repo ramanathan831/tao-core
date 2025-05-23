@@ -47,8 +47,8 @@ class BEVFusionDataConvertExpConfig:
         valid_options=",".join(["kitti", "tao3d"])
     )
     root_dir: str = STR_FIELD(
-        value="/data/",
-        default_value="/data/",
+        value="",
+        default_value="",
         display_name="root directory of the dataset",
         description="A path to the root directory of the given dataset."
     )

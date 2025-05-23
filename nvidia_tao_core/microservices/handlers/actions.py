@@ -213,6 +213,7 @@ class ActionPipeline:
             if self.job_context.specs else self.job_context.num_gpu
         )
         self.num_nodes = get_num_nodes_from_spec(self.job_context.specs, self.action)
+        self.recursive_dataset_file_download = self.api_params.get("recursive_dataset_file_download", False)
         # add an entry on the docker image mapper for trt engine generation MAXINE DEPLOY
         # if action is trt engine generation and network is a maxine network, override image from docker image mapper
         # TODO: robbie add image mpping fix for trt engine gen
@@ -295,6 +296,7 @@ class ActionPipeline:
             admin_key_override=True
         )
         self.job_env_variables["TAO_USER_KEY"] = user_key
+        self.job_env_variables["RECURSIVE_DATASET_FILE_DOWNLOAD"] = str(self.recursive_dataset_file_download)
         self.job_env_variables["TAO_COOKIE_SET"] = str(ngc_cookie)
         self.job_env_variables["TAO_ADMIN_KEY"] = get_admin_key()
         self.job_env_variables["TAO_API_SERVER"] = host_base_url
@@ -329,7 +331,12 @@ class ActionPipeline:
             }
             for gpu_postfix in ["2x", "4x", "8x"]:
                 if gpu_postfix in instance_type:
-                    nv_job_metadata["nvcf_backend_details"]["num_gpu_per_node"] = int(gpu_postfix[:-1])
+                    dividing_factor = 1
+                    if available_nvcf_instances[self.platform_id]["cluster"] == "GFN":
+                        dividing_factor = 2
+                    nv_job_metadata["nvcf_backend_details"]["num_gpu_per_node"] = int(
+                        int(gpu_postfix[:-1]) / dividing_factor
+                    )
                     break
 
             if self.tao_deploy_actions:

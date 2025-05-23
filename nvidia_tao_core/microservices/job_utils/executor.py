@@ -160,7 +160,7 @@ def create(
                         job_name,
                         automl=automl_exp_job,
                         automl_experiment_number=nv_job_metadata.get("AUTOML_EXPERIMENT_NUMBER", "0"),
-                        message="NVCF deployment intitiation error"
+                        message="NVCF function could not be deployed"
                     )
                     logger.error(f"Function deployment request failed for job {job_name}")
                     logger.error(f"Deployment response {deploy_response.text}")
@@ -311,7 +311,7 @@ def create(
         return
 
 
-def create_service(service_name, selector, service_port, target_port, labels=None):
+def create_service(service_name, selector, service_port, target_port, labels={}):
     """Create a service"""
     try:
         name_space = _get_name_space()
@@ -319,7 +319,7 @@ def create_service(service_name, selector, service_port, target_port, labels=Non
         service = client.V1Service(
             api_version="v1",
             kind="Service",
-            metadata=client.V1ObjectMeta(name=service_name, labels=labels),
+            metadata=client.V1ObjectMeta(name=service_name, labels=labels, owner_references=[_get_owner_reference()]),
             spec=client.V1ServiceSpec(
                 cluster_ip=None,  # Headless service
                 selector=selector,
@@ -354,6 +354,23 @@ def create_statefulset_service(job_id):
         "job-id": job_id
     }
     create_service(service_name, selector, 8000, 8000, labels=labels)
+
+
+def _get_owner_reference():
+    """Get the owner reference for K8s resources"""
+    api_instance = client.AppsV1Api()
+    name_space = _get_name_space()
+    workflow_deployment = api_instance.read_namespaced_deployment(
+        name=f"{release_name}-workflow-pod",
+        namespace=name_space)
+    owner_reference = client.V1OwnerReference(
+        api_version=workflow_deployment.api_version,
+        kind=workflow_deployment.kind,
+        controller=True,
+        name=workflow_deployment.metadata.name,
+        uid=workflow_deployment.metadata.uid
+    )
+    return owner_reference
 
 
 def create_statefulset(job_id, num_gpu_per_node, num_nodes, image, api_port=8000, master_port=29500, accelerator=None):
@@ -415,7 +432,8 @@ def create_statefulset(job_id, num_gpu_per_node, num_nodes, image, api_port=8000
             api_version="apps/v1",
             kind="StatefulSet",
             metadata=client.V1ObjectMeta(
-                name=statefulset_name
+                name=statefulset_name,
+                owner_references=[_get_owner_reference()]
             ),
             spec=client.V1StatefulSetSpec(
                 replicas=num_nodes,
@@ -539,6 +557,10 @@ def delete_service(job_id, service_name):
     try:
         name_space = _get_name_space()
         core_v1 = client.CoreV1Api()
+        service = core_v1.read_namespaced_service(name=service_name, namespace=name_space)
+        if not service:
+            logger.info(f"Service {service_name} not found in namespace {name_space}")
+            return
         core_v1.delete_namespaced_service(name=service_name, namespace=name_space)
     except Exception as e:
         logger.error(f"Exception thrown in delete_service is {str(e)}")
@@ -1064,7 +1086,7 @@ def status(
                             job_name,
                             automl=automl_exp_job,
                             automl_experiment_number=nv_job_metadata.get("AUTOML_EXPERIMENT_NUMBER", "0"),
-                            message="NVCF deployment intitiation error"
+                            message="NVCF function details cant be retrieved"
                         )
                         return "Error"
                     if nvcf_function_metadata.get("function", {}).get("status") == "ACTIVE":
@@ -1098,7 +1120,7 @@ def status(
                             job_name,
                             automl=automl_exp_job,
                             automl_experiment_number=nv_job_metadata.get("AUTOML_EXPERIMENT_NUMBER", "0"),
-                            message="NVCF deployment intitiation error"
+                            message="NVCF function metadata has ERROR status"
                         )
                         return "Error"
 
@@ -1226,6 +1248,13 @@ def delete(job_name, use_ngc=True):
         service_name = get_statefulset_service_name(job_name)
         stateful_set_name = get_statefulset_name(job_name)
         delete_service(job_name, service_name=service_name)
+        stateful_set = api_instance.read_namespaced_stateful_set(
+            name=stateful_set_name,
+            namespace=name_space
+        )
+        if not stateful_set:
+            logger.info(f"Statefulset {stateful_set_name} not found in namespace {name_space}")
+            return
         api_response = api_instance.delete_namespaced_stateful_set(
             name=stateful_set_name,
             namespace=name_space,
@@ -1375,6 +1404,10 @@ def create_tensorboard_deployment(deployment_name, image, command, logs_image, l
         name="NAMESPACE",
         value=mongo_namespace
     )
+    backend_env = client.V1EnvVar(
+        name="BACKEND",
+        value=BACKEND,
+    )
     image_pull_secret = os.getenv('IMAGEPULLSECRET', default='imagepullsecret')
     tb_container = client.V1Container(
         name="tb-container",
@@ -1390,7 +1423,11 @@ def create_tensorboard_deployment(deployment_name, image, command, logs_image, l
     tb_logs_container = client.V1Container(
         name="tb-logs-container",
         image=logs_image,
-        env=[no_gpu, mongo_secret_env, mongo_operator_enabled_env, mongo_namespace_env],
+        env=[no_gpu,
+             mongo_secret_env,
+             mongo_operator_enabled_env,
+             mongo_namespace_env,
+             backend_env],
         command=["/bin/sh", "-c"],
         resources=resources,
         args=[logs_command],
@@ -1425,8 +1462,8 @@ def create_tensorboard_deployment(deployment_name, image, command, logs_image, l
         api_version="apps/v1",
         kind="Deployment",
         metadata=client.V1ObjectMeta(name=deployment_name, labels={
-            "resource-type": "tensorboard"
-        }),
+            "resource-type": "tensorboard",
+        }, owner_references=[_get_owner_reference()]),
         spec=spec)
 
     logger.info("Prepared deployment configs")
@@ -1450,15 +1487,19 @@ def create_tensorboard_service(tb_service_name, deploy_label):
     spec = client.V1ServiceSpec(ports=tb_port, selector={"app": deploy_label})
     # add annotation, it will only works in Azure, but will not affect other cloud
     annotation = {
-        "service.beta.kubernetes.io/azure-load-balancer-internal": "true"
+        "service.beta.kubernetes.io/azure-load-balancer-internal": "true",
     }
     service = client.V1Service(
         api_version="v1",
         kind="Service",
-        metadata=client.V1ObjectMeta(name=tb_service_name, labels={
-            "app": tb_service_name,
-            "resource-type": "tensorboard"
-        }, annotations=annotation),
+        metadata=client.V1ObjectMeta(
+            name=tb_service_name,
+            labels={
+                "app": tb_service_name,
+                "resource-type": "tensorboard",
+            },
+            owner_references=[_get_owner_reference()],
+            annotations=annotation),
         spec=spec,
     )
     api_instance = client.CoreV1Api()
@@ -1482,20 +1523,27 @@ def create_tensorboard_ingress(tb_service_name, tb_ingress_name, tb_ingress_path
     ingress = client.V1Ingress(
         api_version="networking.k8s.io/v1",
         kind="Ingress",
-        metadata=client.V1ObjectMeta(name=tb_ingress_name, namespace=name_space, labels={
-            "resource-type": "tensorboard"
-        }, annotations={
-            "kubernetes.io/ingress.class": "nginx",
-            "nginx.ingress.kubernetes.io/client-max-body-size": "0m",
-            "nginx.ingress.kubernetes.io/proxy-body-size": "0m",
-            "nginx.ingress.kubernetes.io/body-size": "0m",
-            "nginx.ingress.kubernetes.io/client-body-buffer-size": "50m",
-            "nginx.ingress.kubernetes.io/proxy-buffer-size": "128k",
-            "nginx.ingress.kubernetes.io/proxy-buffers-number": "4",
-            "nginx.ingress.kubernetes.io/proxy-connect-timeout": "3600",
-            "nginx.ingress.kubernetes.io/proxy-read-timeout": "3600",
-            "nginx.ingress.kubernetes.io/proxy-send-timeout": "3600",
-        }),
+        metadata=client.V1ObjectMeta(
+            name=tb_ingress_name,
+            namespace=name_space,
+            labels={
+                "resource-type": "tensorboard",
+            },
+            annotations={
+                "kubernetes.io/ingress.class": "nginx",
+                "nginx.ingress.kubernetes.io/client-max-body-size": "0m",
+                "nginx.ingress.kubernetes.io/proxy-body-size": "0m",
+                "nginx.ingress.kubernetes.io/body-size": "0m",
+                "nginx.ingress.kubernetes.io/client-body-buffer-size": "50m",
+                "nginx.ingress.kubernetes.io/proxy-buffer-size": "128k",
+                "nginx.ingress.kubernetes.io/proxy-buffers-number": "4",
+                "nginx.ingress.kubernetes.io/proxy-connect-timeout": "3600",
+                "nginx.ingress.kubernetes.io/proxy-read-timeout": "3600",
+                "nginx.ingress.kubernetes.io/proxy-send-timeout": "3600",
+                "meta.helm.sh/release-name": release_name,
+                "meta.helm.sh/release-namespace": name_space
+            },
+            owner_references=[_get_owner_reference()]),
         spec=client.V1IngressSpec(
             rules=[client.V1IngressRule(
                 http=client.V1HTTPIngressRuleValue(

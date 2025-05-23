@@ -31,6 +31,7 @@ from enum import Enum
 import logging
 
 from nvidia_tao_core.microservices.handlers.mongo_handler import MongoHandler
+from nvidia_tao_core.microservices.handlers.ngc_handler import get_ngc_token_from_api_key
 from nvidia_tao_core.microservices.utils import read_network_config, get_admin_key, safe_load_file
 from nvidia_tao_core.microservices.constants import TAO_NETWORKS
 from nvidia_tao_core.microservices.enum_constants import (
@@ -144,16 +145,9 @@ class BaseExperimentMetadata:
         # Get the NGC login token
         ngc_api_key = os.getenv("PTM_API_KEY")
         if ngc_api_key:
-            url = "https://authn.nvidia.com/token"
-            params = {"service": "ngc", "scope": "group/ngc"}
-            if org:
-                params["scope"] = f"group/ngc:{org}"
-            if team:
-                params["scope"] += f"&group/ngc:{org}/{team}"
-            headers = {"Accept": "application/json"}
-            auth = ("$oauthtoken", ngc_api_key)
-            response = requests.get(url, headers=headers, auth=auth, params=params, timeout=TIMEOUT)
-            return response.json()["token"]
+            ngc_token = get_ngc_token_from_api_key(ngc_api_key, org, team)
+            if ngc_token:
+                return ngc_token
         if self.ngc_key.startswith("nvapi"):
             return self.ngc_key
         raise ValueError(
@@ -399,20 +393,23 @@ class BaseExperimentMetadata:
                 "going to try download without configuring credentials".format(org, team)
             )  # noqa pylint: disable=C0209
         # Check and download experiment.yaml file
-        model_files = list(clt.registry.model.list_files(ngc_path))
-        file_paths = list(map(lambda x: x.path, model_files))
-        spec_file = "experiment.yaml"
-        if spec_file in file_paths:
-            dest_path = f"{self.rootdir}/{exp_id}/"
-            os.makedirs(dest_path, exist_ok=True)
-            clt.registry.model.download_version(ngc_path, destination=dest_path, file_patterns=[spec_file])
-            spec_data = safe_load_file(dest_path + f"{model}_v{version}/experiment.yaml", file_type="yaml")
-            if spec_data:
-                logger.info("Successfully got spec data for %s", ngc_path)
-            else:
-                logger.error("Unable to get spec data for %s", ngc_path)
-            return spec_data
-        logger.error("Unable to get spec data for %s", ngc_path)
+        try:
+            model_files = list(clt.registry.model.list_files(ngc_path))
+            file_paths = list(map(lambda x: x.path, model_files))
+            spec_file = "experiment.yaml"
+            if spec_file in file_paths:
+                dest_path = f"{self.rootdir}/{exp_id}/"
+                os.makedirs(dest_path, exist_ok=True)
+                clt.registry.model.download_version(ngc_path, destination=dest_path, file_patterns=[spec_file])
+                spec_data = safe_load_file(dest_path + f"{model}_v{version}/experiment.yaml", file_type="yaml")
+                if spec_data:
+                    logger.info("Successfully got spec data for %s", ngc_path)
+                else:
+                    logger.error("Unable to get spec data for %s", ngc_path)
+                return spec_data
+        except Exception as e:
+            logger.error("Unable to get spec data for %s", ngc_path)
+            logger.error(e)
         return {}
 
     def convert_str_to_enum(self, string_value: str, enum_type: Enum):

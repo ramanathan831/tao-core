@@ -93,12 +93,16 @@ image_size_mapper = {
 ptm_mapper = {
     "backbone": {
         "classification_pyt": "model.backbone.pretrained_backbone_path",
+        "segformer": "model.backbone.pretrained_backbone_path",
+        "visual_changenet": "model.backbone.pretrained_backbone_path",
         "dino": "model.pretrained_backbone_path",
         "grounding_dino": "model.pretrained_backbone_path",
         "mask_grounding_dino": "model.pretrained_backbone_path",
     },
     "end_to_end": {
         "classification_pyt": "train.pretrained_model_path",
+        "visual_changenet": "train.pretrained_model_path",
+        "segformer": "train.pretrained_model_path",
         "dino": "train.pretrained_model_path",
     }
 }
