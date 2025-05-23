@@ -94,9 +94,9 @@ class ClassConfig:
 class AnchorInitConfig:
     """Anchor initialization configuration template."""
 
-    num_anchor: int = INT_FIELD(value=900, default_value="900")
-    detection_range: float = FLOAT_FIELD(value=-1, default_value="-1")
-    sample_ratio: int = INT_FIELD(value=-1, default_value="-1")
+    num_anchor: int = INT_FIELD(value=900, default_value=900)
+    detection_range: float = FLOAT_FIELD(value=-1, default_value=-1)
+    sample_ratio: int = INT_FIELD(value=-1, default_value=-1)
     output_file_name: str = STR_FIELD(value="anchor_init.json", default_value="anchor_init.json")
 
 
@@ -113,6 +113,7 @@ class AICityConfig:
     depth_format: str = STR_FIELD(value=MISSING, default_value="<specify depth format>")
     camera_grouping_mode: str = STR_FIELD(value=MISSING, default_value="<specify camera grouping mode>")
     anchor_init_config: AnchorInitConfig = DATACLASS_FIELD(AnchorInitConfig())
+    num_frames: int = INT_FIELD(value=-1, default_value=-1)
 
 
 @dataclass
