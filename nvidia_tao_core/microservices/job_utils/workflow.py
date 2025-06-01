@@ -129,6 +129,8 @@ def execute_job(job_context):
         # - run post-job steps
         network_config = read_network_config(network)
         action_pipeline_name = network_config["api_params"]["actions_pipe"].get(action, "")
+        if action == "validate_images":
+            action_pipeline_name = "data_services"
         if network in MEDICAL_NETWORK_ARCHITECT:
             action_pipeline_name = "monai_" + action_pipeline_name
         elif network in MEDICAL_AUTOML_ARCHITECT:

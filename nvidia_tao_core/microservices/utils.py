@@ -115,6 +115,9 @@ def get_microservices_network_and_action(network, action):
     microservices_network = network
     microservices_action = action
 
+    if action == "validate_images":
+        return "image", "validate"
+
     # Try to get the mapping from the network config
     try:
         network_config = read_network_config(network)
