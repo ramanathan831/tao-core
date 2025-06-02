@@ -1637,8 +1637,7 @@ class AppHandler:
 
         if kind == "experiment" and handler_metadata.get("type").lower() == "medical":
             if action not in handler_metadata.get("actions", []):
-                if not (kind == "dataset" and action == "validate_images"):
-                    return Code(404, {}, "Action not found")
+                return Code(404, {}, "Action not found")
 
             if not isinstance(specs, dict):
                 return Code(404, [], f"{specs} must be a dictionary. Received {type(specs)}")
