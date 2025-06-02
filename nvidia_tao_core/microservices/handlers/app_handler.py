@@ -1180,7 +1180,8 @@ class AppHandler:
 
         # Action not available
         if action not in metadata.get("actions", []):
-            return Code(404, {}, "Action not found")
+            if not (kind == "dataset" and action == "validate_images"):
+                return Code(404, {}, "Action not found")
 
         base_experiment_spec = {}
         if metadata.get("base_experiment", []):
@@ -1544,7 +1545,11 @@ class AppHandler:
             return Code(404, [], "action not sent")
 
         if action not in handler_metadata.get("actions", []):
-            return Code(404, {}, f"Action {action} requested not in {','.join(handler_metadata.get('actions', []))}")
+            if not (kind == "dataset" and action == "validate_images"):
+                return Code(
+                    404, {},
+                    f"Action {action} requested not in {','.join(handler_metadata.get('actions', []))}"
+                )
 
         if not user_id:
             return Code(

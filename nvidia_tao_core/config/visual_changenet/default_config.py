@@ -405,7 +405,6 @@ class CNDatasetClassifyConfig:
         valid_max="inf",
         description="Batch size",
         display_name="Batch Size",
-        automl_enabled="TRUE"
     )
     workers: int = INT_FIELD(
         value=8,
@@ -414,7 +413,6 @@ class CNDatasetClassifyConfig:
         valid_max="inf",
         description="Workers",
         display_name="Workers",
-        automl_enabled="TRUE"
     )
     fpratio_sampling: float = FLOAT_FIELD(
         value=0.1,
@@ -531,7 +529,6 @@ class CNDatasetSegmentConfig:
         valid_max="inf",
         description="Batch size",
         display_name="Batch Size",
-        automl_enabled="TRUE"
     )
     workers: int = INT_FIELD(
         value=8,
@@ -540,7 +537,6 @@ class CNDatasetSegmentConfig:
         valid_max="inf",
         description="Workers",
         display_name="Workers",
-        automl_enabled="TRUE"
     )
     shuffle: bool = BOOL_FIELD(value=True, default_value=True, description="Shuffle dataloader")
     image_folder_name: str = STR_FIELD(value="A", default_value="A", description="image_folder_name")

@@ -1,7 +1,7 @@
 {
     "api_params": {
         "dataset_type":"not_restricted",
-        "actions": ["validate"],
+        "actions": ["validate_images"],
         "formats":["default"],
         "accepted_ds_intents": ["testing"],
         "image":"TAO_DS",
@@ -11,6 +11,12 @@
         }
     },
     
+    "actions_mapping": {
+        "validate_images": {
+            "network": "image",
+            "action": "validate"
+        }
+    },
     "data_sources": {
         "validate": {
             "data.image_dir": {

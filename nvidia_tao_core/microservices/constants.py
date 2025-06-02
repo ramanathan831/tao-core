@@ -80,7 +80,7 @@ STATUS_CALLBACK_MISMATCH_WITH_CHECKPOINT_EPOCH_TMP = set(["ml_recog"])
 
 COPY_MODEL_PARAMS_FROM_TRAIN_NETWORKS = [
     "centerpose", "deformable_detr", "dino", "grounding_dino",
-    "mask_grounding_dino", "mask2former"
+    "mask_grounding_dino", "mask2former", "visual_changenet"
 ]
 
 MONAI_DATASET_DEFAULT_SPECS = {
