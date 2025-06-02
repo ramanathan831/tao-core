@@ -1360,8 +1360,7 @@ class AppHandler:
         base_experiment_network = base_experiment_metadata.get("network_arch", "")
         base_experiment_name = base_experiment_metadata.get("name", "").lower()
         if action not in base_experiment_metadata.get("actions", []):
-            if not (kind == "dataset" and action == "validate_images"):
-                return Code(404, {}, "Action not found")
+            return Code(404, {}, "Action not found")
 
         base_exp_meta = base_experiment_metadata.get("base_experiment_metadata", {})
         if base_experiment_metadata and base_exp_meta.get("spec_file_present"):
@@ -1547,7 +1546,10 @@ class AppHandler:
 
         if action not in handler_metadata.get("actions", []):
             if not (kind == "dataset" and action == "validate_images"):
-                return Code(404, {}, f"Action {action} requested not in {','.join(handler_metadata.get('actions', []))}")
+                return Code(
+                    404, {},
+                    f"Action {action} requested not in {','.join(handler_metadata.get('actions', []))}"
+                )
 
         if not user_id:
             return Code(
