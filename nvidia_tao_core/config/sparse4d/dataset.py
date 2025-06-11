@@ -302,7 +302,13 @@ class Omniverse3DDetTrackDatasetConfig:
         description="Batch size",
         display_name="Batch size"
     )
-    use_h5_file: bool = BOOL_FIELD(
+    use_h5_file_for_rgb: bool = BOOL_FIELD(
+        value=False,
+        default_value=False,
+        description="Use H5 file",
+        display_name="Use H5 file"
+    )
+    use_h5_file_for_depth: bool = BOOL_FIELD(
         value=True,
         default_value=True,
         description="Use H5 file",

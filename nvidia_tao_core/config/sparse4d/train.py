@@ -18,6 +18,7 @@ from typing import Optional, Dict, Any
 from dataclasses import dataclass
 
 from nvidia_tao_core.config.utils.types import (
+    INT_FIELD,
     STR_FIELD,
     FLOAT_FIELD,
     DICT_FIELD,
@@ -94,18 +95,18 @@ class Sparse4DOptimizerConfig:
 class Sparse4DTrainConfig(TrainConfig):
     """Training configuration for Sparse4D."""
 
-    validation_interval: float = FLOAT_FIELD(
-        value=0.5,
-        default_value=0.5,
-        valid_min=0,
+    validation_interval: int = INT_FIELD(
+        value=1,
+        default_value=1,
+        valid_min=1,
         valid_max="inf",
         description="Validation interval in epochs",
         display_name="Validation interval in epochs"
     )
-    checkpoint_interval: float = FLOAT_FIELD(
-        value=0.5,
-        default_value=0.5,
-        valid_min=0,
+    checkpoint_interval: int = INT_FIELD(
+        value=1,
+        default_value=1,
+        valid_min=1,
         valid_max="inf",
         description="Checkpoint interval in epochs",
         display_name="Checkpoint interval in epochs"
