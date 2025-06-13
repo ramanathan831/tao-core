@@ -41,7 +41,7 @@ spec:
   node(POD_LABEL) {
     container('pyt') {
       def BUILD_TYPE="dev0"
-      def TAO_WHEEL_VERSION="6.0.0"
+      def TAO_WHEEL_VERSION="5.3.0"
       def VER="${TAO_WHEEL_VERSION}.${BUILD_NUMBER}.${BUILD_TYPE}"
       def PYTHON_VERSION=sh(script: 'python -c "import platform; print(platform.python_version())"', returnStdout: true).trim()
       def SRC="dist/nvidia_tao_core-${VER}-py3-none-any.whl"
