@@ -1056,6 +1056,7 @@ def add_workspace_to_cloud_metadata(workspace_metadata, cloud_metadata):
     access_key = workspace_metadata.get('cloud_specific_details', {}).get('access_key', '')
     secret_key = workspace_metadata.get('cloud_specific_details', {}).get('secret_key', '')
     cloud_region = workspace_metadata.get('cloud_specific_details', {}).get('cloud_region', '')
+    endpoint_url = workspace_metadata.get('cloud_specific_details', {}).get('endpoint_url', '')
     cloud_type = workspace_metadata.get("cloud_type")
     if cloud_type not in cloud_metadata:
         cloud_metadata[cloud_type] = {}
@@ -1063,6 +1064,7 @@ def add_workspace_to_cloud_metadata(workspace_metadata, cloud_metadata):
         "cloud_region": cloud_region,
         "access_key": access_key,
         "secret_key": secret_key,
+        "endpoint_url": endpoint_url,
     }
 
 

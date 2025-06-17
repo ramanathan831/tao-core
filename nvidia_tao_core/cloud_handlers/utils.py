@@ -200,25 +200,27 @@ def extract_cloud_details(metadata):
     return cloud_type, bucket_name, access_key, secret_key, region, download_url, token
 
 
-def initialize_cloud_storage(cloud_type, bucket_name, region, access_key, secret_key):
+def initialize_cloud_storage(cloud_type, bucket_name, access_key, secret_key, endpoint_url=None):
     """Initialize CloudStorage instance.
 
     Args:
         cloud_type (str): Type of cloud storage.
         bucket_name (str): Name of the bucket/container.
-        region (str): Region for the cloud storage provider.
         access_key (str): Access key for authentication.
         secret_key (str): Secret key for authentication.
+        endpoint_url (str): Endpoint URL for the cloud storage provider.
 
     Returns:
         CloudStorage: Initialized CloudStorage instance.
     """
+    if endpoint_url == "":
+        endpoint_url = None
     return CloudStorage(
         cloud_type=cloud_type,
         bucket_name=bucket_name,
-        region=region,
-        access_key=access_key,
-        secret_key=secret_key
+        key=access_key,
+        secret=secret_key,
+        client_kwargs={"endpoint_url": endpoint_url}
     )
 
 
@@ -298,6 +300,7 @@ def upload_files(local_path, cloud_storage, file_last_modified):
                 ) and ("checkpoint-" not in file_path and "tmp" not in file_path):
                     logger.info("File event created/modified {}".format(file_path))  # noqa pylint: disable=C0209
                     try:
+                        time.sleep(5)
                         cloud_storage.upload_file(file_path, file_path)
                     except Exception as e:  # pylint: disable=broad-except
                         logger.error(
@@ -399,6 +402,14 @@ def status_callback(data_string, retry=0):
         data_string (str): The status data to be sent.
         retry (int, optional): The current retry attempt (default is 0).
     """
+    logger.info(f"status_callback :: Entering")
+    logger.info(f"data_string: {data_string}")
+    logger.info(f"retry: {retry}")
+    logger.info(f"os.getenv('CLOUD_BASED'): {os.getenv('CLOUD_BASED')}")
+    logger.info(f"os.getenv('TAO_USER_KEY'): {os.getenv('TAO_USER_KEY')}")
+    logger.info(f"os.getenv('TAO_LOGGING_SERVER_URL'): {os.getenv('TAO_LOGGING_SERVER_URL')}")
+    logger.info(f"os.getenv('NVCF_HELM'): {os.getenv('NVCF_HELM')}")
+    logger.info(f"os.getenv('AUTOML_EXPERIMENT_NUMBER'): {os.getenv('AUTOML_EXPERIMENT_NUMBER')}")
     if os.getenv("CLOUD_BASED") == "True":
         if retry >= NUM_RETRY:
             cleanup_cuda_contexts()
@@ -494,11 +505,13 @@ def get_cloud_storage_class_object(cloud_data, cloud_string):
     csp_provider = cloud_string.split(":")[0]
     bucket_name = cloud_string.split("//")[1].split("/")[0]
     cloud_file_path = cloud_string[cloud_string.find(bucket_name) + len(bucket_name):]
-    cloud_storage = CloudStorage(csp_provider,
-                                 bucket_name,
-                                 cloud_data[csp_provider][bucket_name]["cloud_region"],
-                                 cloud_data[csp_provider][bucket_name]["access_key"],
-                                 cloud_data[csp_provider][bucket_name]["secret_key"])
+    cloud_storage = initialize_cloud_storage(
+        cloud_type=csp_provider,
+        bucket_name=bucket_name,
+        access_key=cloud_data[csp_provider][bucket_name].get("access_key"),
+        secret_key=cloud_data[csp_provider][bucket_name].get("secret_key"),
+        endpoint_url=cloud_data[csp_provider][bucket_name].get("endpoint_url")
+    )
     while cloud_file_path.find("//") != -1:
         cloud_file_path = cloud_file_path.replace("//", "/")
     return cloud_storage, cloud_file_path
@@ -710,11 +723,13 @@ def get_results_cloud_data(cloud_data, spec_data, dest_dir=None):
         csp_provider = results_dir.split(":")[0]
         bucket_name = results_dir.split("//")[1].split("/")[0]
         cloud_file_path = results_dir[results_dir.find(bucket_name) + len(bucket_name):]
-        cloud_storage = CloudStorage(csp_provider,
-                                     bucket_name,
-                                     cloud_data[csp_provider][bucket_name]["cloud_region"],
-                                     cloud_data[csp_provider][bucket_name]["access_key"],
-                                     cloud_data[csp_provider][bucket_name]["secret_key"])
+        cloud_storage = initialize_cloud_storage(
+            cloud_type=csp_provider,
+            bucket_name=bucket_name,
+            access_key=cloud_data[csp_provider][bucket_name].get("access_key"),
+            secret_key=cloud_data[csp_provider][bucket_name].get("secret_key"),
+            endpoint_url=cloud_data[csp_provider][bucket_name].get("endpoint_url")
+        )
         spec_data["results_dir"] = cloud_file_path
         return cloud_storage, spec_data
     if not dest_dir:

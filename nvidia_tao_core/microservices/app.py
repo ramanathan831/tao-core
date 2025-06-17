@@ -1382,6 +1382,13 @@ class GpuDetailsSchema(Schema):
     node = fields.Str(validate=validate.Length(max=2048), allow_none=True)
     gpu_type = fields.Str(validate=validate.Length(max=2048))
     instance_type = fields.Str(validate=validate.Length(max=2048), allow_none=True)
+    gpu_count = fields.Int(format="int64", validate=validate.Range(min=0, max=sys.maxsize), allow_none=True)
+    cpu_cores = fields.Int(format="int64", validate=validate.Range(min=0, max=sys.maxsize), allow_none=True)
+    system_memory = fields.Str(validate=validate.Length(max=2048), allow_none=True)
+    gpu_memory = fields.Str(validate=validate.Length(max=2048), allow_none=True)
+    regions = fields.List(fields.Str(validate=validate.Length(max=2048)), allow_none=True)
+    storage = fields.Str(validate=validate.Length(max=2048), allow_none=True)
+    driver_version = fields.Str(validate=validate.Length(max=2048), allow_none=True)
     max_limit = fields.Int(format="int64", validate=validate.Range(min=0, max=sys.maxsize), allow_none=True)
     current_used = fields.Int(format="int64", validate=validate.Range(min=0, max=sys.maxsize), allow_none=True)
     current_available = fields.Int(format="int64", validate=validate.Range(min=0, max=sys.maxsize), allow_none=True)
@@ -1589,6 +1596,7 @@ class AWSCloudPullSchema(Schema):
     access_key = fields.Str(validate=validate.Length(max=2048))
     secret_key = fields.Str(validate=validate.Length(max=2048))
     cloud_region = fields.Str(validate=validate.Length(max=2048), allow_none=True)
+    endpoint_url = fields.URL(validate=fields.validate.Length(max=2048))
     cloud_bucket_name = fields.Str(validate=validate.Length(max=2048), allow_none=True)
 
 
@@ -1598,6 +1606,7 @@ class AzureCloudPullSchema(Schema):
     account_name = fields.Str(validate=validate.Length(max=2048))
     access_key = fields.Str(validate=validate.Length(max=2048))
     cloud_region = fields.Str(validate=validate.Length(max=2048), allow_none=True)
+    endpoint_url = fields.URL(validate=fields.validate.Length(max=2048))
     cloud_bucket_name = fields.Str(validate=validate.Length(max=2048), allow_none=True)
 
 

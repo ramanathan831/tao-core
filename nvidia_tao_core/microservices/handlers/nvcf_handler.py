@@ -46,7 +46,8 @@ def get_available_nvcf_instances(user_id, org_name):
     """For the given org, format and return the NVCF cluster info"""
     ngc_key, _ = get_user_key(user_id, org_name, admin_key_override=True)
 
-    nvcf_info_endpoint = f"https://api.ngc.nvidia.com/v3/orgs/{org_name}/nvcf"
+    nvcf_info_endpoint = f"https://api.ngc.nvidia.com/v2/orgs/{org_name}/ngc/nvcf/deployments/instanceTypes"
+
     nvcf_info_response = send_ngc_api_request(
         endpoint=nvcf_info_endpoint,
         requests_method="GET",
@@ -56,20 +57,49 @@ def get_available_nvcf_instances(user_id, org_name):
     available_nvcf_instances = {}
     if nvcf_info_response.ok:
         gpu_data = nvcf_info_response.json()
-        for cluster in gpu_data['clusters']:
-            cluster_name = cluster["cluster"]
-            gpu_type = cluster['gpuType']
-            instance_type = cluster['instanceType']
-            platform_id = str(uuid.uuid5(uuid.NAMESPACE_X500, f"{cluster_name}_{gpu_type}_{instance_type}"))
+        for gpu_type, instances in gpu_data.items():
+            for instance in instances:
+                instance_name = instance['name']
 
-            available = cluster['maxInstances'] - cluster['currentInstances']
-            available_nvcf_instances[platform_id] = {"cluster": cluster["cluster"],
-                                                     "gpu_type": gpu_type,
-                                                     "instance_type": instance_type,
-                                                     "max_limit": cluster['maxInstances'],
-                                                     "current_used": cluster['currentInstances'],
-                                                     "current_available": available,
-                                                     }
+                # Handle clusters - use clusterGroupName if clusters is empty
+                clusters = instance.get('clusters', [])
+                if not clusters and 'clusterGroupName' in instance:
+                    clusters = [instance['clusterGroupName']]
+
+                # If still no clusters, use 'default'
+                if not clusters:
+                    clusters = ['default']
+
+                # Create separate entry for each cluster this instance is available in
+                for cluster in clusters:
+                    # Create a unique platform ID for this GPU type + cluster combination
+                    platform_id = str(uuid.uuid5(uuid.NAMESPACE_X500, f"{cluster}_{gpu_type}_{instance_name}"))
+
+                    # Extract availability information if present
+                    max_instances = instance.get('maxInstances', 2)
+                    current_instances = instance.get('currentInstances', 0)
+
+                    # Calculate available instances if both values are present
+                    if isinstance(max_instances, int) and isinstance(current_instances, int):
+                        available = max_instances - current_instances
+                    else:
+                        available = 'N/A'
+
+                    available_nvcf_instances[platform_id] = {
+                        "cluster": cluster,
+                        "gpu_type": gpu_type,
+                        "instance_type": instance_name,
+                        "gpu_count": instance['gpuCount'],
+                        "cpu_cores": instance['cpuCores'],
+                        "system_memory": instance['systemMemory'],
+                        "gpu_memory": instance['gpuMemory'],
+                        "regions": instance['regions'],
+                        "max_limit": max_instances,
+                        "current_used": current_instances,
+                        "current_available": available,
+                        "driver_version": instance.get('driverVersion', 'N/A'),
+                        "storage": instance.get('storage', 'N/A')
+                    }
 
     return available_nvcf_instances
 
