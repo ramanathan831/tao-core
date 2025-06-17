@@ -1830,7 +1830,7 @@ class AppHandler:
         automl = False
         if is_request_automl(handler_id, action, kind) and action == "train":
             automl = True
-        stateless_handlers.save_dnn_status(job_id, automl, callback_data)
+        stateless_handlers.save_dnn_status(job_id, automl, callback_data, handler_id, kind)
         return Code(200, [], "Job status updated")
 
     @staticmethod

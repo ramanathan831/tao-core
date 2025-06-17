@@ -402,14 +402,6 @@ def status_callback(data_string, retry=0):
         data_string (str): The status data to be sent.
         retry (int, optional): The current retry attempt (default is 0).
     """
-    logger.info(f"status_callback :: Entering")
-    logger.info(f"data_string: {data_string}")
-    logger.info(f"retry: {retry}")
-    logger.info(f"os.getenv('CLOUD_BASED'): {os.getenv('CLOUD_BASED')}")
-    logger.info(f"os.getenv('TAO_USER_KEY'): {os.getenv('TAO_USER_KEY')}")
-    logger.info(f"os.getenv('TAO_LOGGING_SERVER_URL'): {os.getenv('TAO_LOGGING_SERVER_URL')}")
-    logger.info(f"os.getenv('NVCF_HELM'): {os.getenv('NVCF_HELM')}")
-    logger.info(f"os.getenv('AUTOML_EXPERIMENT_NUMBER'): {os.getenv('AUTOML_EXPERIMENT_NUMBER')}")
     if os.getenv("CLOUD_BASED") == "True":
         if retry >= NUM_RETRY:
             cleanup_cuda_contexts()
