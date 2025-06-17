@@ -23,6 +23,11 @@
                 "multiple_sources": false,
                 "path": "images_train.tar.gz"
             },
+            "dataset.classes_file": {
+                "source": "train_datasets",
+                "multiple_sources": false,
+                "path": "classes.txt"
+            },
             "dataset.val_dataset.images_dir": {
                 "source": "eval_dataset",
                 "multiple_sources": false,
@@ -35,6 +40,11 @@
                 "multiple_sources": false,
                 "path": "images_train.tar.gz"
             },
+            "dataset.classes_file": {
+                "source": "train_datasets",
+                "multiple_sources": false,
+                "path": "classes.txt"
+            },
             "dataset.val_dataset.images_dir": {
                 "source": "eval_dataset",
                 "multiple_sources": false,
@@ -46,6 +56,11 @@
                 "source": "eval_dataset",
                 "multiple_sources": false,
                 "path": "images_val.tar.gz"
+            },
+            "dataset.classes_file": {
+                "source": "eval_dataset",
+                "multiple_sources": false,
+                "path": "classes.txt"
             },
             "dataset.test_dataset.images_dir": {
                 "source": "inference_dataset",
@@ -65,6 +80,11 @@
                 "source": "eval_dataset",
                 "multiple_sources": false,
                 "path": "images_val.tar.gz"
+            },
+            "dataset.classes_file": {
+                "source": "eval_dataset",
+                "multiple_sources": false,
+                "path": "classes.txt"
             },
             "dataset.test_dataset.images_dir": {
                 "source": "inference_dataset",
