@@ -159,5 +159,10 @@
         "train.checkpoint_interval":"assign_const_value,train.num_epochs",
         "train.validation_interval":"assign_const_value,train.num_epochs,train.checkpoint_interval",
         "encryption_key":"key"
+    },
+
+    "metrics": {
+        "available_metrics": ["fid50k_full", "seen_images", "epoch"],
+        "monitoring_metric": "fid50k_full"
     }
 }
