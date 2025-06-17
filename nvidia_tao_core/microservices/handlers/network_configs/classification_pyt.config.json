@@ -103,7 +103,7 @@
         },
         "distill": {
             "results_dir":"output_dir",
-            "distill.pretrained_teacher_model_path":"resume_model"
+            "distill.pretrained_teacher_model_path":"parent_model"
         },
         "evaluate":{
             "results_dir":"output_dir",
