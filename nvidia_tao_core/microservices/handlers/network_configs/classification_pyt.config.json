@@ -23,6 +23,11 @@
                 "multiple_sources": false,
                 "path": "images_train.tar.gz"
             },
+            "dataset.classes_file": {
+                "source": "train_datasets",
+                "multiple_sources": false,
+                "path": "classes.txt"
+            },
             "dataset.val_dataset.images_dir": {
                 "source": "eval_dataset",
                 "multiple_sources": false,
@@ -35,6 +40,11 @@
                 "multiple_sources": false,
                 "path": "images_train.tar.gz"
             },
+            "dataset.classes_file": {
+                "source": "train_datasets",
+                "multiple_sources": false,
+                "path": "classes.txt"
+            },
             "dataset.val_dataset.images_dir": {
                 "source": "eval_dataset",
                 "multiple_sources": false,
@@ -46,6 +56,11 @@
                 "source": "eval_dataset",
                 "multiple_sources": false,
                 "path": "images_val.tar.gz"
+            },
+            "dataset.classes_file": {
+                "source": "eval_dataset",
+                "multiple_sources": false,
+                "path": "classes.txt"
             },
             "dataset.test_dataset.images_dir": {
                 "source": "inference_dataset",
@@ -66,6 +81,11 @@
                 "multiple_sources": false,
                 "path": "images_val.tar.gz"
             },
+            "dataset.classes_file": {
+                "source": "eval_dataset",
+                "multiple_sources": false,
+                "path": "classes.txt"
+            },
             "dataset.test_dataset.images_dir": {
                 "source": "inference_dataset",
                 "multiple_sources": false,
@@ -83,7 +103,7 @@
         },
         "distill": {
             "results_dir":"output_dir",
-            "distill.pretrained_teacher_model_path":"resume_model"
+            "distill.pretrained_teacher_model_path":"parent_model"
         },
         "evaluate":{
             "results_dir":"output_dir",
