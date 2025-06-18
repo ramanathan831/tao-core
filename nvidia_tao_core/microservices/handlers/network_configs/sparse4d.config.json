@@ -1,6 +1,6 @@
 {
   "api_params": {
-    "dataset_type": "omniverse_3d_det_track",
+    "dataset_type": "sparse4d",
     "actions": ["train", "evaluate", "export", "inference"],
     "formats": ["default"],
     "accepted_ds_intents": ["training", "evaluation", "testing"],
@@ -16,57 +16,31 @@
 
   "data_sources": {
     "train": {
-      "dataset.data_root": {
-        "source": "train_datasets",
-        "multiple_sources": false,
-        "path": "data/"
-      },
       "dataset.train_dataset.ann_file": {
         "source": "train_datasets",
         "multiple_sources": false,
         "path": "train.pkl"
-      }
-    },
-    "evaluate": {
+      },
       "dataset.val_dataset.ann_file": {
         "source": "eval_dataset",
         "multiple_sources": false,
         "path": "val.pkl"
       }
     },
-    "inference": {
-      "inference.checkpoint": {
-        "source": "id",
+    "evaluate": {
+      "dataset.test_dataset.ann_file": {
+        "source": "eval_datasets",
         "multiple_sources": false,
-        "path": "model.pth"
+        "path": "test.pkl"
       }
-    }
-  },
-
-  "dataset_validation": {
-    "required_files": {
-      "default": [
-        {
-          "all_of": [
-            { "path": "data/", "type": "folder" },
-            { "path": "train.pkl", "type": "file" }
-          ]
-        }
-      ]
-    }
-  },
-
-  "dynamic_config": {
-    "defaults": {
-      "dataset.use_h5_file": true,
-      "dataset.classes": [
-        "person",
-        "gr1_t2",
-        "agility_digit",
-        "nova_carter"
-      ],
-      "dataset.num_ids": 70
-    }
+    },
+    "inference": {
+      "dataset.test_dataset.ann_file": {
+        "source": "inference_datasets",
+        "multiple_sources": false,
+        "path": "test.pkl"
+      }
+    },
   },
 
   "spec_params": {
@@ -84,14 +58,13 @@
     "inference": {
       "results_dir": "output_dir",
       "inference.checkpoint": "parent_model",
-      "encryption_key": "key",
-      "inference.output_file": "create_inference_result_file_pose"
+      "encryption_key": "key"
     },
     "export": {
       "results_dir": "output_dir",
       "export.checkpoint": "parent_model",
-      "encryption_key": "key",
-      "export.onnx_file": "create_onnx_file"
+      "export.onnx_file": "create_onnx_file",
+      "encryption_key": "key"
     }
   },
 
@@ -105,17 +78,7 @@
   },
 
   "metrics": {
-    "available_metrics": ["val_mota", "val_idf1", "val_mAP"],
-    "monitoring_metric": "val_mota"
-  },
-
-  "actions_mapping": {
-    "analyze": {
-      "network": "analytics"
-    },
-    "augment": {
-      "network": "augmentation",
-      "action": "generate"
-    }
+    "available_metrics": ["val_hota", "val_idf1", "val_mota", "val_mAP"],
+    "monitoring_metric": "val_hota"
   }
 }
