@@ -157,7 +157,11 @@ def _get_network_architectures() -> list[str]:
                     config = json.load(f)
 
                     # Add the main architecture
-                    architectures.add(arch_name)
+                    if arch_name not in ["image_classification",
+                                         "object_detection",
+                                         "segmentation",
+                                         "character_recognition"]:
+                        architectures.add(arch_name)
 
                     # Add networks from action mappings
                     actions_mapping = config.get("actions_mapping", {})
