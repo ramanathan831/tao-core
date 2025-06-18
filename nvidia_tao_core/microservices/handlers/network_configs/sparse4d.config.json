@@ -1,0 +1,121 @@
+{
+  "api_params": {
+    "dataset_type": "omniverse_3d_det_track",
+    "actions": ["train", "evaluate", "export", "inference"],
+    "formats": ["default"],
+    "accepted_ds_intents": ["training", "evaluation", "testing"],
+    "image": "TAO_PYTORCH",
+    "spec_backend": "yaml",
+    "actions_pipe": {
+      "train": "train",
+      "evaluate": "evaluate",
+      "export": "export_with_spec",
+      "inference": "inference"
+    }
+  },
+
+  "data_sources": {
+    "train": {
+      "dataset.data_root": {
+        "source": "train_datasets",
+        "multiple_sources": false,
+        "path": "data/"
+      },
+      "dataset.train_dataset.ann_file": {
+        "source": "train_datasets",
+        "multiple_sources": false,
+        "path": "train.pkl"
+      }
+    },
+    "evaluate": {
+      "dataset.val_dataset.ann_file": {
+        "source": "eval_dataset",
+        "multiple_sources": false,
+        "path": "val.pkl"
+      }
+    },
+    "inference": {
+      "inference.checkpoint": {
+        "source": "id",
+        "multiple_sources": false,
+        "path": "model.pth"
+      }
+    }
+  },
+
+  "dataset_validation": {
+    "required_files": {
+      "default": [
+        {
+          "all_of": [
+            { "path": "data/", "type": "folder" },
+            { "path": "train.pkl", "type": "file" }
+          ]
+        }
+      ]
+    }
+  },
+
+  "dynamic_config": {
+    "defaults": {
+      "dataset.use_h5_file": true,
+      "dataset.classes": [
+        "person",
+        "gr1_t2",
+        "agility_digit",
+        "nova_carter"
+      ],
+      "dataset.num_ids": 70
+    }
+  },
+
+  "spec_params": {
+    "train": {
+      "results_dir": "output_dir",
+      "model.pretrained_model_path": "ptm_if_no_resume_model",
+      "train.resume_training_checkpoint_path": "resume_model",
+      "encryption_key": "key"
+    },
+    "evaluate": {
+      "results_dir": "output_dir",
+      "evaluate.checkpoint": "parent_model",
+      "encryption_key": "key"
+    },
+    "inference": {
+      "results_dir": "output_dir",
+      "inference.checkpoint": "parent_model",
+      "encryption_key": "key",
+      "inference.output_file": "create_inference_result_file_pose"
+    },
+    "export": {
+      "results_dir": "output_dir",
+      "export.checkpoint": "parent_model",
+      "encryption_key": "key",
+      "export.onnx_file": "create_onnx_file"
+    }
+  },
+
+  "automl_spec_params": {
+    "results_dir": "automl_output_dir",
+    "model.pretrained_model_path": "automl_assign_ptm",
+    "train.resume_training_checkpoint_path": "automl_resume_model",
+    "train.checkpoint_interval": "assign_const_value,train.num_epochs",
+    "train.validation_interval": "assign_const_value,train.num_epochs,train.checkpoint_interval",
+    "encryption_key": "key"
+  },
+
+  "metrics": {
+    "available_metrics": ["val_mota", "val_idf1", "val_mAP"],
+    "monitoring_metric": "val_mota"
+  },
+
+  "actions_mapping": {
+    "analyze": {
+      "network": "analytics"
+    },
+    "augment": {
+      "network": "augmentation",
+      "action": "generate"
+    }
+  }
+}
