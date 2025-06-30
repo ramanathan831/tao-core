@@ -15,6 +15,7 @@
 """Generating JSON schemas"""
 
 from nvidia_tao_core.api_utils import dataclass2json_converter
+from nvidia_tao_core.microservices import enum_constants
 
 
 def generate_schema(neural_network_name, action=""):
@@ -32,4 +33,25 @@ def generate_schema(neural_network_name, action=""):
     else:
         expConfig = imported_module.ExperimentConfig()
     json_with_meta_config = dataclass2json_converter.dataclass_to_json(expConfig)
-    return dataclass2json_converter.create_json_schema(json_with_meta_config)
+    schema = dataclass2json_converter.create_json_schema(json_with_meta_config)
+    # Only keep relevant top-level keys
+    valid_actions = enum_constants._get_valid_config_json_param_for_network(neural_network_name, "actions")
+    schema = filter_schema(schema, valid_actions, action)
+    return schema
+
+
+def filter_schema(schema, valid_actions, current_action):
+    """Filter the schema to only include the allowed keys"""
+    # Always keep 'train' and the current action, plus all non-action keys
+    allowed_keys = set(['train', current_action])
+    # Add all non-action keys (not in valid_actions)
+    allowed_keys.update([k for k in schema['properties'] if k not in valid_actions])
+
+    # Filter top-level properties and default
+    schema['properties'] = {k: v for k, v in schema['properties'].items() if k in allowed_keys}
+    schema['default'] = {k: v for k, v in schema['default'].items() if k in allowed_keys}
+    # Optionally filter automl/popular/required lists if present
+    for key in ['automl_default_parameters', 'automl_disabled_parameters', 'popular', 'required']:
+        if key in schema:
+            schema[key] = [k for k in schema[key] if k in allowed_keys]
+    return schema

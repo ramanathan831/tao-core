@@ -20,7 +20,10 @@ from nvidia_tao_core.microservices.constants import TAO_NETWORKS
 from nvidia_tao_core.microservices.enum_constants import _get_network_architectures
 from nvidia_tao_core.scripts.generate_schema import generate_schema
 
-EXCLUDED_KEYWORDS = ['maxine', 'monai', 'vlm']
+EXCLUDED_KEYWORDS = [
+    'maxine', 'monai', 'vlm', 'segmentation',
+    'image_classification', 'character_recognition', 'object_detection'
+]
 config_networks = [
     network for network in _get_network_architectures()
     if not any(keyword in network for keyword in EXCLUDED_KEYWORDS)

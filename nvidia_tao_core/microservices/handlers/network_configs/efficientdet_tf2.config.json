@@ -54,11 +54,6 @@
                 "source": "eval_dataset",
                 "multiple_sources": false,
                 "path": "annotations.json"
-            },
-            "inference.label_map": {
-                "source": "inference_dataset",
-                "multiple_sources": false,
-                "path": "label_map.yaml"
             }
         },
         "retrain": {

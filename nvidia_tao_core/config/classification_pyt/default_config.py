@@ -519,6 +519,11 @@ class DatasetConfig:
         description="Configuration for the testing dataset path",
         display_name="Testing Dataset"
     )
+    classes_file: str = STR_FIELD(
+        value="",
+        default_value="",
+        description="Path to the classes file"
+    )
 
 
 @dataclass
