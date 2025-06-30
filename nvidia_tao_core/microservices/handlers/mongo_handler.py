@@ -32,16 +32,27 @@ logger = logging.getLogger(__name__)
 # MongoDB connection setup
 
 if os.getenv("BACKEND"):
-    mongo_secret = os.getenv("MONGOSECRET", "")
-    mongo_namespace = os.getenv("NAMESPACE", "default")
-    mongo_operator_enabled = os.getenv('MONGO_OPERATOR_ENABLED', 'true') == 'true'
-    encoded_secret = parse.quote(mongo_secret, safe='')
-    mongo_uri_prefix = "mongodb+srv" if mongo_operator_enabled else "mongodb"
-    mongo_connection_string = (
-        f"{mongo_uri_prefix}://default-user:{encoded_secret}@mongodb-svc.{mongo_namespace}"
-        ".svc.cluster.local/tao?replicaSet=mongodb&ssl=false&authSource=admin"
-    )
-    mongo_client = pymongo.MongoClient(mongo_connection_string, tz_aware=True)
+    if os.getenv("HOSTPLATFORM") == "local-docker":
+        mongo_secret = os.getenv("MONGOSECRET", "")
+        encoded_secret = parse.quote(mongo_secret, safe='')
+        mongo_uri_prefix = "mongodb"
+        mongo_connection_string = (
+            f"{mongo_uri_prefix}://default-user:{encoded_secret}@mongodb:27017/tao"
+            "?authSource=admin"
+        )
+        mongo_client = pymongo.MongoClient(mongo_connection_string, tz_aware=True)
+    else:  # k8s
+        mongo_secret = os.getenv("MONGOSECRET", "")
+        mongo_namespace = os.getenv("NAMESPACE", "default")
+        mongo_operator_enabled = os.getenv('MONGO_OPERATOR_ENABLED', 'true') == 'true'
+        encoded_secret = parse.quote(mongo_secret, safe='')
+        mongo_uri_prefix = "mongodb+srv" if mongo_operator_enabled else "mongodb"
+        mongo_connection_string = (
+            f"{mongo_uri_prefix}://default-user:{encoded_secret}@mongodb-svc.{mongo_namespace}"
+            ".svc.cluster.local/tao?replicaSet=mongodb&ssl=false&authSource=admin"
+        )
+        mongo_client = pymongo.MongoClient(mongo_connection_string, tz_aware=True)
+
 NUM_RETRY = 5
 
 
