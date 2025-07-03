@@ -32,7 +32,7 @@ logger = logging.getLogger(__name__)
 # MongoDB connection setup
 
 if os.getenv("BACKEND"):
-    if os.getenv("HOSTPLATFORM") == "local-docker":
+    if os.getenv("HOST_PLATFORM") == "local-docker":
         mongo_secret = os.getenv("MONGOSECRET", "")
         encoded_secret = parse.quote(mongo_secret, safe='')
         mongo_uri_prefix = "mongodb"
