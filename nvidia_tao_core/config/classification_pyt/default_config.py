@@ -206,12 +206,6 @@ class BackboneConfig:
             "gc_vit_large_384",
         ]),
     )
-    feat_downsample: bool = BOOL_FIELD(
-        value=False,
-        default_value=False,
-        display_name="Feature downsample",
-        description="Feature downsample for fan base backbone"
-    )
     pretrained_backbone_path: Optional[str] = STR_FIELD(
         value=None,
         default_value="",
@@ -221,6 +215,12 @@ class BackboneConfig:
         value=False,
         default_value=False,
         description="Flag to freeze backbone",
+        automl_enabled="TRUE"
+    )
+    freeze_norm: bool = BOOL_FIELD(
+        value=False,
+        default_value=False,
+        description="Flag to freeze norm",
         automl_enabled="TRUE"
     )
 
@@ -572,6 +572,12 @@ class TrainExpConfig(TrainConfig):
         default_value=2.0,
         display_name="Grad norm",
         description="Gradient Norm"
+    )
+    precision: str = STR_FIELD(
+        value="fp32",
+        default_value="fp32",
+        description="Precision",
+        valid_options="fp16, fp32"
     )
 
 
