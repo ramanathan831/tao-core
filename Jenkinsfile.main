@@ -155,10 +155,8 @@ spec:
         //     }
         //   }
         // }
-      }
-
-  }
-  catch (Exception e) {
+    }
+    catch (Exception e) {
     // Mark build as failed.
    currentBuild.result = 'FAILURE'
    container('cuda') {
@@ -176,9 +174,10 @@ spec:
           """
         }
     }
+    }
+    // Rethrow the error so the build is marked as failed.
+    throw e
   }
-  // Rethrow the error so the build is marked as failed.
-  throw e
 }
 
 // podTemplate (cloud:'sc-ipp-blossom-prod', yaml : """
