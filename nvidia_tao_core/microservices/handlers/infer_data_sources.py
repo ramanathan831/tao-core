@@ -175,10 +175,17 @@ def apply_transforms(
             value = [value]
         elif transform == "use_dataset_convert_job":
             dataset_convert_job_id = get_job_id_of_action(source_ds, kind="datasets", action=dataset_convert_action)
-            corrected_value = value.replace("{dataset_convert_job_id}", dataset_convert_job_id).replace(source_root, "")
-            if corrected_value.startswith("/"):
-                corrected_value = corrected_value[1:]
-            value = f"{workspace_identifier}{corrected_value}"
+            # Check if the value already has the results path format
+            if value.startswith("/results/"):
+                # It's already in the correct format, just prepend workspace identifier
+                value = f"{workspace_identifier}{value}"
+            else:
+                # Legacy format - apply the old logic
+                corrected_value = value.replace("{dataset_convert_job_id}", dataset_convert_job_id)
+                corrected_value = corrected_value.replace(source_root, "")
+                if corrected_value.startswith("/"):
+                    corrected_value = corrected_value[1:]
+                value = f"{workspace_identifier}{corrected_value}"
 
     return value
 
@@ -454,6 +461,46 @@ def apply_data_source_config(config, job_context, handler_metadata):
             set_nested_config_value(config, config_path, value)
             already_configured_paths.add(config_path)  # Mark as configured
             continue
+
+        # Handle path from convert job spec
+        if "path_from_convert_job_spec" in source_config:
+            convert_spec_config = source_config["path_from_convert_job_spec"]
+            spec_path = convert_spec_config.get("spec_path")
+            mapping = convert_spec_config.get("mapping", {})
+
+            # Get the dataset convert job for this dataset
+            dataset_convert_job_id = get_job_id_of_action(
+                source_datasets[0], kind="datasets", action=dataset_convert_action
+            )
+
+            if dataset_convert_job_id:
+                # Get the job metadata to access specs
+                convert_job_metadata = get_handler_job_metadata(dataset_convert_job_id)
+                if convert_job_metadata:
+                    # Get the spec value from the convert job
+                    job_specs = convert_job_metadata.get("specs", {})
+                    spec_value = get_nested_config_value(job_specs, spec_path)
+
+                    # Use the mapping to determine the path
+                    if spec_value and spec_value in mapping:
+                        path = mapping[spec_value]
+                    else:
+                        path = mapping.get("*", "")
+
+                    if path:
+                        # Check if we're using the dataset convert job transform
+                        if "use_dataset_convert_job" in source_config.get("transform", []):
+                            # Build the results path template for the transform
+                            value = f"/results/{dataset_convert_job_id}/{path}"
+                        else:
+                            value = os.path.join(source_root, path)
+                        value = apply_transforms(
+                            value, source_config.get("transform", []),
+                            source_root, source_datasets[0], dataset_convert_action,
+                            workspace_identifier)
+                        set_nested_config_value(config, config_path, value)
+                        already_configured_paths.add(config_path)  # Mark as configured
+                        continue
 
         # Handle path from type/intent/source/model_type cases
         for path_type in ["type", "format", "intent", "source", "model_type"]:
