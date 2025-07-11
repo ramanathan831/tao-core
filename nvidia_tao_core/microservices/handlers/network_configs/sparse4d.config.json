@@ -5,6 +5,9 @@
         "formats": ["ovpkl"],
         "accepted_ds_intents": ["training", "evaluation", "testing"],
         "image": "TAO_PYTORCH",
+        "image_override_per_action": {
+            "dataset_convert": "TAO_DS"
+        },
         "spec_backend": "yaml",
         "actions_pipe": {
             "dataset_convert": "pyt_odconvert",
