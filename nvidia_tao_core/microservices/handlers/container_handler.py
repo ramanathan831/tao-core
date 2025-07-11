@@ -88,6 +88,22 @@ class ContainerJobHandler:
                     # Create results directory and download files
                     os.makedirs(specs["results_dir"], exist_ok=True)
                     reprocess_files = []
+
+                    # Handle additional downloads
+                    additional_downloads = specs.pop("additional_downloads", [])
+                    if additional_downloads:
+                        logger.info("Processing additional downloads: %s", additional_downloads)
+                        ContainerJobHandler._handle_additional_downloads(
+                            additional_downloads,
+                            job.get("cloud_metadata"),
+                            job["job_id"],
+                            job["neural_network_name"],
+                            ngc_key,
+                            docker_env_vars.get('TAO_API_UI_COOKIE', ""),
+                            docker_env_vars.get('USE_NGC_STAGING', "False")
+                        )
+
+                    logger.info("Downloading files from normal spec")
                     download_files_from_spec(
                         cloud_data=job.get("cloud_metadata"),
                         data=specs,
@@ -295,6 +311,57 @@ class ContainerJobHandler:
         if not status_files:
             return os.path.join(results_dir, action_name, "status.json")
         return status_files[0]
+
+    @staticmethod
+    def _handle_additional_downloads(
+        additional_downloads,
+        cloud_metadata,
+        job_id,
+        network_arch,
+        ngc_key,
+        tao_api_ui_cookie,
+        use_ngc_staging
+    ):
+        """Handle downloading additional files specified in additional_downloads.
+
+        Args:
+            additional_downloads (list): List of additional file/directory paths to download
+            cloud_metadata (dict): Cloud storage metadata
+            job_id (str): Current job ID
+            network_arch (str): Network architecture name
+            ngc_key (str): NGC API key
+            tao_api_ui_cookie (str): TAO API UI cookie
+            use_ngc_staging (str): Whether to use NGC staging
+        """
+        try:
+            if not additional_downloads:
+                return
+
+            # Create a spec structure that includes all additional downloads
+            # Use preserve_source_path=True to maintain original path structure
+            additional_spec = {}
+
+            for i, download_path in enumerate(additional_downloads):
+                logger.info("Preparing additional download: %s", download_path)
+                additional_spec[f"additional_download_{i}"] = download_path
+
+            # Use the existing download utility with preserve_source_path=True
+            download_files_from_spec(
+                cloud_data=cloud_metadata,
+                data=additional_spec,
+                job_id=job_id,
+                network_arch=network_arch,
+                ngc_key=ngc_key,
+                tao_api_ui_cookie=tao_api_ui_cookie,
+                use_ngc_staging=use_ngc_staging,
+                reprocess_files=[],
+                preserve_source_path=True
+            )
+            logger.info("Additional downloads processed successfully")
+
+        except Exception as e:
+            logger.error("Error handling additional downloads: %s", str(e))
+            logger.error("Traceback: %s", traceback.format_exc())
 
     @staticmethod
     def get_current_job_status(results_dir):

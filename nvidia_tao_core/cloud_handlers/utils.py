@@ -514,7 +514,8 @@ def download_files_from_cloud(
     ngc_key,
     tao_api_ui_cookie="",
     use_ngc_staging="",
-    reset_value=False
+    reset_value=False,
+    preserve_source_path=False
 ):
     """Based on the cloud dype, download the file"""
     if "'link': 'https://" in value:
@@ -569,12 +570,17 @@ def download_files_from_cloud(
         try:
             cloud_storage, cloud_file_path = get_cloud_storage_class_object(cloud_data, value)
             local_path_of_dataset_file = f"/results/{job_id}/{cloud_file_path}"
+            if preserve_source_path:
+                local_path_of_dataset_file = f"/{cloud_file_path}"
             if reset_value:
                 # Update the dictionary value with the local path
                 dictionary[key] = local_path_of_dataset_file.replace(".tar.gz", "")
             destination_path = local_path_of_dataset_file
             if cloud_file_path.startswith("/"):
                 cloud_file_path = cloud_file_path[1:]
+
+            # Create destination directory
+            os.makedirs(os.path.dirname(destination_path), exist_ok=True)
 
             if cloud_storage.is_file(cloud_file_path):
                 cloud_storage.download_file(cloud_file_path, destination_path)
@@ -610,7 +616,8 @@ def download_files_from_spec(
     ngc_key=None,
     tao_api_ui_cookie="",
     use_ngc_staging="",
-    reprocess_files=None
+    reprocess_files=None,
+    preserve_source_path=False
 ):
     """Recursively download files from a nested dictionary."""
     if isinstance(data, dict):
@@ -624,7 +631,8 @@ def download_files_from_spec(
                     ngc_key=ngc_key,
                     tao_api_ui_cookie=tao_api_ui_cookie,
                     use_ngc_staging=use_ngc_staging,
-                    reprocess_files=reprocess_files
+                    reprocess_files=reprocess_files,
+                    preserve_source_path=preserve_source_path
                 )
             elif isinstance(value, list):
                 override_list = []
@@ -639,7 +647,8 @@ def download_files_from_spec(
                             network_arch,
                             ngc_key,
                             tao_api_ui_cookie=tao_api_ui_cookie,
-                            use_ngc_staging=use_ngc_staging
+                            use_ngc_staging=use_ngc_staging,
+                            preserve_source_path=preserve_source_path
                         )
                         if not override_value:
                             override_value = list_element
@@ -660,7 +669,8 @@ def download_files_from_spec(
                                     network_arch,
                                     ngc_key,
                                     tao_api_ui_cookie=tao_api_ui_cookie,
-                                    use_ngc_staging=use_ngc_staging
+                                    use_ngc_staging=use_ngc_staging,
+                                    preserve_source_path=preserve_source_path
                                 )
                                 if (reprocess_files is not None and override_value and
                                         (list_dict_value.endswith(".yaml") or list_dict_value.endswith(".json"))):
@@ -686,7 +696,8 @@ def download_files_from_spec(
                         ngc_key,
                         tao_api_ui_cookie=tao_api_ui_cookie,
                         use_ngc_staging=use_ngc_staging,
-                        reset_value=True
+                        reset_value=True,
+                        preserve_source_path=preserve_source_path
                     )
                     if (reprocess_files is not None and override_value and
                             (value.endswith(".yaml") or value.endswith(".json"))):

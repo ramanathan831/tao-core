@@ -267,6 +267,100 @@ def get_metadata_value(metadata, path_type):
     return None
 
 
+def process_additional_downloads(
+    network_config, job_context, handler_metadata, workspace_cache, dataset_convert_action
+):
+    """Process additional downloads configuration from network config"""
+    additional_downloads = []
+
+    # Get additional downloads for the current action
+    downloads_config = network_config.get("additional_download", {}).get(job_context.action, [])
+
+    if not downloads_config:
+        return additional_downloads
+
+    for download_config in downloads_config:
+        # Get source datasets
+        if download_config["source"] == "id":
+            source_datasets = [handler_metadata.get("id")]
+        else:
+            source_datasets = get_datasets_from_metadata(handler_metadata, download_config["source"])
+            if not source_datasets:
+                continue
+
+        # Process each source dataset
+        for source_ds in source_datasets:
+            (source_ds_metadata,
+             workspace_identifier,
+             _) = get_dataset_metadata_and_paths(source_ds, workspace_cache)
+
+            # Handle path from convert job spec
+            if "path_from_convert_job_spec" in download_config:
+                convert_spec_config = download_config["path_from_convert_job_spec"]
+                spec_path = convert_spec_config.get("spec_path")
+                mapping = convert_spec_config.get("mapping", {})
+
+                # Get the dataset convert job for this dataset
+                dataset_convert_job_id = get_job_id_of_action(
+                    source_ds, kind="datasets", action=dataset_convert_action
+                )
+
+                if dataset_convert_job_id:
+                    # Get the job metadata to access specs
+                    convert_job_metadata = get_handler_job_metadata(dataset_convert_job_id)
+                    if convert_job_metadata:
+                        # Get the spec value from the convert job
+                        job_specs = convert_job_metadata.get("specs", {})
+                        spec_value = get_nested_config_value(job_specs, spec_path)
+
+                        # Use the mapping to determine the path
+                        if spec_value and spec_value in mapping:
+                            path_template = mapping[spec_value]
+                        else:
+                            path_template = mapping.get("*", "")
+
+                        if path_template:
+                            # Replace {dataset_convert_job_id} with actual job ID
+                            download_path = path_template.replace("{dataset_convert_job_id}", dataset_convert_job_id)
+
+                            # Replace {dataset_path} with dataset-specific path
+                            if "{dataset_path}" in download_path:
+                                # Use dataset ID or a default path component
+                                dataset_path = source_ds_metadata.get("cloud_file_path", source_ds)
+                                download_path = download_path.replace("{dataset_path}", dataset_path)
+
+                            # Prepend workspace identifier if this is a results path
+                            if download_path.startswith("/results/"):
+                                download_path = workspace_identifier + download_path
+
+                            additional_downloads.append(download_path)
+
+            # Handle direct path (fallback)
+            elif "path" in download_config:
+                path = download_config["path"]
+                if path:
+                    # Replace {dataset_convert_job_id} if present
+                    dataset_convert_job_id = get_job_id_of_action(
+                        source_ds, kind="datasets", action=dataset_convert_action
+                    )
+                    if dataset_convert_job_id and "{dataset_convert_job_id}" in path:
+                        path = path.replace("{dataset_convert_job_id}", dataset_convert_job_id)
+
+                    # Replace {dataset_path} with dataset-specific path
+                    if "{dataset_path}" in path:
+                        # Use dataset ID or a default path component
+                        dataset_path = source_ds_metadata.get("cloud_file_path", source_ds)
+                        path = path.replace("{dataset_path}", dataset_path)
+
+                    # Prepend workspace identifier if this is a results path
+                    if path.startswith("/results/"):
+                        path = workspace_identifier + path
+
+                    additional_downloads.append(path)
+
+    return list(set(additional_downloads))
+
+
 def apply_data_source_config(config, job_context, handler_metadata):
     """Generic data source configuration using config file"""
     workspace_cache = {}
@@ -607,6 +701,13 @@ def apply_data_source_config(config, job_context, handler_metadata):
                     source_root, source_ds, dataset_convert_action,
                     workspace_identifier)
                 set_nested_config_value(config, config_path, value)
+
+    # Process additional downloads
+    additional_downloads = process_additional_downloads(
+        network_config, job_context, handler_metadata, workspace_cache, dataset_convert_action
+    )
+    if additional_downloads:
+        config["additional_downloads"] = additional_downloads
 
     return config
 

@@ -246,6 +246,63 @@
         }
     },
 
+    "additional_download": {
+        "train": [
+            {
+                "source": "train_datasets",
+                "path_from_convert_job_spec": {
+                    "spec_path": "aicity.split",
+                    "mapping": {
+                        "train": "/results/{dataset_convert_job_id}/{dataset_path}/train",
+                        "val": "/results/{dataset_convert_job_id}/{dataset_path}/val",
+                        "test": "/results/{dataset_convert_job_id}/{dataset_path}/test",
+                        "*": "/results/{dataset_convert_job_id}/{dataset_path}/train"
+                    }
+                }
+            },
+            {
+                "source": "eval_dataset",
+                "path_from_convert_job_spec": {
+                    "spec_path": "aicity.split",
+                    "mapping": {
+                        "train": "/results/{dataset_convert_job_id}/{dataset_path}/train",
+                        "val": "/results/{dataset_convert_job_id}/{dataset_path}/val",
+                        "test": "/results/{dataset_convert_job_id}/{dataset_path}/test",
+                        "*": "/results/{dataset_convert_job_id}/{dataset_path}/val"
+                    }
+                }
+            }
+        ],
+        "evaluate": [
+            {
+                "source": "eval_dataset",
+                "path_from_convert_job_spec": {
+                    "spec_path": "aicity.split",
+                    "mapping": {
+                        "train": "/results/{dataset_convert_job_id}/{dataset_path}/train",
+                        "val": "/results/{dataset_convert_job_id}/{dataset_path}/val",
+                        "test": "/results/{dataset_convert_job_id}/{dataset_path}/test",
+                        "*": "/results/{dataset_convert_job_id}/{dataset_path}/val"
+                    }
+                }
+            }
+        ],
+        "inference": [
+            {
+                "source": "inference_dataset",
+                "path_from_convert_job_spec": {
+                    "spec_path": "aicity.split",
+                    "mapping": {
+                        "train": "/results/{dataset_convert_job_id}/{dataset_path}/train",
+                        "val": "/results/{dataset_convert_job_id}/{dataset_path}/val",
+                        "test": "/results/{dataset_convert_job_id}/{dataset_path}/test",
+                        "*": "/results/{dataset_convert_job_id}/{dataset_path}/test"
+                    }
+                }
+            }
+        ]
+    },
+
     "spec_params": {
         "dataset_convert": {
             "results_dir": "output_dir"
