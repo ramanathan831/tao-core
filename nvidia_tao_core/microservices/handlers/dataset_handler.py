@@ -41,19 +41,29 @@ class SimpleHandler:
         self.intent = handler_metadata.get("use_for", [])
         assert type(self.intent) is list, "Intent must be a list"
         self.cloud_instance = None
+        self.cloud_file_path = handler_metadata.get("cloud_file_path", "")
         if workspace_metadata:
             self.cloud_instance, _ = create_cs_instance(workspace_metadata)
 
     def check_for_file_existence(self, path, file_type="file", file_extension=""):
         """Check for existence of file"""
         if self.cloud_instance:
+            # Use cloud_file_path for cloud operations, not local temp path
+            if path in [".", ""]:
+                cloud_path = self.cloud_file_path.strip("/")
+            else:
+                cloud_path = f"{self.cloud_file_path.strip('/')}/{path}"
+
             if file_type == "file":
-                return self.cloud_instance.is_file(path)
+                return self.cloud_instance.is_file(cloud_path)
             if file_type == "folder":
-                path = path[1:] if path.startswith("/") else path
-                return self.cloud_instance.is_folder(path)
+                return self.cloud_instance.is_folder(cloud_path)
             if file_type == "regex":
-                pattern = os.path.join(path, f"*.{file_extension}")
+                # file_extension contains the full regex pattern, not just extension
+                if path in [".", ""]:
+                    pattern = f"{self.cloud_file_path.strip('/')}/{file_extension}"
+                else:
+                    pattern = f"{cloud_path}/{file_extension}"
                 return any(self.cloud_instance.glob_files(pattern))
         else:
             if file_type == "file":
@@ -61,7 +71,11 @@ class SimpleHandler:
             if file_type == "folder":
                 return os.path.isdir(path)
             if file_type == "regex":
-                pattern = os.path.join(path, f"*.{file_extension}")
+                # file_extension contains the full regex pattern, not just extension
+                if path in [".", ""]:
+                    pattern = file_extension
+                else:
+                    pattern = os.path.join(path, file_extension)
                 return bool(glob.glob(pattern))
         return False
 
