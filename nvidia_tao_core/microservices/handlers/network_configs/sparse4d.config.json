@@ -25,6 +25,20 @@
         }
     },
 
+    "dataset_validation": {
+        "required_files": {
+            "ovpkl": [
+                {
+                    "all_of": [
+                        {"path": ".", "type": "regex","regex": "train/*/videos/*.mp4"},
+                        {"path": ".", "type": "regex","regex": "train/*/calibration.json"},
+                        {"path": ".", "type": "regex","regex": "train/*/ground_truth.json"}
+                    ]
+                }
+            ]
+        }
+    },
+
     "data_sources": {
         "dataset_convert": {
             "aicity.root": {
