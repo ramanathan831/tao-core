@@ -342,6 +342,25 @@
 
     "metrics": {
         "available_metrics": ["val_hota", "val_mAP"],
-        "monitoring_metric": "val_mAP"
+        "monitoring_metric": "val_mAP",
+        "dynamic_metric_patterns": [
+            "^lr$",
+            "^loss_cls_\\d+$",
+            "^loss_box_\\d+$",
+            "^loss_cns_\\d+$",
+            "^img_bbox_NuScenes/\\w+_AP_dist_[0-9.]+$",
+            "^img_bbox_NuScenes/\\w+_trans_err$",
+            "^img_bbox_NuScenes/\\w+_scale_err$",
+            "^img_bbox_NuScenes/\\w+_orient_err$",
+            "^img_bbox_NuScenes/\\w+_vel_err$",
+            "^img_bbox_NuScenes/\\w+_attr_err$",
+            "^img_bbox_NuScenes/mATE$",
+            "^img_bbox_NuScenes/mASE$",
+            "^img_bbox_NuScenes/mAOE$",
+            "^img_bbox_NuScenes/mAVE$",
+            "^img_bbox_NuScenes/mAAE$",
+            "^img_bbox_NuScenes/NDS$",
+            "^img_bbox_NuScenes/mAP$"
+        ]
     }
 }

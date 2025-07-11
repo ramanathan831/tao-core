@@ -207,7 +207,26 @@ class EnumFieldPrefix(fields.Field):
             base_value = value[5:]
             if base_value in self.enum._value2member_map_:
                 return value
+
+        # Check against dynamic metric patterns for networks like sparse4d
+        if self._validate_dynamic_metric(value):
+            return value
+
         raise ValidationError(f"Invalid value '{value}' for enum '{self.enum.__name__}'")
+
+    def _validate_dynamic_metric(self, value: str) -> bool:
+        """Validate value against dynamic metric patterns."""
+        from nvidia_tao_core.microservices.enum_constants import _get_dynamic_metric_patterns
+
+        patterns = _get_dynamic_metric_patterns()
+        for pattern in patterns:
+            try:
+                if re.match(pattern, value):
+                    return True
+            except re.error:
+                # Skip invalid regex patterns
+                continue
+        return False
 
     def _serialize(self, value, attr, obj, **kwargs):
         return value

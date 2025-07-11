@@ -191,12 +191,39 @@ def _get_all_metrics() -> set[str]:
                     config = json.load(f)
                     metrics = config.get("metrics", {}).get("available_metrics", [])
                     all_metrics.update(metrics)
+
+                    # Handle dynamic metric patterns
+                    metric_patterns = config.get("metrics", {}).get("dynamic_metric_patterns", [])
+                    all_metrics.update(metric_patterns)
+
             except (json.JSONDecodeError, IOError) as e:
                 logger.warning("Error reading metrics from %s: %s", config_file, e)
                 continue
     # Add all BaseMetrics values
     all_metrics.update(m.value for m in BaseMetrics)
     return all_metrics
+
+
+def _get_dynamic_metric_patterns() -> set[str]:
+    """Get dynamic metric patterns from config files.
+
+    Returns:
+        set[str]: Set of regex patterns for dynamic metrics
+    """
+    config_dir = pathlib.Path(__file__).parent / "handlers" / "network_configs"
+    patterns = set()
+
+    if config_dir.exists():
+        for config_file in config_dir.glob("*.config.json"):
+            try:
+                with open(config_file, 'r', encoding='utf-8') as f:
+                    config = json.load(f)
+                    metric_patterns = config.get("metrics", {}).get("dynamic_metric_patterns", [])
+                    patterns.update(metric_patterns)
+            except (json.JSONDecodeError, IOError) as e:
+                logger.warning("Error reading metric patterns from %s: %s", config_file, e)
+                continue
+    return patterns
 
 
 class BaseMetrics(str, enum.Enum):
