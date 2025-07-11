@@ -116,10 +116,7 @@ class BaseExperimentMetadata:
 
     def get_tao_version(self):
         """Return current version of Nvidia TAO API."""
-        version_locals = {}
-        with open("version.py", "r", encoding="utf-8") as version_file:
-            exec(version_file.read(), {}, version_locals)  # pylint: disable=W0122
-        return version_locals["__version__"]
+        return os.getenv("TAO_TOOLKIT_VERSION", "6.0.0")
 
     def check_version_compatibility(self, version_list: list):
         """Check if the current TAO version is compatible with the provided version list"""
