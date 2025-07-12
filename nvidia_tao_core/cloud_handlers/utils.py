@@ -571,7 +571,7 @@ def download_files_from_cloud(
             cloud_storage, cloud_file_path = get_cloud_storage_class_object(cloud_data, value)
             local_path_of_dataset_file = f"/results/{job_id}/{cloud_file_path}"
             if preserve_source_path:
-                local_path_of_dataset_file = f"/{cloud_file_path}"
+                local_path_of_dataset_file = cloud_file_path
             if reset_value:
                 # Update the dictionary value with the local path
                 dictionary[key] = local_path_of_dataset_file.replace(".tar.gz", "")

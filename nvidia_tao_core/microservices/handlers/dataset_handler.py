@@ -73,7 +73,7 @@ class SimpleHandler:
             if file_type == "regex":
                 # file_extension contains the full regex pattern, not just extension
                 if path in [".", ""]:
-                    pattern = file_extension
+                    pattern = f"{self.cloud_file_path.strip('/')}/{file_extension}"
                 else:
                     pattern = os.path.join(path, file_extension)
                 return bool(glob.glob(pattern))

@@ -192,10 +192,6 @@ def _get_all_metrics() -> set[str]:
                     metrics = config.get("metrics", {}).get("available_metrics", [])
                     all_metrics.update(metrics)
 
-                    # Handle dynamic metric patterns
-                    metric_patterns = config.get("metrics", {}).get("dynamic_metric_patterns", [])
-                    all_metrics.update(metric_patterns)
-
             except (json.JSONDecodeError, IOError) as e:
                 logger.warning("Error reading metrics from %s: %s", config_file, e)
                 continue

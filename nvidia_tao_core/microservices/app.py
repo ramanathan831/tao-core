@@ -54,7 +54,8 @@ from nvidia_tao_core.microservices.enum_constants import (
     BaseExperimentDomain,
     BaseExperimentBackboneType,
     BaseExperimentBackboneClass,
-    BaseExperimentLicense
+    BaseExperimentLicense,
+    _get_dynamic_metric_patterns
 )
 from nvidia_tao_core.microservices.handlers.app_handler import AppHandler as app_handler
 from nvidia_tao_core.microservices.handlers.container_handler import ContainerJobHandler as container_handler
@@ -216,8 +217,6 @@ class EnumFieldPrefix(fields.Field):
 
     def _validate_dynamic_metric(self, value: str) -> bool:
         """Validate value against dynamic metric patterns."""
-        from nvidia_tao_core.microservices.enum_constants import _get_dynamic_metric_patterns
-
         patterns = _get_dynamic_metric_patterns()
         for pattern in patterns:
             try:

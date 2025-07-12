@@ -83,6 +83,7 @@ class BaseExperimentMetadata:
         self.override = override
         self.metadata: dict = {}
         self.dry_run = dry_run
+        self._cached_tao_version: str | None = None
 
         if self.override and self.dry_run:
             raise ValueError("Cannot use both `--override` and `--dry-run` flags together!")
@@ -114,9 +115,30 @@ class BaseExperimentMetadata:
             "!=": operator.ne,
         }
 
-    def get_tao_version(self):
-        """Return current version of Nvidia TAO API."""
-        return os.getenv("TAO_TOOLKIT_VERSION", "6.0.0")
+    def get_tao_version(self) -> str:
+        """Return current version of Nvidia TAO.
+
+        Priority:
+          1. $TAO_TOOLKIT_VERSION
+          2. local version.py (if distributed with the wheel)
+          3. hard-coded fallback
+        """
+        if self._cached_tao_version:
+            return self._cached_tao_version
+
+        env_ver = os.getenv("TAO_TOOLKIT_VERSION")
+        if env_ver:
+            self._cached_tao_version = env_ver
+            return env_ver
+
+        # Optional: Look for version.py next to this file to stay forward-compatible
+        try:
+            from importlib.metadata import version as pkg_version
+            self._cached_tao_version = pkg_version("nvidia-tao-core")
+        except Exception:
+            self._cached_tao_version = "6.0.0"
+
+        return self._cached_tao_version
 
     def check_version_compatibility(self, version_list: list):
         """Check if the current TAO version is compatible with the provided version list"""

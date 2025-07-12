@@ -64,7 +64,7 @@
             "model.head.instance_bank.anchor": {
                 "source": "train_datasets",
                 "multiple_sources": false,
-                "path": "results/{dataset_convert_job_id}/anchor_init.npy",
+                "path": "/results/{dataset_convert_job_id}/anchor_init.npy",
                 "transform": ["use_dataset_convert_job"]
             },
             "dataset.train_dataset.ann_file": {
@@ -127,7 +127,7 @@
             "model.head.instance_bank.anchor": {
                 "source": "train_datasets",
                 "multiple_sources": false,
-                "path": "results/{dataset_convert_job_id}/anchor_init.npy",
+                "path": "/results/{dataset_convert_job_id}/anchor_init.npy",
                 "transform": ["use_dataset_convert_job"]
             },
             "dataset.train_dataset.ann_file": {
@@ -177,7 +177,7 @@
             "model.head.instance_bank.anchor": {
                 "source": "train_datasets",
                 "multiple_sources": false,
-                "path": "results/{dataset_convert_job_id}/anchor_init.npy",
+                "path": "/results/{dataset_convert_job_id}/anchor_init.npy",
                 "transform": ["use_dataset_convert_job"]
             }
         },
@@ -198,7 +198,7 @@
             "model.head.instance_bank.anchor": {
                 "source": "train_datasets",
                 "multiple_sources": false,
-                "path": "results/{dataset_convert_job_id}/anchor_init.npy",
+                "path": "/results/{dataset_convert_job_id}/anchor_init.npy",
                 "transform": ["use_dataset_convert_job"]
             },
             "dataset.train_dataset.ann_file": {

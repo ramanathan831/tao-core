@@ -185,7 +185,9 @@ class ActionPipeline:
                 self.image = self.image.replace(self.tao_framework_version, self.tao_model_override_version)
         if self.action in self.network_config.get("api_params", {}).get("image_override_per_action", {}):
             image_override_per_action = self.api_params.get("image_override_per_action", {})
-            self.image = DOCKER_IMAGE_MAPPER[image_override_per_action.get(self.action)]
+            override_key = image_override_per_action.get(self.action)
+            if override_key:
+                self.image = DOCKER_IMAGE_MAPPER[override_key]
         # This will be run inside a thread
         self.thread = None
         # if self.network == "maxine_eye_contact":
