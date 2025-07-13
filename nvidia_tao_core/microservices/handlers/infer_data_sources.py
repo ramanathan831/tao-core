@@ -53,7 +53,6 @@ def get_datasets_from_metadata(metadata, source_key):
         list: List of dataset IDs, or empty list if not found
     """
     dataset = metadata.get(source_key)
-    logger.info("get datasets from metadata: %s", dataset)
     if dataset:
         if isinstance(dataset, list):
             return dataset
@@ -176,13 +175,13 @@ def apply_transforms(
         elif transform == "use_dataset_convert_job":
             dataset_convert_job_id = get_job_id_of_action(source_ds, kind="datasets", action=dataset_convert_action)
             # Check if the value already has the results path format
+            value = value.replace("{dataset_convert_job_id}", dataset_convert_job_id)
             if value.startswith("/results/"):
                 # It's already in the correct format, just prepend workspace identifier
                 value = f"{workspace_identifier}{value}"
             else:
                 # Legacy format - apply the old logic
-                corrected_value = value.replace("{dataset_convert_job_id}", dataset_convert_job_id)
-                corrected_value = corrected_value.replace(source_root, "")
+                corrected_value = value.replace(source_root, "")
                 if corrected_value.startswith("/"):
                     corrected_value = corrected_value[1:]
                 value = f"{workspace_identifier}{corrected_value}"

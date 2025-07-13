@@ -338,12 +338,10 @@ class Omniverse3DDetTrackDatasetConfig:
     )
     classes: List[str] = LIST_FIELD(
         arrList=[
-            "person", "humanoid", "nova_carter", "transporter",
-            "forklift", "box", "pallet", "crate"
+            "person", "gr1_t2", "agility_digit", "nova_carter",
         ],
         default_value=[
-            "person", "humanoid", "nova_carter", "transporter",
-            "forklift", "box", "pallet", "crate"
+            "person", "gr1_t2", "agility_digit", "nova_carter",
         ],
         description="Classes to detect",
         display_name="Classes to detect"

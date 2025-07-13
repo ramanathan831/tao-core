@@ -386,7 +386,7 @@ class BaseExperimentMetadata:
                                         for network_arch in endpoints:
                                             self.add_experiment(
                                                 base_experiments,
-                                                model.get("displayName"),
+                                                model.get("displayName", network_arch),
                                                 ngc_path,
                                                 network_arch,
                                                 ngc_token
