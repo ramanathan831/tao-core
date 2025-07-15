@@ -39,6 +39,18 @@
         }
     },
 
+    "upload_strategy": {
+        "dataset_convert": {
+            "default": "continuous",
+            "selective_tarball": {
+                "patterns": [
+                    "**/Camera*/**"
+                ],
+                "base_path": "data"
+            }
+        }
+    },
+
     "data_sources": {
         "dataset_convert": {
             "aicity.root": {
@@ -250,55 +262,23 @@
         "train": [
             {
                 "source": "train_datasets",
-                "path_from_convert_job_spec": {
-                    "spec_path": "aicity.split",
-                    "mapping": {
-                        "train": "/results/{dataset_convert_job_id}/{dataset_path}/train",
-                        "val": "/results/{dataset_convert_job_id}/{dataset_path}/val",
-                        "test": "/results/{dataset_convert_job_id}/{dataset_path}/test",
-                        "*": "/results/{dataset_convert_job_id}/{dataset_path}/train"
-                    }
-                }
+                "path": "/results/{dataset_convert_job_id}/convert_selective.tar.gz"
             },
             {
                 "source": "eval_dataset",
-                "path_from_convert_job_spec": {
-                    "spec_path": "aicity.split",
-                    "mapping": {
-                        "train": "/results/{dataset_convert_job_id}/{dataset_path}/train",
-                        "val": "/results/{dataset_convert_job_id}/{dataset_path}/val",
-                        "test": "/results/{dataset_convert_job_id}/{dataset_path}/test",
-                        "*": "/results/{dataset_convert_job_id}/{dataset_path}/val"
-                    }
-                }
+                "path": "/results/{dataset_convert_job_id}/convert_selective.tar.gz"
             }
         ],
         "evaluate": [
             {
                 "source": "eval_dataset",
-                "path_from_convert_job_spec": {
-                    "spec_path": "aicity.split",
-                    "mapping": {
-                        "train": "/results/{dataset_convert_job_id}/{dataset_path}/train",
-                        "val": "/results/{dataset_convert_job_id}/{dataset_path}/val",
-                        "test": "/results/{dataset_convert_job_id}/{dataset_path}/test",
-                        "*": "/results/{dataset_convert_job_id}/{dataset_path}/val"
-                    }
-                }
+                "path": "/results/{dataset_convert_job_id}/convert_selective.tar.gz"
             }
         ],
         "inference": [
             {
                 "source": "inference_dataset",
-                "path_from_convert_job_spec": {
-                    "spec_path": "aicity.split",
-                    "mapping": {
-                        "train": "/results/{dataset_convert_job_id}/{dataset_path}/train",
-                        "val": "/results/{dataset_convert_job_id}/{dataset_path}/val",
-                        "test": "/results/{dataset_convert_job_id}/{dataset_path}/test",
-                        "*": "/results/{dataset_convert_job_id}/{dataset_path}/test"
-                    }
-                }
+                "path": "/results/{dataset_convert_job_id}/convert_selective.tar.gz"
             }
         ]
     },

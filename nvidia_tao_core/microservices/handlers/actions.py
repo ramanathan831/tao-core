@@ -198,7 +198,10 @@ class ActionPipeline:
 
         self.spec = {}
         self.config = {}
-        self.job_env_variables = {}
+        self.job_env_variables = {
+            "ORCHESTRATION_API_NETWORK": self.network,
+            "ORCHESTRATION_API_ACTION": self.action
+        }
         self.platform_id = self.job_context.platform_id
         if not self.platform_id:
             if BACKEND == "NVCF":
@@ -641,7 +644,7 @@ class ActionPipeline:
             # If platform is indeed None, jobDriver.create would take care of it.
             docker_env_vars = self.handler_metadata.get("docker_env_vars", {})
             self.decrypt_docker_env_vars(docker_env_vars)
-            self.job_env_variables = copy.deepcopy(docker_env_vars)
+            self.job_env_variables.update(copy.deepcopy(docker_env_vars))
             # Add environment variables from monai.
             self.generate_env_variables()
             if self.monai_env_variable:

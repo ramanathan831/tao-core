@@ -173,7 +173,16 @@ def apply_transforms(
         elif transform == "wrap_in_list":
             value = [value]
         elif transform == "use_dataset_convert_job":
-            dataset_convert_job_id = get_job_id_of_action(source_ds, kind="datasets", action=dataset_convert_action)
+            dataset_convert_job_id = get_job_id_of_action(
+                source_ds, kind="datasets", action=dataset_convert_action
+            ) or ""
+            if "{dataset_convert_job_id}" in value and not dataset_convert_job_id:
+                logger.warning(
+                    "Unable to resolve dataset-convert job for dataset %s; skipping transform.",
+                    source_ds,
+                )
+                return value
+
             # Check if the value already has the results path format
             value = value.replace("{dataset_convert_job_id}", dataset_convert_job_id)
             if value.startswith("/results/"):
@@ -182,9 +191,7 @@ def apply_transforms(
             else:
                 # Legacy format - apply the old logic
                 corrected_value = value.replace(source_root, "")
-                if corrected_value.startswith("/"):
-                    corrected_value = corrected_value[1:]
-                value = f"{workspace_identifier}{corrected_value}"
+                value = f"{workspace_identifier}{corrected_value.lstrip('/')}"
 
     return value
 

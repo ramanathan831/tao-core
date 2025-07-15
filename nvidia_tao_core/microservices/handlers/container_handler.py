@@ -25,6 +25,8 @@ import threading
 import traceback
 import yaml
 import logging
+import tarfile
+from tqdm import tqdm
 
 from nvidia_tao_core.api_utils import module_utils
 from nvidia_tao_core.api_utils.entrypoint_mimicker import vlm_entrypoint
@@ -33,10 +35,12 @@ from nvidia_tao_core.cloud_handlers.utils import (
     get_results_cloud_data,
     monitor_and_upload,
     cleanup_cuda_contexts,
+    create_tarball,
+    upload_tarball_to_cloud,
 )
 import nvidia_tao_core.loggers.logging as status_logging
 from nvidia_tao_core.api_utils.module_utils import entrypoint_paths, entry_points
-from nvidia_tao_core.microservices.utils import safe_load_file, safe_dump_file
+from nvidia_tao_core.microservices.utils import safe_load_file, safe_dump_file, read_network_config
 
 # Configure logging
 logging.basicConfig(
@@ -51,6 +55,34 @@ entrypoint = importlib.import_module(entrypoint_paths[module]) if module else No
 
 class ContainerJobHandler:
     """Handler for processing jobs in a containerized environment."""
+
+    @staticmethod
+    def create_and_upload_tarball(results_dir, cloud_storage, job_id, action_name):
+        """Create a tarball of the results directory and upload it.
+
+        Args:
+            results_dir (str): Directory to tarball
+            cloud_storage: CloudStorage instance for uploading
+            job_id (str): Job ID for naming the tarball
+            action_name (str): Action name for naming the tarball
+        """
+        try:
+            tarball_name = f"{job_id}/{action_name}_results.tar.gz"
+            tarball_path = os.path.join(os.path.dirname(results_dir), tarball_name)
+
+            # Create tarball using utility function
+            if create_tarball(results_dir, tarball_path):
+                # Upload tarball using utility function
+                if cloud_storage:
+                    upload_tarball_to_cloud(cloud_storage, tarball_path, remove_after_upload=True)
+                else:
+                    logger.warning("No cloud storage configured, tarball created but not uploaded: %s", tarball_path)
+            else:
+                logger.error("Failed to create tarball for job %s action %s", job_id, action_name)
+
+        except Exception as e:
+            logger.error("Error in create_and_upload_tarball: %s", str(e))
+            logger.error("Traceback: %s", traceback.format_exc())
 
     @staticmethod
     def entrypoint_wrapper(job):
@@ -139,15 +171,42 @@ class ContainerJobHandler:
                                     if reprocess_file_data:
                                         safe_dump_file(file_name, reprocess_file_data, file_type=file_type)
 
-                    # Start cloud upload monitoring if needed
-                    if cloud_storage:
+                    # Get upload strategy by reading network config directly
+                    network = docker_env_vars.get("ORCHESTRATION_API_NETWORK", job.get("neural_network_name", ""))
+                    action = docker_env_vars.get("ORCHESTRATION_API_ACTION", job.get("action_name", ""))
+                    upload_strategy = ContainerJobHandler.get_upload_strategy_from_config(network, action)
+                    logger.info("Using upload strategy for %s %s: %s", network, action, upload_strategy)
+
+                    # Determine if we should start continuous monitoring
+                    should_start_continuous = True
+                    selective_tarball_config = None
+
+                    if isinstance(upload_strategy, dict):
+                        # Complex upload strategy
+                        default_strategy = upload_strategy.get("default", "continuous")
+                        selective_tarball_config = upload_strategy.get("selective_tarball")
+
+                        if default_strategy != "continuous":
+                            should_start_continuous = False
+
+                        logger.info("Complex upload strategy - default: %s, selective_tarball: %s",
+                                    default_strategy, bool(selective_tarball_config))
+                    elif upload_strategy != "continuous":
+                        # Simple non-continuous strategy
+                        should_start_continuous = False
+
+                    if cloud_storage and should_start_continuous:
                         exit_event = threading.Event()
                         upload_thread = threading.Thread(
                             target=monitor_and_upload,
-                            args=(specs["results_dir"], cloud_storage, exit_event),
+                            args=(specs["results_dir"], cloud_storage, exit_event, 0, selective_tarball_config),
                             daemon=True
                         )
                         upload_thread.start()
+                    else:
+                        # For tarball_after_completion or complex strategies, we'll handle upload after job completion
+                        exit_event = None
+                        upload_thread = None
 
                     # Prepare entrypoint arguments
                     args = {
@@ -208,7 +267,11 @@ class ContainerJobHandler:
                                 job,
                                 is_completed,
                                 status_logger,
-                                status_file
+                                status_file,
+                                cloud_storage,
+                                upload_strategy,
+                                specs["results_dir"],
+                                selective_tarball_config
                             )
 
                     # Launch job asynchronously
@@ -226,7 +289,10 @@ class ContainerJobHandler:
                             ),
                             status_level=status_logging.Status.FAILURE
                         )
-                    ContainerJobHandler._cleanup(exit_event, upload_thread)
+                    ContainerJobHandler._cleanup(
+                        exit_event=exit_event,
+                        upload_thread=upload_thread
+                    )
 
             # Launch the async setup and execution
             setup_thread = threading.Thread(target=async_setup_and_run, daemon=True)
@@ -265,13 +331,42 @@ class ContainerJobHandler:
         job=None,
         is_completed=None,
         status_logger=None,
-        status_file=None
+        status_file=None,
+        cloud_storage=None,
+        upload_strategy="continuous",
+        results_dir=None,
+        selective_tarball_config=None
     ):
         """Clean up resources and log final status."""
         if exit_event:
             exit_event.set()
         if upload_thread:
             upload_thread.join()
+
+        # Handle tarball upload strategy after job completion
+        if (job and is_completed and cloud_storage and
+           upload_strategy == "tarball_after_completion" and results_dir):
+            logger.info("Job completed successfully, creating and uploading tarball...")
+            ContainerJobHandler.create_and_upload_tarball(
+                results_dir,
+                cloud_storage,
+                job["job_id"],
+                job["action_name"]
+            )
+
+        # Handle selective tarball creation if needed
+        if selective_tarball_config and job and is_completed and cloud_storage:
+            logger.info("Job completed successfully, creating and uploading selective tarball...")
+            tarball_path = ContainerJobHandler.create_selective_tarball(
+                results_dir,
+                selective_tarball_config.get("patterns", []),
+                selective_tarball_config.get("base_path", ""),
+                job["job_id"],
+                job["action_name"]
+            )
+
+            if tarball_path:
+                upload_tarball_to_cloud(cloud_storage, tarball_path, remove_after_upload=True)
 
         if job and is_completed is not None:
             status = status_logging.Status.SUCCESS if is_completed else status_logging.Status.FAILURE
@@ -397,3 +492,96 @@ class ContainerJobHandler:
             "SUCCESS": "Done",
             "FAILURE": "Error",
         }.get(last_status, "Pending")
+
+    @staticmethod
+    def find_files_by_patterns(base_dir, patterns):
+        """Find files and directories matching the given patterns.
+
+        Args:
+            base_dir (str): Base directory to search in
+            patterns (list): List of glob patterns to match
+
+        Returns:
+            list: List of file/directory paths that match the patterns
+        """
+        matched_paths = set()
+
+        for pattern in patterns:
+            # Convert the pattern to work with os.walk
+            search_path = os.path.join(base_dir, pattern)
+
+            # Use glob to find matching paths
+            for match in glob.glob(search_path, recursive=True):
+                if os.path.exists(match):
+                    matched_paths.add(match)
+
+        return list(matched_paths)
+
+    @staticmethod
+    def create_selective_tarball(results_dir, patterns, base_path, job_id, action_name):
+        """Create a tarball containing only files matching the specified patterns.
+
+        Args:
+            results_dir (str): Results directory
+            patterns (list): List of glob patterns to include in tarball
+            base_path (str): Base path within results_dir to apply patterns
+            job_id (str): Job ID for naming the tarball
+            action_name (str): Action name for naming the tarball
+
+        Returns:
+            str: Path to created tarball or None if failed
+        """
+        try:
+            search_dir = os.path.join(results_dir, base_path) if base_path else results_dir
+            if not os.path.exists(search_dir):
+                logger.warning("Search directory does not exist: %s", search_dir)
+                return None
+
+            # Find files matching patterns
+            matched_files = ContainerJobHandler.find_files_by_patterns(search_dir, patterns)
+
+            if not matched_files:
+                logger.info("No files found matching patterns: %s", patterns)
+                return None
+
+            tarball_name = f"{job_id}/{action_name}_selective.tar.gz"
+            tarball_path = os.path.join(os.path.dirname(results_dir), tarball_name)
+
+            logger.info("Creating selective tarball with %d matching files/directories", len(matched_files))
+
+            # Create tarball with only matching files
+            with tarfile.open(tarball_path, 'w:gz') as tar:
+                for file_path in tqdm(matched_files, desc="Adding files to tarball"):
+                    # Calculate relative path for archive
+                    if os.path.isfile(file_path):
+                        rel_path = os.path.relpath(file_path, results_dir)
+                        tar.add(file_path, arcname=rel_path)
+
+            logger.info("Selective tarball created successfully: %s", tarball_path)
+            return tarball_path
+
+        except Exception as e:
+            logger.error("Error creating selective tarball: %s", str(e))
+            logger.error("Traceback: %s", traceback.format_exc())
+            return None
+
+    @staticmethod
+    def get_upload_strategy_from_config(network, action):
+        """Get upload strategy by reading network config directly.
+
+        Args:
+            network (str): Network name
+            action (str): Action name
+
+        Returns:
+            dict or str: Upload strategy configuration
+        """
+        try:
+            network_config = read_network_config(network)
+            if network_config and "upload_strategy" in network_config:
+                strategy = network_config["upload_strategy"].get(action, "continuous")
+                return strategy
+            return "continuous"  # Default to continuous if not specified
+        except Exception as e:
+            logger.error("Error reading upload strategy from network config: %s", str(e))
+            return "continuous"
