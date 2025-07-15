@@ -67,13 +67,13 @@ class ContainerJobHandler:
             action_name (str): Action name for naming the tarball
         """
         try:
-            tarball_name = f"{job_id}/{action_name}_results.tar.gz"
-            tarball_path = os.path.join(os.path.dirname(results_dir), tarball_name)
+            tarball_name = f"{action_name}_results.tar.gz"
+            tarball_path = os.path.join(results_dir, tarball_name)
 
             # Create tarball using utility function
             if create_tarball(results_dir, tarball_path):
                 # Upload tarball using utility function
-                if cloud_storage:
+                if cloud_storage and os.path.exists(tarball_path):
                     upload_tarball_to_cloud(cloud_storage, tarball_path, remove_after_upload=True)
                 else:
                     logger.warning("No cloud storage configured, tarball created but not uploaded: %s", tarball_path)
@@ -544,8 +544,8 @@ class ContainerJobHandler:
                 logger.info("No files found matching patterns: %s", patterns)
                 return None
 
-            tarball_name = f"{job_id}/{action_name}_selective.tar.gz"
-            tarball_path = os.path.join(os.path.dirname(results_dir), tarball_name)
+            tarball_name = f"{action_name}_selective.tar.gz"
+            tarball_path = os.path.join(results_dir, tarball_name)
 
             logger.info("Creating selective tarball with %d matching files/directories", len(matched_files))
 
