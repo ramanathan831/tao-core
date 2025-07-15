@@ -53,7 +53,6 @@ def get_datasets_from_metadata(metadata, source_key):
         list: List of dataset IDs, or empty list if not found
     """
     dataset = metadata.get(source_key)
-    logger.info("get datasets from metadata: %s", dataset)
     if dataset:
         if isinstance(dataset, list):
             return dataset
@@ -174,11 +173,25 @@ def apply_transforms(
         elif transform == "wrap_in_list":
             value = [value]
         elif transform == "use_dataset_convert_job":
-            dataset_convert_job_id = get_job_id_of_action(source_ds, kind="datasets", action=dataset_convert_action)
-            corrected_value = value.replace("{dataset_convert_job_id}", dataset_convert_job_id).replace(source_root, "")
-            if corrected_value.startswith("/"):
-                corrected_value = corrected_value[1:]
-            value = f"{workspace_identifier}{corrected_value}"
+            dataset_convert_job_id = get_job_id_of_action(
+                source_ds, kind="datasets", action=dataset_convert_action
+            ) or ""
+            if "{dataset_convert_job_id}" in value and not dataset_convert_job_id:
+                logger.warning(
+                    "Unable to resolve dataset-convert job for dataset %s; skipping transform.",
+                    source_ds,
+                )
+                return value
+
+            # Check if the value already has the results path format
+            value = value.replace("{dataset_convert_job_id}", dataset_convert_job_id)
+            if value.startswith("/results/"):
+                # It's already in the correct format, just prepend workspace identifier
+                value = f"{workspace_identifier}{value}"
+            else:
+                # Legacy format - apply the old logic
+                corrected_value = value.replace(source_root, "")
+                value = f"{workspace_identifier}{corrected_value.lstrip('/')}"
 
     return value
 
@@ -258,6 +271,100 @@ def get_metadata_value(metadata, path_type):
     if path_type == "format":
         return metadata.get("format", None)
     return None
+
+
+def process_additional_downloads(
+    network_config, job_context, handler_metadata, workspace_cache, dataset_convert_action
+):
+    """Process additional downloads configuration from network config"""
+    additional_downloads = []
+
+    # Get additional downloads for the current action
+    downloads_config = network_config.get("additional_download", {}).get(job_context.action, [])
+
+    if not downloads_config:
+        return additional_downloads
+
+    for download_config in downloads_config:
+        # Get source datasets
+        if download_config["source"] == "id":
+            source_datasets = [handler_metadata.get("id")]
+        else:
+            source_datasets = get_datasets_from_metadata(handler_metadata, download_config["source"])
+            if not source_datasets:
+                continue
+
+        # Process each source dataset
+        for source_ds in source_datasets:
+            (source_ds_metadata,
+             workspace_identifier,
+             _) = get_dataset_metadata_and_paths(source_ds, workspace_cache)
+
+            # Handle path from convert job spec
+            if "path_from_convert_job_spec" in download_config:
+                convert_spec_config = download_config["path_from_convert_job_spec"]
+                spec_path = convert_spec_config.get("spec_path")
+                mapping = convert_spec_config.get("mapping", {})
+
+                # Get the dataset convert job for this dataset
+                dataset_convert_job_id = get_job_id_of_action(
+                    source_ds, kind="datasets", action=dataset_convert_action
+                )
+
+                if dataset_convert_job_id:
+                    # Get the job metadata to access specs
+                    convert_job_metadata = get_handler_job_metadata(dataset_convert_job_id)
+                    if convert_job_metadata:
+                        # Get the spec value from the convert job
+                        job_specs = convert_job_metadata.get("specs", {})
+                        spec_value = get_nested_config_value(job_specs, spec_path)
+
+                        # Use the mapping to determine the path
+                        if spec_value and spec_value in mapping:
+                            path_template = mapping[spec_value]
+                        else:
+                            path_template = mapping.get("*", "")
+
+                        if path_template:
+                            # Replace {dataset_convert_job_id} with actual job ID
+                            download_path = path_template.replace("{dataset_convert_job_id}", dataset_convert_job_id)
+
+                            # Replace {dataset_path} with dataset-specific path
+                            if "{dataset_path}" in download_path:
+                                # Use dataset ID or a default path component
+                                dataset_path = source_ds_metadata.get("cloud_file_path", source_ds)
+                                download_path = download_path.replace("{dataset_path}", dataset_path)
+
+                            # Prepend workspace identifier if this is a results path
+                            if download_path.startswith("/results/"):
+                                download_path = workspace_identifier + download_path
+
+                            additional_downloads.append(download_path)
+
+            # Handle direct path (fallback)
+            elif "path" in download_config:
+                path = download_config["path"]
+                if path:
+                    # Replace {dataset_convert_job_id} if present
+                    dataset_convert_job_id = get_job_id_of_action(
+                        source_ds, kind="datasets", action=dataset_convert_action
+                    )
+                    if dataset_convert_job_id and "{dataset_convert_job_id}" in path:
+                        path = path.replace("{dataset_convert_job_id}", dataset_convert_job_id)
+
+                    # Replace {dataset_path} with dataset-specific path
+                    if "{dataset_path}" in path:
+                        # Use dataset ID or a default path component
+                        dataset_path = source_ds_metadata.get("cloud_file_path", source_ds)
+                        path = path.replace("{dataset_path}", dataset_path)
+
+                    # Prepend workspace identifier if this is a results path
+                    if path.startswith("/results/"):
+                        path = workspace_identifier + path
+
+                    additional_downloads.append(path)
+
+    return list(set(additional_downloads))
 
 
 def apply_data_source_config(config, job_context, handler_metadata):
@@ -455,6 +562,46 @@ def apply_data_source_config(config, job_context, handler_metadata):
             already_configured_paths.add(config_path)  # Mark as configured
             continue
 
+        # Handle path from convert job spec
+        if "path_from_convert_job_spec" in source_config:
+            convert_spec_config = source_config["path_from_convert_job_spec"]
+            spec_path = convert_spec_config.get("spec_path")
+            mapping = convert_spec_config.get("mapping", {})
+
+            # Get the dataset convert job for this dataset
+            dataset_convert_job_id = get_job_id_of_action(
+                source_datasets[0], kind="datasets", action=dataset_convert_action
+            )
+
+            if dataset_convert_job_id:
+                # Get the job metadata to access specs
+                convert_job_metadata = get_handler_job_metadata(dataset_convert_job_id)
+                if convert_job_metadata:
+                    # Get the spec value from the convert job
+                    job_specs = convert_job_metadata.get("specs", {})
+                    spec_value = get_nested_config_value(job_specs, spec_path)
+
+                    # Use the mapping to determine the path
+                    if spec_value and spec_value in mapping:
+                        path = mapping[spec_value]
+                    else:
+                        path = mapping.get("*", "")
+
+                    if path:
+                        # Check if we're using the dataset convert job transform
+                        if "use_dataset_convert_job" in source_config.get("transform", []):
+                            # Build the results path template for the transform
+                            value = f"/results/{dataset_convert_job_id}/{path}"
+                        else:
+                            value = os.path.join(source_root, path)
+                        value = apply_transforms(
+                            value, source_config.get("transform", []),
+                            source_root, source_datasets[0], dataset_convert_action,
+                            workspace_identifier)
+                        set_nested_config_value(config, config_path, value)
+                        already_configured_paths.add(config_path)  # Mark as configured
+                        continue
+
         # Handle path from type/intent/source/model_type cases
         for path_type in ["type", "format", "intent", "source", "model_type"]:
             key = f"path_from_{path_type}"
@@ -560,6 +707,13 @@ def apply_data_source_config(config, job_context, handler_metadata):
                     source_root, source_ds, dataset_convert_action,
                     workspace_identifier)
                 set_nested_config_value(config, config_path, value)
+
+    # Process additional downloads
+    additional_downloads = process_additional_downloads(
+        network_config, job_context, handler_metadata, workspace_cache, dataset_convert_action
+    )
+    if additional_downloads:
+        config["additional_downloads"] = additional_downloads
 
     return config
 

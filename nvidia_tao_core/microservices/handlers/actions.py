@@ -183,6 +183,11 @@ class ActionPipeline:
             self.tao_framework_version, self.tao_model_override_version = DOCKER_IMAGE_VERSION[self.network]
             if self.tao_model_override_version not in self.image:
                 self.image = self.image.replace(self.tao_framework_version, self.tao_model_override_version)
+        if self.action in self.network_config.get("api_params", {}).get("image_override_per_action", {}):
+            image_override_per_action = self.api_params.get("image_override_per_action", {})
+            override_key = image_override_per_action.get(self.action)
+            if override_key:
+                self.image = DOCKER_IMAGE_MAPPER[override_key]
         # This will be run inside a thread
         self.thread = None
         # if self.network == "maxine_eye_contact":
@@ -193,7 +198,10 @@ class ActionPipeline:
 
         self.spec = {}
         self.config = {}
-        self.job_env_variables = {}
+        self.job_env_variables = {
+            "ORCHESTRATION_API_NETWORK": self.network,
+            "ORCHESTRATION_API_ACTION": self.action
+        }
         self.platform_id = self.job_context.platform_id
         if not self.platform_id:
             if BACKEND == "NVCF":
@@ -636,7 +644,7 @@ class ActionPipeline:
             # If platform is indeed None, jobDriver.create would take care of it.
             docker_env_vars = self.handler_metadata.get("docker_env_vars", {})
             self.decrypt_docker_env_vars(docker_env_vars)
-            self.job_env_variables = copy.deepcopy(docker_env_vars)
+            self.job_env_variables.update(copy.deepcopy(docker_env_vars))
             # Add environment variables from monai.
             self.generate_env_variables()
             if self.monai_env_variable:

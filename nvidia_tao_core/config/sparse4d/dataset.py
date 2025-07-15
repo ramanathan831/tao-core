@@ -336,20 +336,12 @@ class Omniverse3DDetTrackDatasetConfig:
         description="Path to data root",
         display_name="Path to data root"
     )
-    anno_root: str = STR_FIELD(
-        value=MISSING,
-        default_value="",
-        description="Path to annotation root",
-        display_name="Path to annotation root"
-    )
     classes: List[str] = LIST_FIELD(
         arrList=[
-            "person", "humanoid", "nova_carter", "transporter",
-            "forklift", "box", "pallet", "crate"
+            "person", "gr1_t2", "agility_digit", "nova_carter",
         ],
         default_value=[
-            "person", "humanoid", "nova_carter", "transporter",
-            "forklift", "box", "pallet", "crate"
+            "person", "gr1_t2", "agility_digit", "nova_carter",
         ],
         description="Classes to detect",
         display_name="Classes to detect"
