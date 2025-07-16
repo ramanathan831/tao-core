@@ -48,3 +48,5 @@ tritonclient[all]==2.55.0
 uWSGI
 validators==0.21.0
 Werkzeug==3.0.3
+docker
+rich

@@ -163,6 +163,12 @@ class BaseExperimentMetadata:
         """Authenticate to NGC"""
         # Get the NGC login token
         ngc_api_key = os.getenv("PTM_API_KEY")
+        if not ngc_api_key:
+            secrets_file = "/var/secrets/secrets.json"
+            with open(secrets_file, "r", encoding="utf-8") as f:
+                secrets = json.load(f)
+            ngc_api_key = secrets.get("ptm_api_key")
+
         if ngc_api_key:
             ngc_token = get_ngc_token_from_api_key(ngc_api_key, org, team)
             if ngc_token:

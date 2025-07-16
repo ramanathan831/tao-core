@@ -1372,7 +1372,10 @@ def container_job_status():
 @app.before_request
 def authenticate_without_ingress():
     """Authentication endpoint if ingress-nginx is not enabled"""
-    if ingress_enabled or '/super_endpoint' not in request.path:
+    skip_api_endpoints = ['/health', '/liveness', '/swagger', '/login', '/auth',
+                          '/redoc', '/version', '/rapipdf', '/container_job',
+                          '/openapi', '/version', '/tao_api_notebooks']
+    if ingress_enabled or any(endpoint in request.path for endpoint in skip_api_endpoints):
         return None
     if "super_endpoint" in request.path:
         request_body = request.get_json(force=True)

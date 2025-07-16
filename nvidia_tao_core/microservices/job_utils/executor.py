@@ -23,6 +23,7 @@ from kubernetes.client.rest import ApiException
 import logging
 
 from nvidia_tao_core.microservices.constants import MONAI_NETWORKS, NETWORK_CONTAINER_MAPPING
+from nvidia_tao_core.microservices.handlers.docker_handler import DockerHandler
 from nvidia_tao_core.microservices.handlers.stateless_handlers import (
     BACKEND,
     get_handler_job_metadata,
@@ -737,6 +738,22 @@ def check_endpoints_ready(service_name, namespace):
         raise e
 
 
+def wait_for_container(container_handler, job_id, port=8000):
+    """Wait for the container to be ready."""
+    start_time = time.time()
+    while time.time() - start_time < 300:
+        metadata_status = get_handler_job_metadata(job_id).get("status")
+        if metadata_status in ("Canceled", "Canceling", "Paused", "Pausing"):
+            return metadata_status
+        if container_handler.check_container_health(port=port):
+            logger.info(f"Container '{job_id}' is ready.")
+            return "Running"
+        logger.info(f"Waiting for container '{job_id}' to be ready...")
+        time.sleep(10)
+    logger.error("Timed out waiting for container to be ready.")
+    return "Error"
+
+
 def wait_for_service(job_id, service_name=None):
     """Wait until the specified service is ready or timeout is reached.
 
@@ -794,34 +811,61 @@ def create_microservice_and_send_request(
             if action == "gen_trt_engine":
                 microservice_container = os.getenv('IMAGE_TAO_DEPLOY')
 
-        service_name = get_statefulset_service_name(microservice_pod_id)
-
-        create_statefulset(
-            microservice_pod_id,
-            num_gpu,
-            num_nodes,
-            microservice_container,
-            accelerator=accelerator
-        )
-        if wait_for_service(microservice_pod_id, service_name=service_name):
-            response = send_microservice_request(
-                api_endpoint,
-                network,
-                action,
-                cloud_metadata=cloud_metadata,
-                specs=specs,
-                job_id=microservice_pod_id,
-                nvcf_helm=nvcf_helm,
-                docker_env_vars=docker_env_vars,
-                statefulset_replicas=num_nodes
+        if BACKEND == "local-docker":
+            docker_handler = DockerHandler(microservice_container)
+            port = 8000
+            docker_handler.start_container(
+                container_name=microservice_pod_id,
+                command=["/bin/bash", "-c", f"flask run --host 0.0.0.0 --port {port}"]
             )
-            if response.status_code != 200 and response.text:
-                logger.error(f"Error when sending microservice request {response.text}")
-                delete(microservice_pod_id, use_ngc=False)
-                return None
-            if api_endpoint != "post_action":
-                delete(microservice_pod_id, use_ngc=False)
-            return response
+
+            if wait_for_container(docker_handler, microservice_pod_id, port=port):
+                response = docker_handler.make_container_request(
+                    api_endpoint,
+                    network,
+                    action,
+                    cloud_metadata=cloud_metadata,
+                    specs=specs,
+                    job_id=microservice_pod_id,
+                    docker_env_vars=docker_env_vars,
+                    port=port
+                )
+                if response.status_code != 200 and response.text:
+                    logger.error(f"Error when sending microservice request {response.text}")
+                    docker_handler.stop_container()
+                    return None
+                if api_endpoint != "post_action":
+                    docker_handler.stop_container()
+                return response
+
+        if BACKEND == "local-k8s":
+            service_name = get_statefulset_service_name(microservice_pod_id)
+            create_statefulset(
+                microservice_pod_id,
+                num_gpu,
+                num_nodes,
+                microservice_container,
+                accelerator=accelerator
+            )
+            if wait_for_service(microservice_pod_id, service_name=service_name):
+                response = send_microservice_request(
+                    api_endpoint,
+                    network,
+                    action,
+                    cloud_metadata=cloud_metadata,
+                    specs=specs,
+                    job_id=microservice_pod_id,
+                    nvcf_helm=nvcf_helm,
+                    docker_env_vars=docker_env_vars,
+                    statefulset_replicas=num_nodes
+                )
+                if response.status_code != 200 and response.text:
+                    logger.error(f"Error when sending microservice request {response.text}")
+                    delete(microservice_pod_id, use_ngc=False)
+                    return None
+                if api_endpoint != "post_action":
+                    delete(microservice_pod_id, use_ngc=False)
+                return response
         return None
     except Exception as e:
         logger.error(f"Exception thrown in create_microservice_and_send_request is {str(e)}")
@@ -1050,11 +1094,13 @@ def status(
     automl_experiment_id="0"
 ):
     """Returns status of kubernetes job"""
-    name_space = _get_name_space()
-    if os.getenv("DEV_MODE", "False").lower() in ("true", "1"):
-        config.load_kube_config()
-    else:
-        config.load_incluster_config()
+    name_space = None
+    if BACKEND == "local-k8s":
+        name_space = _get_name_space()
+        if os.getenv("DEV_MODE", "False").lower() in ("true", "1"):
+            config.load_kube_config()
+        else:
+            config.load_incluster_config()
 
     if BACKEND == "NVCF" and use_ngc:
         try:
@@ -1143,12 +1189,15 @@ def status(
 
     # For local cluster jobs
     if network not in MONAI_NETWORKS:
+        specs = get_job_specs(job_name, automl=automl_exp_job, automl_experiment_id=automl_experiment_id)
+        if not specs:
+            logger.error(f"Unable to retrieve specs for job {job_name}")
+            return "Error"
 
-        service_status = wait_for_service(job_name)
-        if service_status == "Running":
-            specs = get_job_specs(job_name, automl=automl_exp_job, automl_experiment_id=automl_experiment_id)
-            if specs:
-                response = send_microservice_request(
+        if BACKEND == "local-docker":
+            docker_handler = DockerHandler.get_handler_for_container(job_name)
+            if docker_handler:
+                response = docker_handler.make_container_request(
                     api_endpoint="get_job_status",
                     network=network,
                     action=action,
@@ -1159,6 +1208,23 @@ def status(
                     job_status = response.json()
                     status = job_status.get("status")
                     return status
+
+                logger.error(f"Error when sending microservice request {response.text}")
+                return "Error"
+
+        service_status = wait_for_service(job_name)
+        if service_status == "Running":
+            response = send_microservice_request(
+                api_endpoint="get_job_status",
+                network=network,
+                action=action,
+                job_id=job_name,
+                specs=specs,
+            )
+            if response and response.ok:
+                job_status = response.json()
+                status = job_status.get("status")
+                return status
         elif service_status in ("Canceled", "Canceling", "Paused", "Pausing"):
             return service_status
         return "Error"
@@ -1234,7 +1300,15 @@ def delete_nvcf_function(job_name):
 
 
 def delete(job_name, use_ngc=True):
-    """Deletes a kubernetes statefulset"""
+    """Deletes a Job"""
+    if BACKEND == "local-docker":
+        docker_handler = DockerHandler.get_handler_for_container(job_name)
+        if docker_handler:
+            docker_handler.stop_container()
+        else:
+            logger.error(f"Docker container not found for job {job_name}")
+        return
+
     name_space = _get_name_space()
     if os.getenv("DEV_MODE", "False").lower() in ("true", "1"):
         config.load_kube_config()
