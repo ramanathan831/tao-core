@@ -24,8 +24,9 @@ import os
 import sys
 import logging
 import requests
-from rich.progress import Progress
 from nvidia_tao_core.microservices.utils import get_admin_key
+if os.getenv("BACKEND") == "local-docker":
+    from nvidia_tao_core.microservices.job_utils.gpu_manager import gpu_manager
 
 # Configure logging
 logging.basicConfig(
@@ -37,22 +38,48 @@ logger = logging.getLogger(__name__)
 DOCKER_NETWORK = os.getenv("DOCKER_NETWORK", "tao_default")
 DOCKER_USERNAME = os.getenv("DOCKER_USERNAME", "$oauthtoken")
 docker_client = docker.from_env() if os.getenv("DOCKER_HOST") else None
+DEBUG_MODE = os.getenv("DEBUG_MODE", "false").lower() in ("true", "1")
 
 
-def docker_pull_progress(line, progress):
-    """Simple function to visualize a docker pull."""
-    tasks = {}
+def docker_pull_progress(line):
+    """Simple function to log docker pull progress."""
+    logged_layers = set()
     if line['status'] == 'Downloading':
-        idx = f'[red][Download {line["id"]}]'
+        if 'progressDetail' in line and 'current' in line['progressDetail'] and 'total' in line['progressDetail']:
+            current = line['progressDetail']['current']
+            total = line['progressDetail']['total']
+            if total > 0:
+                percentage = (current / total) * 100
+                # Only log every 10% to reduce verbosity
+                if percentage % 10 < 1 or percentage == 100:
+                    logger.info(f"Downloading {line['id']}: {percentage:.0f}%")
+        else:
+            # Only log once per layer to avoid spam
+            if line['id'] not in logged_layers:
+                logger.info(f"Downloading {line['id']}")
+                logged_layers.add(line['id'])
     elif line['status'] == 'Extracting':
-        idx = f'[green][Extract  {line["id"]}]'
+        if 'progressDetail' in line and 'current' in line['progressDetail'] and 'total' in line['progressDetail']:
+            current = line['progressDetail']['current']
+            total = line['progressDetail']['total']
+            if total > 0:
+                percentage = (current / total) * 100
+                # Only log every 25% to reduce verbosity
+                if percentage % 25 < 1 or percentage == 100:
+                    logger.info(f"Extracting {line['id']}: {percentage:.0f}%")
+        else:
+            # Only log once per layer to avoid spam
+            if line['id'] not in logged_layers:
+                logger.info(f"Extracting {line['id']}")
+                logged_layers.add(line['id'])
     else:
-        # skip other statuses
-        return
-    if idx not in tasks.keys():
-        tasks[idx] = progress.add_task(f"{idx}", total=line['progressDetail']['total'])
-    else:
-        progress.update(tasks[idx], completed=line['progressDetail']['current'])
+        # Only log important statuses, skip verbose ones
+        important_statuses = ['Pulling fs layer', 'Verifying Checksum', 'Download complete', 'Pull complete']
+        if line['status'] in important_statuses:
+            logger.info(f"Docker pull: {line['status']} for {line.get('id', 'unknown')}")
+        elif DEBUG_MODE:
+            # Only log other statuses in debug mode
+            logger.debug(f"Docker pull status: {line['status']} for {line.get('id', 'unknown')}")
 
 
 class DockerHandler:
@@ -184,28 +211,31 @@ class DockerHandler:
         try:
             repository = f"{self._docker_registry}/{self._image_name}"
             logger.info(f"Pulling from repository: {repository}")
-            with Progress() as progress:
-                response = self._api_client.pull(
-                    repository=repository,
-                    tag=self._docker_tag,
-                    stream=True,
-                    decode=True
-                )
-                for line in response:
-                    docker_pull_progress(line, progress)
+            response = self._api_client.pull(
+                repository=repository,
+                tag=self._docker_tag,
+                stream=True,
+                decode=True
+            )
+            for line in response:
+                docker_pull_progress(line)
         except docker.errors.APIError as e:
             logger.error(f"Docker pull failed. {e}")
             sys.exit(1)
         logger.info("Container pull complete.")
 
     @staticmethod
-    def get_device_requests():
-        """Create device requests for the docker."""
-        device_requests = [docker.types.DeviceRequest(count=-1, capabilities=[["gpu"]])]
+    def get_device_requests(gpu_ids=[]):
+        """Create device requests for the docker container."""
+        device_requests = []
+        if gpu_ids:
+            device_requests = [docker.types.DeviceRequest(capabilities=[["gpu"]], device_ids=gpu_ids)]
+        else:
+            device_requests = [docker.types.DeviceRequest(count=-1, capabilities=[["gpu"]])]
         return device_requests
 
-    def start_container(self, container_name="", docker_env_vars={}, command=[]):
-        """Start a container running a Flask microservice."""
+    def start_container(self, container_name="", docker_env_vars={}, command=[], num_gpus=-1):
+        """Start a container."""
         # Check if the image exists locally. If not, pull it.
         if not self._check_image_exists():
             logger.info(
@@ -213,12 +243,13 @@ class DockerHandler:
                 "Pulling a new docker.")
             self.pull()
         try:
+            gpu_ids = gpu_manager.assign_gpus(container_name, num_gpus)
             logger.info(f"Starting Container: {self._docker_image}")
             self._container = self._docker_client.containers.run(
                 self._docker_image,
                 command=command,
                 name=container_name,
-                device_requests=self.get_device_requests(),
+                device_requests=self.get_device_requests(gpu_ids),
                 network=DOCKER_NETWORK,
                 tmpfs={"/dev/shm": ""},
                 detach=True,
@@ -231,7 +262,7 @@ class DockerHandler:
             logger.error(traceback.format_exc())
 
     def check_container_health(self, port=8000):
-        """Check if the container is healthy."""
+        """Check if the microservice container is running and healthy."""
         if self._container:
             logger.info(f"Checking container health: {self._container.name}")
             self._container.reload()
@@ -262,7 +293,7 @@ class DockerHandler:
         docker_env_vars={},
         port=8000
     ):
-        """Make a request to the container microservice."""
+        """Make a request to the microservice container."""
         if self._container:
             logger.info(f"Making microservice request to container: {self._container.name}")
             # Set default URLs if not provided
@@ -300,7 +331,7 @@ class DockerHandler:
                 request_metadata = {"results_dir": specs.get("results_dir", "")}
 
             # Send request
-            if os.getenv("DEBUG_MODE", "false").lower() == "true":
+            if DEBUG_MODE:
                 logger.info("Sending request to %s with request_metadata %s", endpoint, request_metadata)
             try:
                 if api_endpoint == "get_job_status":
@@ -316,7 +347,7 @@ class DockerHandler:
         return None
 
     def stop_container(self):
-        """Stop an instantiated container."""
+        """Stop a container."""
         if self._container:
             logger.info(f"Stopping container: {self._container.name}")
             self._container.stop()

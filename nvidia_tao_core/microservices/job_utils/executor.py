@@ -47,7 +47,8 @@ from nvidia_tao_core.microservices.handlers.nvcf_handler import (
     create_microservice_job_on_nvcf,
     get_nvcf_microservices_job_status
 )
-
+if os.getenv("BACKEND") == "local-docker":
+    from nvidia_tao_core.microservices.job_utils.gpu_manager import gpu_manager
 if os.getenv("BACKEND"):  # To see if the container is going to be used for Service pods or network jobs
     from nvidia_tao_core.microservices.handlers.mongo_handler import (
         mongo_secret,
@@ -816,7 +817,8 @@ def create_microservice_and_send_request(
             port = 8000
             docker_handler.start_container(
                 container_name=microservice_pod_id,
-                command=["/bin/bash", "-c", f"flask run --host 0.0.0.0 --port {port}"]
+                command=["/bin/bash", "-c", f"flask run --host 0.0.0.0 --port {port}"],
+                num_gpus=num_gpu
             )
 
             if wait_for_container(docker_handler, microservice_pod_id, port=port):
@@ -833,9 +835,11 @@ def create_microservice_and_send_request(
                 if response.status_code != 200 and response.text:
                     logger.error(f"Error when sending microservice request {response.text}")
                     docker_handler.stop_container()
+                    gpu_manager.release_gpus(microservice_pod_id)
                     return None
                 if api_endpoint != "post_action":
                     docker_handler.stop_container()
+                    gpu_manager.release_gpus(microservice_pod_id)
                 return response
 
         if BACKEND == "local-k8s":
@@ -1208,9 +1212,8 @@ def status(
                     job_status = response.json()
                     status = job_status.get("status")
                     return status
-
                 logger.error(f"Error when sending microservice request {response.text}")
-                return "Error"
+            return "Error"
 
         service_status = wait_for_service(job_name)
         if service_status == "Running":
@@ -1307,6 +1310,7 @@ def delete(job_name, use_ngc=True):
             docker_handler.stop_container()
         else:
             logger.error(f"Docker container not found for job {job_name}")
+        gpu_manager.release_gpus(job_name)
         return
 
     name_space = _get_name_space()
@@ -1395,10 +1399,13 @@ def list_namespace_jobs():
 
 def dependency_check(num_gpu=-1, accelerator=None):
     """Checks for GPU dependency"""
-    if os.getenv("BACKEND", "") not in ("local-k8s", "local-microservices"):
+    if os.getenv("BACKEND", "") not in ("local-k8s", "local-docker"):
         return True
     if num_gpu == -1:
         num_gpu = int(os.getenv('NUM_GPU_PER_NODE', default='1'))
+    if BACKEND == "local-docker":
+        available_gpus = gpu_manager.get_available_gpus()
+        return bool(available_gpus)
     label_selector = 'accelerator=' + str(accelerator)
     if not accelerator:
         label_selector = None
