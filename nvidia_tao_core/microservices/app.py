@@ -1585,7 +1585,7 @@ class CloudPullTypesEnum(Enum):
 
     aws = 'aws'
     azure = 'azure'
-    gcp = 'gcp'
+    seaweedfs = 'seaweedfs'
     huggingface = 'huggingface'
     self_hosted = 'self_hosted'
 
