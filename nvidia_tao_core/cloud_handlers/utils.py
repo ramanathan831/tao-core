@@ -200,12 +200,13 @@ def extract_cloud_details(metadata):
     return cloud_type, bucket_name, access_key, secret_key, region, download_url, token
 
 
-def initialize_cloud_storage(cloud_type, bucket_name, access_key, secret_key, endpoint_url=None):
+def initialize_cloud_storage(cloud_type, bucket_name, region, access_key, secret_key, endpoint_url=None):
     """Initialize CloudStorage instance.
 
     Args:
         cloud_type (str): Type of cloud storage.
         bucket_name (str): Name of the bucket/container.
+        region (str): Region for the cloud storage provider.
         access_key (str): Access key for authentication.
         secret_key (str): Secret key for authentication.
         endpoint_url (str): Endpoint URL for the cloud storage provider.
@@ -213,14 +214,18 @@ def initialize_cloud_storage(cloud_type, bucket_name, access_key, secret_key, en
     Returns:
         CloudStorage: Initialized CloudStorage instance.
     """
-    if endpoint_url == "":
-        endpoint_url = None
+    # Prepare client_kwargs - only include endpoint_url if it's provided
+    client_kwargs = {}
+    if endpoint_url and endpoint_url != "":
+        client_kwargs["endpoint_url"] = endpoint_url
+
     return CloudStorage(
         cloud_type=cloud_type,
         bucket_name=bucket_name,
+        region=region,
         key=access_key,
         secret=secret_key,
-        client_kwargs={"endpoint_url": endpoint_url}
+        client_kwargs=client_kwargs
     )
 
 
@@ -500,6 +505,7 @@ def get_cloud_storage_class_object(cloud_data, cloud_string):
     cloud_storage = initialize_cloud_storage(
         cloud_type=csp_provider,
         bucket_name=bucket_name,
+        region=cloud_data[csp_provider][bucket_name].get("region"),
         access_key=cloud_data[csp_provider][bucket_name].get("access_key"),
         secret_key=cloud_data[csp_provider][bucket_name].get("secret_key"),
         endpoint_url=cloud_data[csp_provider][bucket_name].get("endpoint_url")
@@ -718,6 +724,7 @@ def get_results_cloud_data(cloud_data, spec_data, dest_dir=None):
         cloud_storage = initialize_cloud_storage(
             cloud_type=csp_provider,
             bucket_name=bucket_name,
+            region=cloud_data[csp_provider][bucket_name].get("region"),
             access_key=cloud_data[csp_provider][bucket_name].get("access_key"),
             secret_key=cloud_data[csp_provider][bucket_name].get("secret_key"),
             endpoint_url=cloud_data[csp_provider][bucket_name].get("endpoint_url")
