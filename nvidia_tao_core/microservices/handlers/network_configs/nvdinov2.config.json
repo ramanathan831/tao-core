@@ -47,7 +47,7 @@
         },
         "distill": {
             "results_dir":"output_dir",
-            "model.distill.pretrained_non_distill_pl_model_path":"resume_model",
+            "model.distill.pretrained_non_distill_pl_model_path":"parent_model",
             "encryption_key":"key"
         },
         "inference":{

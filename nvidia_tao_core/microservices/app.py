@@ -54,7 +54,8 @@ from nvidia_tao_core.microservices.enum_constants import (
     BaseExperimentDomain,
     BaseExperimentBackboneType,
     BaseExperimentBackboneClass,
-    BaseExperimentLicense
+    BaseExperimentLicense,
+    _get_dynamic_metric_patterns
 )
 from nvidia_tao_core.microservices.handlers.app_handler import AppHandler as app_handler
 from nvidia_tao_core.microservices.handlers.container_handler import ContainerJobHandler as container_handler
@@ -207,7 +208,24 @@ class EnumFieldPrefix(fields.Field):
             base_value = value[5:]
             if base_value in self.enum._value2member_map_:
                 return value
+
+        # Check against dynamic metric patterns for networks like sparse4d
+        if self._validate_dynamic_metric(value):
+            return value
+
         raise ValidationError(f"Invalid value '{value}' for enum '{self.enum.__name__}'")
+
+    def _validate_dynamic_metric(self, value: str) -> bool:
+        """Validate value against dynamic metric patterns."""
+        patterns = _get_dynamic_metric_patterns()
+        for pattern in patterns:
+            try:
+                if re.match(pattern, value):
+                    return True
+            except re.error:
+                # Skip invalid regex patterns
+                continue
+        return False
 
     def _serialize(self, value, attr, obj, **kwargs):
         return value
@@ -624,6 +642,8 @@ class AllowedDockerEnvVariables(Enum):
     TAO_API_SERVER = "TAO_API_SERVER"
     TAO_LOGGING_SERVER_URL = "TAO_LOGGING_SERVER_URL"
     RECURSIVE_DATASET_FILE_DOWNLOAD = "RECURSIVE_DATASET_FILE_DOWNLOAD"
+    ORCHESTRATION_API_NETWORK = "ORCHESTRATION_API_NETWORK"
+    ORCHESTRATION_API_ACTION = "ORCHESTRATION_API_ACTION"
     AUTOML_EXPERIMENT_NUMBER = "AUTOML_EXPERIMENT_NUMBER"
     JOB_ID = "JOB_ID"
     TAO_API_JOB_ID = "TAO_API_JOB_ID"  # Automl brain job id
@@ -1352,7 +1372,10 @@ def container_job_status():
 @app.before_request
 def authenticate_without_ingress():
     """Authentication endpoint if ingress-nginx is not enabled"""
-    if ingress_enabled or '/super_endpoint' not in request.path:
+    skip_api_endpoints = ['/health', '/liveness', '/swagger', '/login', '/auth',
+                          '/redoc', '/version', '/rapipdf', '/container_job',
+                          '/openapi', '/version', '/tao_api_notebooks']
+    if ingress_enabled or any(endpoint in request.path for endpoint in skip_api_endpoints):
         return None
     if "super_endpoint" in request.path:
         request_body = request.get_json(force=True)

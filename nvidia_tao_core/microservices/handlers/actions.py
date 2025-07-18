@@ -183,6 +183,11 @@ class ActionPipeline:
             self.tao_framework_version, self.tao_model_override_version = DOCKER_IMAGE_VERSION[self.network]
             if self.tao_model_override_version not in self.image:
                 self.image = self.image.replace(self.tao_framework_version, self.tao_model_override_version)
+        if self.action in self.network_config.get("api_params", {}).get("image_override_per_action", {}):
+            image_override_per_action = self.api_params.get("image_override_per_action", {})
+            override_key = image_override_per_action.get(self.action)
+            if override_key:
+                self.image = DOCKER_IMAGE_MAPPER[override_key]
         # This will be run inside a thread
         self.thread = None
         # if self.network == "maxine_eye_contact":
@@ -193,7 +198,10 @@ class ActionPipeline:
 
         self.spec = {}
         self.config = {}
-        self.job_env_variables = {}
+        self.job_env_variables = {
+            "ORCHESTRATION_API_NETWORK": self.network,
+            "ORCHESTRATION_API_ACTION": self.action
+        }
         self.platform_id = self.job_context.platform_id
         if not self.platform_id:
             if BACKEND == "NVCF":
@@ -382,7 +390,7 @@ class ActionPipeline:
         experiment_metadata = copy.deepcopy(self.handler_metadata)
         exp_workspace_id = experiment_metadata.get("workspace")
         self.workspace_ids.append(exp_workspace_id)
-        if self.network in MONAI_NETWORKS or (self.network not in MONAI_NETWORKS and BACKEND == "local-k8s"):
+        if self.network in MONAI_NETWORKS or BACKEND in ("local-k8s", "local-docker"):
             get_cloud_metadata(self.workspace_ids, self.cloud_metadata)
 
     def handle_multiple_ptm_fields(self):
@@ -581,7 +589,7 @@ class ActionPipeline:
             metadata_status = "Error"
 
         self.detailed_print(f"Job Done: {self.job_name} Final status: {metadata_status}")
-        if self.ngc_runner or (self.network not in MONAI_NETWORKS and BACKEND == "local-k8s"):
+        if self.ngc_runner or (self.network not in MONAI_NETWORKS and BACKEND in ("local-k8s", "local-docker")):
             if metadata_status not in ("Canceled", "Canceling", "Paused", "Pausing"):
                 jobDriver.delete(self.job_name)
 
@@ -636,7 +644,7 @@ class ActionPipeline:
             # If platform is indeed None, jobDriver.create would take care of it.
             docker_env_vars = self.handler_metadata.get("docker_env_vars", {})
             self.decrypt_docker_env_vars(docker_env_vars)
-            self.job_env_variables = copy.deepcopy(docker_env_vars)
+            self.job_env_variables.update(copy.deepcopy(docker_env_vars))
             # Add environment variables from monai.
             self.generate_env_variables()
             if self.monai_env_variable:
@@ -648,7 +656,7 @@ class ActionPipeline:
             else:
                 nv_job_metadata = None
 
-            if self.network not in MONAI_NETWORKS and BACKEND == "local-k8s":
+            if self.network not in MONAI_NETWORKS and BACKEND in ("local-k8s", "local-docker"):
                 self.create_microservice_action_job(self.job_name)
             else:
                 jobDriver.create(
@@ -1063,7 +1071,7 @@ class AutoMLPipeline(ActionPipeline):
             if k8s_status == "Error":
                 self.detailed_print(f"Relaunching job {self.job_name}")
                 wait_for_job_completion(self.job_name)
-                if self.network not in MONAI_NETWORKS and BACKEND == "local-k8s":
+                if self.network not in MONAI_NETWORKS and BACKEND in ("local-k8s", "local-docker"):
                     self.create_microservice_action_job(self.automl_brain_job_id)
                 else:
                     jobDriver.create(
@@ -1125,7 +1133,7 @@ class AutoMLPipeline(ActionPipeline):
             if self.ngc_runner:
                 self.generate_nv_job_metadata(nv_job_metadata)
 
-            if self.network not in MONAI_NETWORKS and BACKEND == "local-k8s":
+            if self.network not in MONAI_NETWORKS and BACKEND in ("local-k8s", "local-docker"):
                 self.create_microservice_action_job(self.automl_brain_job_id)
             else:
                 jobDriver.create(

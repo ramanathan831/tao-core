@@ -38,122 +38,315 @@ spec:
     """
 )
 {
-  node(POD_LABEL) {
-    container('pyt') {
-      def BUILD_TYPE="dev0"
-      def TAO_WHEEL_VERSION="6.0.0"
-      def VER="${TAO_WHEEL_VERSION}.${BUILD_NUMBER}.${BUILD_TYPE}"
-      def PYTHON_VERSION=sh(script: 'python -c "import platform; print(platform.python_version())"', returnStdout: true).trim()
-      def SRC="dist/nvidia_tao_core-${VER}-py3-none-any.whl"
-      def TARGET="sw-tao-pypi-local/nvidia-tao-core-dev/${VER}/${PYTHON_VERSION}/"
-      def PROP="component_name=nvidia-tao-core;arch=x86_64;os=linux;build_source=None;version=${VER};branch=main;release_approver=vpraveen"
-      
-      // GitLab Related
-      def GITLAB_PROJECT_ID = "140075" 
-      def TAG_NAME = "v${VER}"
-      def RELEASE_NAME = "Release ${VER}"
-      def RELEASE_DESCRIPTION = "Release ${VER} with third-party packages"
-      
-      stage ('checkout') {
-        gitlabCommitStatus(name: "checkout", connection: gitLabConnection('git-lab-master')) {
-          checkout scm
-        }
-      }
-
-      stage ('static_tests') {
-        gitlabCommitStatus(name: "static_tests", connection: gitLabConnection('git-lab-master')) {
-          sh "pip install pylint==3.0.3 pydocstyle flake8"
-          sh "python3 ci/run_static_tests.py"
-        }
-      }
-
-      stage ("functional_tests") {
-        withCredentials([string(credentialsId: 'NGC_CLI_API_KEY_SVC_TLT_CI', variable: 'NGC_CLI_API_KEY')]) {
-          script{
-            env.NGC_KEY=NGC_CLI_API_KEY
-            env.NGC_PATH='ea-tlt/tao_ea/pretrained_dino_imagenet:fan_hybrid_tiny'
+  try {
+    node(POD_LABEL) {
+      container('pyt') {
+        def BUILD_TYPE="dev0"
+        def TAO_WHEEL_VERSION="6.0.0"
+        def VER="${TAO_WHEEL_VERSION}.${BUILD_NUMBER}.${BUILD_TYPE}"
+        def PYTHON_VERSION=sh(script: 'python -c "import platform; print(platform.python_version())"', returnStdout: true).trim()
+        def SRC="dist/nvidia_tao_core-${VER}-py3-none-any.whl"
+        def TARGET="sw-tao-pypi-local/nvidia-tao-core-dev/${VER}/${PYTHON_VERSION}/"
+        def PROP="component_name=nvidia-tao-core;arch=x86_64;os=linux;build_source=None;version=${VER};branch=main;release_approver=vpraveen"
+        
+        // GitLab Related
+        def GITLAB_PROJECT_ID = "140075" 
+        def TAG_NAME = "v${VER}"
+        def RELEASE_NAME = "Release ${VER}"
+        def RELEASE_DESCRIPTION = "Release ${VER} with third-party packages"
+        
+        stage ('checkout') {
+          gitlabCommitStatus(name: "checkout", connection: gitLabConnection('git-lab-master')) {
+            checkout scm
           }
         }
-        gitlabCommitStatus(name: "functional_tests", connection: gitLabConnection('git-lab-master')) {
-          sh "pip install . && pytest"
-        }
-      }
 
-      stage ('build_pyt_wheel') {
-        gitlabCommitStatus(name: "build_wheel", connection: gitLabConnection('git-lab-master')) {
-          sh "echo '${BUILD_NUMBER}-${BUILD_TYPE}' > build.info"
-          sh "bash release/python/build_wheel.sh"
+        stage ('static_tests') {
+          gitlabCommitStatus(name: "static_tests", connection: gitLabConnection('git-lab-master')) {
+            sh "pip install pylint==3.0.3 pydocstyle flake8"
+            sh "python3 ci/run_static_tests.py"
+          }
         }
-      }
-      
-      stage ('publish_pyt_wheel') {
-        gitlabCommitStatus(name: "build_wheel", connection: gitLabConnection('git-lab-master')) {
-          withCredentials([usernamePassword(credentialsId: 'tao-artifactory-tkn', passwordVariable: 'JFROG_PASSWORD', usernameVariable: 'JFROG_USERNAME')]) {
-              sh "bash release/python/install_jfrog.sh"
-              sh "jf rt u --url=https://urm.nvidia.com/artifactory/ --user=${JFROG_USERNAME} --password=${JFROG_PASSWORD} --target-props '${PROP}' ${SRC} ${TARGET}"
+
+        stage ('clean_up'){
+          gitlabCommitStatus(name: "clean_up", connection: gitLabConnection('git-lab-master')) {
+            sh """
+              echo "Clearing build and dists"
+              python setup.py clean --all
+              echo "Clearing pycache and pycs"
+              find . | grep -E '(__pycache__|[.]pyc|[.]pyo\$)' | xargs rm -rf
+            """
           }
         }
       }
+    }
 
-      stage ('publish_release_artifacts') {
-        gitlabCommitStatus(name: "publish_release_artifacts", connection: gitLabConnection('git-lab-master')) {
-          catchError(buildResult: 'SUCCESS', stageResult: 'FAILURE') {
-            withCredentials([string(credentialsId: 'gitlab-api-token', variable: 'GITLAB_TOKEN')]) {
-              def MAIN_WORKSPACE="${WORKSPACE}"
+    // Stage 2: Parallel execution of x86 and ARM tests
+    parallel (
+      "x86_tests": {
+        node(POD_LABEL) {
+          container('pyt') {
+            try {
+              stage ('checkout_x86') {
+                gitlabCommitStatus(name: "checkout_x86", connection: gitLabConnection('git-lab-master')) {
+                  checkout scm
+                }
+              }
 
-              echo "Updating dependencies..."
-
-              sh """
-                      python3 -m pip install requests
+              stage ("functional_tests_x86") {
+                withCredentials([string(credentialsId: 'NGC_CLI_API_KEY_SVC_TLT_CI', variable: 'NGC_CLI_API_KEY')]) {
+                  script{
+                    env.NGC_KEY=NGC_CLI_API_KEY
+                    env.NGC_PATH='ea-tlt/tao_ea/pretrained_dino_imagenet:fan_hybrid_tiny'
+                  }
+                }
+                gitlabCommitStatus(name: "functional_tests_x86", connection: gitLabConnection('git-lab-master')) {
+                  sh "pip install . && pytest"
+                }
+              }
+            } finally {
+              stage ('cleanup_x86') {
+                catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
+                  sh """
+                    echo "Clearing build and dists"
+                    python setup.py clean --all
+                    echo "Clearing pycache and pycs"
+                    find . | grep -E '(__pycache__|[.]pyc|[.]pyo\$)' | xargs rm -rf
                   """
+                }
+              }
+            }
+          }
+        }
+      },
+      "arm_tests": {
+        node('GB200-ARM') {
+          try {
+            stage('checkout_arm') {
+              gitlabCommitStatus(name: "checkout_arm", connection: gitLabConnection('git-lab-master')) {
+                checkout scm
+              }
+            }
 
-              echo "Publishing release artifacts..."
-
-              sh """
-                # Check if git is installed, if not install it
-                command -v git >/dev/null 2>&1 || { echo "Installing git..."; apt-get update && apt-get install -y git; }
-                
-                # Clone using GitLab token for authentication
-                git clone https://oauth2:\${GITLAB_TOKEN}@gitlab-master.nvidia.com/nvidia-tao-toolkit/tao-third-party-packages.git third-party-manager
-              """
-
-              sh """
-                cd third-party-manager
-                python3 manage_third_party.py \\
-                  --enable-wheels \\
-                  --python-requirements "${MAIN_WORKSPACE}/requirements.txt" \\
-                  --gitlab-project-id ${GITLAB_PROJECT_ID} \\
-                  --tag-name ${TAG_NAME} \\
-                  --gitlab-token \${GITLAB_TOKEN} \\
-                  --release-name "${RELEASE_NAME}" \\
-                  --release-description "${RELEASE_DESCRIPTION}" \\
-                  --wheels-dir "third_party_wheels" \\
-                  --gitlab-timeout 60 \\
-                  --gitlab-retries 3
-              """
-
-              echo "Cleaning up workspace..."
-              sh 'rm -rf third_party_wheels third_party_apt third_party_apt_sources || true'
+            stage('functional_tests_arm') {
+              gitlabCommitStatus(name: "functional_tests_arm", connection: gitLabConnection('git-lab-master')) {
+                withCredentials([string(credentialsId: 'NGC_CLI_API_KEY_SVC_TLT_CI', variable: 'NGC_CLI_API_KEY')]) {
+                  script {
+                    // Use the same Docker image as x86, but run on ARM node
+                    def dockerImage = "nvcr.io/nvidia/pytorch:24.03-py3"
+                    
+                    // Create unique container name for this pipeline run to avoid conflicts
+                    def containerName = "tao-arm-${BUILD_NUMBER}-${env.JOB_NAME.replaceAll('/', '-')}"
+                    
+                    // Set NGC environment variables (same as x86)
+                    env.NGC_KEY=NGC_CLI_API_KEY
+                    env.NGC_PATH='ea-tlt/tao_ea/pretrained_dino_imagenet:fan_hybrid_tiny'
+                    
+                    sh """
+                      set -e
+                      echo "Running functional tests on ARM using Docker"
+                      
+                      # Set variables for the shell script
+                      DOCKER_IMAGE="${dockerImage}"
+                      CONTAINER_NAME="${containerName}"
+                      
+                      # Pull the multi-arch Docker image
+                      docker pull \$DOCKER_IMAGE
+                      
+                      # Run the same test logic as x86 but in Docker container on ARM
+                      # Use pipeline-specific labels for safe cleanup
+                      docker run --rm --gpus all \
+                        --user \$(id -u):\$(id -g) \
+                        --name \$CONTAINER_NAME \
+                        --label "pipeline=tao-core-arm" \
+                        --label "build=${BUILD_NUMBER}" \
+                        --label "job=${env.JOB_NAME}" \
+                        -v \$(pwd):/tao-core \
+                        -w /tao-core \
+                        -e HOME=/tao-core \
+                        -e NGC_CLI_API_KEY=\$NGC_CLI_API_KEY \
+                        -e NGC_KEY=\$NGC_CLI_API_KEY \
+                        -e NGC_PATH='ea-tlt/tao_ea/pretrained_dino_imagenet:fan_hybrid_tiny' \
+                        \$DOCKER_IMAGE \
+                        bash -c \"set -e; pip install . && pytest\"
+                    """
+                  }
+                }
+              }
+            }
+          } finally {
+            stage('cleanup_arm') {
+              catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
+                echo "Cleaning up ARM node workspace and pipeline-specific Docker resources"
+                sh """
+                  # Only clean up Docker resources specific to this pipeline run (safe for concurrent pipelines)
+                  echo "Cleaning up containers for this pipeline run..."
+                  PIPELINE_CONTAINERS=\$(docker ps -a --filter "label=pipeline=tao-core-arm" --filter "label=build=${BUILD_NUMBER}" --format "{{.ID}}" 2>/dev/null || echo "")
+                  if [ ! -z "\$PIPELINE_CONTAINERS" ]; then
+                    echo "Removing pipeline-specific containers: \$PIPELINE_CONTAINERS"
+                    docker rm -f \$PIPELINE_CONTAINERS || echo "Some containers already removed"
+                  else
+                    echo "No pipeline-specific containers to clean up"
+                  fi
+                  
+                  # Clean up any containers with our specific job label that are exited (broader safety net)
+                  JOB_CONTAINERS=\$(docker ps -a --filter "label=job=${JOB_NAME}" --filter "status=exited" --format "{{.ID}}" 2>/dev/null || echo "")
+                  if [ ! -z "\$JOB_CONTAINERS" ]; then
+                    echo "Removing exited containers from this job: \$JOB_CONTAINERS"
+                    docker rm \$JOB_CONTAINERS || echo "Some job containers already removed"
+                  else
+                    echo "No exited job containers to clean up"
+                  fi
+                  
+                  echo "Cleaning up dangling images only (safe for concurrent pipelines)..."
+                  docker image prune -f --filter "dangling=true" || echo "No dangling images to clean up"
+                  
+                  # Remove workspace contents
+                  rm -rf "${WORKSPACE}"/*
+                  
+                  echo "ARM cleanup completed (pipeline-specific, safe for concurrent runs)"
+                """
+              }
             }
           }
         }
       }
+    )
+
+    // Stage 3: Build and final cleanup on x86 Kubernetes pod
+    node(POD_LABEL) {
+      container('pyt') {
+        def BUILD_TYPE="dev0"
+        def TAO_WHEEL_VERSION="6.0.0"
+        def VER="${TAO_WHEEL_VERSION}.${BUILD_NUMBER}.${BUILD_TYPE}"
+        def PYTHON_VERSION=sh(script: 'python -c "import platform; print(platform.python_version())"', returnStdout: true).trim()
+        def SRC="dist/nvidia_tao_core-${VER}-py3-none-any.whl"
+        def TARGET="sw-tao-pypi-local/nvidia-tao-core-dev/${VER}/${PYTHON_VERSION}/"
+        def PROP="component_name=nvidia-tao-core;arch=x86_64;os=linux;build_source=None;version=${VER};branch=main;release_approver=vpraveen"
+        
+        // GitLab Related
+        def GITLAB_PROJECT_ID = "140075" 
+        def TAG_NAME = "v${VER}"
+        def RELEASE_NAME = "Release ${VER}"
+        def RELEASE_DESCRIPTION = "Release ${VER} with third-party packages"
+
+        stage ('checkout_build') {
+          gitlabCommitStatus(name: "checkout_build", connection: gitLabConnection('git-lab-master')) {
+            checkout scm
+          }
+        }
+
+        stage ('build_pyt_wheel') {
+          gitlabCommitStatus(name: "build_wheel", connection: gitLabConnection('git-lab-master')) {
+            sh "echo '${BUILD_NUMBER}-${BUILD_TYPE}' > build.info"
+            sh "bash release/python/build_wheel.sh"
+          }
+        }
+        
+        stage ('publish_pyt_wheel') {
+          gitlabCommitStatus(name: "build_wheel", connection: gitLabConnection('git-lab-master')) {
+            withCredentials([usernamePassword(credentialsId: 'tao-artifactory-tkn', passwordVariable: 'JFROG_PASSWORD', usernameVariable: 'JFROG_USERNAME')]) {
+                sh "bash release/python/install_jfrog.sh"
+                sh "jf rt u --url=https://urm.nvidia.com/artifactory/ --user=${JFROG_USERNAME} --password=${JFROG_PASSWORD} --target-props '${PROP}' ${SRC} ${TARGET}"
+            }
+          }
+        }
+
+        stage ('publish_release_artifacts') {
+          gitlabCommitStatus(name: "publish_release_artifacts", connection: gitLabConnection('git-lab-master')) {
+            catchError(buildResult: 'SUCCESS', stageResult: 'FAILURE') {
+              withCredentials([string(credentialsId: 'gitlab-api-token', variable: 'GITLAB_TOKEN')]) {
+                def MAIN_WORKSPACE="${WORKSPACE}"
+
+                echo "Updating dependencies..."
+
+                sh """
+                        python3 -m pip install requests
+                    """
+
+                echo "Publishing release artifacts..."
+
+                sh """
+                  # Check if git is installed, if not install it
+                  command -v git >/dev/null 2>&1 || { echo "Installing git..."; apt-get update && apt-get install -y git; }
+                  
+                  # Clone using GitLab token for authentication
+                  git clone https://oauth2:\${GITLAB_TOKEN}@gitlab-master.nvidia.com/nvidia-tao-toolkit/tao-third-party-packages.git third-party-manager
+                """
+
+                sh """
+                  cd third-party-manager
+                  python3 manage_third_party.py \\
+                    --enable-wheels \\
+                    --python-requirements "${MAIN_WORKSPACE}/requirements.txt" \\
+                    --gitlab-project-id ${GITLAB_PROJECT_ID} \\
+                    --tag-name ${TAG_NAME} \\
+                    --gitlab-token \${GITLAB_TOKEN} \\
+                    --release-name "${RELEASE_NAME}" \\
+                    --release-description "${RELEASE_DESCRIPTION}" \\
+                    --wheels-dir "third_party_wheels" \\
+                    --gitlab-timeout 60 \\
+                    --gitlab-retries 3
+                """
+
+                echo "Cleaning up workspace..."
+                sh 'rm -rf third_party_wheels third_party_apt third_party_apt_sources || true'
+              }
+            }
+          }
+        }
+
+        stage ('clean_up'){
+          gitlabCommitStatus(name: "clean_up", connection: gitLabConnection('git-lab-master')) {
+            sh """
+              echo "Clearing build and dists"
+              python setup.py clean --all
+              echo "Clearing pycache and pycs"
+              find . | grep -E '(__pycache__|[.]pyc|[.]pyo\$)' | xargs rm -rf
+            """
+          }
+        }
+        
+      }
       
+      // container('docker') {
+      //   stage ('wheeltamer_tests') {
+      //     gitlabCommitStatus(name: "wheeltamer_tests", connection: gitLabConnection('git-lab-master')) {
+      //       docker.withRegistry('https://gitlab-master.nvidia.com:5005', 'tao-launcher-api-ptkn') {
+      //         sh "docker pull gitlab-master.nvidia.com:5005/dl/pypi/wheel-ci-cd:wheeltamer"
+      //         sh "docker run --rm -v ${WORKSPACE}/dist:/workspace \
+      //             -e 'EXPECTED_PKG_LICENSE=NVIDIA Proprietary Software' \
+      //             -e 'ALLOWED_NOSEC_COUNT=0' \
+      //             gitlab-master.nvidia.com:5005/dl/pypi/wheel-ci-cd:wheeltamer /bin/bash -c 'wheeltamer'"
+      //       }
+      //     }
+      //   }
+      // }
     }
-    
-    // container('docker') {
-    //   stage ('wheeltamer_tests') {
-    //     gitlabCommitStatus(name: "wheeltamer_tests", connection: gitLabConnection('git-lab-master')) {
-    //       docker.withRegistry('https://gitlab-master.nvidia.com:5005', 'tao-launcher-api-ptkn') {
-    //         sh "docker pull gitlab-master.nvidia.com:5005/dl/pypi/wheel-ci-cd:wheeltamer"
-    //         sh "docker run --rm -v ${WORKSPACE}/dist:/workspace \
-    //             -e 'EXPECTED_PKG_LICENSE=NVIDIA Proprietary Software' \
-    //             -e 'ALLOWED_NOSEC_COUNT=0' \
-    //             gitlab-master.nvidia.com:5005/dl/pypi/wheel-ci-cd:wheeltamer /bin/bash -c 'wheeltamer'"
-    //       }
-    //     }
-    //   }
-    // }
+  }
+  catch (Exception e) {
+    // Mark build as failed.
+    currentBuild.result = 'FAILURE'
+    node(POD_LABEL) {
+      container('pyt') {
+        stage("Jira Notification on Failure") {
+          withCredentials([string(credentialsId: 'TAO-jira-token', variable: 'jira_token')]) {
+            sh """
+               python3 -m pip install jira
+               python3 ci/create_jira_issue.py --jira_server "https://jirasw.nvidia.com/" \\
+               --username "hqtran@nvidia.com" \\
+               --api_token "${jira_token}" \\
+               --project_key "TLT" \\
+               --summary "Pipeline '${JOB_NAME}' Failure" \\
+               --description \$'The pipeline "${JOB_NAME}" has failed.\nLink to the build: https://prod.blsm.nvidia.com/metropolis-iva-tlt-jenkins/view/tao-pytorch/job/${JOB_NAME}' \\
+               --issue_type "Bug"
+            """
+          }
+        }
+      }
+    }
+    // Rethrow the error so the build is marked as failed.
+    throw e
   }
 }
 

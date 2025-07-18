@@ -70,35 +70,52 @@ check_jenkins_status:
       build_url="$JENKINS_URL/job/tao-core-develop/${current_build_number}/"
       echo "You can view the build details at: $build_url"
 
-      # STEP3 : Poll Jenkins job status and get details for each stage
+      # Step 4 : Poll Jenkins job status and get details for each stage
+      # Reference:
+      # - https://stackoverflow.com/a/64660976
+      # - https://prod.blsm.nvidia.com/metropolis-iva-tlt-jenkins/api/
+      echo "---------- Console Output of the Jenkins job ----------"
+      start=0
       while true; do
-          # Fetch job status and stage details
-          response=$(curl -s -u "$JENKINS_USER:$JENKINS_TOKEN" \
-          "$JENKINS_URL/job/tao-core-develop/${current_build_number}/wfapi/describe")
+          # Fetch the Console Output of the job
+          response=$(curl -si -w "\n%{size_header},%{size_download}" -u "$JENKINS_USER:$JENKINS_TOKEN" \
+          "$JENKINS_URL/job/tao-core-develop/${current_build_number}/logText/progressiveText?start=${start}")
 
-          # Extract job status (SUCCESS, FAILURE, ABORTED, etc.)
-          JOB_STATUS=$(curl -s -u "$JENKINS_USER:$JENKINS_TOKEN" \
-          "$JENKINS_URL/job/tao-core-develop/${current_build_number}/api/json" | jq -r '.result')
+          # Extract the header and the body
+          header_size=$(sed -n '$ s/^\([0-9]*\),.*$/\1/ p' <<< "${response}")
+          body_size=$(sed -n '$ s/^.*,\([0-9]*\)$/\1/ p' <<< "${response}")
+          header="${response:0:${header_size}}"
+          body="$(sed '$d' <<< ${response:${header_size}:${body_size}})"
 
-          # Check and display the current status of each stage
-          echo ""
-          echo "$response" | jq -r '.stages[] | "\(.name): \(.status)"'
-          echo ""
+          # Extract the start value by from the header
+          start=$(echo "$header" | grep "X-Text-Size" | sed "s/[^0-9]//g")
+
+          # Fetch the job status (SUCCESS, FAILURE, ABORTED, etc.)
+          # Use `|| true` to prevent the script from failing if `jq` encounters an error.
+          job_status=$(curl -s -u "$JENKINS_USER:$JENKINS_TOKEN" \
+          "$JENKINS_URL/job/tao-core-develop/${current_build_number}/api/json?tree=result" | \
+          jq -r '.result') || true
+
+          # Output the log
+          echo "$body"
 
           # Handle the overall job status
-          if [ "$JOB_STATUS" == "SUCCESS" ]; then
+          if [ "$job_status" == "SUCCESS" ]; then
+              echo "-------------- End of the Console Output --------------"
               echo "Jenkins job succeeded"
               break
-          elif [ "$JOB_STATUS" == "FAILURE" ]; then
+          elif [ "$job_status" == "FAILURE" ]; then
+              echo "-------------- End of the Console Output --------------"
               echo "Jenkins job failed"
               exit 1
-          elif [ "$JOB_STATUS" == "ABORTED" ]; then
+          elif [ "$job_status" == "ABORTED" ]; then
               echo "Jenkins job was aborted"
               exit 1
           else
               sleep 10
           fi
       done
+
   timeout: 2h
   tags: ["trigger-jenkins"]
   only:

@@ -302,7 +302,13 @@ class Omniverse3DDetTrackDatasetConfig:
         description="Batch size",
         display_name="Batch size"
     )
-    use_h5_file: bool = BOOL_FIELD(
+    use_h5_file_for_rgb: bool = BOOL_FIELD(
+        value=False,
+        default_value=False,
+        description="Use H5 file",
+        display_name="Use H5 file"
+    )
+    use_h5_file_for_depth: bool = BOOL_FIELD(
         value=True,
         default_value=True,
         description="Use H5 file",
@@ -330,20 +336,12 @@ class Omniverse3DDetTrackDatasetConfig:
         description="Path to data root",
         display_name="Path to data root"
     )
-    anno_root: str = STR_FIELD(
-        value=MISSING,
-        default_value="",
-        description="Path to annotation root",
-        display_name="Path to annotation root"
-    )
     classes: List[str] = LIST_FIELD(
         arrList=[
-            "person", "humanoid", "nova_carter", "transporter",
-            "forklift", "box", "pallet", "crate"
+            "person", "gr1_t2", "agility_digit", "nova_carter",
         ],
         default_value=[
-            "person", "humanoid", "nova_carter", "transporter",
-            "forklift", "box", "pallet", "crate"
+            "person", "gr1_t2", "agility_digit", "nova_carter",
         ],
         description="Classes to detect",
         display_name="Classes to detect"

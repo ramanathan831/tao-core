@@ -14,6 +14,7 @@
 
 """Utility functions for Cloud Storage handler"""
 import ast
+import fnmatch
 import glob
 import logging
 import os
@@ -284,13 +285,14 @@ def get_file_modification_time(local_path):
         return 0
 
 
-def upload_files(local_path, cloud_storage, file_last_modified):
+def upload_files(local_path, cloud_storage, file_last_modified, selective_tarball_config=None):
     """Uploads any detected changes to the specified cloud storage.
 
     Args:
         local_path (str): The local path to monitor.
         cloud_storage: An instance of the CloudStorage class for uploading files.
         file_last_modified: Dictionary to find modified files
+        selective_tarball_config (dict): Configuration for selective tarball patterns to skip.
     """
     for root, _, files in os.walk(local_path):
         for filename in files:
@@ -303,6 +305,13 @@ def upload_files(local_path, cloud_storage, file_last_modified):
                     file_path not in file_last_modified or
                     current_last_modified > file_last_modified[file_path]
                 ) and ("checkpoint-" not in file_path and "tmp" not in file_path):
+
+                    # Skip files that will be included in selective tarball
+                    if should_skip_file_for_tarball(file_path, local_path, selective_tarball_config):
+                        # Update modification time but don't upload
+                        file_last_modified[file_path] = current_last_modified
+                        continue
+
                     logger.info("File event created/modified {}".format(file_path))  # noqa pylint: disable=C0209
                     try:
                         time.sleep(5)
@@ -462,18 +471,63 @@ def status_callback(data_string, retry=0):
                     status_callback(data_string, retry)
 
 
-def monitor_and_upload(local_path, cloud_storage, exit_event, seek_position=0):
+def should_skip_file_for_tarball(file_path, local_path, selective_tarball_config):
+    """Check if a file should be skipped because it will be included in selective tarball.
+
+    Args:
+        file_path (str): Full path to the file
+        local_path (str): Base local path
+        selective_tarball_config (dict): Selective tarball configuration
+
+    Returns:
+        bool: True if file should be skipped, False otherwise
+    """
+    if not selective_tarball_config:
+        return False
+
+    patterns = selective_tarball_config.get("patterns", [])
+    base_path = selective_tarball_config.get("base_path", "")
+
+    if not patterns:
+        return False
+
+    # Calculate the search directory
+    search_dir = os.path.join(local_path, base_path) if base_path else local_path
+
+    # Check if file is within the search directory
+    if not file_path.startswith(search_dir):
+        return False
+
+    # Get relative path from search directory
+    rel_path = os.path.relpath(file_path, search_dir)
+
+    # Check if file matches any pattern
+    for pattern in patterns:
+        if fnmatch.fnmatch(rel_path, pattern) or fnmatch.fnmatch(file_path, os.path.join(search_dir, pattern)):
+            logger.debug("Skipping continuous upload for tarball file: %s (matches pattern: %s)", rel_path, pattern)
+            return True
+
+    return False
+
+
+def monitor_and_upload(local_path, cloud_storage, exit_event, seek_position=0, selective_tarball_config=None):
     """Monitors the specified local path and its subdirectories for new or modified files.
 
     Args:
         local_path (str): The local path to monitor.
         cloud_storage: An instance of the CloudStorage class for uploading files.
         exit_event (threading.Event): An event to signal the thread to exit.
+        seek_position (int): Initial seek position for log reading.
+        selective_tarball_config (dict): Configuration for selective tarball patterns to skip.
 
     Returns:
         None
     """
     logger.info("monitor_and_upload :: Entering")
+    if selective_tarball_config:
+        patterns = selective_tarball_config.get("patterns", [])
+        base_path = selective_tarball_config.get("base_path", "")
+        logger.info("Selective tarball enabled - skipping patterns: %s in base_path: %s", patterns, base_path)
     file_last_modified = {}
 
     # Initialize file_last_modified with files that are already part of results dir
@@ -484,10 +538,10 @@ def monitor_and_upload(local_path, cloud_storage, exit_event, seek_position=0):
 
     try:
         while True:
-            upload_files(local_path, cloud_storage, file_last_modified)
+            upload_files(local_path, cloud_storage, file_last_modified, selective_tarball_config)
             seek_position = send_logs_to_server(seek_position)
             if exit_event.is_set():
-                upload_files(local_path, cloud_storage, file_last_modified)
+                upload_files(local_path, cloud_storage, file_last_modified, selective_tarball_config)
                 seek_position = send_logs_to_server(seek_position)
                 break
             time.sleep(30)  # Adjust the sleep interval as needed
@@ -525,7 +579,8 @@ def download_files_from_cloud(
     ngc_key,
     tao_api_ui_cookie="",
     use_ngc_staging="",
-    reset_value=False
+    reset_value=False,
+    preserve_source_path=False
 ):
     """Based on the cloud dype, download the file"""
     if "'link': 'https://" in value:
@@ -580,12 +635,17 @@ def download_files_from_cloud(
         try:
             cloud_storage, cloud_file_path = get_cloud_storage_class_object(cloud_data, value)
             local_path_of_dataset_file = f"/results/{job_id}/{cloud_file_path}"
+            if preserve_source_path:
+                local_path_of_dataset_file = cloud_file_path
             if reset_value:
                 # Update the dictionary value with the local path
                 dictionary[key] = local_path_of_dataset_file.replace(".tar.gz", "")
             destination_path = local_path_of_dataset_file
             if cloud_file_path.startswith("/"):
                 cloud_file_path = cloud_file_path[1:]
+
+            # Create destination directory
+            os.makedirs(os.path.dirname(destination_path), exist_ok=True)
 
             if cloud_storage.is_file(cloud_file_path):
                 cloud_storage.download_file(cloud_file_path, destination_path)
@@ -621,7 +681,8 @@ def download_files_from_spec(
     ngc_key=None,
     tao_api_ui_cookie="",
     use_ngc_staging="",
-    reprocess_files=None
+    reprocess_files=None,
+    preserve_source_path=False
 ):
     """Recursively download files from a nested dictionary."""
     if isinstance(data, dict):
@@ -635,7 +696,8 @@ def download_files_from_spec(
                     ngc_key=ngc_key,
                     tao_api_ui_cookie=tao_api_ui_cookie,
                     use_ngc_staging=use_ngc_staging,
-                    reprocess_files=reprocess_files
+                    reprocess_files=reprocess_files,
+                    preserve_source_path=preserve_source_path
                 )
             elif isinstance(value, list):
                 override_list = []
@@ -650,7 +712,8 @@ def download_files_from_spec(
                             network_arch,
                             ngc_key,
                             tao_api_ui_cookie=tao_api_ui_cookie,
-                            use_ngc_staging=use_ngc_staging
+                            use_ngc_staging=use_ngc_staging,
+                            preserve_source_path=preserve_source_path
                         )
                         if not override_value:
                             override_value = list_element
@@ -671,7 +734,8 @@ def download_files_from_spec(
                                     network_arch,
                                     ngc_key,
                                     tao_api_ui_cookie=tao_api_ui_cookie,
-                                    use_ngc_staging=use_ngc_staging
+                                    use_ngc_staging=use_ngc_staging,
+                                    preserve_source_path=preserve_source_path
                                 )
                                 if (reprocess_files is not None and override_value and
                                         (list_dict_value.endswith(".yaml") or list_dict_value.endswith(".json"))):
@@ -697,7 +761,8 @@ def download_files_from_spec(
                         ngc_key,
                         tao_api_ui_cookie=tao_api_ui_cookie,
                         use_ngc_staging=use_ngc_staging,
-                        reset_value=True
+                        reset_value=True,
+                        preserve_source_path=preserve_source_path
                     )
                     if (reprocess_files is not None and override_value and
                             (value.endswith(".yaml") or value.endswith(".json"))):
@@ -736,6 +801,58 @@ def get_results_cloud_data(cloud_data, spec_data, dest_dir=None):
         raise ValueError("Destination directory is not provided")
     spec_data["results_dir"] = f'{dest_dir}/{spec_data["results_dir"]}'
     return None, spec_data
+
+
+def create_tarball(source_dir, tarball_path):
+    """Create a tarball from the source directory.
+
+    Args:
+        source_dir (str): Directory to tarball
+        tarball_path (str): Path where the tarball will be created
+
+    Returns:
+        bool: True if successful, False otherwise
+    """
+    try:
+        logger.info("Creating tarball: %s from source: %s", tarball_path, source_dir)
+
+        with tarfile.open(tarball_path, 'w:gz') as tar:
+            tar.add(source_dir, arcname=os.path.basename(source_dir))
+
+        logger.info("Tarball created successfully: %s", tarball_path)
+        return True
+    except Exception as e:
+        logger.error("Error creating tarball: %s", str(e))
+        logger.error("Traceback: %s", traceback.format_exc())
+        return False
+
+
+def upload_tarball_to_cloud(cloud_storage, tarball_path, remove_after_upload=True):
+    """Upload a tarball to cloud storage.
+
+    Args:
+        cloud_storage: CloudStorage instance
+        tarball_path (str): Path to the tarball to upload
+        remove_after_upload (bool): Whether to remove the local tarball after upload
+
+    Returns:
+        bool: True if successful, False otherwise
+    """
+    try:
+        logger.info("Uploading tarball to cloud: %s", tarball_path)
+
+        cloud_storage.upload_file(tarball_path, tarball_path)
+        logger.info("Tarball uploaded successfully: %s", tarball_path)
+
+        if remove_after_upload and os.path.exists(tarball_path):
+            os.remove(tarball_path)
+            logger.info("Local tarball removed: %s", tarball_path)
+
+        return True
+    except Exception as e:
+        logger.error("Error uploading tarball: %s", str(e))
+        logger.error("Traceback: %s", traceback.format_exc())
+        return False
 
 
 def cleanup_cuda_contexts():
