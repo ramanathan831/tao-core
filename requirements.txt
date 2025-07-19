@@ -10,6 +10,7 @@ Flask==2.3.2
 Flask-Limiter==3.5.0
 google-api-core==2.24.2
 googleapis-common-protos==1.69.1
+huggingface_hub
 jsonschema==4.18.0
 jupyterlab==4.3.6
 kubernetes==23.6.0
