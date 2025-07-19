@@ -516,7 +516,7 @@ def internal_job_status_update(job_id, automl=False, automl_experiment_number="0
             f.write(f"\n{message}\n")
 
 
-def save_dnn_status(job_id, automl=False, callback_data={}, experiment_number="0"):
+def save_dnn_status(job_id, automl=False, callback_data={}, experiment_number="0", handler_id=None, kind=None):
     """Update DNN status with callback data"""
     lookup_job_id = status_lookup_job_id(
         job_id,
@@ -526,7 +526,15 @@ def save_dnn_status(job_id, automl=False, callback_data={}, experiment_number="0
     )
     mongo_status_table_handler = MongoHandler("tao", "job_statuses")
     job_query = {'id': lookup_job_id}
-    mongo_status_table_handler.upsert_append(job_query, json.loads(callback_data["status"]))
+    callback_data_dict = json.loads(callback_data["status"])
+    update_job_message(
+        handler_id,
+        job_id,
+        kind,
+        callback_data_dict["message"],
+        automl_expt_job_id=job_id,
+        update_automl_expt=automl)
+    mongo_status_table_handler.upsert_append(job_query, callback_data_dict)
 
 
 def get_dnn_status(job_id, automl=False, experiment_number="0"):

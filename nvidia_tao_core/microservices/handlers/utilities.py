@@ -676,7 +676,7 @@ def get_dataset_download_command(dataset_metadata):
             f"until wget --timeout=1 --tries=1 --retry-connrefused --no-verbose "
             f"--directory-prefix={temp_dir}/ {cloud_download_url}; do sleep 10; done"
         )
-    elif cloud_type in ("aws", "azure"):
+    elif cloud_type in ("aws", "azure", "seaweedfs"):
         if cloud_file_path.startswith("/"):
             cloud_file_path = cloud_file_path[1:]
         logger.info("Downloading to %s", os.path.join(temp_dir, cloud_file_path))
@@ -1056,6 +1056,7 @@ def add_workspace_to_cloud_metadata(workspace_metadata, cloud_metadata):
     access_key = workspace_metadata.get('cloud_specific_details', {}).get('access_key', '')
     secret_key = workspace_metadata.get('cloud_specific_details', {}).get('secret_key', '')
     cloud_region = workspace_metadata.get('cloud_specific_details', {}).get('cloud_region', '')
+    endpoint_url = workspace_metadata.get('cloud_specific_details', {}).get('endpoint_url', '')
     cloud_type = workspace_metadata.get("cloud_type")
     if cloud_type not in cloud_metadata:
         cloud_metadata[cloud_type] = {}
@@ -1063,6 +1064,7 @@ def add_workspace_to_cloud_metadata(workspace_metadata, cloud_metadata):
         "cloud_region": cloud_region,
         "access_key": access_key,
         "secret_key": secret_key,
+        "endpoint_url": endpoint_url,
     }
 
 
@@ -1284,9 +1286,29 @@ def _get_result_file_path(checkpoint_function, files, format_epoch_number):
 
 
 def get_file_list_from_cloud_storage(workspace_metadata, res_root):
-    """Return files present in res_root in cloud storage"""
+    """Return files present in res_root in cloud storage - Enhanced with storage fix"""
+    # Validate workspace metadata
+    if not workspace_metadata:
+        logger.error("No workspace metadata provided")
+        return []
+
+    if not workspace_metadata.get("cloud_specific_details"):
+        logger.error("No cloud_specific_details in workspace metadata")
+        return []
+
+    # Create storage client with cleaned metadata
     cs_instance, _ = create_cs_instance(workspace_metadata)
-    files, _ = cs_instance.list_files_in_folder(res_root[1:])
+
+    # Clear any cached state
+    if hasattr(cs_instance, '_fs') and cs_instance._fs:
+        if hasattr(cs_instance._fs, 'clear_instance_cache'):
+            cs_instance._fs.clear_instance_cache()
+        if hasattr(cs_instance._fs, 'invalidate_cache'):
+            cs_instance._fs.invalidate_cache()
+
+    folder_path = res_root[1:] if res_root.startswith('/') else res_root
+    files, _ = cs_instance.list_files_in_folder(folder_path)
+
     return files
 
 
@@ -1363,7 +1385,7 @@ def search_for_checkpoint(handler_metadata, job_id, res_root, files, checkpoint_
 
 
 def get_files_from_cloud(handler_metadata, job_id):
-    """Get filelist of a job from cloud"""
+    """Get filelist of a job from cloud - Enhanced with storage fix"""
     if job_id is None:
         return None
 
@@ -1423,7 +1445,6 @@ def resolve_checkpoint_root_and_search(handler_metadata, job_id, folder=False, r
 
 def get_model_results_path(handler_metadata, job_id, folder=False):
     """Return the model file for the job context and handler metadata passes"""
-    logger.info("\nget_model_results_path\n")
     return resolve_checkpoint_root_and_search(handler_metadata, job_id, folder=folder)
 
 

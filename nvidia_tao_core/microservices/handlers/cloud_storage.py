@@ -12,22 +12,17 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Cloud storage Apache client"""
+"""Cloud storage fsspec client"""
 import os
-import io
 import copy
 import time
-import functools
-import fnmatch
+import fsspec
 import logging
+import functools
+from datetime import datetime
 
 from nvidia_tao_core.microservices.handlers.encrypt import NVVaultEncryption
 from nvidia_tao_core.distributed.decorators import master_node_only
-
-from libcloud.storage.types import Provider
-from libcloud.storage.providers import get_driver
-from libcloud.common.types import LibcloudError
-from libcloud.storage.types import ObjectDoesNotExistError
 
 NUM_RETRY = 5
 
@@ -39,57 +34,127 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+def clear_fsspec_caches():
+    """Clear all fsspec caches to prevent state corruption."""
+    try:
+        # Clear fsspec registry caches
+        if hasattr(fsspec, 'registry') and hasattr(fsspec.registry, 'clear_cache'):
+            fsspec.registry.clear_cache()
+
+        # Clear s3fs specific caches
+        try:
+            import s3fs
+            if hasattr(s3fs, 'S3FileSystem'):
+                if hasattr(s3fs.S3FileSystem, 'clear_instance_cache'):
+                    s3fs.S3FileSystem.clear_instance_cache()
+                if hasattr(s3fs.S3FileSystem, '_cache'):
+                    s3fs.S3FileSystem._cache.clear()
+            # Clear session pools in s3fs core
+            if hasattr(s3fs, 'core') and hasattr(s3fs.core, '_cache'):
+                s3fs.core._cache.clear()
+        except ImportError:
+            pass
+
+        # Clear generic fsspec filesystem caches
+        try:
+            if hasattr(fsspec, 'filesystem'):
+                # Clear any cached filesystem instances
+                if hasattr(fsspec.filesystem, '_cache'):
+                    fsspec.filesystem._cache.clear()
+        except Exception:
+            pass
+
+        logger.info("Cleared all fsspec caches")
+    except Exception as e:
+        logger.warning(f"Could not clear some fsspec caches: {e}")
+
+
+def reset_storage_state():
+    """Reset storage client state to prevent corruption."""
+    clear_fsspec_caches()
+
+    # Force garbage collection to clean up any hanging connections
+    import gc
+    gc.collect()
+
+    logger.info("Reset storage state and caches")
+
+
 def retry_method(func):
     """Retry Cloud storage methods for NUM_RETRY times"""
     @functools.wraps(func)
     def wrapper(*args, **kwargs):
-        for _ in range(NUM_RETRY):
+        for attempt in range(NUM_RETRY):
             try:
+                if attempt > 0:
+                    # Clear caches before retry
+                    logger.warning(f"Retrying {func.__name__} attempt {attempt + 1}/{NUM_RETRY}")
+                    clear_fsspec_caches()
+                    time.sleep(30)
                 return func(*args, **kwargs)
             except Exception as e:
                 # Log or handle the exception as needed
-                logger.error("Exception in %s: %s", func.__name__, e)
-            time.sleep(30)
+                logger.error("Exception in %s (attempt %d/%d): %s", func.__name__, attempt + 1, NUM_RETRY, e)
+                if attempt == NUM_RETRY - 1:
+                    # Last attempt failed
+                    raise
         # If all retries fail, raise an exception or handle it accordingly
         raise ValueError(f"Failed to execute {func.__name__} after multiple retries")
     return wrapper
 
 
 def create_cs_instance_with_decrypted_metadata(decrypted_metadata):
-    """Create a Cloud storage instance based on decrypted metadata"""
+    """Create a cloud storage instance with decrypted metadata"""
     handler_metadata_copy = copy.deepcopy(decrypted_metadata)
-    cloud_type = handler_metadata_copy.get("cloud_type")
-    cloud_specific_details = handler_metadata_copy.get("cloud_specific_details")
-    cloud_region = cloud_specific_details.get("cloud_region")
+    cloud_type = handler_metadata_copy.get("cloud_type", "aws")
+    cloud_specific_details = handler_metadata_copy.get("cloud_specific_details", {})
     cloud_bucket_name = cloud_specific_details.get("cloud_bucket_name")
 
+    # Check if air-gapped mode is enabled
+    if os.getenv("AIRGAPPED_MODE", "false").lower() == "true" or cloud_type == "seaweedfs":
+        # Use SeaweedFS for air-gapped deployment
+        return _create_seaweedfs_instance(cloud_specific_details)
+
+    # Original cloud providers
     cs_instance = None
     if cloud_specific_details and cloud_bucket_name:
-        if cloud_type == "aws" and cloud_region:
+        if cloud_type == "aws":
             cs_instance = CloudStorage(
-                "aws",
-                cloud_bucket_name,
-                region=cloud_region,
-                access_key=cloud_specific_details.get("access_key"),
-                secret_key=cloud_specific_details.get("secret_key")
+                cloud_type="aws",
+                bucket_name=cloud_bucket_name,
+                region=cloud_specific_details.get("cloud_region"),
+                key=cloud_specific_details.get("access_key"),
+                secret=cloud_specific_details.get("secret_key"),
+                client_kwargs={"endpoint_url": cloud_specific_details.get("endpoint_url")}
             )
         elif cloud_type == "azure":
             cs_instance = CloudStorage(
-                "azure",
-                cloud_bucket_name,
-                access_key=cloud_specific_details.get("account_name"),
-                secret_key=cloud_specific_details.get("access_key")
+                cloud_type="azure",
+                bucket_name=cloud_bucket_name,
+                region=cloud_specific_details.get("cloud_region"),
+                key=cloud_specific_details.get("account_name"),
+                secret=cloud_specific_details.get("access_key"),
+                client_kwargs={"endpoint_url": cloud_specific_details.get("endpoint_url")}
             )
+
     return cs_instance, cloud_specific_details
 
 
 def create_cs_instance(handler_metadata):
-    """Create a Cloud Storage instance based on handler metadata details"""
-    handler_metadata_copy = copy.deepcopy(handler_metadata)
-    cloud_type = handler_metadata_copy.get("cloud_type")
-    cloud_specific_details = handler_metadata_copy.get("cloud_specific_details")
+    """Create a cloud storage instance based on handler metadata"""
+    # Clear caches before creating new instance
+    clear_fsspec_caches()
 
-    # Decrypt cloud details
+    handler_metadata_copy = copy.deepcopy(handler_metadata)
+    cloud_type = handler_metadata_copy.get("cloud_type", "aws")
+    cloud_specific_details = handler_metadata_copy.get("cloud_specific_details", {})
+
+    # Check if air-gapped mode is enabled
+    if os.getenv("AIRGAPPED_MODE", "false").lower() == "true" or cloud_type == "seaweedfs":
+        # Use SeaweedFS for air-gapped deployment
+        return _create_seaweedfs_instance(cloud_specific_details)
+
+    # Decrypt cloud details for original cloud providers
     config_path = os.getenv("VAULT_SECRET_PATH", None)
     if config_path:
         encryption = NVVaultEncryption(config_path)
@@ -97,346 +162,410 @@ def create_cs_instance(handler_metadata):
             if encryption.check_config()[0]:
                 cloud_specific_details[key] = encryption.decrypt(encrypted_value)
 
-    cloud_region = cloud_specific_details.get("cloud_region")
     cloud_bucket_name = cloud_specific_details.get("cloud_bucket_name")
 
     cs_instance = None
     if cloud_specific_details:
         if cloud_type == "aws":
             cs_instance = CloudStorage(
-                "aws",
-                cloud_bucket_name,
-                region=cloud_region,
-                access_key=cloud_specific_details.get("access_key"),
-                secret_key=cloud_specific_details.get("secret_key")
+                cloud_type="aws",
+                bucket_name=cloud_bucket_name,
+                region=cloud_specific_details.get("cloud_region"),
+                key=cloud_specific_details.get("access_key"),
+                secret=cloud_specific_details.get("secret_key"),
+                client_kwargs={"endpoint_url": cloud_specific_details.get("endpoint_url")}
             )
         elif cloud_type == "azure":
             cs_instance = CloudStorage(
-                "azure",
-                cloud_bucket_name,
-                access_key=cloud_specific_details.get("account_name"),
-                secret_key=cloud_specific_details.get("access_key")
+                cloud_type="azure",
+                bucket_name=cloud_bucket_name,
+                region=cloud_specific_details.get("cloud_region"),
+                key=cloud_specific_details.get("account_name"),
+                secret=cloud_specific_details.get("access_key"),
+                client_kwargs={"endpoint_url": cloud_specific_details.get("endpoint_url")}
             )
     return cs_instance, cloud_specific_details
 
 
+def _create_seaweedfs_instance(cloud_specific_details):
+    """Create a SeaweedFS storage instance"""
+    # SeaweedFS configuration with environment variable fallbacks
+    endpoint = cloud_specific_details.get("endpoint_url", "http://seaweedfs-s3:8333")
+    bucket_name = cloud_specific_details.get("cloud_bucket_name", "tao-storage")
+    access_key = cloud_specific_details.get("access_key", "")
+    secret_key = cloud_specific_details.get("secret_key", "")
+    region = cloud_specific_details.get("cloud_region", "us-east-1")
+
+    # Create SeaweedFS-compatible storage instance
+    seaweedfs_instance = CloudStorage(
+        cloud_type="seaweedfs",
+        bucket_name=bucket_name,
+        region=region,
+        key=access_key,
+        secret=secret_key,
+        use_ssl=False,
+        client_kwargs={
+            'endpoint_url': endpoint,
+            'addressing_style': 'path'
+        }
+    )
+
+    return seaweedfs_instance, cloud_specific_details
+
+
+def get_date_time():
+    """Get current date and time"""
+    now = datetime.now()
+    return now.strftime("%m/%d/%Y"), now.strftime("%H:%M:%S")
+
+
 class CloudStorage:
-    """Class for CRUD Cloud storage operations."""
+    """Cloud storage CRUD operations using fsspec for S3, Azure, and SeaweedFS."""
 
     @retry_method
-    def __init__(self, cloud_type, bucket_name, region="us-west-1", access_key=None, secret_key=None):
+    def __init__(self, cloud_type, bucket_name, region=None, **kwargs):
         """Initialize the CloudStorage object.
 
-        cloud_type: Type of cloud storage ("aws" or "azure").
+        cloud_type: 'aws', 'azure', or 'seaweedfs'.
         bucket_name: Name of the bucket/container.
         region: Region for the cloud storage provider.
-        access_key: Access key for authentication.
-        secret_key: Secret key for authentication.
+        kwargs: Additional arguments for fsspec.filesystem
         """
+        # Clear caches before creating filesystem
+        clear_fsspec_caches()
+
         self.cloud_type = cloud_type
         self.bucket_name = bucket_name
         self.region = region
+        self.fs = None
 
-        if cloud_type == "aws":
-            cls = get_driver(Provider.S3)
-        elif cloud_type == "azure":
-            cls = get_driver(Provider.AZURE_BLOBS)
+        # Prepare client_kwargs with region if provided
+        if 'client_kwargs' not in kwargs:
+            kwargs['client_kwargs'] = {}
+        if region:
+            kwargs['client_kwargs']['region_name'] = region
+
+        # Configure for reliability - disable filesystem caching
+        fsspec_config = {
+            'use_listings_cache': False,  # Disable listings cache
+            'listings_expiry_time': 0,    # Immediately expire any cached listings
+            'skip_instance_cache': True   # Skip fsspec instance caching
+        }
+
+        if cloud_type == 'aws':
+            # Merge fsspec config with user kwargs
+            aws_kwargs = {**kwargs, **fsspec_config}
+            self.fs = fsspec.filesystem('s3', **aws_kwargs)
+            self.root = f'{bucket_name}/'
+        elif cloud_type == 'azure':
+            # Merge fsspec config with user kwargs
+            azure_kwargs = {**kwargs, **fsspec_config}
+            self.fs = fsspec.filesystem('az', **azure_kwargs)
+            self.root = f'{bucket_name}/'
+        elif cloud_type == 'seaweedfs':
+            # SeaweedFS uses S3-compatible API
+            fsspec_kwargs = kwargs.copy()
+            client_kwargs = fsspec_kwargs.pop('client_kwargs', {})
+
+            # Use client_kwargs approach for maximum compatibility (works in both local and Docker)
+            if client_kwargs:
+                # Filter out incompatible parameters like 'addressing_style'
+                client_kwargs_filtered = {
+                    k: v for k, v in client_kwargs.items()
+                    if k != 'addressing_style'
+                }
+                if client_kwargs_filtered:
+                    fsspec_kwargs['client_kwargs'] = client_kwargs_filtered
+
+            # Merge fsspec config for SeaweedFS reliability
+            seaweedfs_kwargs = {**fsspec_kwargs, **fsspec_config}
+
+            self.fs = fsspec.filesystem('s3', **seaweedfs_kwargs)
+            self.root = f'{bucket_name}/'
         else:
-            raise ValueError("Invalid cloud_type. Supported values: 'aws' or 'azure'.")
+            raise ValueError("Unsupported cloud_type. Use 'aws', 'azure', or 'seaweedfs'.")
 
-        self.driver = cls(access_key, secret_key, region=self.region)
-        self.container = self.driver.get_container(container_name=self.bucket_name)
+    def reset_filesystem_state(self):
+        """Reset the filesystem state to clear any corrupted caches."""
+        try:
+            # Clear filesystem-specific caches
+            if hasattr(self.fs, 'invalidate_cache'):
+                self.fs.invalidate_cache()
+            if hasattr(self.fs, '_cache') and hasattr(self.fs._cache, 'clear'):
+                self.fs._cache.clear()
 
-    """GET Operations"""
+            # Clear global fsspec caches
+            clear_fsspec_caches()
+
+            logger.info("Filesystem state reset complete")
+        except Exception as e:
+            logger.warning(f"Error resetting filesystem state: {e}")
 
     @retry_method
     def is_file(self, cloud_path):
-        """Check if the given cloud path represents a file.
-
-        :param cloud_path: Cloud path to be checked.
-        :return: True if the path represents a file, False otherwise.
-        """
+        """Check if the given cloud path is a file."""
+        full_path = self.root + cloud_path
         try:
-            self.driver.get_object(container_name=self.bucket_name, object_name=cloud_path)
-        except (LibcloudError, ObjectDoesNotExistError):
-            logger.error("File %s doesn't exist in cloud storage", cloud_path)
-            return False
+            return self.fs.isfile(full_path)
         except Exception as e:
-            logger.error("Error checking cloud path: %s", e)
+            logger.error(f"is_file error: {e}")
             return False
-        return True
 
     @retry_method
     def is_folder(self, cloud_path):
-        """Check if the given cloud path represents a folder.
-
-        :param cloud_path: Cloud path to be checked.
-        :return: True if the path represents a folder, False otherwise.
-        """
+        """Check if the given cloud path is a folder."""
+        full_path = self.root + cloud_path.rstrip('/') + '/'
         try:
-            prefix = cloud_path.rstrip('/') + '/'
-
-            # List objects with the specified prefix
-            objects = self.driver.list_container_objects(container=self.container, ex_prefix=prefix)
-
-            # Check if there are any objects with the specified prefix
-            return any(objects)
+            return self.fs.isdir(full_path)
         except Exception as e:
-            raise e
+            logger.error(f"is_folder error: {e}")
+            return False
 
     @retry_method
     def glob_files(self, pattern):
-        """Search for files in the bucket that match the specified pattern.
-
-        pattern: File pattern to match, e.g., "*.mp4".
-        Returns:
-            List of matching file names.
-        """
-        all_files = self.driver.list_container_objects(self.container)
-        matching_files = [obj.name for obj in all_files if fnmatch.fnmatch(obj.name, pattern)]
-        return matching_files
+        """Return a list of files matching the pattern."""
+        full_pattern = self.root + pattern
+        try:
+            return [p[len(self.root):] for p in self.fs.glob(full_pattern) if self.fs.isfile(p)]
+        except Exception as e:
+            logger.error(f"glob_files error: {e}")
+            return []
 
     @retry_method
     def list_files_in_folder(self, folder):
-        """List files in the specified folder in the cloud storage bucket.
-
-        folder: Cloud folder path.
-        :return: List of cloud storage objects in the specified folder.
-        """
+        """Recursively list files in the specified folder and its subfolders."""
         try:
-            folder = folder + '/' if not folder.endswith('/') else folder
-            file_objects = self.driver.list_container_objects(container=self.container, ex_prefix=folder)
-            file_names = [file_object.name for file_object in file_objects]
-            return file_names, file_objects
+            # Normalize folder path
+            folder_normalized = folder.strip('/')
+            full_path = self.root + folder_normalized + '/' if folder_normalized else self.root
+
+            # Clear filesystem cache before operation for SeaweedFS
+            if self.cloud_type == 'seaweedfs':
+                try:
+                    if hasattr(self.fs, 'invalidate_cache'):
+                        self.fs.invalidate_cache()
+                    if hasattr(self.fs, '_cache') and hasattr(self.fs._cache, 'clear'):
+                        self.fs._cache.clear()
+                except Exception as cache_err:
+                    logger.warning(f"Could not clear filesystem cache: {cache_err}")
+
+            # Use fsspec for all cloud providers (unified approach)
+            all_paths = self.fs.find(full_path)
+            logger.info(f"Found {len(all_paths)} paths total")
+
+            file_names = []
+            for p in all_paths:
+                try:
+                    if self.fs.isfile(p):
+                        file_names.append(p[len(self.root):])
+                except Exception as file_check_err:
+                    logger.warning(f"Error checking if {p} is file: {file_check_err}")
+
+            logger.info(f"Found {len(file_names)} files: {file_names[:5]}{'...' if len(file_names) > 5 else ''}")
+            return file_names, []  # Details not available recursively
         except Exception as e:
-            raise e
+            logger.error(f"list_files_in_folder error: {e}")
+            return [], []
 
     @retry_method
     def download_file(self, cloud_file_path, local_destination):
-        """Download a file from the cloud storage bucket.
-
-        cloud_file_path: Cloud file path to be downloaded.
-        local_destination: Local path to save the downloaded file.
-        """
-        if not self.is_file(cloud_file_path):
-            logger.error("Cloud file %s trying to download doesn't exist", cloud_file_path)
-            return
+        """Download a file from cloud storage to local destination."""
+        full_path = self.root + cloud_file_path
         try:
-            base_path = os.path.dirname(local_destination)
-            if not os.path.exists(base_path):
-                os.makedirs(base_path)
-
-            obj = self.driver.get_object(container_name=self.bucket_name, object_name=cloud_file_path)
-            obj.download(destination_path=local_destination, overwrite_existing=True)
+            self.fs.download(full_path, local_destination)
+            logger.info(f"Downloaded {cloud_file_path} to {local_destination}")
         except Exception as e:
-            raise e
+            logger.error(f"download_file error: {e}")
+            raise
 
     @retry_method
     def download_folder(self, cloud_folder, local_destination, maintain_src_folder_structure=False):
-        """Download all files in a cloud folder to a local destination.
+        """Download a folder from cloud storage to local destination."""
+        # Normalize path to avoid double slashes
+        cloud_folder_normalized = cloud_folder.strip('/')
+        full_path = self.root + cloud_folder_normalized + '/' if cloud_folder_normalized else self.root
 
-        cloud_folder: Cloud folder path to be downloaded.
-        local_destination: Local folder path to save the downloaded files.
-        """
-        _, objects = self.list_files_in_folder(cloud_folder)
-        for obj in objects:
+        try:
+            # Use fsspec for all cloud providers (unified approach)
             if maintain_src_folder_structure:
-                local_dest_wo_parent_root = f"/{obj.name}"
-                if local_dest_wo_parent_root.endswith("/"):
-                    local_dest_wo_parent_root = local_dest_wo_parent_root[:-1]
+                # Download maintaining the source folder structure
+                self.fs.download(full_path, local_destination, recursive=True)
             else:
-                relative_path = obj.name.replace(cloud_folder, "")
-                if relative_path.startswith("/"):
-                    relative_path = relative_path[1:]
-                local_dest_wo_parent_root = os.path.join(local_destination, relative_path)
-            self.download_file(obj.name, local_dest_wo_parent_root)
+                # Download contents without the source folder structure
+                files = self.fs.find(full_path)
+                os.makedirs(local_destination, exist_ok=True)
+                for file_path in files:
+                    if self.fs.isfile(file_path):
+                        relative_path = file_path[len(full_path):]
+                        local_file_path = os.path.join(local_destination, relative_path)
+                        # Create directory if needed
+                        os.makedirs(os.path.dirname(local_file_path), exist_ok=True)
+                        self.fs.download(file_path, local_file_path)
+                        logger.debug(f"Downloaded {file_path} to {local_file_path}")
 
-    """CREATE Operations"""
+            logger.info(f"Downloaded folder {cloud_folder} to {local_destination} using fsspec")
+        except Exception as e:
+            logger.error(f"download_folder error: {e}")
+            raise
 
     @retry_method
     @master_node_only
     def create_folder_in_bucket(self, folder):
-        """Create a folder in the cloud storage bucket.
-
-        Args:
-            folder (str): Folder path to be created in the cloud storage bucket.
-        """
+        """Create a folder in the bucket."""
+        full_path = self.root + folder.rstrip('/') + '/'
         try:
-            # Ensure the folder path ends with a trailing slash
-            if not folder.endswith('/'):
-                folder += '/'
-
-            # Upload an empty object to represent the folder
-            empty_data = io.BytesIO(b'')
-            self.driver.upload_object_via_stream(empty_data, container=self.container, object_name=folder)
+            # Create an empty object to represent the folder
+            self.fs.makedirs(full_path, exist_ok=True)
+            logger.info(f"Created folder {folder}")
         except Exception as e:
-            raise e
+            logger.error(f"create_folder_in_bucket error: {e}")
+            raise
 
     @retry_method
     @master_node_only
     def upload_file(self, local_file_path, cloud_file_path):
-        """Upload a file from a local path to a specified path in the cloud storage bucket.
-
-        :local_file_path: Local file path to be uploaded.
-        :cloud_file_path: Destination path in the cloud storage bucket.
-        """
+        """Upload a file from local storage to cloud."""
+        full_path = self.root + cloud_file_path
         try:
-            # Upload the file to cloud storage
-            if os.path.exists(local_file_path):
-                with open(local_file_path, 'rb') as file_stream:
-                    self.driver.upload_object_via_stream(
-                        file_stream,
-                        container=self.container,
-                        object_name=cloud_file_path
-                    )
-                if self.is_file(cloud_file_path):
-                    logger.info("File %s was uploaded successfully", cloud_file_path)
-                else:
-                    raise ValueError(f"File {cloud_file_path} was not uploaded successfully")
+            self.fs.upload(local_file_path, full_path)
+            logger.info(f"Uploaded {local_file_path} to {cloud_file_path}")
         except Exception as e:
-            raise e
+            logger.error(f"upload_file error: {e}")
+            raise
 
     @retry_method
     @master_node_only
     def upload_folder(self, local_folder, cloud_subfolder):
-        """Upload files from a local folder to a specified subfolder in the cloud storage bucket.
-
-        local_folder: Local folder path.
-        cloud_subfolder: Target subfolder in the cloud storage bucket.
-        """
+        """Upload a folder from local storage to cloud."""
+        full_path = self.root + cloud_subfolder.rstrip('/') + '/'
         try:
-            # Remove leading/trailing slashes from cloud_subfolder
-            cloud_subfolder = cloud_subfolder.strip("/")
-
-            for root, _, files in os.walk(local_folder):
-                for file in files:
-                    local_file_path = os.path.join(root, file)
-                    relative_path = os.path.relpath(local_file_path, local_folder)
-
-                    # Construct the cloud object name without a leading slash
-                    cloud_object_name = f"{cloud_subfolder}/{relative_path.replace(os.path.sep, '/')}"
-
-                    # Upload the file to cloud storage
-                    with open(local_file_path, 'rb') as file_stream:
-                        self.driver.upload_object_via_stream(
-                            file_stream,
-                            container=self.container,
-                            object_name=cloud_object_name
-                        )
+            self.fs.upload(local_folder, full_path, recursive=True)
+            logger.info(f"Uploaded folder {local_folder} to {cloud_subfolder}")
         except Exception as e:
-            raise e
-
-    """DELETE Operations"""
+            logger.error(f"upload_folder error: {e}")
+            raise
 
     @retry_method
     @master_node_only
     def delete_folder(self, folder):
-        """Delete a folder and its contents from the cloud storage bucket.
-
-        folder: Cloud folder path to be deleted.
-        """
+        """Delete a folder and its contents from cloud storage."""
+        full_path = self.root + folder.rstrip('/') + '/'
         try:
-            _, objects = self.list_files_in_folder(folder)
-            for obj in objects:
-                self.driver.delete_object(obj)
+            self.fs.rm(full_path, recursive=True)
+            logger.info(f"Deleted folder {folder}")
         except Exception as e:
-            raise e
+            logger.error(f"delete_folder error: {e}")
+            raise
 
     @retry_method
     @master_node_only
     def delete_file(self, file_path):
-        """Delete a file from the cloud storage bucket.
-
-        file_path: Cloud file path to be deleted.
-        """
+        """Delete a file from cloud storage."""
+        full_path = self.root + file_path
         try:
-            if self.is_file(file_path):
-                obj = self.driver.get_object(container_name=self.bucket_name, object_name=file_path)
-                self.driver.delete_object(obj)
-            else:
-                logger.info("File %s doesn't exist", file_path)
+            self.fs.rm(full_path)
+            logger.info(f"Deleted file {file_path}")
         except Exception as e:
-            raise e
-
-    """UPDATE Operations"""
+            logger.error(f"delete_file error: {e}")
+            raise
 
     @retry_method
     @master_node_only
     def move_file(self, source_path, destination_path):
-        """Move a file within the cloud storage bucket.
-
-        :param source_path: Source path of the file to be moved.
-        :param destination_path: Destination path for the file.
-        """
-        if not self.is_file(source_path):
-            raise ValueError("Source path must represent a file.")
-
-        self.copy_file(source_path, destination_path)
-        self.delete_file(source_path)
+        """Move a file within cloud storage."""
+        full_source = self.root + source_path
+        full_destination = self.root + destination_path
+        try:
+            self.fs.mv(full_source, full_destination)
+            logger.info(f"Moved {source_path} to {destination_path}")
+        except Exception as e:
+            logger.error(f"move_file error: {e}")
+            raise
 
     @retry_method
     @master_node_only
     def move_folder(self, source_path, destination_path):
-        """Move a folder within the cloud storage bucket.
-
-        :param source_path: Source path of the folder to be moved.
-        :param destination_path: Destination path for the folder.
-        """
-        if not self.is_folder(source_path):
-            raise ValueError("Source path must represent a folder.")
-
-        # Ensure the destination folder exists
-        self.create_folder_in_bucket(destination_path)
-
-        _, objects = self.list_files_in_folder(source_path)
-        for obj in objects:
-            relative_path = os.path.relpath(obj.name, source_path)
-            destination_object_name = f"{destination_path}/{relative_path.replace(os.path.sep, '/')}"
-
-            self.copy_file(obj.name, destination_object_name)
-            self.delete_file(obj.name)
+        """Move a folder within cloud storage."""
+        full_source = self.root + source_path.rstrip('/') + '/'
+        full_destination = self.root + destination_path.rstrip('/') + '/'
+        try:
+            self.fs.mv(full_source, full_destination, recursive=True)
+            logger.info(f"Moved folder {source_path} to {destination_path}")
+        except Exception as e:
+            logger.error(f"move_folder error: {e}")
+            raise
 
     @retry_method
     @master_node_only
     def copy_file(self, source_object_name, destination_object_name):
-        """Copy a file within the cloud storage bucket.
-
-        :param source_path: Source path of the file to be copied.
-        :param destination_path: Destination path for the copied file.
-        """
-        if self.is_file(source_object_name):
-            # Get the source object
-            source_object = self.driver.get_object(container_name=self.bucket_name, object_name=source_object_name)
-
-            # Upload the source object to the destination object path
-            try:
-                self.driver.upload_object_via_stream(
-                    source_object.as_stream(),
-                    container=self.container,
-                    object_name=destination_object_name
-                )
-                logger.info("Object copied successfully: %s -> %s", source_object_name, destination_object_name)
-            except Exception as e:
-                logger.error("Error copying object %s: %s", source_object_name, e)
-                raise ValueError(f"Error copying object {source_object_name}") from e
+        """Copy a file within cloud storage."""
+        full_source = self.root + source_object_name
+        full_destination = self.root + destination_object_name
+        try:
+            self.fs.cp(full_source, full_destination)
+            logger.info(f"Copied {source_object_name} to {destination_object_name}")
+        except Exception as e:
+            logger.error(f"copy_file error: {e}")
+            raise
 
     @retry_method
     @master_node_only
     def copy_folder(self, source_path, destination_path):
-        """Copy a folder within the cloud storage bucket.
+        """Copy a folder within cloud storage."""
+        full_source = self.root + source_path.rstrip('/') + '/'
+        full_destination = self.root + destination_path.rstrip('/') + '/'
+        try:
+            self.fs.cp(full_source, full_destination, recursive=True)
+            logger.info(f"Copied folder {source_path} to {destination_path}")
+        except Exception as e:
+            logger.error(f"copy_folder error: {e}")
+            raise
 
-        :param source_path: Source path of the folder to be copied.
-        :param destination_path: Destination path for the copied folder.
-        """
-        if not self.is_folder(source_path):
-            raise ValueError("Source path must represent a folder.")
+    @retry_method
+    def search_for_ptm(self, root="", network="", parameter_name=""):
+        """Return path of the PTM file under the PTM root folder (cloud version)"""
+        try:
+            # Normalize root path
+            root_normalized = root.strip('/')
+            search_path = root_normalized + '/' if root_normalized else ''
 
-        # Ensure the destination folder exists
-        self.create_folder_in_bucket(destination_path)
+            # Search for common model file extensions (mimic utils.py)
+            models = []
+            models.extend(self.glob_files(search_path + "**/*.tlt"))
+            models.extend(self.glob_files(search_path + "**/*.hdf5"))
+            models.extend(self.glob_files(search_path + "**/*.pth"))
+            models.extend(self.glob_files(search_path + "**/*.pth.tar"))
+            models.extend(self.glob_files(search_path + "**/*.pt"))
 
-        _, objects = self.list_files_in_folder(source_path)
-        for obj in objects:
-            relative_path = os.path.relpath(obj.name, source_path)
-            destination_object_name = f"{destination_path}/{relative_path.replace(os.path.sep, '/')}"
+            # Special cases for specific networks (mimic utils.py)
+            if network in ("classification_pyt", "visual_changenet", "nvdinov2"):
+                models.extend(self.glob_files(search_path + "**/*.ckpt"))
 
-            self.copy_file(obj.name, destination_object_name)
+            if network == "stylegan_xl":
+                if parameter_name == "inception_fid_path":
+                    models.extend(self.glob_files(search_path + "**/*Inception*.pth"))
+                if parameter_name == "input_embeddings_path":
+                    models.extend(self.glob_files(search_path + "**/*tf_efficientnet*.pth"))
+
+            if models:
+                model_path = models[0]  # pick one arbitrarily
+                logger.info(f"Found valid PTM at {model_path}")
+                return model_path
+
+            # If no models found but root exists, handle special cases
+            if self.is_folder(root_normalized):
+                if network == "vila":
+                    # For vila, return first item in directory
+                    files, dirs = self.list_files_in_folder(root_normalized)
+                    if files:
+                        return files[0]
+                    if dirs:
+                        return dirs[0]
+                return root_normalized
+
+            logger.info("PTM can't be found")
+            return None
+
+        except Exception as e:
+            logger.error(f"search_for_ptm error: {e}")
+            return None
