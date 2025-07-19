@@ -1,0 +1,12 @@
+# TAO Toolkit - Sample NGC Models List for Air-gapped Deployment
+# 
+# This file contains a list of NGC model paths that will be downloaded
+# and prepared for air-gapped deployment.
+#
+# Format: org/team/model:version
+# Lines starting with # are treated as comments and ignored
+#
+# Common TAO Models:
+
+nvstaging/tao/ocrnet:trainable_v2.0
+nvidia/tao/poseclassificationnet:trainable_v1.0
