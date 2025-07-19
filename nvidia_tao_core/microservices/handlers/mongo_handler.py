@@ -116,6 +116,16 @@ class MongoHandler:
         self.collection.update_one(query, {'$set': new_data}, upsert=True)
 
     @retry_method
+    def update_many(self, query, new_data):
+        """Update multiple documents based on the query.
+
+        Args:
+            query (dict): Query criteria for selecting the documents.
+            new_data (dict): Data to update in the documents.
+        """
+        self.collection.update_many(query, {'$set': new_data})
+
+    @retry_method
     def upsert_append(self, query, new_data):
         """Append new data to the 'status' field in a document.
 
