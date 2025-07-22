@@ -375,6 +375,32 @@ def _get_owner_reference():
     return owner_reference
 
 
+def wait_for_statefulset_ready(statefulset_name, name_space):
+    """Wait for the statefulset to be ready"""
+    api_instance = client.AppsV1Api()
+    stateful_set_ready = False
+    while not stateful_set_ready:
+        statefulset_response = api_instance.read_namespaced_stateful_set(
+            statefulset_name,
+            name_space
+        )
+        if statefulset_response:
+            desired_replicas = statefulset_response.spec.replicas
+            ready_replicas = statefulset_response.status.ready_replicas or 0
+            if desired_replicas == ready_replicas:
+                logger.info(f"Statefulset {statefulset_name} is ready with {ready_replicas} replicas")
+                stateful_set_ready = True
+            else:
+                logger.info(
+                    f"Statefulset {statefulset_name} pending with "
+                    f"{ready_replicas}/{desired_replicas} ready"
+                )
+                time.sleep(10)
+        else:
+            logger.info(f"{statefulset_name} not found.")
+            time.sleep(10)
+
+
 def create_statefulset(job_id, num_gpu_per_node, num_nodes, image, api_port=8000, master_port=29500, accelerator=None):
     """Create statefulset"""
     try:
@@ -528,27 +554,7 @@ def create_statefulset(job_id, num_gpu_per_node, num_nodes, image, api_port=8000
             body=stateful_set
         )
         # Ensure the statefulset is ready
-        stateful_set_ready = False
-        while not stateful_set_ready:
-            statefulset_response = api_instance.read_namespaced_stateful_set(
-                statefulset_name,
-                name_space
-            )
-            if statefulset_response:
-                desired_replicas = statefulset_response.spec.replicas
-                ready_replicas = statefulset_response.status.ready_replicas or 0
-                if desired_replicas == ready_replicas:
-                    logger.info(f"Statefulset {statefulset_name} is ready with {ready_replicas} replicas")
-                    stateful_set_ready = True
-                else:
-                    logger.info(
-                        f"Statefulset {statefulset_name} pending with "
-                        f"{ready_replicas}/{desired_replicas} ready"
-                    )
-                    time.sleep(10)
-            else:
-                logger.info(f"{statefulset_name} not found.")
-                time.sleep(10)
+        wait_for_statefulset_ready(statefulset_name, name_space)
     except Exception as e:
         logger.error(f"Exception thrown in create_service is {str(e)}")
         logger.error(traceback.format_exc())
@@ -1791,3 +1797,248 @@ def get_cluster_ip(namespace='default'):
     except Exception as e:
         logger.error(f"Error fetching ClusterIP: {e}")
         return None, None
+
+
+def create_inference_microservice_statefulset(
+        statefulset_name, image, command, replicas, num_gpu=-1,
+        ports=(8000, 8001), is_long_lived=True, org_name=None,
+        experiment_id=None, job_id=None):
+    """Creates a Inference Microservice StatefulSet for long-lived inference services"""
+    image_pull_secret = os.getenv('IMAGEPULLSECRET', default='imagepullsecret')
+    name_space = _get_name_space()
+    api_instance = client.AppsV1Api()
+
+    # Shared memory volume mount for Inference Microservice models
+    dshm_volume_mount = client.V1VolumeMount(
+        name="dshm",
+        mount_path="/dev/shm")
+
+    # GPU resources
+    resources = client.V1ResourceRequirements(
+        limits={
+            'nvidia.com/gpu': num_gpu if num_gpu > 0 else 1
+        })
+
+    # Security context with necessary capabilities
+    capabilities = client.V1Capabilities(
+        add=['SYS_PTRACE']
+    )
+    security_context = client.V1SecurityContext(
+        capabilities=capabilities
+    )
+
+    # Container ports for Inference Microservice
+    inference_microservice_ports = [
+        client.V1ContainerPort(container_port=ports[0], name="http-ims"),
+        client.V1ContainerPort(container_port=ports[1], name="health-ims")
+    ]
+
+    # Enhanced command for Inference Microservice with built-in server
+    inference_microservice_command = f"""
+umask 0 &&
+echo "Starting Inference Microservice..." &&
+{command}
+"""
+
+    # Container definition
+    container = client.V1Container(
+        name="ims-container",
+        image=image,
+        command=["/bin/bash", "-c"],
+        args=[inference_microservice_command],
+        resources=resources,
+        volume_mounts=[dshm_volume_mount],
+        ports=inference_microservice_ports,
+        security_context=security_context,
+        env=[
+            client.V1EnvVar(name="JOB_ID", value=job_id or "")
+        ])
+
+    # Shared memory volume
+    dshm_volume = client.V1Volume(
+        name="dshm",
+        empty_dir=client.V1EmptyDirVolumeSource(medium='Memory'))
+
+    # Pod template with special labels for long-lived services
+    template = client.V1PodTemplateSpec(
+        metadata=client.V1ObjectMeta(
+            labels={
+                "app": "ims",
+                "service-type": "long-lived" if is_long_lived else "temporary",
+                "auto-cleanup": "false" if is_long_lived else "true",
+                "statefulset": statefulset_name,
+                "org": org_name or "default",
+                "experiment": experiment_id or "",
+                "job": job_id or ""
+            }
+        ),
+        spec=client.V1PodSpec(
+            restart_policy="Always",
+            containers=[container],
+            volumes=[dshm_volume],
+            image_pull_secrets=[client.V1LocalObjectReference(name=image_pull_secret)]
+        ))
+
+    # StatefulSet spec
+    spec = client.V1StatefulSetSpec(
+        replicas=replicas,
+        service_name=f"ims-svc-{job_id}",  # Headless service name
+        template=template,
+        selector=client.V1LabelSelector(
+            match_labels={"statefulset": statefulset_name}
+        ),
+        # Persistent volume claims can be added here if needed for model storage
+        # volume_claim_templates=[...]
+    )
+
+    # StatefulSet object
+    statefulset = client.V1StatefulSet(
+        api_version="apps/v1",
+        kind="StatefulSet",
+        metadata=client.V1ObjectMeta(
+            name=statefulset_name,
+            labels={
+                "app": "ims",
+                "service-type": "long-lived" if is_long_lived else "temporary",
+                "auto-cleanup": "false" if is_long_lived else "true",
+                "org": org_name or "default",
+                "experiment": experiment_id or "",
+                "job": job_id or ""
+            }
+        ),
+        spec=spec)
+
+    try:
+        api_response = api_instance.create_namespaced_stateful_set(
+            body=statefulset,
+            namespace=name_space)
+        logger.info(f"Inference Microservice StatefulSet created. status='{str(api_response.status)}'")
+        wait_for_statefulset_ready(statefulset_name, name_space)
+        return True
+    except Exception as e:
+        logger.error(f"Inference Microservice StatefulSet failed to create, got error: {e}")
+        return False
+
+
+def get_inference_microservice_statefulset_pods(statefulset_name):
+    """Returns pods of a Inference Microservice StatefulSet"""
+    name_space = _get_name_space()
+    api_instance = client.CoreV1Api()
+
+    try:
+        # Get pods with the statefulset label
+        label_selector = f"statefulset={statefulset_name}"
+        api_response = api_instance.list_namespaced_pod(
+            namespace=name_space,
+            label_selector=label_selector
+        )
+
+        pod_ips = []
+        for pod in api_response.items:
+            if pod.status.phase == "Running" and pod.status.pod_ip:
+                pod_ips.append(pod.status.pod_ip)
+
+        return pod_ips
+    except Exception as e:
+        logger.error(f"Error getting Inference Microservice StatefulSet pods: {e}")
+        return []
+
+
+def get_inference_microservice_statefulset_pod_ip(statefulset_name):
+    """Get the first running pod IP for a Inference Microservice StatefulSet"""
+    pod_ips = get_inference_microservice_statefulset_pods(statefulset_name)
+    return pod_ips[0] if pod_ips else None
+
+
+def delete_inference_microservice_statefulset(statefulset_name):
+    """Deletes a Inference Microservice StatefulSet"""
+    name_space = _get_name_space()
+    api_instance = client.AppsV1Api()
+
+    try:
+        api_response = api_instance.delete_namespaced_stateful_set(
+            name=statefulset_name,
+            namespace=name_space,
+            body=client.V1DeleteOptions(
+                propagation_policy='Foreground',
+                grace_period_seconds=5)
+        )
+        logger.info(f"Inference Microservice StatefulSet deleted. status='{str(api_response.status)}'")
+        return True
+    except Exception as e:
+        logger.error(f"Inference Microservice StatefulSet failed to delete, got error: {e}")
+        return False
+
+
+def create_inference_microservice_service(service_name, statefulset_name, ports, service_type="ClusterIP"):
+    """Creates a Kubernetes service for Inference Microservice StatefulSet"""
+    name_space = _get_name_space()
+    api_instance = client.CoreV1Api()
+
+    # Service ports
+    service_ports = [
+        client.V1ServicePort(
+            name="http-port",
+            port=ports[0],
+            target_port=ports[0],
+            protocol="TCP"
+        ),
+        client.V1ServicePort(
+            name="health-port",
+            port=ports[1],
+            target_port=ports[1],
+            protocol="TCP"
+        )
+    ]
+
+    # Service spec for StatefulSet
+    spec = client.V1ServiceSpec(
+        type=service_type,
+        ports=service_ports,
+        selector={"statefulset": statefulset_name},
+        cluster_ip="None" if service_type == "Headless" else None  # Headless service for StatefulSet
+    )
+
+    # Service object
+    service = client.V1Service(
+        api_version="v1",
+        kind="Service",
+        metadata=client.V1ObjectMeta(
+            name=service_name,
+            labels={"app": "ims"}
+        ),
+        spec=spec
+    )
+
+    try:
+        api_response = api_instance.create_namespaced_service(
+            namespace=name_space,
+            body=service
+        )
+        logger.info(f"Inference Microservice service created: {service_name}")
+
+        return {
+            "service_name": service_name,
+            "cluster_ip": api_response.spec.cluster_ip,
+            "ports": ports
+        }
+    except Exception as e:
+        logger.error(f"Failed to create Inference Microservice service: {e}")
+        raise
+
+
+def delete_inference_microservice_service(service_name):
+    """Deletes a Inference Microservice Kubernetes service"""
+    name_space = _get_name_space()
+    api_instance = client.CoreV1Api()
+
+    try:
+        api_instance.delete_namespaced_service(
+            name=service_name,
+            namespace=name_space
+        )
+        logger.info(f"Inference Microservice service deleted: {service_name}")
+        return True
+    except Exception as e:
+        logger.error(f"Failed to delete Inference Microservice service: {e}")
+        return False
