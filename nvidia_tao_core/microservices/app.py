@@ -43,6 +43,7 @@ from marshmallow_enum import EnumField, Enum
 from nvidia_tao_core.microservices.filter_utils import filtering, pagination
 from nvidia_tao_core.microservices.auth_utils import credentials, authentication, access_control, metrics
 from nvidia_tao_core.microservices.health_utils import health_check
+from nvidia_tao_core.microservices.handlers.inference_microservice_handler import InferenceMicroserviceHandler
 
 from nvidia_tao_core.microservices.enum_constants import (
     ActionEnum,
@@ -9035,6 +9036,354 @@ def experiment_job_download_selective_files(org_name, experiment_id, job_id):
     # Load metadata in schema and return
     schema_dict = schema.dump(schema.load(response.data))
     return make_response(jsonify(schema_dict), response.code)
+
+
+# Inference Microservice Endpoints
+
+@app.route('/api/v1/orgs/<org_name>/experiments/<experiment_id>/inference_microservice/start', methods=['POST'])
+@disk_space_check
+def inference_microservice_start(org_name, experiment_id):
+    """Start a new Inference Microservice and return job_id.
+
+    ---
+    post:
+      tags:
+      - INFERENCE_MICROSERVICE
+      summary: Start Inference Microservice
+      description: |
+        Creates a new Inference Microservice job and starts the StatefulSet. Returns job_id for subsequent operations.
+        - Creates a new unique job_id
+        - Starts Inference Microservice StatefulSet microservice
+        - Returns job_id for file uploads and inference requests
+      parameters:
+        - name: org_name
+          in: path
+          required: true
+          description: Name of the organization
+          schema:
+            type: string
+        - name: experiment_id
+          in: path
+          required: true
+          description: Experiment ID
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                model_path:
+                  type: string
+                  description: Path to the model
+                  example: "/workspace/model"
+                docker_image:
+                  type: string
+                  description: Docker image for inference
+                  example: "nvcr.io/nvidia/vila-inference:latest"
+                gpu_type:
+                  type: string
+                  description: GPU type required
+                  example: "H100"
+                num_gpus:
+                  type: integer
+                  description: Number of GPUs required
+                  example: 1
+              required:
+                - model_path
+      responses:
+        200:
+          description: Inference Microservice started successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  job_id:
+                    type: string
+                    description: Unique job ID for this Inference Microservice
+                  status:
+                    type: string
+                    description: Service status
+                  message:
+                    type: string
+                    description: Success message
+        400:
+          description: Bad request
+        500:
+          description: Internal server error
+    """
+    try:
+        request_data = request.get_json(force=True)
+
+        # Generate unique job_id
+        job_id = str(uuid.uuid4())
+
+        # Create job configuration
+        success = InferenceMicroserviceHandler.start_inference_microservice(
+            org_name, experiment_id, job_id, request_data
+        )
+
+        if success:
+            return make_response(jsonify({
+                'job_id': job_id,
+                'status': 'starting',
+                'message': f'Inference Microservice started with job_id: {job_id}'
+            }), 200)
+        return make_response(jsonify({
+            'error': 'Failed to start Inference Microservice',
+            'error_code': 1
+        }), 500)
+
+    except Exception as err:
+        logger.error("Error in inference_microservice_start: %s", str(traceback.format_exc()))
+        return make_response(jsonify({
+            'error': str(err),
+            'error_code': 1
+        }), 500)
+
+
+@app.route('/api/v1/orgs/<org_name>/experiments/<experiment_id>/jobs/<job_id>/inference_microservice/inference',
+           methods=['POST'])
+@disk_space_check
+def inference_microservice_inference(org_name, experiment_id, job_id):
+    """Make an inference request to a running Inference Microservice.
+
+    ---
+    post:
+      tags:
+      - INFERENCE_MICROSERVICE
+      summary: Make Inference Microservice inference request
+      description: |
+        Sends inference request to a running Inference Microservice. This endpoint:
+        - Validates the Inference Microservice is running
+        - Processes prompts and images for Inference Microservice inference
+        - Returns generated content from the Inference Microservice model
+        - Supports both single and batch inference requests
+      parameters:
+      - name: org_name
+        in: path
+        description: Org Name
+        required: true
+        schema:
+          type: string
+          maxLength: 255
+          pattern: '^[a-zA-Z0-9_-]+$'
+      - name: experiment_id
+        in: path
+        description: Experiment ID
+        required: true
+        schema:
+          type: string
+          format: uuid
+          maxLength: 36
+      - name: job_id
+        in: path
+        description: Inference Microservice Job ID
+        required: true
+        schema:
+          type: string
+          format: uuid
+          maxLength: 36
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                input:
+                  type: array
+                  items:
+                    type: string
+                  description: Base64-encoded images/videos with data URI format (data:image/jpeg;base64,...)
+                model:
+                  type: string
+                  description: Model identifier (e.g. nvidia/nvdino-v2)
+                prompt:
+                  type: string
+                  description: Text prompt for Inference Microservice inference
+                  default: ""
+              required: [input, model]
+      responses:
+        200:
+          description: Inference completed successfully
+        400:
+          description: Invalid request parameters
+        404:
+          description: Inference Microservice not found
+        500:
+          description: Inference request failed
+    """
+    message = validate_uuid(experiment_id=experiment_id, job_id=job_id)
+    if message:
+        metadata = {"error_desc": message, "error_code": 1}
+        schema = ErrorRspSchema()
+        response = make_response(jsonify(schema.dump(schema.load(metadata))), 400)
+        return response
+
+    try:
+        request_data = request.get_json()
+
+        if not request_data:
+            metadata = {"error_desc": "Input data is required", "error_code": 1}
+            schema = ErrorRspSchema()
+            return make_response(jsonify(schema.dump(schema.load(metadata))), 400)
+
+        # Process Inference Microservice inference via direct StatefulSet call
+        result = InferenceMicroserviceHandler.process_inference_microservice_request_direct(job_id, request_data)
+
+        return make_response(jsonify(result), 200 if result.get("status") == "processing" else 500)
+
+    except Exception as e:
+        logger.error("Error processing Inference Microservice inference request: %s", str(e))
+        metadata = {"error_desc": str(e), "error_code": 1}
+        schema = ErrorRspSchema()
+        return make_response(jsonify(schema.dump(schema.load(metadata))), 500)
+
+
+@app.route('/api/v1/orgs/<org_name>/experiments/<experiment_id>/jobs/<job_id>/inference_microservice/status',
+           methods=['GET'])
+@disk_space_check
+def inference_microservice_status(org_name, experiment_id, job_id):  # noqa: D214
+    """Get status of a Inference Microservice.
+
+    ---
+    get:
+      tags:
+      - INFERENCE_MICROSERVICE
+      summary: Get Inference Microservice status
+      description: |
+        Returns the status of a Inference Microservice.
+      parameters:
+      - name: org_name
+        in: path
+        description: Org Name
+        required: true
+        schema:
+          type: string
+          maxLength: 255
+          pattern: '^[a-zA-Z0-9_-]+$'
+      - name: experiment_id
+        in: path
+        description: Experiment ID
+        required: true
+        schema:
+          type: string
+          format: uuid
+          maxLength: 36
+      - name: job_id
+        in: path
+        description: Inference Microservice Job ID
+        required: true
+        schema:
+          type: string
+          format: uuid
+          maxLength: 36
+      responses:
+        200:
+          description: Service status retrieved successfully
+        404:
+          description: Inference Microservice not found
+        500:
+          description: Failed to get service status
+    """
+    message = validate_uuid(experiment_id=experiment_id, job_id=job_id)
+    if message:
+        metadata = {"error_desc": message, "error_code": 1}
+        schema = ErrorRspSchema()
+        response = make_response(jsonify(schema.dump(schema.load(metadata))), 400)
+        return response
+
+    try:
+        # Get Inference Microservice service status directly
+        result = InferenceMicroserviceHandler.get_inference_microservice_status_detailed(job_id)
+        return make_response(jsonify(result), 200 if result.get("status") != "error" else 500)
+
+    except Exception as e:
+        logger.error("Error getting Inference Microservice status: %s", str(e))
+        metadata = {"error_desc": str(e), "error_code": 1}
+        schema = ErrorRspSchema()
+        return make_response(jsonify(schema.dump(schema.load(metadata))), 500)
+
+
+@app.route('/api/v1/orgs/<org_name>/experiments/<experiment_id>/jobs/<job_id>/inference_microservice/stop',
+           methods=['POST'])
+@disk_space_check
+def stop_inference_microservice(org_name, experiment_id, job_id):  # noqa: D214
+    """Stop a Inference Microservice.
+
+    ---
+    post:
+      tags:
+      - INFERENCE_MICROSERVICE
+      summary: Stop Inference Microservice
+      description: |
+        Stops a running Inference Microservice.
+      parameters:
+      - name: org_name
+        in: path
+        description: Org Name
+        required: true
+        schema:
+          type: string
+          maxLength: 255
+          pattern: '^[a-zA-Z0-9_-]+$'
+      - name: experiment_id
+        in: path
+        description: Experiment ID
+        required: true
+        schema:
+          type: string
+          format: uuid
+          maxLength: 36
+      - name: job_id
+        in: path
+        description: Inference Microservice Job ID to stop
+        required: true
+        schema:
+          type: string
+          format: uuid
+          maxLength: 36
+      responses:
+        200:
+          description: Inference Microservice stopped successfully
+        400:
+          description: Invalid request parameters
+        404:
+          description: Inference Microservice not found
+        500:
+          description: Failed to stop service
+    """
+    message = validate_uuid(experiment_id=experiment_id, job_id=job_id)
+    if message:
+        metadata = {"error_desc": message, "error_code": 1}
+        schema = ErrorRspSchema()
+        response = make_response(jsonify(schema.dump(schema.load(metadata))), 400)
+        return response
+
+    try:
+        # Stop the Inference Microservice
+        result = InferenceMicroserviceHandler.stop_inference_microservice(job_id)
+
+        # Update job status if stopped successfully
+        if result.code == 200:
+            from nvidia_tao_core.microservices.handlers.stateless_handlers import update_job_status
+            update_job_status(
+                experiment_id,
+                job_id,
+                status="Done",
+                kind="experiments"
+            )
+
+        return make_response(jsonify(result.data), result.code)
+
+    except Exception as e:
+        logger.error("Error stopping Inference Microservice: %s", str(e))
+        metadata = {"error_desc": str(e), "error_code": 1}
+        schema = ErrorRspSchema()
+        return make_response(jsonify(schema.dump(schema.load(metadata))), 500)
 
 
 #
