@@ -7161,8 +7161,8 @@ def experiment_job_get_epoch_numbers(org_name, experiment_id, job_id):
       responses:
         200:
           description: List of epoch numbers
-          content:
-            application/json:
+        content:
+          application/json:
               schema: LstIntSchema
           headers:
             Access-Control-Allow-Origin:
@@ -7628,7 +7628,7 @@ def experiment_job_retrieve(org_name, experiment_id, job_id):
         schema = ExperimentJobSchema()
     else:
         schema = ErrorRspSchema()
-        # Load metadata in schema and return
+    # Load metadata in schema and return
     schema_dict = schema.dump(schema.load(response.data))
     return make_response(jsonify(schema_dict), response.code)
 
@@ -9234,7 +9234,7 @@ def inference_microservice_inference(org_name, experiment_id, job_id):
         # Process Inference Microservice inference via direct StatefulSet call
         result = InferenceMicroserviceHandler.process_inference_microservice_request_direct(job_id, request_data)
 
-        return make_response(jsonify(result), 200 if result.get("status") == "processing" else 500)
+        return make_response(jsonify(result), 200 if result.get("status") != "error" else 500)
 
     except Exception as e:
         logger.error("Error processing Inference Microservice inference request: %s", str(e))

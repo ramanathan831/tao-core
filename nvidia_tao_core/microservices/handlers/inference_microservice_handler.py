@@ -278,9 +278,10 @@ exec python3 -m llava.cli.tao_model_server --job "{str(job_metadata)}" --docker_
                 timeout=300  # 5 minutes for inference
             )
 
-            if response.status_code == 200:
+            if response.status_code in [200, 202]:
                 result = response.json()
                 message = "Inference Microservice inference completed via direct StatefulSet call"
+                message = result.get("message", message)
                 return {
                     "job_id": job_id,
                     "status": "completed",
