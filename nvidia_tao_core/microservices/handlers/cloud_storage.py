@@ -387,13 +387,12 @@ class CloudStorage:
         cloud_folder_normalized = cloud_folder.strip('/')
         full_path = self.root + cloud_folder_normalized + '/' if cloud_folder_normalized else self.root
 
-        if os.path.exists(local_destination):
-            logger.info(f"Folder {local_destination} already exists, skipping download")
-            return
-
         try:
             # Use fsspec for all cloud providers (unified approach)
             if maintain_src_folder_structure:
+                if os.path.exists(local_destination):
+                    logger.info(f"Folder {local_destination} already exists, skipping download")
+                    return
                 # Download maintaining the source folder structure
                 self.fs.download(full_path, local_destination, recursive=True)
             else:
@@ -404,6 +403,12 @@ class CloudStorage:
                     if self.fs.isfile(file_path):
                         relative_path = file_path[len(full_path):]
                         local_file_path = os.path.join(local_destination, relative_path)
+                        if os.path.exists(local_file_path):
+                            logger.info(
+                                f"File {local_file_path} in folder {local_destination} "
+                                f"already exists, skipping download"
+                            )
+                            continue
                         # Create directory if needed
                         os.makedirs(os.path.dirname(local_file_path), exist_ok=True)
                         self.fs.download(file_path, local_file_path)
