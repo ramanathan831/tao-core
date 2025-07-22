@@ -17,11 +17,11 @@
 Provides common functionality for loading models, serving inference requests, and managing server lifecycle
 """
 
-import json
 import os
+import json
 import logging
-import time
 import threading
+import time
 from abc import ABC, abstractmethod
 from datetime import datetime
 from typing import Dict, List, Any, Tuple
@@ -57,6 +57,13 @@ class BaseInferenceMicroserviceServer(ABC):
         self.model_state_dir = "/tmp/tao_models"
         self.model_params = model_params  # Store all model-specific params
 
+        # Health check and auto-deletion configuration
+        self.last_request_time = datetime.now()
+        self.idle_timeout_minutes = 30  # Default 30 minutes idle timeout
+        self.auto_deletion_enabled = True
+        self._health_monitor_thread = None
+        self._shutdown_flag = threading.Event()
+
     def setup_logging(self):
         """Setup logging configuration"""
         logging.basicConfig(
@@ -64,6 +71,86 @@ class BaseInferenceMicroserviceServer(ABC):
             format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
         )
         self.logger = logging.getLogger(f'tao_{self.__class__.__name__.lower()}')
+
+    def update_last_request_time(self):
+        """Update the last request timestamp - called on each inference request"""
+        self.last_request_time = datetime.now()
+        self.logger.debug(f"Updated last request time: {self.last_request_time}")
+
+    def get_idle_time_minutes(self) -> float:
+        """Get the current idle time in minutes
+
+        Returns:
+            Float representing minutes since last request
+        """
+        idle_time = datetime.now() - self.last_request_time
+        return idle_time.total_seconds() / 60.0
+
+    def is_idle_timeout_exceeded(self) -> bool:
+        """Check if the idle timeout has been exceeded
+
+        Returns:
+            True if server has been idle longer than timeout, False otherwise
+        """
+        return self.get_idle_time_minutes() > self.idle_timeout_minutes
+
+    def _start_health_monitor(self):
+        """Start the health monitoring thread for auto-deletion"""
+        if self._health_monitor_thread is None and self.auto_deletion_enabled:
+            self._health_monitor_thread = threading.Thread(
+                target=self._health_monitor_loop,
+                daemon=True
+            )
+            self._health_monitor_thread.start()
+            self.logger.info(f"Started health monitor with {self.idle_timeout_minutes} minute timeout")
+
+    def _health_monitor_loop(self):
+        """Background thread that monitors server health and triggers auto-deletion"""
+        while not self._shutdown_flag.is_set():
+            try:
+                if self.is_idle_timeout_exceeded():
+                    idle_minutes = self.get_idle_time_minutes()
+                    self.logger.warning(
+                        f"Server has been idle for {idle_minutes:.1f} minutes "
+                        f"(timeout: {self.idle_timeout_minutes}). Triggering auto-deletion."
+                    )
+
+                    # Call auto-deletion directly
+                    try:
+                        from nvidia_tao_core.microservices.handlers.inference_microservice_handler import (
+                            InferenceMicroserviceHandler
+                        )
+                        result = InferenceMicroserviceHandler.stop_inference_microservice(
+                            self.job_id, auto_deletion=True
+                        )
+                        if result.status_code == 200:
+                            self.logger.info("Auto-deletion executed successfully")
+                        else:
+                            self.logger.error(f"Auto-deletion failed: {result.message}")
+                    except ImportError as e:
+                        self.logger.error(f"Failed to import inference handler for auto-deletion: {e}")
+                    except Exception as e:
+                        self.logger.error(f"Failed to execute auto-deletion: {e}")
+
+                    # Stop monitoring after triggering deletion
+                    break
+
+                # Check every 5 minutes
+                self._shutdown_flag.wait(300)
+
+            except Exception as e:
+                self.logger.error(f"Error in health monitor loop: {e}")
+                self._shutdown_flag.wait(60)  # Wait 1 minute before retrying
+
+    def shutdown_health_monitor(self):
+        """Gracefully shutdown the health monitoring thread"""
+        if self._health_monitor_thread:
+            self.logger.info("Shutting down health monitor")
+            self._shutdown_flag.set()
+            self._health_monitor_thread.join(timeout=10)
+            if self._health_monitor_thread.is_alive():
+                self.logger.warning("Health monitor thread did not shutdown gracefully")
+            self._health_monitor_thread = None
 
     def _initialize_background(self, job_data: Dict[str, Any], docker_env_vars: Dict[str, Any]):
         """Initialize server configuration in background thread"""
@@ -303,19 +390,25 @@ class BaseInferenceMicroserviceServer(ABC):
         @app.route('/health', methods=['GET'])
         def health():
             """Health check endpoint"""
+            idle_minutes = self.get_idle_time_minutes()
             return jsonify({
                 "status": "healthy",
                 "model_loaded": self.model_loaded,
                 "model_loading": self.model_loading,
                 "server_initializing": self.server_initializing,
                 "job_id": self.job_id,
-                "model_type": self.__class__.__name__
+                "model_type": self.__class__.__name__,
+                "last_request_time": self.last_request_time.isoformat(),
+                "idle_time_minutes": round(idle_minutes, 2),
+                "idle_timeout_minutes": self.idle_timeout_minutes,
+                "auto_deletion_enabled": self.auto_deletion_enabled
             })
 
         @app.route('/status', methods=['GET'])
         def status():
             """Detailed status endpoint"""
             model_state = self.get_model_state()
+            idle_minutes = self.get_idle_time_minutes()
             return jsonify({
                 "job_id": self.job_id,
                 "model_loaded": self.model_loaded,
@@ -324,13 +417,24 @@ class BaseInferenceMicroserviceServer(ABC):
                 "initialization_error": self.initialization_error,
                 "model_load_error": self.model_load_error,
                 "model_state": model_state,
-                "server_port": self.port
+                "server_port": self.port,
+                "last_request_time": self.last_request_time.isoformat(),
+                "idle_time_minutes": round(idle_minutes, 2),
+                "idle_timeout_minutes": self.idle_timeout_minutes,
+                "auto_deletion_enabled": self.auto_deletion_enabled,
+                "health_monitor_active": (
+                    self._health_monitor_thread is not None and
+                    self._health_monitor_thread.is_alive()
+                )
             })
 
         @app.route('/inference', methods=['POST'])
         def inference():
             """Inference endpoint"""
             try:
+                # Update request timestamp for health monitoring
+                self.update_last_request_time()
+
                 # Check initialization status first
                 if self.server_initializing:
                     response_data = {
@@ -425,16 +529,23 @@ class BaseInferenceMicroserviceServer(ABC):
                 init_thread.daemon = True
                 init_thread.start()
 
+            # Start health monitoring for auto-deletion
+            self._start_health_monitor()
+
             # Start server immediately (don't wait for initialization or model loading)
             app = self.create_flask_app()
             self.logger.info(f"Starting {self.__class__.__name__} Server on port {self.port}")
             self.logger.info("Server starting immediately - initialization and model loading in background")
+            self.logger.info(f"Health monitor enabled with {self.idle_timeout_minutes} minute idle timeout")
             app.run(host='0.0.0.0', port=self.port, debug=False, threaded=True)
             return True
 
         except Exception as e:
             self.logger.error(f"Failed to start server: {e}")
             return False
+        finally:
+            # Cleanup on server shutdown
+            self.shutdown_health_monitor()
 
     def start_server(self, load_model_params: Dict[str, Any] = None):
         """Start the persistent model server immediately and load model in background
@@ -443,6 +554,9 @@ class BaseInferenceMicroserviceServer(ABC):
             load_model_params: Parameters for model loading
         """
         try:
+            # Start health monitoring for auto-deletion
+            self._start_health_monitor()
+
             # Start model loading in background
             if load_model_params is None:
                 load_model_params = {}
@@ -452,12 +566,22 @@ class BaseInferenceMicroserviceServer(ABC):
             app = self.create_flask_app()
             self.logger.info(f"Starting {self.__class__.__name__} Server on port {self.port}")
             self.logger.info("Server starting immediately - model will load in background")
+            self.logger.info(f"Health monitor enabled with {self.idle_timeout_minutes} minute idle timeout")
             app.run(host='0.0.0.0', port=self.port, debug=False, threaded=True)
             return True
 
         except Exception as e:
             self.logger.error(f"Failed to start server: {e}")
             return False
+        finally:
+            # Cleanup on server shutdown
+            self.shutdown_health_monitor()
+
+    def shutdown_server(self):
+        """Gracefully shutdown the server and cleanup resources"""
+        self.logger.info("Shutting down inference microservice server")
+        self.shutdown_health_monitor()
+        # Additional cleanup can be added here if needed
 
     @classmethod
     def create_from_tao_job(cls, job_data: Dict[str, Any], docker_env_vars: Dict[str, Any],

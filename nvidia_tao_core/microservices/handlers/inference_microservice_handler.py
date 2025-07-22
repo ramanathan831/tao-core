@@ -17,6 +17,7 @@ import logging
 import requests
 from datetime import datetime
 from typing import Dict, Any
+import os
 
 from nvidia_tao_core.microservices.handlers.docker_images import DOCKER_IMAGE_MAPPER
 from nvidia_tao_core.microservices.handlers.utilities import Code, add_workspace_to_cloud_metadata
@@ -95,7 +96,7 @@ exec python3 -m llava.cli.tao_model_server --job "{str(job_metadata)}" --docker_
         logger.info("Using run command: %s", run_command)
 
         # Ports for Inference Microservice (HTTP API, health check)
-        ports = (8000, 8001)
+        ports = (8080, 8081)
 
         try:
             # Create long-lived inference service StatefulSet
@@ -120,7 +121,7 @@ exec python3 -m llava.cli.tao_model_server --job "{str(job_metadata)}" --docker_
             logger.info("Inference Microservice %s is ready", statefulset_name)
 
             # Create K8s service for the StatefulSet
-            service_id = f"service-{job_id}"
+            service_id = f"ims-svc-{job_id}"
             return InferenceMicroserviceHandler._create_inference_microservice_service(
                 service_id=service_id,
                 statefulset_name=statefulset_name,
@@ -167,29 +168,62 @@ exec python3 -m llava.cli.tao_model_server --job "{str(job_metadata)}" --docker_
             return Code(500, {}, f"Failed to create Inference Microservice: {str(e)}")
 
     @staticmethod
-    def stop_inference_microservice(job_id: str) -> Code:
-        """Stops a Inference Microservice StatefulSet"""
-        logger.info("Stopping Inference Microservice %s", job_id)
+    def stop_inference_microservice(job_id: str, auto_deletion: bool = False) -> Code:
+        """Stop a running Inference Microservice
+
+        Args:
+            job_id: Job ID for the microservice to stop
+            auto_deletion: True if called due to idle timeout, False if manual stop
+
+        Returns:
+            Code object with status and result information
+        """
+        action = "Auto-deleting" if auto_deletion else "Stopping"
+        reason = "due to inactivity" if auto_deletion else "manually"
+
+        logger.info("%s Inference Microservice %s %s", action, job_id, reason)
 
         statefulset_name = f"ims-{job_id}"
-        service_id = f"service-{job_id}"
+        service_name = statefulset_name.replace("ims-", "ims-svc-")
+        logger.info("Using StatefulSet name: %s", statefulset_name)
+        logger.info("Using Service name: %s", service_name)
 
         try:
-            # Delete the StatefulSet
-            delete_result = jobDriver.delete_inference_microservice_statefulset(statefulset_name)
+            # Delete the StatefulSet and associated service directly
+            statefulset_deleted = jobDriver.delete_inference_microservice_statefulset(statefulset_name)
+            service_deleted = jobDriver.delete_inference_microservice_service(service_name)
 
-            # Delete the service
-            service_delete_result = jobDriver.delete_inference_microservice_service(service_id)
+            if statefulset_deleted and service_deleted:
+                success_message = "auto-deleted due to inactivity" if auto_deletion else "stopped successfully"
+                logger.info(
+                    "Successfully %s Inference Microservice %s",
+                    "auto-deleted" if auto_deletion else "stopped", job_id
+                )
 
-            if delete_result and service_delete_result:
-                logger.info("Inference Microservice %s stopped successfully", job_id)
-                return Code(200, {"job_id": job_id}, "Inference Microservice stopped successfully")
-            logger.warning("Failed to completely stop Inference Microservice %s", job_id)
-            return Code(500, {}, "Failed to stop Inference Microservice")
+                result = {
+                    "status": "success",
+                    "message": f"Inference microservice for job {job_id} {success_message}",
+                    "job_id": job_id,
+                    "timestamp": datetime.now().isoformat(),
+                    "auto_deletion": auto_deletion
+                }
+                return Code(200, result, f"Inference Microservice {success_message}")
+            error_details = []
+            if not statefulset_deleted:
+                error_details.append("StatefulSet deletion failed")
+            if not service_deleted:
+                error_details.append("Service deletion failed")
+
+            error_msg = (
+                f"Failed to {action.lower()} inference microservice for job {job_id}: "
+                f"{', '.join(error_details)}"
+            )
+            logger.error(error_msg)
+            return Code(500, {"error": error_msg}, f"Failed to {action.lower()} Inference Microservice")
 
         except Exception as e:
-            logger.error("Error stopping Inference Microservice: %s", str(e))
-            return Code(500, {}, f"Failed to stop Inference Microservice: {str(e)}")
+            logger.error("Error %s Inference Microservice %s: %s", action.lower(), job_id, str(e))
+            return Code(500, {"error": str(e)}, f"Error {action.lower()} Inference Microservice")
 
     @staticmethod
     def get_inference_microservice_status(job_id: str) -> Code:
@@ -250,59 +284,153 @@ exec python3 -m llava.cli.tao_model_server --job "{str(job_metadata)}" --docker_
             return {"status": "error", "error": str(e), "loaded": False}
 
     @staticmethod
-    def process_inference_microservice_request_direct(job_id: str, inference_config: dict) -> dict:
-        """Process Inference Microservice request by directly calling StatefulSet model server"""
+    def get_inference_microservice_url(job_id: str, endpoint: str = "inference") -> str:
+        """Get the URL for inference microservice requests
+
+        Args:
+            job_id: Job ID for the microservice
+            endpoint: Endpoint to call (inference, health, status)
+            use_fqdn: Deprecated parameter, kept for compatibility
+
+        Returns:
+            Full URL for the request (always uses simple service name)
+        """
+        service_name = f"ims-svc-{job_id}"
+
+        # Always use simple service name for both Kubernetes and docker-compose
+        # This works reliably for intra-cluster communication and avoids DNS issues
+        if os.environ.get('DEPLOYMENT_MODE', 'kubernetes') == 'docker-compose':
+            url = f"http://{job_id}:8080/{endpoint}"
+        else:
+            url = f"http://{service_name}:8080/{endpoint}"
+
+        logger.info(f"Inference microservice URL: {url}")
+        return url
+
+    @staticmethod
+    def process_inference_microservice_request_direct(job_id: str, request_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Process inference request directly to the StatefulSet microservice
+
+        Args:
+            job_id: Job ID for the microservice
+            request_data: Request data to send to the microservice
+
+        Returns:
+            Response from the microservice
+        """
         try:
-            logger.info(f"Processing Inference Microservice via direct StatefulSet call for job {job_id}")
+            logger.info(f"Processing inference request for job {job_id}")
 
-            statefulset_name = f"ims-{job_id}"
-
-            # Get StatefulSet pod IP
-            pods_ip = jobDriver.get_inference_microservice_statefulset_pods(statefulset_name)
-            if not pods_ip:
-                return {
-                    "job_id": job_id,
-                    "status": "error",
-                    "error": f"Inference Microservice StatefulSet {job_id} not found or not ready"
-                }
-            # Use the first available pod
-            pod_ip = pods_ip[0]
-            inference_url = f"http://{pod_ip}:8080/inference"
-            logger.info(f"Inference URL: {inference_url}")
-            logger.info(f"Inference config: {inference_config}")
-
-            # Direct HTTP call to StatefulSet model server
-            response = requests.post(
-                inference_url,
-                json=inference_config,
-                timeout=300  # 5 minutes for inference
+            # Get the inference URL
+            inference_url = InferenceMicroserviceHandler.get_inference_microservice_url(
+                job_id, "inference"
             )
 
-            if response.status_code in [200, 202]:
+            # Make request to the microservice
+            timeout = 300  # 5 minutes timeout for inference
+            response = requests.post(
+                inference_url,
+                json=request_data,
+                timeout=timeout,
+                headers={'Content-Type': 'application/json'}
+            )
+
+            if response.status_code == 200:
                 result = response.json()
-                message = "Inference Microservice inference completed via direct StatefulSet call"
-                message = result.get("message", message)
-                return {
-                    "job_id": job_id,
-                    "status": "completed",
-                    "results": result.get("results", []),
-                    "message": result.get("message", message)
-                }
+                logger.info(f"Inference request completed successfully for job {job_id}")
+                return result
+            if response.status_code in [202, 503]:
+                # Server is initializing or loading - return appropriate response
+                result = response.json()
+                logger.info(
+                    f"Inference microservice not ready for job {job_id}: "
+                    f"{result.get('message', 'Unknown status')}"
+                )
+                return result
+            error_msg = f"Inference request failed with status {response.status_code}"
+            logger.error(f"{error_msg} for job {job_id}")
+            try:
+                error_detail = response.json()
+                error_msg += f": {error_detail.get('error', 'Unknown error')}"
+            except (ValueError, KeyError):
+                error_msg += f": {response.text}"
+
             return {
-                "job_id": job_id,
                 "status": "error",
-                "error": f"StatefulSet inference failed with status {response.status_code}: {response.text}",
-                "message": "Direct StatefulSet call failed",
+                "error": error_msg,
+                "job_id": job_id,
+                "timestamp": datetime.now().isoformat()
+            }
+
+        except requests.exceptions.Timeout:
+            error_msg = f"Inference request timed out after {timeout} seconds for job {job_id}"
+            logger.error(error_msg)
+            return {
+                "status": "error",
+                "error": error_msg,
+                "job_id": job_id,
+                "timestamp": datetime.now().isoformat()
+            }
+        except requests.exceptions.ConnectionError:
+            error_msg = f"Could not connect to inference microservice for job {job_id}"
+            logger.error(error_msg)
+            return {
+                "status": "error",
+                "error": error_msg,
+                "job_id": job_id,
+                "timestamp": datetime.now().isoformat()
+            }
+        except Exception as e:
+            error_msg = f"Unexpected error during inference request for job {job_id}: {str(e)}"
+            logger.error(error_msg)
+            return {
+                "status": "error",
+                "error": error_msg,
+                "job_id": job_id,
+                "timestamp": datetime.now().isoformat()
+            }
+
+    @staticmethod
+    def get_inference_microservice_status_direct(job_id: str) -> Dict[str, Any]:
+        """Get status directly from the StatefulSet microservice
+
+        Args:
+            job_id: Job ID for the microservice
+
+        Returns:
+            Status response from the microservice
+        """
+        try:
+            logger.info(f"Getting status for inference microservice job {job_id}")
+
+            # Get the status URL
+            status_url = InferenceMicroserviceHandler.get_inference_microservice_url(
+                job_id, "status"
+            )
+
+            # Make request to the microservice
+            response = requests.get(status_url, timeout=30)
+
+            if response.status_code == 200:
+                result = response.json()
+                logger.info(f"Status retrieved successfully for job {job_id}")
+                return result
+            error_msg = f"Status request failed with status {response.status_code}"
+            logger.error(f"{error_msg} for job {job_id}")
+            return {
+                "status": "error",
+                "error": error_msg,
+                "job_id": job_id,
                 "timestamp": datetime.now().isoformat()
             }
 
         except Exception as e:
-            logger.error(f"Error processing Inference Microservice via direct StatefulSet call: {e}")
+            error_msg = f"Failed to get status for job {job_id}: {str(e)}"
+            logger.error(error_msg)
             return {
-                "job_id": job_id,
                 "status": "error",
-                "error": str(e),
-                "message": "Failed to process Inference Microservice request via direct StatefulSet call",
+                "error": error_msg,
+                "job_id": job_id,
                 "timestamp": datetime.now().isoformat()
             }
 
