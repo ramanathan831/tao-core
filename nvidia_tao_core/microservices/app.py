@@ -9298,7 +9298,7 @@ def inference_microservice_status(org_name, experiment_id, job_id):  # noqa: D21
 
     try:
         # Get Inference Microservice service status directly
-        result = InferenceMicroserviceHandler.get_inference_microservice_status_detailed(job_id)
+        result = InferenceMicroserviceHandler.get_inference_microservice_status_direct(job_id)
         return make_response(jsonify(result), 200 if result.get("status") != "error" else 500)
 
     except Exception as e:
@@ -9599,6 +9599,10 @@ with app.test_request_context():
     spec.path(view=experiment_job_delete)
     spec.path(view=experiment_job_resume)
     spec.path(view=experiment_job_download)
+    spec.path(view=inference_microservice_start)
+    spec.path(view=inference_microservice_inference)
+    spec.path(view=inference_microservice_status)
+    spec.path(view=stop_inference_microservice)
 
 
 def main():
