@@ -21,6 +21,7 @@ import json
 import os
 import logging
 import time
+import threading
 from abc import ABC, abstractmethod
 from datetime import datetime
 from typing import Dict, List, Any, Tuple
@@ -48,6 +49,10 @@ class BaseInferenceMicroserviceServer(ABC):
         self.port = port
         self.model = None
         self.model_loaded = False
+        self.model_loading = False
+        self.model_load_error = None
+        self.server_initializing = True
+        self.initialization_error = None
         self.cloud_storage = cloud_storage
         self.model_state_dir = "/tmp/tao_models"
         self.model_params = model_params  # Store all model-specific params
@@ -60,11 +65,42 @@ class BaseInferenceMicroserviceServer(ABC):
         )
         self.logger = logging.getLogger(f'tao_{self.__class__.__name__.lower()}')
 
-    def save_model_state(self, loaded: bool = False, load_time: float = None, error: str = None):
+    def _initialize_background(self, job_data: Dict[str, Any], docker_env_vars: Dict[str, Any]):
+        """Initialize server configuration in background thread"""
+        try:
+            self.logger.info("Starting background initialization...")
+            self.server_initializing = True
+            self.initialization_error = None
+
+            # Save initializing state
+            self.save_model_state(loaded=False, loading=False)
+
+            # Prepare data (downloads files, sets up cloud storage) - this can be slow
+            cloud_storage, specs, _ = prepare_data_before_job_run(job_data, docker_env_vars)
+
+            # Update instance with downloaded/prepared data
+            self.cloud_storage = cloud_storage
+            self.model_params.update(specs)
+
+            self.server_initializing = False
+            self.logger.info("Background initialization completed - starting model loading")
+
+            # Now start model loading
+            self.load_model()
+
+        except Exception as e:
+            error_msg = f"Failed to initialize server: {e}"
+            self.logger.error(error_msg)
+            self.server_initializing = False
+            self.initialization_error = str(e)
+            self.save_model_state(loaded=False, loading=False, error=str(e))
+
+    def save_model_state(self, loaded: bool = False, loading: bool = False, load_time: float = None, error: str = None):
         """Save model loading state to file
 
         Args:
             loaded: Whether model is loaded successfully
+            loading: Whether model is currently loading
             load_time: Time taken to load model
             error: Error message if loading failed
         """
@@ -72,6 +108,8 @@ class BaseInferenceMicroserviceServer(ABC):
             "job_id": self.job_id,
             "model_params": self.model_params,
             "loaded": loaded,
+            "loading": loading,
+            "initializing": self.server_initializing,
             "timestamp": datetime.now().isoformat(),
             "server_port": self.port,
             "model_type": self.__class__.__name__
@@ -81,6 +119,8 @@ class BaseInferenceMicroserviceServer(ABC):
             model_state["load_time"] = load_time
         if error:
             model_state["error"] = error
+        if hasattr(self, 'initialization_error') and self.initialization_error:
+            model_state["initialization_error"] = self.initialization_error
 
         os.makedirs(self.model_state_dir, exist_ok=True)
         state_file = f"{self.model_state_dir}/{self.job_id}_server.json"
@@ -132,21 +172,16 @@ class BaseInferenceMicroserviceServer(ABC):
         """
         pass
 
-    def load_model(self, **kwargs) -> bool:
-        """Load model with error handling and state management
-
-        Args:
-            **kwargs: Model-specific configuration parameters
-
-        Returns:
-            True if model loaded successfully, False otherwise
-        """
+    def _load_model_background(self, **kwargs):
+        """Load model in background thread"""
         try:
-            print(f"Loading {self.__class__.__name__} model")
+            print(f"Loading {self.__class__.__name__} model in background")
+            self.model_loading = True
+            self.model_load_error = None
             start_time = time.time()
 
-            # Save initial state
-            self.save_model_state(loaded=False)
+            # Save loading state
+            self.save_model_state(loaded=False, loading=True)
 
             # Merge model_params with provided kwargs
             all_params = {**self.model_params, **kwargs}
@@ -157,12 +192,14 @@ class BaseInferenceMicroserviceServer(ABC):
             if success:
                 load_time = time.time() - start_time
                 self.model_loaded = True
+                self.model_loading = False
                 print(f"{self.__class__.__name__} model loaded successfully in {load_time:.2f} seconds")
-                self.save_model_state(loaded=True, load_time=load_time)
+                self.save_model_state(loaded=True, loading=False, load_time=load_time)
+                self.logger.info(f"Model loaded successfully in {load_time:.2f}s - ready for inference")
             else:
-                self.save_model_state(loaded=False, error="Model loading failed")
-
-            return success
+                self.model_loading = False
+                self.model_load_error = "Model loading failed"
+                self.save_model_state(loaded=False, loading=False, error="Model loading failed")
 
         except Exception as e:
             error_msg = f"Failed to load model: {e}"
@@ -171,8 +208,27 @@ class BaseInferenceMicroserviceServer(ABC):
             print(traceback.format_exc())
             self.logger.error(error_msg)
             self.model_loaded = False
-            self.save_model_state(loaded=False, error=str(e))
+            self.model_loading = False
+            self.model_load_error = str(e)
+            self.save_model_state(loaded=False, loading=False, error=str(e))
+
+    def load_model(self, **kwargs) -> bool:
+        """Start model loading in background thread
+
+        Args:
+            **kwargs: Model-specific configuration parameters
+
+        Returns:
+            True (loading started), False if already loading
+        """
+        if self.model_loading or self.model_loaded:
             return False
+
+        # Start loading in background thread
+        load_thread = threading.Thread(target=self._load_model_background, kwargs=kwargs)
+        load_thread.daemon = True
+        load_thread.start()
+        return True
 
     def download_and_process_file(self, input_file: str) -> str:
         """Download file from cloud storage if needed and return local path
@@ -211,6 +267,10 @@ class BaseInferenceMicroserviceServer(ABC):
             Inference results dictionary
         """
         if not self.model_loaded:
+            if self.model_loading:
+                raise RuntimeError("Model is still loading, please wait")
+            if self.model_load_error:
+                raise RuntimeError(f"Model failed to load: {self.model_load_error}")
             raise RuntimeError("Model not loaded")
 
         try:
@@ -246,6 +306,8 @@ class BaseInferenceMicroserviceServer(ABC):
             return jsonify({
                 "status": "healthy",
                 "model_loaded": self.model_loaded,
+                "model_loading": self.model_loading,
+                "server_initializing": self.server_initializing,
                 "job_id": self.job_id,
                 "model_type": self.__class__.__name__
             })
@@ -257,6 +319,10 @@ class BaseInferenceMicroserviceServer(ABC):
             return jsonify({
                 "job_id": self.job_id,
                 "model_loaded": self.model_loaded,
+                "model_loading": self.model_loading,
+                "server_initializing": self.server_initializing,
+                "initialization_error": self.initialization_error,
+                "model_load_error": self.model_load_error,
                 "model_state": model_state,
                 "server_port": self.port
             })
@@ -265,20 +331,61 @@ class BaseInferenceMicroserviceServer(ABC):
         def inference():
             """Inference endpoint"""
             try:
-                # Check if model is loaded
-                model_state = self.get_model_state()
-                if not model_state.get("loaded", False):
+                # Check initialization status first
+                if self.server_initializing:
                     response_data = {
                         "job_id": self.job_id,
-                        "status": "waiting",
-                        "message": "Model not loaded yet, try again later"
+                        "status": "initializing",
+                        "message": "Server is initializing (downloading files, setting up), please wait",
+                        "timestamp": datetime.now().isoformat()
                     }
-                    return jsonify(response_data)
+                    return jsonify(response_data), 202  # 202 Accepted - processing
+
+                if self.initialization_error:
+                    response_data = {
+                        "job_id": self.job_id,
+                        "status": "error",
+                        "error": f"Server initialization failed: {self.initialization_error}",
+                        "timestamp": datetime.now().isoformat()
+                    }
+                    return jsonify(response_data), 503  # 503 Service Unavailable
+
+                # Check model status
+                if self.model_loading:
+                    response_data = {
+                        "job_id": self.job_id,
+                        "status": "loading",
+                        "message": "Model is currently loading, please wait and try again",
+                        "timestamp": datetime.now().isoformat()
+                    }
+                    return jsonify(response_data), 202  # 202 Accepted - processing
+
+                if self.model_load_error:
+                    response_data = {
+                        "job_id": self.job_id,
+                        "status": "error",
+                        "error": f"Model failed to load: {self.model_load_error}",
+                        "timestamp": datetime.now().isoformat()
+                    }
+                    return jsonify(response_data), 503  # 503 Service Unavailable
+
+                if not self.model_loaded:
+                    response_data = {
+                        "job_id": self.job_id,
+                        "status": "not_ready",
+                        "message": "Model not loaded yet, please try again later",
+                        "timestamp": datetime.now().isoformat()
+                    }
+                    return jsonify(response_data), 503  # 503 Service Unavailable
 
                 # Parse request data - pass all parameters to model implementation
                 data = request.json
                 if not data:
-                    return jsonify({"error": "Request body is required"}), 400
+                    return jsonify({
+                        "error": "Request body is required",
+                        "job_id": self.job_id,
+                        "timestamp": datetime.now().isoformat()
+                    }), 400
 
                 # Run inference with all parameters
                 results = self.run_inference(**data)
@@ -286,6 +393,7 @@ class BaseInferenceMicroserviceServer(ABC):
                 response_data = {
                     "status": "completed",
                     "results": results,
+                    "job_id": self.job_id,
                     "message": f"{self.__class__.__name__} inference completed"
                 }
 
@@ -296,20 +404,54 @@ class BaseInferenceMicroserviceServer(ABC):
                 return jsonify({
                     "status": "error",
                     "error": str(e),
+                    "job_id": self.job_id,
                     "timestamp": datetime.now().isoformat()
                 }), 500
 
         return app
 
-    def start_server(self):
-        """Start the persistent model server"""
-        if not self.model_loaded:
-            self.logger.error("Cannot start server: model not loaded")
-            return False
+    def start_server_immediate(self):
+        """Start the server immediately and initialize in background
 
+        Uses stored job_data and docker_env_vars from factory method
+        """
         try:
+            # Start initialization in background if data is available
+            if hasattr(self, '_job_data') and hasattr(self, '_docker_env_vars'):
+                init_thread = threading.Thread(
+                    target=self._initialize_background,
+                    args=(self._job_data, self._docker_env_vars)
+                )
+                init_thread.daemon = True
+                init_thread.start()
+
+            # Start server immediately (don't wait for initialization or model loading)
             app = self.create_flask_app()
             self.logger.info(f"Starting {self.__class__.__name__} Server on port {self.port}")
+            self.logger.info("Server starting immediately - initialization and model loading in background")
+            app.run(host='0.0.0.0', port=self.port, debug=False, threaded=True)
+            return True
+
+        except Exception as e:
+            self.logger.error(f"Failed to start server: {e}")
+            return False
+
+    def start_server(self, load_model_params: Dict[str, Any] = None):
+        """Start the persistent model server immediately and load model in background
+
+        Args:
+            load_model_params: Parameters for model loading
+        """
+        try:
+            # Start model loading in background
+            if load_model_params is None:
+                load_model_params = {}
+            self.load_model(**load_model_params)
+
+            # Start server immediately (don't wait for model to load)
+            app = self.create_flask_app()
+            self.logger.info(f"Starting {self.__class__.__name__} Server on port {self.port}")
+            self.logger.info("Server starting immediately - model will load in background")
             app.run(host='0.0.0.0', port=self.port, debug=False, threaded=True)
             return True
 
@@ -328,13 +470,18 @@ class BaseInferenceMicroserviceServer(ABC):
             port: Server port
 
         Returns:
-            Tuple of (configured model server instance, specs dict)
+            Configured model server instance (ready to start)
         """
-        cloud_storage, specs, _ = prepare_data_before_job_run(job_data, docker_env_vars)
-
-        return cls(
+        # Create server instance immediately with minimal data
+        server_instance = cls(
             job_id=job_data["job_id"],
             port=port,
-            cloud_storage=cloud_storage,
-            **specs  # Pass all specs as model-specific kwargs
+            cloud_storage=None,  # Will be initialized in background
+            **{}  # Empty model params initially
         )
+
+        # Store initialization data for later use
+        server_instance._job_data = job_data
+        server_instance._docker_env_vars = docker_env_vars
+
+        return server_instance
