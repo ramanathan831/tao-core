@@ -110,11 +110,6 @@ def create_cs_instance_with_decrypted_metadata(decrypted_metadata):
     cloud_specific_details = handler_metadata_copy.get("cloud_specific_details", {})
     cloud_bucket_name = cloud_specific_details.get("cloud_bucket_name")
 
-    # Check if air-gapped mode is enabled
-    if os.getenv("AIRGAPPED_MODE", "false").lower() == "true" or cloud_type == "seaweedfs":
-        # Use SeaweedFS for air-gapped deployment
-        return _create_seaweedfs_instance(cloud_specific_details)
-
     # Original cloud providers
     cs_instance = None
     if cloud_specific_details and cloud_bucket_name:
@@ -136,6 +131,10 @@ def create_cs_instance_with_decrypted_metadata(decrypted_metadata):
                 secret=cloud_specific_details.get("access_key"),
                 client_kwargs={"endpoint_url": cloud_specific_details.get("endpoint_url")}
             )
+        elif cloud_type == "seaweedfs":
+            return _create_seaweedfs_instance(cloud_specific_details)
+        else:
+            raise ValueError(f"Unsupported cloud_type: {cloud_type}")
 
     return cs_instance, cloud_specific_details
 
@@ -148,11 +147,6 @@ def create_cs_instance(handler_metadata):
     handler_metadata_copy = copy.deepcopy(handler_metadata)
     cloud_type = handler_metadata_copy.get("cloud_type", "aws")
     cloud_specific_details = handler_metadata_copy.get("cloud_specific_details", {})
-
-    # Check if air-gapped mode is enabled
-    if os.getenv("AIRGAPPED_MODE", "false").lower() == "true" or cloud_type == "seaweedfs":
-        # Use SeaweedFS for air-gapped deployment
-        return _create_seaweedfs_instance(cloud_specific_details)
 
     # Decrypt cloud details for original cloud providers
     config_path = os.getenv("VAULT_SECRET_PATH", None)
@@ -184,6 +178,11 @@ def create_cs_instance(handler_metadata):
                 secret=cloud_specific_details.get("access_key"),
                 client_kwargs={"endpoint_url": cloud_specific_details.get("endpoint_url")}
             )
+        elif cloud_type == "seaweedfs":
+            return _create_seaweedfs_instance(cloud_specific_details)
+        else:
+            raise ValueError(f"Unsupported cloud_type: {cloud_type}")
+
     return cs_instance, cloud_specific_details
 
 
