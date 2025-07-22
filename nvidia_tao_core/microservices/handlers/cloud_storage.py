@@ -371,6 +371,9 @@ class CloudStorage:
         """Download a file from cloud storage to local destination."""
         full_path = self.root + cloud_file_path
         try:
+            if os.path.exists(local_destination):
+                logger.info(f"File {local_destination} already exists, skipping download")
+                return
             self.fs.download(full_path, local_destination)
             logger.info(f"Downloaded {cloud_file_path} to {local_destination}")
         except Exception as e:
@@ -383,6 +386,10 @@ class CloudStorage:
         # Normalize path to avoid double slashes
         cloud_folder_normalized = cloud_folder.strip('/')
         full_path = self.root + cloud_folder_normalized + '/' if cloud_folder_normalized else self.root
+
+        if os.path.exists(local_destination):
+            logger.info(f"Folder {local_destination} already exists, skipping download")
+            return
 
         try:
             # Use fsspec for all cloud providers (unified approach)
