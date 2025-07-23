@@ -394,6 +394,7 @@ def main():
     parser.add_argument(
         "json_file",
         nargs='?',
+        default=None,
         help="Path to JSON file containing experiment metadata. "
              "If --use-cloud-storage is specified, defaults to 'index.json' under LOCAL_MODEL_REGISTRY folder. "
              "Otherwise, this parameter is required for local file operations."

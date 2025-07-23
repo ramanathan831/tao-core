@@ -192,6 +192,8 @@ check_container_env() {
 
 # Parse command line arguments
 EXTRA_ARGS=()
+USER_PROVIDED_CLOUD_TYPE=false
+USER_PROVIDED_BUCKET_NAME=false
 while [[ $# -gt 0 ]]; do
     case $1 in
         -t|--deployment-type)
@@ -228,11 +230,13 @@ while [[ $# -gt 0 ]]; do
             ;;
         --cloud-type)
             CLOUD_TYPE="$2"
+            USER_PROVIDED_CLOUD_TYPE=true
             EXTRA_ARGS+=(--cloud-type "$2")
             shift 2
             ;;
         --bucket-name)
             BUCKET_NAME="$2"
+            USER_PROVIDED_BUCKET_NAME=true
             EXTRA_ARGS+=(--bucket-name "$2")
             shift 2
             ;;
@@ -342,8 +346,15 @@ fi
 # Build the command to run in the pod
 PYTHON_CMD="python3 -m nvidia_tao_core.microservices.load_airgapped_experiments_to_db "
 PYTHON_CMD+=" --use-cloud-storage"
-PYTHON_CMD+=" --cloud-type \"$CLOUD_TYPE\""
-PYTHON_CMD+=" --bucket-name \"$BUCKET_NAME\""
+
+# Only add default arguments if not provided by user
+if [ "$USER_PROVIDED_CLOUD_TYPE" = false ]; then
+    PYTHON_CMD+=" --cloud-type \"$CLOUD_TYPE\""
+fi
+
+if [ "$USER_PROVIDED_BUCKET_NAME" = false ]; then
+    PYTHON_CMD+=" --bucket-name \"$BUCKET_NAME\""
+fi
 
 if [ "$DRY_RUN" = true ]; then
     PYTHON_CMD+=" --dry-run"
@@ -357,6 +368,12 @@ fi
 for arg in "${EXTRA_ARGS[@]}"; do
     PYTHON_CMD+=" \"$arg\""
 done
+
+# Only add json_file argument if not using cloud storage
+# When using cloud storage, the script automatically looks for index.json under LOCAL_MODEL_REGISTRY
+if [ "$USE_CLOUD_STORAGE" = false ]; then
+    PYTHON_CMD+=" \"$JSON_FILE_PATH\""
+fi
 
 log "Executing command in $DEPLOYMENT_TYPE container/pod $CONTAINER_OR_POD:"
 log "$PYTHON_CMD"
