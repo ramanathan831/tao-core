@@ -281,6 +281,7 @@ class CloudStorage:
         :cloud_file_path: Destination path in the cloud storage bucket.
         """
         try:
+            cloud_file_path = cloud_file_path.strip("/")
             # Upload the file to cloud storage
             if os.path.exists(local_file_path):
                 with open(local_file_path, 'rb') as file_stream:
