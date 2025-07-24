@@ -179,10 +179,12 @@ class ActionPipeline:
             if "maxine" in self.network:
                 team = "MAXINE"
             self.image = DOCKER_IMAGE_MAPPER[f"{team}_DEPLOY"]
+        using_previous_version = False
         if self.network in DOCKER_IMAGE_VERSION.keys():
             self.tao_framework_version, self.tao_model_override_version = DOCKER_IMAGE_VERSION[self.network]
             if self.tao_model_override_version not in self.image:
                 self.image = self.image.replace(self.tao_framework_version, self.tao_model_override_version)
+                using_previous_version = True
         if self.action in self.network_config.get("api_params", {}).get("image_override_per_action", {}):
             image_override_per_action = self.api_params.get("image_override_per_action", {})
             override_key = image_override_per_action.get(self.action)
@@ -202,6 +204,8 @@ class ActionPipeline:
             "ORCHESTRATION_API_NETWORK": self.network,
             "ORCHESTRATION_API_ACTION": self.action
         }
+        if using_previous_version:
+            self.job_env_variables = {}
         self.platform_id = self.job_context.platform_id
         if not self.platform_id:
             if BACKEND == "NVCF":
