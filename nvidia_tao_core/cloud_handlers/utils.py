@@ -314,11 +314,7 @@ def upload_files(local_path, cloud_storage, file_last_modified, selective_tarbal
 
                     logger.info("File event created/modified {}".format(file_path))  # noqa pylint: disable=C0209
                     try:
-<<<<<<< HEAD
                         time.sleep(10)
-=======
-                        time.sleep(5)
->>>>>>> main
                         cloud_storage.upload_file(file_path, file_path)
                     except Exception as e:  # pylint: disable=broad-except
                         logger.error(
