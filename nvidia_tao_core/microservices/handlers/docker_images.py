@@ -57,7 +57,7 @@ DOCKER_IMAGE_VERSION = {  # (Release tao version for DNN framework, Overriden ve
     "re_identification": ("6.25.7", "6.0.0"),
     "rtdetr": ("6.25.7", "6.0.0"),
     "segformer": ("6.25.7", "6.0.0"),
-    "sparse4d": ("6.25.7", "6.0.0"),
+    "sparse4d": ("6.25.7", "6.25.7"),
     "stylegan_xl": ("6.25.7", "6.0.0"),
     "visual_changenet": ("6.25.7", "6.0.0"),
 }

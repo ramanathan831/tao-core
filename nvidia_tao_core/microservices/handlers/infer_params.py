@@ -23,10 +23,13 @@ import os
 import logging
 
 from nvidia_tao_core.microservices.constants import MONAI_NETWORKS
+
 from nvidia_tao_core.microservices.handlers.utilities import (
     search_for_base_experiment, get_model_results_path,
     get_file_list_from_cloud_storage, search_for_checkpoint, filter_files
 )
+from nvidia_tao_core.cloud_handlers.utils import search_for_ptm
+from nvidia_tao_core.microservices.handlers.cloud_storage import create_cs_instance
 from nvidia_tao_core.microservices.handlers.stateless_handlers import (
     get_handler_root, get_jobs_root, get_handler_job_metadata,
     get_handler_metadata, get_handler_kind, get_base_experiment_metadata,
@@ -124,8 +127,64 @@ def infer_ptm(job_context, handler_metadata):
             else:
                 base_experiment_metadata = get_base_experiment_metadata(handler_ptm)
                 ngc_path = base_experiment_metadata.get("ngc_path") if base_experiment_metadata else None
-                ptm_file.append(f"ngc://{ngc_path}")
+                workspace_metadata = get_handler_metadata(handler_metadata.get("workspace"), kind="workspaces")
+
+                # Check if running in air-gapped mode
+                if os.getenv("AIRGAPPED_MODE", "false").lower() == "true":
+                    # In air-gapped mode, check if local model exists, otherwise use the PTM root
+                    path_part, version = ngc_path.split(":", 1)
+                    model_name = path_part.split("/")[-1]
+
+                    cs_instance, _ = create_cs_instance(workspace_metadata)
+                    model_registry = os.getenv('LOCAL_MODEL_REGISTRY')
+                    root_path = f"{model_registry}/{path_part}/{version}/{model_name}_v{version}"
+                    cloud_path = cs_instance.search_for_ptm(root=root_path, network=network)
+                    if cloud_path:
+                        bucket_name = workspace_metadata.get('cloud_specific_details').get('cloud_bucket_name')
+                        ptm_file.append(f"seaweedfs://{bucket_name}/{cloud_path}")
+                else:
+                    # Original cloud mode behavior
+                    ptm_file.append(f"ngc://{ngc_path}")
     return ",".join(ptm_file)
+
+
+def _get_local_model_path_for_job(ngc_path, ptm_root, network=""):
+    """Get local model path for job execution in air-gapped mode.
+
+    Args:
+        ngc_path (str): NGC path of the model
+        ptm_root (str): PTM root directory
+        network (str): Network architecture name for network-specific search
+
+    Returns:
+        str: Local model path if found, None otherwise
+    """
+    try:
+        # Parse NGC path to construct local registry path
+        from nvidia_tao_core.microservices.pretrained_models import split_ngc_path
+        org, team, model_version = split_ngc_path(ngc_path)
+        model_name, version = model_version.split(':')
+
+        # Get local model registry path
+        local_registry = os.getenv("LOCAL_MODEL_REGISTRY", "/shared-storage/models")
+        local_model_path = os.path.join(local_registry, org, team, model_name, version)
+
+        # First try the structured local registry path
+        if os.path.exists(local_model_path):
+            found_model = search_for_ptm(local_model_path, network=network)
+            if found_model:
+                return found_model
+
+        # Fallback to ptm_root (previously downloaded models)
+        if os.path.exists(ptm_root):
+            found_model = search_for_ptm(ptm_root, network=network)
+            if found_model:
+                return found_model
+
+        return None
+    except Exception as e:
+        logger.error(f"Error getting local model path for {ngc_path}: {e}")
+        return None
 
 
 def infer_pruned_model(job_context, handler_metadata):

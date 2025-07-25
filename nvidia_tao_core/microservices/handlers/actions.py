@@ -394,7 +394,7 @@ class ActionPipeline:
         experiment_metadata = copy.deepcopy(self.handler_metadata)
         exp_workspace_id = experiment_metadata.get("workspace")
         self.workspace_ids.append(exp_workspace_id)
-        if self.network in MONAI_NETWORKS or (self.network not in MONAI_NETWORKS and BACKEND == "local-k8s"):
+        if self.network in MONAI_NETWORKS or BACKEND in ("local-k8s", "local-docker"):
             get_cloud_metadata(self.workspace_ids, self.cloud_metadata)
 
     def handle_multiple_ptm_fields(self):
@@ -593,7 +593,7 @@ class ActionPipeline:
             metadata_status = "Error"
 
         self.detailed_print(f"Job Done: {self.job_name} Final status: {metadata_status}")
-        if self.ngc_runner or (self.network not in MONAI_NETWORKS and BACKEND == "local-k8s"):
+        if self.ngc_runner or (self.network not in MONAI_NETWORKS and BACKEND in ("local-k8s", "local-docker")):
             if metadata_status not in ("Canceled", "Canceling", "Paused", "Pausing"):
                 jobDriver.delete(self.job_name)
 
@@ -660,7 +660,7 @@ class ActionPipeline:
             else:
                 nv_job_metadata = None
 
-            if self.network not in MONAI_NETWORKS and BACKEND == "local-k8s":
+            if self.network not in MONAI_NETWORKS and BACKEND in ("local-k8s", "local-docker"):
                 self.create_microservice_action_job(self.job_name)
             else:
                 jobDriver.create(
@@ -1075,7 +1075,7 @@ class AutoMLPipeline(ActionPipeline):
             if k8s_status == "Error":
                 self.detailed_print(f"Relaunching job {self.job_name}")
                 wait_for_job_completion(self.job_name)
-                if self.network not in MONAI_NETWORKS and BACKEND == "local-k8s":
+                if self.network not in MONAI_NETWORKS and BACKEND in ("local-k8s", "local-docker"):
                     self.create_microservice_action_job(self.automl_brain_job_id)
                 else:
                     jobDriver.create(
@@ -1137,7 +1137,7 @@ class AutoMLPipeline(ActionPipeline):
             if self.ngc_runner:
                 self.generate_nv_job_metadata(nv_job_metadata)
 
-            if self.network not in MONAI_NETWORKS and BACKEND == "local-k8s":
+            if self.network not in MONAI_NETWORKS and BACKEND in ("local-k8s", "local-docker"):
                 self.create_microservice_action_job(self.automl_brain_job_id)
             else:
                 jobDriver.create(

@@ -325,7 +325,7 @@ def upload_model(org_name, team_name, handler_metadata, source_files, ngc_key, j
 
 
 def download_ngc_model(ngc_path, ptm_root, key, is_cookie_set, use_ngc_staging):
-    """Download models from NGC model registry.
+    """Download models from NGC model registry or use local models in air-gapped mode.
 
     Args:
         ngc_path (str): The NGC path to the desired model in the format 'org/team/model:version'.
@@ -337,6 +337,13 @@ def download_ngc_model(ngc_path, ptm_root, key, is_cookie_set, use_ngc_staging):
     if ngc_path == "":
         logger.info("Invalid ngc path.")
         return False
+
+    # Check if running in air-gapped mode
+    if os.getenv("AIRGAPPED_MODE", "false").lower() == "true":
+        logger.info("Air-gapped mode detected, using local model registry")
+        return _download_local_model(ngc_path, ptm_root)
+
+    # Original NGC download logic
     ngc_configs = ngc_path.split('/')
     org = ngc_configs[0]
     team = ""
@@ -379,8 +386,57 @@ def download_ngc_model(ngc_path, ptm_root, key, is_cookie_set, use_ngc_staging):
     except errors.NgcException as e:
         logger.error("Failed to download {}. Error: {}".format(ngc_path, e))  # noqa pylint: disable=C0209
         return False
+    except Exception as e:
+        logger.error("Failed to download {}. Error: {}".format(ngc_path, e))  # noqa pylint: disable=C0209
+        return False
 
     return True
+
+
+def _download_local_model(ngc_path, ptm_root):
+    """Download model from local registry in air-gapped mode.
+
+    Args:
+        ngc_path (str): The NGC path to the desired model in the format 'org/team/model:version'.
+        ptm_root (str): The directory where the downloaded model will be saved.
+
+    Returns:
+        bool: True if the copy is successful, False otherwise.
+    """
+    try:
+        # Parse NGC path
+        from nvidia_tao_core.microservices.pretrained_models import split_ngc_path
+        org, team, model_version = split_ngc_path(ngc_path)
+        model_name, version = model_version.split(':')
+
+        # Get local model registry path
+        local_registry = os.getenv("LOCAL_MODEL_REGISTRY", "/shared-storage/models")
+        local_model_path = os.path.join(local_registry, org, team, model_name, version)
+
+        if not os.path.exists(local_model_path):
+            logger.error(f"Model {ngc_path} not found in local registry at {local_model_path}")
+            return False
+
+        # Create destination directory
+        os.makedirs(ptm_root, exist_ok=True)
+
+        # Copy model from local registry to PTM root
+        for item in os.listdir(local_model_path):
+            src = os.path.join(local_model_path, item)
+            dst = os.path.join(ptm_root, item)
+            if os.path.isdir(src):
+                if os.path.exists(dst):
+                    shutil.rmtree(dst)
+                shutil.copytree(src, dst)
+            else:
+                shutil.copy2(src, dst)
+
+        logger.info(f"Copied local model {ngc_path} to {ptm_root}")
+        return True
+
+    except Exception as e:
+        logger.error(f"Failed to copy local model {ngc_path}. Error: {e}")
+        return False
 
 
 def delete_model(org_name, team_name, handler_metadata, ngc_key, use_cookie, job_id, job_action):

@@ -28,14 +28,22 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-def backup(access_key, secret_key, s3_bucket_name, s3_bucket_region):
+def backup(access_key, secret_key, s3_bucket_name, endpoint_url=None, region=None):
     """Script to backup mongodump file to S3 bucket"""
-    if not access_key or not secret_key or not s3_bucket_name or not s3_bucket_region:
+    if not access_key or not secret_key or not s3_bucket_name:
         logger.error("Invalid arguments. Check script arguments and try again.")
         return
 
     try:
-        cs_instance = CloudStorage('aws', s3_bucket_name, s3_bucket_region, access_key, secret_key)
+        cs_instance = CloudStorage(
+            cloud_type="aws",
+            bucket_name=s3_bucket_name,
+            region=region,
+            key=access_key,
+            secret=secret_key,
+            client_kwargs={"endpoint_url": endpoint_url}
+        )
+
     except Exception as e:
         logger.error("Invalid cloud credentials. Check cloud credentials and try again: %s", str(e))
         return
@@ -53,8 +61,9 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description="Backup MongoDB data to S3")
     parser.add_argument("--access-key", help="AWS S3 access key to use for backup", default=None)
     parser.add_argument("--secret-key", help="AWS S3 secret key to use for backup", default=None)
+    parser.add_argument("--region", help="AWS S3 region to use for backup", default=None)
     parser.add_argument("--s3-bucket-name", help="AWS S3 bucket to store backup data in", default=None)
-    parser.add_argument("--s3-bucket-region", help="AWS S3 bucket region to store backup data in", default=None)
+    parser.add_argument("--endpoint-url", help="AWS S3 endpoint URL to use for backup", default=None)
     args = parser.parse_args()
 
-    backup(args.access_key, args.secret_key, args.s3_bucket_name, args.s3_bucket_region)
+    backup(args.access_key, args.secret_key, args.s3_bucket_name, args.endpoint_url)
