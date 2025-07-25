@@ -425,7 +425,7 @@ class CloudStorage:
     @master_node_only
     def upload_file(self, local_file_path, cloud_file_path):
         """Upload a file from local storage to cloud."""
-        full_path = self.root + cloud_file_path
+        full_path = self.root + cloud_file_path.strip("/")
         try:
             self.fs.upload(local_file_path, full_path)
             logger.info(f"Uploaded {local_file_path} to {cloud_file_path}")
