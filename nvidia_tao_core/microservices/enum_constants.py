@@ -79,6 +79,10 @@ def _get_valid_actions():
                     config = json.load(f)
                     if "actions" in config.get("api_params", {}):
                         actions.update(config["api_params"]["actions"])
+                    actions_mapping = config.get("actions_mapping", {})
+                    for _, mapping in actions_mapping.items():
+                        if "action" in mapping:
+                            actions.add(mapping["action"])
             except (json.JSONDecodeError, IOError):
                 continue
 
