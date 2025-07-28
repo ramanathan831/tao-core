@@ -128,9 +128,10 @@ def infer_ptm(job_context, handler_metadata):
                 base_experiment_metadata = get_base_experiment_metadata(handler_ptm)
                 ngc_path = base_experiment_metadata.get("ngc_path") if base_experiment_metadata else None
                 workspace_metadata = get_handler_metadata(handler_metadata.get("workspace"), kind="workspaces")
+                cloud_type = workspace_metadata.get("cloud_type", "aws")
 
                 # Check if running in air-gapped mode
-                if os.getenv("AIRGAPPED_MODE", "false").lower() == "true":
+                if os.getenv("AIRGAPPED_MODE", "false").lower() == "true" and cloud_type == "seaweedfs":
                     # In air-gapped mode, check if local model exists, otherwise use the PTM root
                     path_part, version = ngc_path.split(":", 1)
                     model_name = path_part.split("/")[-1]
