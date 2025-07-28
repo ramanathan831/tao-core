@@ -374,7 +374,12 @@ def apply_data_source_config(config, job_context, handler_metadata):
     if job_context.network == "efficientdet_tf2":
         dataset_convert_action = "convert_efficientdet_tf2"
 
-    network_config = read_network_config(job_context.network)
+    job_network = job_context.network
+    job_action = job_context.action
+    if job_action == "validate_images":
+        job_network = "image"
+        job_action = "validate"
+    network_config = read_network_config(job_network)
 
     # Keep track of paths that have already been set by special handlers
     already_configured_paths = set()
@@ -421,12 +426,12 @@ def apply_data_source_config(config, job_context, handler_metadata):
                             if action_restriction:
                                 if isinstance(action_restriction, list):
                                     # Simple list of allowed actions
-                                    if job_context.action not in action_restriction:
+                                    if job_action not in action_restriction:
                                         continue
                                 elif isinstance(action_restriction, dict):
                                     # Dict mapping config paths to allowed actions
                                     if config_path in action_restriction:
-                                        if job_context.action not in action_restriction[config_path]:
+                                        if job_action not in action_restriction[config_path]:
                                             continue
                                     else:
                                         # If config_path not in action_restriction dict, apply to all actions
@@ -470,12 +475,12 @@ def apply_data_source_config(config, job_context, handler_metadata):
                                     if action_restriction:
                                         if isinstance(action_restriction, list):
                                             # Simple list of allowed actions
-                                            if job_context.action not in action_restriction:
+                                            if job_action not in action_restriction:
                                                 continue
                                         elif isinstance(action_restriction, dict):
                                             # Dict mapping config paths to allowed actions
                                             if config_path in action_restriction:
-                                                if job_context.action not in action_restriction[config_path]:
+                                                if job_action not in action_restriction[config_path]:
                                                     continue
                                             else:
                                                 # If config_path not in action_restriction dict, apply to all actions
@@ -498,8 +503,8 @@ def apply_data_source_config(config, job_context, handler_metadata):
 
         # Check action rules
         if "action_rules" in dynamic_config:
-            if job_context.action in dynamic_config["action_rules"]:
-                rules = dynamic_config["action_rules"][job_context.action]
+            if job_action in dynamic_config["action_rules"]:
+                rules = dynamic_config["action_rules"][job_action]
                 if "set_value" in rules:
                     for config_path, value in rules["set_value"].items():
                         set_nested_config_value(config, config_path, value)
@@ -516,7 +521,7 @@ def apply_data_source_config(config, job_context, handler_metadata):
                 remove_nested_config_value(config, path)
 
             # Handle action-specific removals
-            for path in rules.get("remove_if_action", {}).get(job_context.action, []):
+            for path in rules.get("remove_if_action", {}).get(job_action, []):
                 remove_nested_config_value(config, path)
 
             # Handle joint model path splitting
@@ -534,7 +539,7 @@ def apply_data_source_config(config, job_context, handler_metadata):
                 set_nested_config_value(config, path, value)
 
     # Apply data source mappings
-    data_sources = network_config.get("data_sources", {}).get(job_context.action, {})
+    data_sources = network_config.get("data_sources", {}).get(job_action, {})
 
     for config_path, source_config in data_sources.items():
         # Get source datasets
