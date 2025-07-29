@@ -1,3 +1,7 @@
+// Global variables
+def TAO_VERSION = "6.25.7"
+def BUILD_TYPE = "dev"
+
 podTemplate (cloud:'sc-ipp-blossom-prod', yaml : """
 apiVersion: v1
 kind: Pod
@@ -41,9 +45,7 @@ spec:
   // Stage 1: Initial setup and basic tests
   node(POD_LABEL) {
     container('pyt') {
-      def BUILD_TYPE="dev0"
-      def TAO_WHEEL_VERSION="5.3.0"
-      def VER="${TAO_WHEEL_VERSION}.${BUILD_NUMBER}.${BUILD_TYPE}"
+      def VER="${TAO_VERSION}.${BUILD_TYPE}${BUILD_NUMBER}"
       def PYTHON_VERSION=sh(script: 'python -c "import platform; print(platform.python_version())"', returnStdout: true).trim()
       
       stage ('checkout') {
@@ -207,9 +209,7 @@ spec:
   // Stage 3: Build and final cleanup on x86 Kubernetes pod
   node(POD_LABEL) {
     container('pyt') {
-      def BUILD_TYPE="dev0"
-      def TAO_WHEEL_VERSION="5.3.0"
-      def VER="${TAO_WHEEL_VERSION}.${BUILD_NUMBER}.${BUILD_TYPE}"
+      def VER="${TAO_VERSION}.${BUILD_TYPE}${BUILD_NUMBER}"
       def PYTHON_VERSION=sh(script: 'python -c "import platform; print(platform.python_version())"', returnStdout: true).trim()
 
       stage ('checkout_build') {
@@ -220,7 +220,10 @@ spec:
 
       stage ('build_pyt_wheel') {
         gitlabCommitStatus(name: "build_wheel", connection: gitLabConnection('git-lab-master')) {
-          sh "echo '${BUILD_NUMBER}-${BUILD_TYPE}' > build.info"
+          // Extract patch number from TAO_VERSION (e.g., "5.3.0" -> "0")
+          def VERSION_PARTS = TAO_VERSION.split('\\.')
+          def PATCH_NUMBER = VERSION_PARTS[-1]
+          sh "echo '${PATCH_NUMBER}.${BUILD_TYPE}${BUILD_NUMBER}' > build.info"
           sh """
             echo "Installing required packages"
             pip install --upgrade pip setuptools wheel
