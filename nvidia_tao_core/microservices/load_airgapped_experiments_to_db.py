@@ -22,6 +22,8 @@ import sys
 import yaml
 import glob
 import tempfile
+import uuid
+import shutil
 
 from nvidia_tao_core.microservices.handlers.mongo_handler import MongoHandler
 from nvidia_tao_core.microservices.utils import safe_load_file
@@ -119,9 +121,10 @@ class AirgappedExperimentLoader:
                 logger.error("JSON file not found in cloud storage: %s", cloud_json_path)
                 return None
 
-            # Create temporary file for download
-            with tempfile.NamedTemporaryFile(mode='w+', suffix='.json', delete=False) as temp_file:
-                temp_path = temp_file.name
+            # Create temporary directory and filename for download
+            temp_dir = tempfile.mkdtemp()
+            temp_filename = f"airgapped_models_{uuid.uuid4().hex}.json"
+            temp_path = os.path.join(temp_dir, temp_filename)
 
             try:
                 # Download the file
@@ -131,9 +134,9 @@ class AirgappedExperimentLoader:
 
             except Exception as e:
                 logger.error("Failed to download JSON file from cloud storage: %s", e)
-                # Clean up temporary file if download failed
+                # Clean up temporary directory if download failed
                 try:
-                    os.unlink(temp_path)
+                    shutil.rmtree(temp_dir)
                 except OSError:
                     pass
                 return None
@@ -208,9 +211,10 @@ class AirgappedExperimentLoader:
                     continue
 
                 if self.cloud_storage.is_file(file):
-                    # Download to temporary file
-                    with tempfile.NamedTemporaryFile(mode='w+', suffix='.yaml', delete=False) as temp_file:
-                        temp_path = temp_file.name
+                    # Create temporary directory and filename for download
+                    temp_dir = tempfile.mkdtemp()
+                    temp_filename = f"experiment_{uuid.uuid4().hex}.yaml"
+                    temp_path = os.path.join(temp_dir, temp_filename)
 
                     try:
                         self.cloud_storage.download_file(file, temp_path)
@@ -227,11 +231,11 @@ class AirgappedExperimentLoader:
                         return None
 
                     finally:
-                        # Clean up temporary file
+                        # Clean up temporary directory
                         try:
-                            os.unlink(temp_path)
+                            shutil.rmtree(temp_dir)
                         except Exception as e:
-                            logger.error("Failed to clean up temporary file %s: %s", temp_path, e)
+                            logger.error("Failed to clean up temporary directory %s: %s", temp_dir, e)
                             pass
 
             logger.warning("No experiment.yaml file found in cloud storage for experiment: %s (searched in %s)",
@@ -394,6 +398,7 @@ def main():
     parser.add_argument(
         "json_file",
         nargs='?',
+        default=None,
         help="Path to JSON file containing experiment metadata. "
              "If --use-cloud-storage is specified, defaults to 'index.json' under LOCAL_MODEL_REGISTRY folder. "
              "Otherwise, this parameter is required for local file operations."
@@ -462,7 +467,7 @@ def main():
         bucket_name = args.bucket_name
 
         cloud_config = {
-            "cloud_type": args.cloud_type,
+            "cloud_type": "seaweedfs",
             "bucket_name": bucket_name,
             "endpoint_url": endpoint_url,
             "access_key": access_key,
