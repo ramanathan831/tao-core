@@ -299,7 +299,7 @@ exec python3 -m llava.cli.tao_model_server --job "{str(job_metadata)}" --docker_
 
         # Always use simple service name for both Kubernetes and docker-compose
         # This works reliably for intra-cluster communication and avoids DNS issues
-        if os.environ.get('DEPLOYMENT_MODE', 'kubernetes') == 'docker-compose':
+        if os.environ.get('BACKEND', 'local-k8s') == 'local-docker':
             url = f"http://{job_id}:8080/{endpoint}"
         else:
             url = f"http://{service_name}:8080/{endpoint}"
