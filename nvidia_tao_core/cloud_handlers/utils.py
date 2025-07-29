@@ -184,7 +184,6 @@ def download_huggingface_model(download_url, destination_folder, token):
         destination_folder (str): The destination folder where the model will be saved.
         token (str): The token for accessing private models (optional).
     """
-
     if token:
         model_dir = snapshot_download(
             repo_id=download_url,
