@@ -30,7 +30,8 @@ from packaging import version
 from enum import Enum
 import logging
 
-from nvidia_tao_core.microservices.handlers.mongo_handler import MongoHandler
+if os.getenv("AIRGAPPED_MODE", "False") == "False":
+    from nvidia_tao_core.microservices.handlers.mongo_handler import MongoHandler
 from nvidia_tao_core.microservices.handlers.ngc_handler import get_ngc_token_from_api_key
 from nvidia_tao_core.microservices.utils import read_network_config, get_admin_key, safe_load_file
 from nvidia_tao_core.microservices.constants import TAO_NETWORKS
@@ -68,6 +69,9 @@ class BaseExperimentMetadata:
         ngc_key: str = None,
         override: bool = False,
         dry_run: bool = False,
+        output_json: str = None,
+        models_file: str = None,
+        model_names: str = None,
     ):
         """Initialize Base Experiment Metadata class
 
@@ -76,9 +80,19 @@ class BaseExperimentMetadata:
             org_teams (str): Organization and team names. Each pair of org/team separated by a comma.
             ngc_key (str, optional): NGC Personal Key. Defaults to None.
             override (bool, optional): Override existing base experiments. Defaults to False.
+            dry_run (bool, optional): Dry run mode. Defaults to False.
+            output_json (str, optional): Output JSON file path for airgapped mode. Defaults to None.
+            models_file (str, optional): File containing list of NGC model paths for specific model selection.
+                Defaults to None.
+            model_names (str, optional): Comma-separated list of model names/entrypoints to download.
+                Defaults to None.
         """
         self.shared_folder_path = shared_folder_path
-        self.ngc_key = ngc_key or get_admin_key()
+        self.ngc_key = os.getenv("PTM_API_KEY") or ngc_key or get_admin_key()
+        self.airgapped = os.getenv("AIRGAPPED_MODE", "False") == "True"
+        self.output_json = output_json
+        self.models_file = models_file
+        self.model_names = model_names.split(",") if model_names else None
         self.org_team_list = self.prepare_org_team(org_teams)
         self.override = override
         self.metadata: dict = {}
@@ -96,6 +110,8 @@ class BaseExperimentMetadata:
         self.rootdir = os.path.abspath(
             os.path.join(self.shared_folder_path, "orgs", str(self.base_exp_uuid), "experiments", str(self.ptm_uuid))
         )
+        if self.airgapped:
+            self.rootdir = self.shared_folder_path
         self.metadata_file = os.path.join(self.rootdir, "ptm_metadatas.json")
 
         # create rootdir if it doesn't exist
@@ -192,6 +208,14 @@ class BaseExperimentMetadata:
                 if "/" in org_team:
                     org, team = org_team.split("/")
                 org_team_list.append((org, team))
+        elif self.models_file:
+            # In models file mode, we don't need org/team validation since we specify exact models
+            logger.info("> Models file mode: will process specific models from file.")
+            org_team_list = []
+        elif self.model_names:
+            # In model names mode, we need to discover all orgs but filter by model names
+            logger.info(f"> Model names mode: will discover models matching: {', '.join(self.model_names)}")
+            org_team_list = self.get_org_teams()
         else:
             logger.warning("> No org/team is provided by `--org-team`.")
             org_team_list = self.get_org_teams()
@@ -230,7 +254,7 @@ class BaseExperimentMetadata:
                 logger.error(response.json())
                 continue
             teams = [team["name"] for team in response.json()["teams"]]
-            logger.info(f"{org}:", teams)
+            logger.info(f"{org}: {teams}")
             org_teams.extend([(org, team) for team in teams])
             org_teams.append((org, ""))
         logger.info("nvidia: ['tao']")
@@ -307,10 +331,24 @@ class BaseExperimentMetadata:
         return base_experiments
 
     def add_experiment(self, base_experiments, display_name, ngc_path, network_arch, ngc_token):
-        """Add experiment to the base experiments lis with unique id"""
+        """Add experiment to the base experiments list with unique id"""
         hash_str = f"{ngc_path}:{network_arch}"
         exp_id = str(uuid.uuid5(self.base_exp_uuid, hash_str))
-        spec_data = self.get_base_spec(ngc_path, exp_id, ngc_token)
+
+        if self.airgapped:
+            # In airgapped mode, download complete model instead of just specs
+            spec_data = {}
+            download_success = self.download_complete_model(ngc_path, exp_id, ngc_token)
+            if download_success:
+                # Try to get spec data if experiment.yaml exists
+                org, team, model, version = self.split_ngc_path(ngc_path)
+                spec_file_path = f"{self.rootdir}/{org}/{team}/{model}/{version}/{model}_v{version}/experiment.yaml"
+                if os.path.isfile(spec_file_path):
+                    spec_data = safe_load_file(spec_file_path, file_type="yaml") or {}
+        else:
+            # Regular mode - only download experiment specs
+            spec_data = self.get_base_spec(ngc_path, exp_id, ngc_token)
+
         base_experiments[exp_id] = {
             "id": exp_id,
             "name": display_name,
@@ -390,6 +428,12 @@ class BaseExperimentMetadata:
                                                 except (SyntaxError, ValueError):
                                                     logger.error(f"{key_value} not loadable by `ast.literal_eval`.")
                                         for network_arch in endpoints:
+                                            # Filter by model names if specified
+                                            if self.model_names and network_arch not in self.model_names:
+                                                logger.debug(f"Skipping {network_arch} - not in requested model names: "
+                                                             f"{self.model_names}")
+                                                continue
+
                                             self.add_experiment(
                                                 base_experiments,
                                                 model.get("displayName", network_arch),
@@ -405,7 +449,7 @@ class BaseExperimentMetadata:
         from ngcsdk import Client  # pylint: disable=C0415
         clt = Client()
         try:
-            clt.configure(api_key=ngc_token, org_name=org, team_name=team)
+            clt.configure(api_key=self.ngc_key, org_name=org, team_name=team)
         except Exception as e:
             if not ("Invalid org" in str(e) or "Invalid team" in str(e)):
                 logger.error(
@@ -436,6 +480,70 @@ class BaseExperimentMetadata:
             logger.error("Unable to get spec data for %s", ngc_path)
             logger.error(e)
         return {}
+
+    def download_complete_model(self, ngc_path, exp_id, ngc_token):
+        """Download complete model for airgapped deployment"""
+        print(f"Downloading complete model: {ngc_path}")
+
+        org, team, model, version = self.split_ngc_path(ngc_path)
+        from ngcsdk import Client  # pylint: disable=C0415
+        clt = Client()
+        try:
+            clt.configure(api_key=self.ngc_key, org_name=org, team_name=team)
+        except Exception as e:
+            if not ("Invalid org" in str(e) or "Invalid team" in str(e)):
+                logger.error(
+                    "Can't configure the passed NGC KEY "  # noqa pylint: disable=C0209
+                    "for Org {}, team {}".format(org, team)
+                )
+                return False
+            logger.warning(
+                "Can't validate the passed NGC KEY for Org {}, team {}, "
+                "going to try download without configuring credentials".format(org, team)
+            )  # noqa pylint: disable=C0209
+
+        # Download complete model
+        try:
+            model_dir = f"{self.rootdir}/{org}/{team}/{model}/{version}"
+            os.makedirs(model_dir, exist_ok=True)
+
+            # Download all files for the model version
+            logger.info(f"Downloading complete model: {ngc_path}")
+            clt.registry.model.download_version(ngc_path, destination=model_dir)
+
+            logger.info(f"Successfully downloaded complete model for {ngc_path}")
+            return True
+        except Exception as e:
+            logger.error(f"Unable to download complete model for {ngc_path}")
+            logger.error(e)
+            return False
+
+    def load_base_experiments_from_file(self) -> dict:
+        """Get base experiments from models file"""
+        base_experiments: dict[str, dict] = {}
+        if not self.models_file or not os.path.isfile(self.models_file):
+            logger.error(f"Models file not found: {self.models_file}")
+            return base_experiments
+
+        with open(self.models_file, "r", encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                # Skip empty lines and comments
+                if not line or line.startswith('#'):
+                    continue
+
+                ngc_path = line
+                try:
+                    org, team, _, _ = self.split_ngc_path(ngc_path)
+                    ngc_token = self.get_ngc_token(org, team)
+
+                    # Use model name as display name and network architecture
+                    model_name = ngc_path.split('/')[-1].split(':')[0]
+                    self.add_experiment(base_experiments, model_name, ngc_path, model_name, ngc_token)
+                except Exception as e:
+                    logger.error(f"Failed to process model {ngc_path}: {e}")
+                    continue
+        return base_experiments
 
     def convert_str_to_enum(self, string_value: str, enum_type: Enum):
         """Convert string to enum based on value."""
@@ -477,7 +585,7 @@ class BaseExperimentMetadata:
                 if not attr["tao_version_check"]:
                     raise ValueError(
                         f"Model {experiment_info['ngc_path']} requires API version of {attr['tao_version']} "
-                        "but the current API version is {self.tao_version}!"
+                        f"but the current API version is {self.tao_version}!"
                     )
             if not attr.get("trainable"):
                 raise ValueError(f"Model {experiment_info['ngc_path']} is not trainable!")
@@ -579,10 +687,20 @@ class BaseExperimentMetadata:
         """Get base experiments hosted on NGC"""
         model_info = {}
         valid_base_experiments = {}
-        ngc_base_experiments = self.load_base_experiments_from_ngc()
-        logger.info("Loaded base experiments from NGC: %s", len(ngc_base_experiments))
+
+        if self.models_file:
+            # Load specific models from file
+            ngc_base_experiments = self.load_base_experiments_from_file()
+            logger.info("Loaded base experiments from models file: %s", len(ngc_base_experiments))
+        else:
+            # Auto-discover all available models from NGC
+            ngc_base_experiments = self.load_base_experiments_from_ngc()
+            logger.info("Loaded base experiments from NGC discovery: %s", len(ngc_base_experiments))
+            if self.model_names:
+                logger.info("Applied model name filtering for: %s", ', '.join(self.model_names))
+
         logger.info("--------------------------------------------------------")
-        if DEPLOYMENT_MODE == "PROD":
+        if DEPLOYMENT_MODE == "PROD" and not self.models_file:
             logger.info("--------------------------------------------------------")
             experiments_form_csv = self.load_base_experiments_from_csv()
             logger.info("Loaded base experiments from CSV: %s", len(experiments_form_csv))
@@ -592,7 +710,9 @@ class BaseExperimentMetadata:
             ngc_path = base_experiment["ngc_path"]
             org, team, model_name, model_version = self.split_ngc_path(ngc_path)
             ngc_token = self.get_ngc_token(org, team)
-            if (org, team) in self.org_team_list:
+
+            # In models file mode, process all experiments; in auto-discovery mode, check org/team membership
+            if self.models_file or (org, team) in self.org_team_list:
                 # Get ngc model metadata and cache it
                 try:
                     monai_metadata = {}
@@ -631,14 +751,25 @@ class BaseExperimentMetadata:
         existing_base_experiments = self.get_existing_base_experiments()
         ngc_hosted_base_experiments = self.get_ngc_hosted_base_experiments()
         self.metadata = {**existing_base_experiments, **ngc_hosted_base_experiments}
-        if not self.dry_run:
+
+        if self.airgapped and self.output_json:
+            # Write to JSON file for airgapped deployment
+            metadata_list = list(self.metadata.values())
+            output_path = self.output_json
+            os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
+            with open(output_path, 'w', encoding='utf-8') as f:
+                json.dump(metadata_list, f, indent=2, default=str)
+            logger.info(f"Base experiments metadata written to JSON file: {output_path}")
+        elif not self.dry_run:
+            # Regular mode - write to MongoDB
             mongo_experiments = MongoHandler("tao", "experiments")
             for base_exp_id in self.metadata:
                 base_exp_metadata = self.metadata[base_exp_id]
                 mongo_experiments.upsert({'id': base_exp_id}, base_exp_metadata)
             logger.info("Base experiments metadata written to database")
         else:
-            logger.info("Skipping NGC metadata edit in dry run mode!")
+            logger.info("Skipping metadata write in dry run mode!")
+
         logger.info("--------------------------------------------------------")
         logger.info("Existing base experiments: %s", len(existing_base_experiments))
         logger.info("New base experiments: %s", len(ngc_hosted_base_experiments))
@@ -656,6 +787,23 @@ if __name__ == "__main__":
         parser.add_argument("--ngc-key", help="NGC Key", default=get_admin_key())
         parser.add_argument("--dry-run", help="Dry run mode", default=False, action="store_true")
         parser.add_argument("--override", help="Override existing base experiments", action="store_true")
+        parser.add_argument("--output-json", help="Output JSON file path for airgapped mode",
+                            default="airgapped_models_metadata.json")
+        parser.add_argument("--models-file",
+                            help="File containing list of NGC model paths for specific model selection")
+        parser.add_argument("--model-names",
+                            help="Comma-separated list of model names/entrypoints to download "
+                                 "(e.g., 'classification_pyt,dino')")
         args = parser.parse_args()
-        bem = BaseExperimentMetadata(args.shared_folder_path, args.org_teams, args.ngc_key, args.override, args.dry_run)
+
+        bem = BaseExperimentMetadata(
+            args.shared_folder_path,
+            args.org_teams,
+            args.ngc_key,
+            args.override,
+            args.dry_run,
+            args.output_json,
+            args.models_file,
+            args.model_names
+        )
         bem.sync()
