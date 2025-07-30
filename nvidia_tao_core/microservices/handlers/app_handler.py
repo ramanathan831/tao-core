@@ -36,6 +36,7 @@ from nvidia_tao_core.microservices.constants import (
     MAXINE_NETWORKS,
     MISSING_EPOCH_FORMAT_NETWORKS
 )
+from nvidia_tao_core.microservices.airgapped_utils import AirgappedExperimentLoader
 from nvidia_tao_core.microservices.enum_constants import DatasetType, ExperimentNetworkArch
 from nvidia_tao_core.microservices.handlers import ngc_handler, stateless_handlers
 from nvidia_tao_core.microservices.handlers.nvcf_handler import get_available_nvcf_instances
@@ -2696,6 +2697,91 @@ class AppHandler:
         public_experiments_metadata = stateless_handlers.get_public_experiments(maxine=maxine_request)
         metadatas += public_experiments_metadata
         return metadatas
+
+    @staticmethod
+    def load_airgapped_experiments(user_id, org_name, workspace_id):
+        """Load airgapped experiments from cloud storage using workspace credentials.
+
+        Args:
+            user_id (str): The UUID of the user.
+            org_name (str): The name of the organization.
+            workspace_id (str): The UUID of the workspace containing cloud credentials.
+            models_base_dir (str, optional): Base directory for searching model files.
+
+        Returns:
+            Code: A response object indicating the result of the operation.
+                - 200 if experiments are loaded successfully.
+                - 400 if there's an error with the request or configuration.
+                - 403 if access denied to workspace.
+                - 404 if workspace not found.
+        """
+        # Get workspace metadata
+        workspace_metadata = stateless_handlers.get_handler_metadata(workspace_id, "workspaces")
+        if not workspace_metadata:
+            return Code(404, {"error_desc": f"Workspace {workspace_id} not found", "error_code": 1},
+                        f"Workspace {workspace_id} not found")
+
+        # Check workspace access
+        workspace_user_id = workspace_metadata.get('user_id')
+        if workspace_user_id != user_id:
+            return Code(403, {"error_desc": "Access denied to workspace", "error_code": 1},
+                        "Access denied to workspace")
+
+        # Map workspace cloud credentials to cloud_config format
+        cloud_type = workspace_metadata.get("cloud_type", "seaweedfs")
+        cloud_specific_details = workspace_metadata.get("cloud_specific_details", {})
+
+        cloud_config = {
+            "cloud_type": cloud_type,
+            "bucket_name": cloud_specific_details.get("cloud_bucket_name", "tao-storage"),
+            "region": cloud_specific_details.get("cloud_region"),
+            "access_key": cloud_specific_details.get("access_key"),
+            "secret_key": cloud_specific_details.get("secret_key"),
+            "endpoint_url": cloud_specific_details.get("endpoint_url")
+        }
+
+        # Initialize and run airgapped loader (dry_run=False to save to MongoDB)
+        try:
+            loader = AirgappedExperimentLoader(
+                cloud_config=cloud_config
+            )
+
+            # Load and import experiments to MongoDB
+            success = loader.load_and_import()
+
+            if success:
+                return_metadata = {
+                    "success": True,
+                    "message": "Successfully loaded airgapped experiments to MongoDB",
+                    "experiments_loaded": 1,  # We don't have exact counts from the loader
+                    "experiments_failed": 0
+                }
+                return Code(200, return_metadata, "Successfully loaded airgapped experiments to MongoDB")
+            return_metadata = {
+                "success": False,
+                "message": "Failed to load airgapped experiments",
+                "experiments_loaded": 0,
+                "experiments_failed": 1
+            }
+            return Code(400, return_metadata, "Failed to load airgapped experiments")
+
+        except Exception as e:
+            return_metadata = {
+                "success": False,
+                "message": f"Error loading airgapped experiments: {str(e)}",
+                "experiments_loaded": 0,
+                "experiments_failed": 1,
+                "error_desc": str(e),
+                "error_code": 1
+            }
+            return Code(400, return_metadata, f"Error loading airgapped experiments: {str(e)}")
+        finally:
+            # Clean up
+            try:
+                if 'loader' in locals():
+                    loader.cleanup()
+            except Exception:
+                pass  # Ignore cleanup errors
 
     @staticmethod
     def create_experiment(user_id, org_name, request_dict, experiment_id=None, from_ui=False):

@@ -1,5 +1,3 @@
-#!/usr/bin/env python3
-
 # Copyright (c) 2024, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
@@ -14,11 +12,10 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Load air-gapped experiment metadata from JSON and import to database"""
-import argparse
+"""Airgapped experiment loader for TAO microservices"""
+
 import os
 import logging
-import sys
 import yaml
 import glob
 import tempfile
@@ -29,29 +26,18 @@ from nvidia_tao_core.microservices.handlers.mongo_handler import MongoHandler
 from nvidia_tao_core.microservices.utils import safe_load_file
 from nvidia_tao_core.cloud_handlers.utils import initialize_cloud_storage
 
-# Configure logging
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
 logger = logging.getLogger(__name__)
-
-base_exp_uuid = "00000000-0000-0000-0000-000000000000"
 
 
 class AirgappedExperimentLoader:
     """Loader for air-gapped experiment metadata"""
 
-    def __init__(self, dry_run: bool = False, models_base_dir: str = None,
-                 cloud_config: dict = None):
+    def __init__(self, cloud_config: dict = None):
         """Initialize the loader
 
         Args:
-            dry_run (bool, optional): If True, only validate data without writing to database. Defaults to False.
-            models_base_dir (str, optional): Base directory for searching model files. Defaults to JSON file directory.
             cloud_config (dict, optional): Cloud storage configuration.
         """
-        self.dry_run = dry_run
         self.mongo_handler = MongoHandler("tao", "experiments")
         self.local_json_file = None
 
@@ -310,10 +296,6 @@ class AirgappedExperimentLoader:
 
     def import_to_database(self, experiments):
         """Import experiments to database"""
-        if self.dry_run:
-            logger.info("DRY RUN: Would import %d experiments to database", len(experiments))
-            return
-
         logger.info("Importing %d experiments to database...", len(experiments))
 
         success_count = 0
@@ -364,99 +346,3 @@ class AirgappedExperimentLoader:
                 logger.debug("Cleaned up temporary JSON file: %s", self.local_json_file)
             except Exception as e:
                 logger.error("Failed to clean up temporary JSON file %s: %s", self.local_json_file, e)
-
-
-def main():
-    """Main function"""
-    parser = argparse.ArgumentParser(description="Load air-gapped experiment metadata from JSON to database")
-    parser.add_argument(
-        "--dry-run",
-        action="store_true",
-        help="Validate data without writing to database"
-    )
-    parser.add_argument(
-        "--models-base-dir",
-        help="Base directory for searching model files (defaults to JSON file directory)"
-    )
-    parser.add_argument(
-        "--bucket-name",
-        default="tao-storage",
-        help="Cloud storage bucket name (default: tao-storage)"
-    )
-    parser.add_argument(
-        "--endpoint-url",
-        help="Cloud storage endpoint URL"
-    )
-    parser.add_argument(
-        "--access-key",
-        help="Cloud storage access key"
-    )
-    parser.add_argument(
-        "--secret-key",
-        help="Cloud storage secret key"
-    )
-    parser.add_argument(
-        "--region",
-        help="Cloud storage region"
-    )
-    parser.add_argument(
-        "--verbose",
-        action="store_true",
-        help="Enable verbose logging (shows debug statements)"
-    )
-
-    args = parser.parse_args()
-
-    # Configure logging based on verbose flag
-    if args.verbose:
-        # Set debug level only for this module's logger, not globally
-        logger.setLevel(logging.DEBUG)
-        logger.info("Verbose logging enabled - debug statements will be shown")
-
-    # Prepare cloud configuration if using cloud storage
-    # Use command line args or fall back to environment variables
-    endpoint_url = args.endpoint_url
-    access_key = args.access_key
-    secret_key = args.secret_key
-    bucket_name = args.bucket_name
-
-    cloud_config = {
-        "cloud_type": "seaweedfs",
-        "bucket_name": bucket_name,
-        "endpoint_url": endpoint_url,
-        "access_key": access_key,
-        "secret_key": secret_key,
-        "region": args.region
-    }
-
-    # Validate required cloud storage parameters
-    if not all([endpoint_url, access_key, secret_key]):
-        logger.error(
-            "When using --use-cloud-storage, you must provide endpoint-url, access-key, and secret-key "
-            "via command line args or environment variables "
-            "(SEAWEEDFS_S3_ENDPOINT, SEAWEEDFS_ACCESS_KEY, SEAWEEDFS_SECRET_KEY)"
-        )
-        sys.exit(1)
-
-    logger.info("Using cloud storage configuration: endpoint=%s, bucket=%s", endpoint_url, bucket_name)
-
-    # Initialize loader
-    loader = AirgappedExperimentLoader(
-        args.dry_run,
-        args.models_base_dir,
-        cloud_config
-    )
-
-    # Load and import
-    success = loader.load_and_import()
-
-    if success:
-        logger.info("Operation completed successfully")
-        sys.exit(0)
-    else:
-        logger.error("Operation failed")
-        sys.exit(1)
-
-
-if __name__ == "__main__":
-    main()
