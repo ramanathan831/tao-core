@@ -43,7 +43,6 @@ OPTIONS:
     -f, --compose-file FILE         Docker Compose file path (optional, default: docker-compose.yml)
     -d, --dry-run                   Validate data without writing to database
     -v, --verbose                   Enable verbose logging
-    --cloud-type TYPE               Cloud storage type (default: seaweedfs)
     --bucket-name NAME              Cloud storage bucket name (default: tao-storage)
     --endpoint-url URL              Cloud storage endpoint URL (overrides env var)
     --access-key KEY                Cloud storage access key (overrides env var)
@@ -68,9 +67,6 @@ EXAMPLES:
     $0 --deployment-type docker-compose --dry-run
     $0 -t docker-compose --container-name tao_api_app --verbose
     $0 -t docker-compose --compose-file /path/to/docker-compose.yml
-
-    # Custom cloud storage settings (works with both deployment types)
-    $0 --cloud-type seaweedfs --bucket-name my-bucket
 
 EOF
 }
@@ -226,11 +222,6 @@ while [[ $# -gt 0 ]]; do
             VERBOSE=true
             shift
             ;;
-        --cloud-type)
-            CLOUD_TYPE="$2"
-            EXTRA_ARGS+=(--cloud-type "$2")
-            shift 2
-            ;;
         --bucket-name)
             BUCKET_NAME="$2"
             EXTRA_ARGS+=(--bucket-name "$2")
@@ -341,8 +332,6 @@ fi
 
 # Build the command to run in the pod
 PYTHON_CMD="python3 -m nvidia_tao_core.microservices.load_airgapped_experiments_to_db "
-PYTHON_CMD+=" --use-cloud-storage"
-PYTHON_CMD+=" --cloud-type \"$CLOUD_TYPE\""
 PYTHON_CMD+=" --bucket-name \"$BUCKET_NAME\""
 
 if [ "$DRY_RUN" = true ]; then

@@ -42,57 +42,40 @@ base_exp_uuid = "00000000-0000-0000-0000-000000000000"
 class AirgappedExperimentLoader:
     """Loader for air-gapped experiment metadata"""
 
-    def __init__(self, json_file_path: str = None, dry_run: bool = False, models_base_dir: str = None,
-                 use_cloud_storage: bool = False, cloud_config: dict = None):
+    def __init__(self, dry_run: bool = False, models_base_dir: str = None,
+                 cloud_config: dict = None):
         """Initialize the loader
 
         Args:
-            json_file_path (str, optional): Path to the JSON file containing experiment metadata.
-                                          If use_cloud_storage=True, defaults to "index.json" under
-                                          LOCAL_MODEL_REGISTRY. If use_cloud_storage=False, this parameter is required.
             dry_run (bool, optional): If True, only validate data without writing to database. Defaults to False.
             models_base_dir (str, optional): Base directory for searching model files. Defaults to JSON file directory.
-            use_cloud_storage (bool, optional): If True, download JSON file and experiment.yaml from cloud
-                                          storage. Defaults to False.
-            cloud_config (dict, optional): Cloud storage configuration. Required if use_cloud_storage=True.
+            cloud_config (dict, optional): Cloud storage configuration.
         """
         self.dry_run = dry_run
         self.mongo_handler = MongoHandler("tao", "experiments")
-        self.use_cloud_storage = use_cloud_storage
         self.local_json_file = None
 
-        if use_cloud_storage:
-            if not cloud_config:
-                raise ValueError("cloud_config is required when use_cloud_storage=True")
+        if not cloud_config:
+            raise ValueError("cloud_config is required when using cloud_storage")
 
-            # Use fixed path "index.json" for cloud storage
-            self.json_file_path = json_file_path or "index.json"
+        # Use fixed path "index.json" for cloud storage
+        self.json_file_path = "ptm_metadatas.json"
 
-            # Initialize cloud storage
-            self.cloud_storage = initialize_cloud_storage(
-                cloud_type=cloud_config.get("cloud_type", "seaweedfs"),
-                bucket_name=cloud_config.get("bucket_name", "tao-storage"),
-                region=cloud_config.get("region"),
-                access_key=cloud_config.get("access_key"),
-                secret_key=cloud_config.get("secret_key"),
-                endpoint_url=cloud_config.get("endpoint_url")
-            )
-            logger.info("Initialized cloud storage for downloading JSON and experiment.yaml files")
+        # Initialize cloud storage
+        self.cloud_storage = initialize_cloud_storage(
+            cloud_type=cloud_config.get("cloud_type", "seaweedfs"),
+            bucket_name=cloud_config.get("bucket_name", "tao-storage"),
+            region=cloud_config.get("region"),
+            access_key=cloud_config.get("access_key"),
+            secret_key=cloud_config.get("secret_key"),
+            endpoint_url=cloud_config.get("endpoint_url")
+        )
+        logger.info("Initialized cloud storage for downloading JSON and experiment.yaml files")
 
-            # Download JSON file from cloud storage
-            self.local_json_file = self._download_json_file_from_cloud()
-            if not self.local_json_file:
-                raise FileNotFoundError(f"Failed to download JSON file from cloud storage: {self.json_file_path}")
-        else:
-            if not json_file_path:
-                raise ValueError("json_file_path is required when use_cloud_storage=False")
-
-            self.json_file_path = json_file_path
-            self.cloud_storage = None
-            self.local_json_file = json_file_path
-            # Base directory for searching spec files (local filesystem)
-            self.base_dir = models_base_dir if models_base_dir else os.path.dirname(os.path.abspath(json_file_path))
-            logger.info("Using base directory for model file search: %s", self.base_dir)
+        # Download JSON file from cloud storage
+        self.local_json_file = self._download_json_file_from_cloud()
+        if not self.local_json_file:
+            raise FileNotFoundError(f"Failed to download JSON file from cloud storage: {self.json_file_path}")
 
     def _download_json_file_from_cloud(self):
         """Download JSON file from cloud storage under LOCAL_MODEL_REGISTRY folder
@@ -106,14 +89,7 @@ class AirgappedExperimentLoader:
             if not local_model_registry:
                 raise ValueError("LOCAL_MODEL_REGISTRY environment variable is not set")
 
-            # Ensure json_file_path is relative to LOCAL_MODEL_REGISTRY
-            if self.json_file_path.startswith('/'):
-                # Remove leading slash if present
-                json_file_path = self.json_file_path.lstrip('/')
-            else:
-                json_file_path = self.json_file_path
-
-            cloud_json_path = f"{local_model_registry}/{json_file_path}"
+            cloud_json_path = f"{local_model_registry}/{self.json_file_path}"
             logger.info("Downloading JSON file from cloud storage: %s", cloud_json_path)
 
             # Check if file exists in cloud storage
@@ -190,9 +166,7 @@ class AirgappedExperimentLoader:
 
         path_part, version = ngc_path.split(":", 1)
 
-        if self.use_cloud_storage:
-            return self._download_experiment_yaml_from_cloud(experiment, path_part, version)
-        return self._read_experiment_yaml_from_local(experiment, path_part, version)
+        return self._download_experiment_yaml_from_cloud(experiment, path_part, version)
 
     def _download_experiment_yaml_from_cloud(self, experiment, path_part, version):
         """Download experiment.yaml from cloud storage"""
@@ -384,7 +358,7 @@ class AirgappedExperimentLoader:
 
     def cleanup(self):
         """Clean up temporary files"""
-        if self.use_cloud_storage and self.local_json_file and os.path.exists(self.local_json_file):
+        if self.local_json_file and os.path.exists(self.local_json_file):
             try:
                 os.unlink(self.local_json_file)
                 logger.debug("Cleaned up temporary JSON file: %s", self.local_json_file)
@@ -396,14 +370,6 @@ def main():
     """Main function"""
     parser = argparse.ArgumentParser(description="Load air-gapped experiment metadata from JSON to database")
     parser.add_argument(
-        "json_file",
-        nargs='?',
-        default=None,
-        help="Path to JSON file containing experiment metadata. "
-             "If --use-cloud-storage is specified, defaults to 'index.json' under LOCAL_MODEL_REGISTRY folder. "
-             "Otherwise, this parameter is required for local file operations."
-    )
-    parser.add_argument(
         "--dry-run",
         action="store_true",
         help="Validate data without writing to database"
@@ -411,16 +377,6 @@ def main():
     parser.add_argument(
         "--models-base-dir",
         help="Base directory for searching model files (defaults to JSON file directory)"
-    )
-    parser.add_argument(
-        "--use-cloud-storage",
-        action="store_true",
-        help="Download experiment.yaml files from cloud storage instead of local filesystem"
-    )
-    parser.add_argument(
-        "--cloud-type",
-        default="seaweedfs",
-        help="Cloud storage type (default: seaweedfs)"
     )
     parser.add_argument(
         "--bucket-name",
@@ -458,45 +414,36 @@ def main():
         logger.info("Verbose logging enabled - debug statements will be shown")
 
     # Prepare cloud configuration if using cloud storage
-    cloud_config = None
-    if args.use_cloud_storage:
-        # Use command line args or fall back to environment variables
-        endpoint_url = args.endpoint_url
-        access_key = args.access_key
-        secret_key = args.secret_key
-        bucket_name = args.bucket_name
+    # Use command line args or fall back to environment variables
+    endpoint_url = args.endpoint_url
+    access_key = args.access_key
+    secret_key = args.secret_key
+    bucket_name = args.bucket_name
 
-        cloud_config = {
-            "cloud_type": "seaweedfs",
-            "bucket_name": bucket_name,
-            "endpoint_url": endpoint_url,
-            "access_key": access_key,
-            "secret_key": secret_key,
-            "region": args.region
-        }
+    cloud_config = {
+        "cloud_type": "seaweedfs",
+        "bucket_name": bucket_name,
+        "endpoint_url": endpoint_url,
+        "access_key": access_key,
+        "secret_key": secret_key,
+        "region": args.region
+    }
 
-        # Validate required cloud storage parameters
-        if not all([endpoint_url, access_key, secret_key]):
-            logger.error(
-                "When using --use-cloud-storage, you must provide endpoint-url, access-key, and secret-key "
-                "via command line args or environment variables "
-                "(SEAWEEDFS_S3_ENDPOINT, SEAWEEDFS_ACCESS_KEY, SEAWEEDFS_SECRET_KEY)"
-            )
-            sys.exit(1)
-
-        logger.info("Using cloud storage configuration: endpoint=%s, bucket=%s", endpoint_url, bucket_name)
-
-    # Validate json_file argument based on use_cloud_storage
-    if not args.use_cloud_storage and not args.json_file:
-        logger.error("json_file argument is required when not using cloud storage")
+    # Validate required cloud storage parameters
+    if not all([endpoint_url, access_key, secret_key]):
+        logger.error(
+            "When using --use-cloud-storage, you must provide endpoint-url, access-key, and secret-key "
+            "via command line args or environment variables "
+            "(SEAWEEDFS_S3_ENDPOINT, SEAWEEDFS_ACCESS_KEY, SEAWEEDFS_SECRET_KEY)"
+        )
         sys.exit(1)
+
+    logger.info("Using cloud storage configuration: endpoint=%s, bucket=%s", endpoint_url, bucket_name)
 
     # Initialize loader
     loader = AirgappedExperimentLoader(
-        args.json_file,
         args.dry_run,
         args.models_base_dir,
-        args.use_cloud_storage,
         cloud_config
     )
 
