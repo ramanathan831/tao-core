@@ -5470,6 +5470,13 @@ class ExperimentJobSchema(Schema):
     experiment_id = fields.Str(format="uuid", validate=fields.validate.Length(max=36), allow_none=True)
 
 
+class SourceType(Enum):
+    """Class defining source type enum for base experiments"""
+
+    ngc = "ngc"
+    huggingface = "huggingface"
+
+
 class ExperimentRspSchema(Schema):
     """Class defining experiment response schema"""
 
@@ -5600,6 +5607,7 @@ class ExperimentRspSchema(Schema):
     )
     bundle_url = fields.Str(format="regex", regex=r'.*', validate=fields.validate.Length(max=1000), allow_none=True)
     base_experiment_metadata = fields.Nested(BaseExperimentMetadataSchema, allow_none=True)
+    source_type = EnumField(SourceType, allow_none=True)
     experiment_actions = fields.List(
         fields.Nested(ExperimentActions, allow_none=True),
         validate=fields.validate.Length(max=sys.maxsize)
