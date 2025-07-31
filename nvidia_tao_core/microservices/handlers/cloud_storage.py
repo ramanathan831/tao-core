@@ -313,7 +313,7 @@ class CloudStorage:
     @retry_method
     def is_folder(self, cloud_path):
         """Check if the given cloud path is a folder."""
-        full_path = self.root + cloud_path.strip('/').rstrip('/') + '/'
+        full_path = self.root + cloud_path.strip('/') + '/'
         try:
             return self.fs.isdir(full_path)
         except Exception as e:
