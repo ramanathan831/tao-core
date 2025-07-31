@@ -313,25 +313,128 @@ def create(
         return
 
 
-def create_service(service_name, selector, service_port, target_port, labels={}):
-    """Create a service"""
+def create_service_unified(service_name, selector, ports, service_type="ClusterIP", labels=None,
+                           return_info=False, add_owner_reference=True):
+    """Unified function to create Kubernetes services with flexible configuration
+
+    Args:
+        service_name: Name of the service
+        selector: Selector dictionary for the service
+        ports: Either a single port (int), tuple (port, target_port), or list of tuples
+               [(port, target_port, name), ...]
+        service_type: "ClusterIP", "Headless", or other Kubernetes service types
+        labels: Labels dictionary for the service
+        return_info: Whether to return service information dict
+        add_owner_reference: Whether to add owner reference to the service
+
+    Returns:
+        If return_info=True: dict with service_name, cluster_ip, and ports
+        If return_info=False: None
+    """
     try:
         name_space = _get_name_space()
-        core_v1 = client.CoreV1Api()
+        api_instance = client.CoreV1Api()
+
+        # Set default labels
+        if labels is None:
+            labels = {}
+
+        # Handle different port formats
+        if isinstance(ports, int):
+            # Single port number
+            service_ports = [client.V1ServicePort(port=ports, target_port=ports)]
+        elif isinstance(ports, tuple) and len(ports) == 2:
+            # Single (port, target_port) tuple
+            service_ports = [client.V1ServicePort(port=ports[0], target_port=ports[1])]
+        elif isinstance(ports, list):
+            # List of port configurations
+            service_ports = []
+            for port_config in ports:
+                if isinstance(port_config, tuple):
+                    if len(port_config) == 2:
+                        # (port, target_port)
+                        service_ports.append(client.V1ServicePort(
+                            port=port_config[0],
+                            target_port=port_config[1],
+                            name=f"port-{port_config[0]}"
+                        ))
+                    elif len(port_config) == 3:
+                        # (port, target_port, name)
+                        service_ports.append(client.V1ServicePort(
+                            port=port_config[0],
+                            target_port=port_config[1],
+                            name=port_config[2],
+                            protocol="TCP"
+                        ))
+                else:
+                    # Just port number
+                    service_ports.append(client.V1ServicePort(
+                        port=port_config,
+                        target_port=port_config,
+                        name=f"port-{port_config}"
+                    ))
+        else:
+            raise ValueError(f"Unsupported ports format: {ports}")
+
+        # Configure service spec
+        cluster_ip = "None" if service_type == "Headless" else None
+        spec = client.V1ServiceSpec(
+            type=service_type if service_type != "Headless" else "ClusterIP",
+            ports=service_ports,
+            selector=selector,
+            cluster_ip=cluster_ip
+        )
+
+        # Configure metadata
+        metadata_kwargs = {"name": service_name, "labels": labels}
+        if add_owner_reference:
+            metadata_kwargs["owner_references"] = [_get_owner_reference()]
+
+        # Create service object
         service = client.V1Service(
             api_version="v1",
             kind="Service",
-            metadata=client.V1ObjectMeta(name=service_name, labels=labels, owner_references=[_get_owner_reference()]),
-            spec=client.V1ServiceSpec(
-                cluster_ip=None,  # Headless service
-                selector=selector,
-                ports=[client.V1ServicePort(port=service_port, target_port=target_port)]
-            )
+            metadata=client.V1ObjectMeta(**metadata_kwargs),
+            spec=spec
         )
-        core_v1.create_namespaced_service(namespace=name_space, body=service)
+
+        # Create the service
+        api_response = api_instance.create_namespaced_service(
+            namespace=name_space,
+            body=service
+        )
+        logger.info(f"Service created: {service_name}")
+
+        if return_info:
+            return {
+                "service_name": service_name,
+                "cluster_ip": api_response.spec.cluster_ip,
+                "ports": ports
+            }
+        return None
+
     except Exception as e:
-        logger.error(f"Exception thrown in create_service is {str(e)}")
+        logger.error(f"Failed to create service {service_name}: {e}")
+        if return_info:
+            raise
+        # For backward compatibility with create_service, don't raise for non-return cases
         logger.error(traceback.format_exc())
+        return None
+
+
+def create_service(service_name, selector, service_port, target_port, labels=None):
+    """Legacy function - delegates to unified service creation"""
+    if labels is None:
+        labels = {}
+    return create_service_unified(
+        service_name=service_name,
+        selector=selector,
+        ports=(service_port, target_port),
+        service_type="Headless",
+        labels=labels,
+        return_info=False,
+        add_owner_reference=True
+    )
 
 
 def create_flask_service(job_id):
@@ -341,11 +444,46 @@ def create_flask_service(job_id):
         "app": "flask",
         "job-id": job_id
     }
-    create_service(service_name, selector, 8000, 8000)
+    return create_service_unified(
+        service_name=service_name,
+        selector=selector,
+        ports=(8000, 8000),
+        service_type="Headless",
+        labels={},
+        return_info=False,
+        add_owner_reference=True
+    )
 
 
-def create_statefulset_service(job_id):
-    """Create a service for a statefulset"""
+def create_statefulset_service(job_id, statefulset_type="multinode", ports=None, service_type="ClusterIP"):
+    """Create a service for a statefulset with flexible configuration"""
+    if statefulset_type == "inference_microservice":
+        # Inference microservice service configuration
+        service_name = f"ims-svc-{job_id}"
+        statefulset_name = f"ims-{job_id}"
+        selector = {"statefulset": statefulset_name}
+        labels = {"app": "ims"}
+
+        # Handle ports format for inference microservices
+        if isinstance(ports, tuple) and len(ports) == 2:
+            port_list = [
+                (ports[0], ports[0], "http-port"),
+                (ports[1], ports[1], "health-port")
+            ]
+        else:
+            port_list = ports or [(8080, 8080, "http-port"), (8081, 8081, "health-port")]
+
+        return create_service_unified(
+            service_name=service_name,
+            selector=selector,
+            ports=port_list,
+            service_type=service_type,
+            labels=labels,
+            return_info=True,
+            add_owner_reference=False
+        )
+
+    # Multinode service configuration
     service_name = get_statefulset_service_name(job_id)
     selector = {
         "app": "multinode",
@@ -355,7 +493,18 @@ def create_statefulset_service(job_id):
         "app": "multinode",
         "job-id": job_id
     }
-    create_service(service_name, selector, 8000, 8000, labels=labels)
+    # Default to single port if not specified
+    port_info = ports[0] if ports else (8000, 8000)
+
+    return create_service_unified(
+        service_name=service_name,
+        selector=selector,
+        ports=port_info,
+        service_type="Headless",
+        labels=labels,
+        return_info=False,
+        add_owner_reference=True
+    )
 
 
 def _get_owner_reference():
@@ -401,42 +550,139 @@ def wait_for_statefulset_ready(statefulset_name, name_space):
             time.sleep(10)
 
 
-def create_statefulset(job_id, num_gpu_per_node, num_nodes, image, api_port=8000, master_port=29500, accelerator=None):
-    """Create statefulset"""
+def create_statefulset(job_id, num_gpu_per_node, num_nodes, image, api_port=8000, master_port=29500, accelerator=None,
+                       statefulset_type="multinode", custom_command=None, custom_env_vars=None,
+                       custom_ports=None, org_name=None, experiment_id=None, is_long_lived=False):
+    """Create statefulset with flexible configuration for different types"""
     try:
-        create_statefulset_service(job_id)
+        # Set default api_port for inference microservices if not explicitly provided
+        if statefulset_type == "inference_microservice" and api_port == 8000:
+            api_port = 8080  # Default port for inference microservices
+
+        # Create service before StatefulSet for better Kubernetes practices (enables immediate DNS resolution)
+        if statefulset_type == "inference_microservice":
+            # Use default inference microservice ports if no custom ports specified
+            service_ports = custom_ports or [(8080, 8080), (8081, 8081)]
+        else:
+            # Use api_port for multinode services
+            service_ports = custom_ports or [(api_port, api_port)]
+
+        create_statefulset_service(job_id, statefulset_type=statefulset_type, ports=service_ports)
+
         name_space = _get_name_space()
         api_instance = client.AppsV1Api()
-        statefulset_name = get_statefulset_name(job_id)
-        service_name = get_statefulset_service_name(job_id)
+
+        # Set statefulset name and service name based on type
+        if statefulset_type == "inference_microservice":
+            statefulset_name = f"ims-{job_id}"
+            service_name = f"ims-svc-{job_id}"
+            app_label = "ims"
+        else:
+            statefulset_name = get_statefulset_name(job_id)
+            service_name = get_statefulset_service_name(job_id)
+            app_label = "multinode"
+
+        # Configure labels based on type
         labels = {
-            "app": "multinode",
+            "app": app_label,
             "job-id": job_id
         }
-        release_name_env_var = client.V1EnvVar(name="RELEASE_NAME", value=release_name)
-        namespace_env_var = client.V1EnvVar(name="NAMESPACE", value=name_space)
-        num_gpu_env_var = client.V1EnvVar(name="NUM_GPU_PER_NODE", value=str(num_gpu_per_node))
-        world_size_env_var = client.V1EnvVar(name="WORLD_SIZE", value=str(num_nodes))
-        node_rank_env_var = client.V1EnvVar(name="NODE_RANK", value_from=client.V1EnvVarSource(
-            field_ref=client.V1ObjectFieldSelector(
-                field_path="metadata.labels['apps.kubernetes.io/pod-index']"
+
+        if statefulset_type == "inference_microservice":
+            labels.update({
+                "service-type": "long-lived" if is_long_lived else "temporary",
+                "auto-cleanup": "false" if is_long_lived else "true",
+                "statefulset": statefulset_name,
+                "org": org_name or "default",
+                "experiment": experiment_id or "",
+                "job": job_id or ""
+            })
+
+        # Configure environment variables based on type
+        env_vars = []
+        if statefulset_type == "multinode":
+            # Original multinode environment variables
+            release_name_env_var = client.V1EnvVar(name="RELEASE_NAME", value=release_name)
+            namespace_env_var = client.V1EnvVar(name="NAMESPACE", value=name_space)
+            num_gpu_env_var = client.V1EnvVar(name="NUM_GPU_PER_NODE", value=str(num_gpu_per_node))
+            world_size_env_var = client.V1EnvVar(name="WORLD_SIZE", value=str(num_nodes))
+            node_rank_env_var = client.V1EnvVar(name="NODE_RANK", value_from=client.V1EnvVarSource(
+                field_ref=client.V1ObjectFieldSelector(
+                    field_path="metadata.labels['apps.kubernetes.io/pod-index']"
+                )
+            ))
+            master_address_env_var = client.V1EnvVar(
+                name="MASTER_ADDR",
+                value=f"{statefulset_name}-0.{service_name}.{name_space}.svc.cluster.local"
             )
-        ))
-        master_address_env_var = client.V1EnvVar(
-            name="MASTER_ADDR",
-            value=f"{statefulset_name}-0.{service_name}.{name_space}.svc.cluster.local"
-        )
-        master_port_env_var = client.V1EnvVar(name="MASTER_PORT", value=str(master_port))
-        save_on_each_node_env_var = client.V1EnvVar("SAVE_ON_EACH_NODE", value="True")
-        nccl_ib_disable_env_var = client.V1EnvVar(
-            "NCCL_IB_DISABLE",
-            value=os.getenv("NCCL_IB_DISABLE", default="0")
-        )
-        nccl_ib_ext_disable_env_var = client.V1EnvVar(
-            "NCCL_IBEXT_DISABLE",
-            value=os.getenv("NCCL_IBEXT_DISABLE", default="0")
-        )
-        container_port = client.V1ContainerPort(container_port=api_port)
+            master_port_env_var = client.V1EnvVar(name="MASTER_PORT", value=str(master_port))
+            save_on_each_node_env_var = client.V1EnvVar("SAVE_ON_EACH_NODE", value="True")
+            nccl_ib_disable_env_var = client.V1EnvVar(
+                "NCCL_IB_DISABLE",
+                value=os.getenv("NCCL_IB_DISABLE", default="0")
+            )
+            nccl_ib_ext_disable_env_var = client.V1EnvVar(
+                "NCCL_IBEXT_DISABLE",
+                value=os.getenv("NCCL_IBEXT_DISABLE", default="0")
+            )
+            env_vars = [namespace_env_var, num_gpu_env_var, world_size_env_var, node_rank_env_var,
+                        master_address_env_var, master_port_env_var, save_on_each_node_env_var,
+                        nccl_ib_disable_env_var, nccl_ib_ext_disable_env_var, release_name_env_var]
+        elif statefulset_type == "inference_microservice":
+            # Automatic environment variables for inference microservice
+            env_vars = [client.V1EnvVar(name="JOB_ID", value=job_id or "")]
+
+        # Add custom environment variables if provided
+        if custom_env_vars:
+            env_vars.extend(custom_env_vars)
+
+        # Configure ports
+        if statefulset_type == "inference_microservice":
+            # Default inference microservice ports: HTTP API (8080) and health check (8081)
+            if custom_ports:
+                container_ports = [
+                    client.V1ContainerPort(
+                        container_port=port[0],
+                        name=port[2] if len(port) > 2 else f"port-{port[0]}"
+                    )
+                    for port in custom_ports
+                ]
+            else:
+                container_ports = [
+                    client.V1ContainerPort(container_port=8080, name="http-ims"),
+                    client.V1ContainerPort(container_port=8081, name="health-ims")
+                ]
+        elif custom_ports:
+            container_ports = [
+                client.V1ContainerPort(
+                    container_port=port[0],
+                    name=port[2] if len(port) > 2 else f"port-{port[0]}"
+                )
+                for port in custom_ports
+            ]
+        else:
+            container_ports = [client.V1ContainerPort(container_port=api_port)]
+
+        # Configure command
+        if statefulset_type == "inference_microservice" and custom_command:
+            # Auto-format inference microservice command with proper initialization
+            container_command = ["/bin/bash", "-c"]
+            inference_microservice_command = f"""
+umask 0 &&
+echo "Starting Inference Microservice..." &&
+{custom_command}
+"""
+            container_args = [inference_microservice_command]
+        elif custom_command:
+            container_command = ["/bin/bash", "-c"]
+            container_args = [custom_command]
+        else:
+            container_command = ["/bin/bash", "-c"]
+            container_args = ["flask run --host 0.0.0.0 --port 8000"]
+
+        # Configure container name
+        container_name = f"{app_label}-container"
+
         dshm_volume_mount = client.V1VolumeMount(name="dshm", mount_path="/dev/shm")
         dshm_volume = client.V1Volume(
             name="dshm",
@@ -456,17 +702,112 @@ def create_statefulset(job_id, num_gpu_per_node, num_nodes, image, api_port=8000
             if available_gpus:
                 gpu_to_be_run_on = available_gpus.get(accelerator, {}).get("gpu_type")
             node_selector = {'accelerator': gpu_to_be_run_on}
+
+        # Configure probes (only for multinode, not for inference microservice)
+        probes = {}
+        if statefulset_type == "multinode":
+            probes = {
+                "readiness_probe": client.V1Probe(
+                    http_get=client.V1HTTPGetAction(
+                        path="/api/v1/health/readiness",
+                        port=8000
+                    ),
+                    initial_delay_seconds=10,
+                    period_seconds=10,
+                    timeout_seconds=5,
+                    failure_threshold=3
+                ),
+                "liveness_probe": client.V1Probe(
+                    http_get=client.V1HTTPGetAction(
+                        path="/api/v1/health/liveness",
+                        port=8000
+                    ),
+                    initial_delay_seconds=10,
+                    period_seconds=10,
+                    timeout_seconds=5,
+                    failure_threshold=3
+                )
+            }
+
+        # Create container
+        container_spec = {
+            "name": container_name,
+            "image": image,
+            "command": container_command,
+            "args": container_args,
+            "resources": client.V1ResourceRequirements(
+                limits={
+                    "nvidia.com/gpu": (
+                        num_gpu_per_node if statefulset_type == "multinode"
+                        else (num_gpu_per_node if num_gpu_per_node > 0 else 1)
+                    )
+                }
+            ),
+            "env": env_vars,
+            "ports": container_ports,
+            "volume_mounts": [dshm_volume_mount],
+            "security_context": security_context
+        }
+
+        # Add probes if they exist
+        if probes:
+            container_spec.update(probes)
+
+        container = client.V1Container(**container_spec)
+
+        # Configure affinity (only for multinode)
+        affinity = None
+        if statefulset_type == "multinode":
+            affinity = client.V1Affinity(
+                pod_anti_affinity=client.V1PodAntiAffinity(
+                    preferred_during_scheduling_ignored_during_execution=[
+                        client.V1WeightedPodAffinityTerm(
+                            weight=100,
+                            pod_affinity_term=client.V1PodAffinityTerm(
+                                label_selector=client.V1LabelSelector(
+                                    match_expressions=[
+                                        client.V1LabelSelectorRequirement(
+                                            key="app",
+                                            operator="In",
+                                            values=["multinode"]
+                                        )
+                                    ]
+                                ),
+                                topology_key="kubernetes.io/hostname"
+                            )
+                        )
+                    ]
+                )
+            )
+
+        # Create metadata with owner references (only for multinode)
+        metadata_spec = {"name": statefulset_name}
+        if statefulset_type == "multinode":
+            metadata_spec["owner_references"] = [_get_owner_reference()]
+
+        # Add labels to metadata
+        if statefulset_type == "inference_microservice":
+            metadata_spec["labels"] = {
+                "app": app_label,
+                "service-type": "long-lived" if is_long_lived else "temporary",
+                "auto-cleanup": "false" if is_long_lived else "true",
+                "org": org_name or "default",
+                "experiment": experiment_id or "",
+                "job": job_id or ""
+            }
+
         stateful_set = client.V1StatefulSet(
             api_version="apps/v1",
             kind="StatefulSet",
-            metadata=client.V1ObjectMeta(
-                name=statefulset_name,
-                owner_references=[_get_owner_reference()]
-            ),
+            metadata=client.V1ObjectMeta(**metadata_spec),
             spec=client.V1StatefulSetSpec(
                 replicas=num_nodes,
                 selector=client.V1LabelSelector(
-                    match_labels=labels
+                    match_labels=(
+                        {"statefulset": statefulset_name}
+                        if statefulset_type == "inference_microservice"
+                        else labels
+                    )
                 ),
                 service_name=service_name,
                 template=client.V1PodTemplateSpec(
@@ -475,76 +816,11 @@ def create_statefulset(job_id, num_gpu_per_node, num_nodes, image, api_port=8000
                     ),
                     spec=client.V1PodSpec(
                         image_pull_secrets=[client.V1LocalObjectReference(name=image_pull_secret)],
-                        containers=[
-                            client.V1Container(
-                                name="multinode-container",
-                                image=image,
-                                command=["/bin/bash", "-c"],
-                                args=["flask run --host 0.0.0.0 --port 8000"],
-                                resources=client.V1ResourceRequirements(
-                                    limits={
-                                        "nvidia.com/gpu": num_gpu_per_node
-                                    }
-                                ),
-                                env=[namespace_env_var,
-                                     num_gpu_env_var,
-                                     world_size_env_var,
-                                     node_rank_env_var,
-                                     master_address_env_var,
-                                     master_port_env_var,
-                                     save_on_each_node_env_var,
-                                     nccl_ib_disable_env_var,
-                                     nccl_ib_ext_disable_env_var,
-                                     release_name_env_var],
-                                ports=[container_port],
-                                readiness_probe=client.V1Probe(
-                                    http_get=client.V1HTTPGetAction(
-                                        path="/api/v1/health/readiness",
-                                        port=8000
-                                    ),
-                                    initial_delay_seconds=10,
-                                    period_seconds=10,
-                                    timeout_seconds=5,
-                                    failure_threshold=3
-                                ),
-                                liveness_probe=client.V1Probe(
-                                    http_get=client.V1HTTPGetAction(
-                                        path="/api/v1/health/liveness",
-                                        port=8000
-                                    ),
-                                    initial_delay_seconds=10,
-                                    period_seconds=10,
-                                    timeout_seconds=5,
-                                    failure_threshold=3
-                                ),
-                                volume_mounts=[dshm_volume_mount],
-                                security_context=security_context
-                            )
-                        ],
+                        containers=[container],
                         volumes=[dshm_volume],
                         node_selector=node_selector,
                         restart_policy="Always",
-                        affinity=client.V1Affinity(
-                            pod_anti_affinity=client.V1PodAntiAffinity(
-                                preferred_during_scheduling_ignored_during_execution=[
-                                    client.V1WeightedPodAffinityTerm(
-                                        weight=100,
-                                        pod_affinity_term=client.V1PodAffinityTerm(
-                                            label_selector=client.V1LabelSelector(
-                                                match_expressions=[
-                                                    client.V1LabelSelectorRequirement(
-                                                        key="app",
-                                                        operator="In",
-                                                        values=["multinode"]
-                                                    )
-                                                ]
-                                            ),
-                                            topology_key="kubernetes.io/hostname"
-                                        )
-                                    )
-                                ]
-                            )
-                        )
+                        affinity=affinity
                     )
                 )
             )
@@ -555,24 +831,58 @@ def create_statefulset(job_id, num_gpu_per_node, num_nodes, image, api_port=8000
         )
         # Ensure the statefulset is ready
         wait_for_statefulset_ready(statefulset_name, name_space)
+        return True
     except Exception as e:
-        logger.error(f"Exception thrown in create_service is {str(e)}")
+        logger.error(f"Exception thrown in create_statefulset is {str(e)}")
         logger.error(traceback.format_exc())
+        return False
 
 
-def delete_service(job_id, service_name):
-    """Delete a microservice pod's service"""
+def delete_service(job_id=None, service_name=None, service_type="default"):
+    """Delete a microservice pod's service with flexible service name handling
+
+    Args:
+        job_id: Optional job ID (can be None if service_name is provided)
+        service_name: Optional service name (can be None if job_id is provided and service_type is set)
+        service_type: Type of service to determine naming pattern
+                     - "default": uses job_id for service_name if service_name not provided
+                     - "inference_microservice": extracts job_id from "ims-svc-{job_id}" pattern
+                     - "flask": uses "flask-service-{job_id}" pattern
+    """
     try:
+        # Handle different service naming patterns
+        if service_name is None:
+            if job_id is None:
+                raise ValueError("Either job_id or service_name must be provided")
+
+            if service_type == "flask":
+                service_name = f"flask-service-{job_id}"
+            elif service_type == "statefulset":
+                service_name = get_statefulset_service_name(job_id)
+            else:
+                # Default case
+                service_name = job_id
+        elif service_type == "inference_microservice" and job_id is None:
+            # Extract job_id from inference microservice service name pattern
+            if service_name.startswith("ims-svc-"):
+                job_id = service_name.replace("ims-svc-", "")
+            else:
+                job_id = service_name  # fallback
+
         name_space = _get_name_space()
         core_v1 = client.CoreV1Api()
         service = core_v1.read_namespaced_service(name=service_name, namespace=name_space)
         if not service:
             logger.info(f"Service {service_name} not found in namespace {name_space}")
-            return
+            return True  # Return True since the goal (service not existing) is achieved
+
         core_v1.delete_namespaced_service(name=service_name, namespace=name_space)
+        logger.info(f"Successfully deleted service: {service_name}")
+        return True
     except Exception as e:
         logger.error(f"Exception thrown in delete_service is {str(e)}")
         logger.error(traceback.format_exc())
+        return False
 
 
 def create_microservice_pod(job_name, image, num_gpu=-1, accelerator=None):
@@ -1308,8 +1618,17 @@ def delete_nvcf_function(job_name):
     delete_function_version(org_name, team_name, function_id, version_id, ngc_key)
 
 
-def delete(job_name, use_ngc=True):
-    """Deletes a Job"""
+def delete(job_name, use_ngc=True, resource_type="multinode"):
+    """Deletes a Job or StatefulSet
+
+    Args:
+        job_name: Name of the job/resource to delete
+        use_ngc: Whether to use NGC for NVCF functions
+        resource_type: Type of resource to delete ("multinode" or "inference_microservice")
+
+    Returns:
+        bool: True if deletion successful or resource not found, False if error occurred
+    """
     if BACKEND == "local-docker":
         docker_handler = DockerHandler.get_handler_for_container(job_name)
         if docker_handler:
@@ -1317,7 +1636,7 @@ def delete(job_name, use_ngc=True):
         else:
             logger.error(f"Docker container not found for job {job_name}")
         gpu_manager.release_gpus(job_name)
-        return
+        return True
 
     name_space = _get_name_space()
     if os.getenv("DEV_MODE", "False").lower() in ("true", "1"):
@@ -1326,19 +1645,26 @@ def delete(job_name, use_ngc=True):
         config.load_incluster_config()
     if BACKEND == "NVCF" and use_ngc:
         delete_nvcf_function(job_name)
-        return
+        return True
     api_instance = client.AppsV1Api()
     try:
-        service_name = get_statefulset_service_name(job_name)
-        stateful_set_name = get_statefulset_name(job_name)
-        delete_service(job_name, service_name=service_name)
+        # Configure naming and service type based on resource type
+        if resource_type == "inference_microservice":
+            stateful_set_name = f"ims-{job_name}"
+            service_type = "inference_microservice"
+        else:
+            stateful_set_name = get_statefulset_name(job_name)
+            service_type = "statefulset"
+
+        # Delete service first, then statefulset
+        delete_service(job_id=job_name, service_type=service_type)
         stateful_set = api_instance.read_namespaced_stateful_set(
             name=stateful_set_name,
             namespace=name_space
         )
         if not stateful_set:
             logger.info(f"Statefulset {stateful_set_name} not found in namespace {name_space}")
-            return
+            return True  # Deletion goal achieved - resource doesn't exist
         api_response = api_instance.delete_namespaced_stateful_set(
             name=stateful_set_name,
             namespace=name_space,
@@ -1348,11 +1674,11 @@ def delete(job_name, use_ngc=True):
             )
         )
         logger.info(f"Statefulset deleted. status='{str(api_response.status)}'")
-        return
+        return True
     except Exception as e:
         logger.error(f"Exception caught in delete_statefulset {str(e)}")
         logger.error("Statefulset failed to delete.")
-        return
+        return False
 
 
 def delete_job(job_name, use_ngc=True):
@@ -1369,8 +1695,7 @@ def delete_job(job_name, use_ngc=True):
 
     api_instance = client.BatchV1Api()
     try:
-        service_name = f"flask-service-{job_name}"
-        delete_service(job_name, service_name=service_name)
+        delete_service(job_id=job_name, service_type="flask")
         api_response = api_instance.delete_namespaced_job(
             name=job_name,
             namespace=name_space,
@@ -1799,157 +2124,6 @@ def get_cluster_ip(namespace='default'):
         return None, None
 
 
-def create_inference_microservice_statefulset(
-        statefulset_name, image, command, replicas, num_gpu=-1,
-        ports=(8000, 8001), is_long_lived=True, org_name=None,
-        experiment_id=None, job_id=None):
-    """Creates a Inference Microservice StatefulSet for long-lived inference services"""
-    image_pull_secret = os.getenv('IMAGEPULLSECRET', default='imagepullsecret')
-    name_space = _get_name_space()
-    api_instance = client.AppsV1Api()
-
-    # Shared memory volume mount for Inference Microservice models
-    dshm_volume_mount = client.V1VolumeMount(
-        name="dshm",
-        mount_path="/dev/shm")
-
-    # GPU resources
-    resources = client.V1ResourceRequirements(
-        limits={
-            'nvidia.com/gpu': num_gpu if num_gpu > 0 else 1
-        })
-
-    # Security context with necessary capabilities
-    capabilities = client.V1Capabilities(
-        add=['SYS_PTRACE']
-    )
-    security_context = client.V1SecurityContext(
-        capabilities=capabilities
-    )
-
-    # Container ports for Inference Microservice
-    inference_microservice_ports = [
-        client.V1ContainerPort(container_port=ports[0], name="http-ims"),
-        client.V1ContainerPort(container_port=ports[1], name="health-ims")
-    ]
-
-    # Enhanced command for Inference Microservice with built-in server
-    inference_microservice_command = f"""
-umask 0 &&
-echo "Starting Inference Microservice..." &&
-{command}
-"""
-
-    # Container definition
-    container = client.V1Container(
-        name="ims-container",
-        image=image,
-        command=["/bin/bash", "-c"],
-        args=[inference_microservice_command],
-        resources=resources,
-        volume_mounts=[dshm_volume_mount],
-        ports=inference_microservice_ports,
-        security_context=security_context,
-        env=[
-            client.V1EnvVar(name="JOB_ID", value=job_id or "")
-        ])
-
-    # Shared memory volume
-    dshm_volume = client.V1Volume(
-        name="dshm",
-        empty_dir=client.V1EmptyDirVolumeSource(medium='Memory'))
-
-    # Pod template with special labels for long-lived services
-    template = client.V1PodTemplateSpec(
-        metadata=client.V1ObjectMeta(
-            labels={
-                "app": "ims",
-                "service-type": "long-lived" if is_long_lived else "temporary",
-                "auto-cleanup": "false" if is_long_lived else "true",
-                "statefulset": statefulset_name,
-                "org": org_name or "default",
-                "experiment": experiment_id or "",
-                "job": job_id or ""
-            }
-        ),
-        spec=client.V1PodSpec(
-            restart_policy="Always",
-            containers=[container],
-            volumes=[dshm_volume],
-            image_pull_secrets=[client.V1LocalObjectReference(name=image_pull_secret)]
-        ))
-
-    # StatefulSet spec
-    spec = client.V1StatefulSetSpec(
-        replicas=replicas,
-        service_name=f"ims-svc-{job_id}",  # Headless service name
-        template=template,
-        selector=client.V1LabelSelector(
-            match_labels={"statefulset": statefulset_name}
-        ),
-        # Persistent volume claims can be added here if needed for model storage
-        # volume_claim_templates=[...]
-    )
-
-    # StatefulSet object
-    statefulset = client.V1StatefulSet(
-        api_version="apps/v1",
-        kind="StatefulSet",
-        metadata=client.V1ObjectMeta(
-            name=statefulset_name,
-            labels={
-                "app": "ims",
-                "service-type": "long-lived" if is_long_lived else "temporary",
-                "auto-cleanup": "false" if is_long_lived else "true",
-                "org": org_name or "default",
-                "experiment": experiment_id or "",
-                "job": job_id or ""
-            }
-        ),
-        spec=spec)
-
-    try:
-        api_response = api_instance.create_namespaced_stateful_set(
-            body=statefulset,
-            namespace=name_space)
-        logger.info(f"Inference Microservice StatefulSet created. status='{str(api_response.status)}'")
-        wait_for_statefulset_ready(statefulset_name, name_space)
-        return True
-    except Exception as e:
-        logger.error(f"Inference Microservice StatefulSet failed to create, got error: {e}")
-        return False
-
-
-def get_inference_microservice_statefulset_pods(statefulset_name):
-    """Returns pods of a Inference Microservice StatefulSet"""
-    name_space = _get_name_space()
-    api_instance = client.CoreV1Api()
-
-    try:
-        # Get pods with the statefulset label
-        label_selector = f"statefulset={statefulset_name}"
-        api_response = api_instance.list_namespaced_pod(
-            namespace=name_space,
-            label_selector=label_selector
-        )
-
-        pod_ips = []
-        for pod in api_response.items:
-            if pod.status.phase == "Running" and pod.status.pod_ip:
-                pod_ips.append(pod.status.pod_ip)
-
-        return pod_ips
-    except Exception as e:
-        logger.error(f"Error getting Inference Microservice StatefulSet pods: {e}")
-        return []
-
-
-def get_inference_microservice_statefulset_pod_ip(statefulset_name):
-    """Get the first running pod IP for a Inference Microservice StatefulSet"""
-    pod_ips = get_inference_microservice_statefulset_pods(statefulset_name)
-    return pod_ips[0] if pod_ips else None
-
-
 def delete_inference_microservice_statefulset(statefulset_name):
     """Deletes a Inference Microservice StatefulSet"""
     name_space = _get_name_space()
@@ -1961,7 +2135,8 @@ def delete_inference_microservice_statefulset(statefulset_name):
             namespace=name_space,
             body=client.V1DeleteOptions(
                 propagation_policy='Foreground',
-                grace_period_seconds=5)
+                grace_period_seconds=5
+            )
         )
         logger.info(f"Inference Microservice StatefulSet deleted. status='{str(api_response.status)}'")
         return True
@@ -1970,75 +2145,31 @@ def delete_inference_microservice_statefulset(statefulset_name):
         return False
 
 
-def create_inference_microservice_service(service_name, statefulset_name, ports, service_type="ClusterIP"):
-    """Creates a Kubernetes service for Inference Microservice StatefulSet"""
+def status_statefulset(statefulset_name, replicas=1, resource_type="StatefulSet"):
+    """General function to get status of any StatefulSet
+
+    Status definition:
+    Running: The StatefulSet is ready and running
+    ReplicaNotReady: at least one replica of the StatefulSet is not ready.
+    NotFound: cannot find the StatefulSet. This status is useful to check if the StatefulSet is stopped.
+    Error: meet exceptions except not found error when check the status.
+    """
     name_space = _get_name_space()
-    api_instance = client.CoreV1Api()
-
-    # Service ports
-    service_ports = [
-        client.V1ServicePort(
-            name="http-port",
-            port=ports[0],
-            target_port=ports[0],
-            protocol="TCP"
-        ),
-        client.V1ServicePort(
-            name="health-port",
-            port=ports[1],
-            target_port=ports[1],
-            protocol="TCP"
-        )
-    ]
-
-    # Service spec for StatefulSet
-    spec = client.V1ServiceSpec(
-        type=service_type,
-        ports=service_ports,
-        selector={"statefulset": statefulset_name},
-        cluster_ip="None" if service_type == "Headless" else None  # Headless service for StatefulSet
-    )
-
-    # Service object
-    service = client.V1Service(
-        api_version="v1",
-        kind="Service",
-        metadata=client.V1ObjectMeta(
-            name=service_name,
-            labels={"app": "ims"}
-        ),
-        spec=spec
-    )
-
+    api_instance = client.AppsV1Api()
     try:
-        api_response = api_instance.create_namespaced_service(
-            namespace=name_space,
-            body=service
-        )
-        logger.info(f"Inference Microservice service created: {service_name}")
-
-        return {
-            "service_name": service_name,
-            "cluster_ip": api_response.spec.cluster_ip,
-            "ports": ports
-        }
+        api_response = api_instance.read_namespaced_stateful_set_status(
+            name=statefulset_name,
+            namespace=name_space)
+        ready_replicas = api_response.status.ready_replicas or 0
+        if ready_replicas < replicas:
+            return {"status": "ReplicaNotReady", "replicas": {"ready": ready_replicas, "desired": replicas}}
+        return {"status": "Running", "replicas": {"ready": ready_replicas, "desired": replicas}}
+    except ApiException as e:
+        if e.status == 404:
+            logger.info(f"{resource_type} StatefulSet not found.")
+            return {"status": "NotFound"}
+        logger.error(f"Got other ApiException error: {e}")
+        return {"status": "Error"}
     except Exception as e:
-        logger.error(f"Failed to create Inference Microservice service: {e}")
-        raise
-
-
-def delete_inference_microservice_service(service_name):
-    """Deletes a Inference Microservice Kubernetes service"""
-    name_space = _get_name_space()
-    api_instance = client.CoreV1Api()
-
-    try:
-        api_instance.delete_namespaced_service(
-            name=service_name,
-            namespace=name_space
-        )
-        logger.info(f"Inference Microservice service deleted: {service_name}")
-        return True
-    except Exception as e:
-        logger.error(f"Failed to delete Inference Microservice service: {e}")
-        return False
+        logger.error(f"Got {type(e)} error: {e}")
+        return {"status": "Error"}

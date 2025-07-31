@@ -23,6 +23,7 @@ from nvidia_tao_core.microservices.handlers.docker_images import DOCKER_IMAGE_MA
 from nvidia_tao_core.microservices.handlers.utilities import Code, add_workspace_to_cloud_metadata
 from nvidia_tao_core.microservices.job_utils import executor as jobDriver
 from nvidia_tao_core.microservices.handlers.stateless_handlers import get_handler_metadata
+from nvidia_tao_core.microservices.utils import read_network_config
 
 
 # Configure logging
@@ -46,13 +47,34 @@ class InferenceMicroserviceHandler:
     @staticmethod
     def start_inference_microservice(org_name: str, experiment_id: str, job_id: str,
                                      job_config: Dict[str, Any],
-                                     replicas: int = 1) -> Code:
-        """Starts a long-lived Inference Microservice using StatefulSet"""
+                                     replicas: int = 1, api_port: int = 8080) -> Code:
+        """Starts a long-lived Inference Microservice using StatefulSet
+
+        The network architecture is automatically determined from the experiment metadata.
+        """
         logger.info("Starting Inference Microservice %s for experiment %s", job_id, experiment_id)
 
-        # Get the Inference Microservice Docker image
-        image = DOCKER_IMAGE_MAPPER.get("VILA", "nvcr.io/nvidia/tao/tao-toolkit:5.0.0-tf2.11.0")
-        logger.info("Using Docker image: %s", image)
+        # Get experiment metadata to determine network architecture
+        experiment_metadata = get_handler_metadata(experiment_id, kind="experiments")
+        network_arch = experiment_metadata.get("network_arch", "vila")  # Default to vila if not found
+        logger.info("Network architecture from experiment metadata: %s", network_arch)
+
+        # Read network config to get docker image name
+        try:
+            network_config = read_network_config(network_arch.lower())
+
+            if network_config:
+                image_key = network_config.get('api_params', {}).get('image', network_arch.upper())
+                image = DOCKER_IMAGE_MAPPER.get(image_key, "nvcr.io/nvidia/tao/tao-toolkit:5.0.0-tf2.11.0")
+                logger.info("Using Docker image: %s (from network_arch: %s)", image, network_arch)
+            else:
+                # Fallback if network config is empty
+                image = DOCKER_IMAGE_MAPPER.get(network_arch.upper(), "nvcr.io/nvidia/tao/tao-toolkit:5.0.0-tf2.11.0")
+                logger.info("Using fallback Docker image: %s", image)
+        except Exception as e:
+            logger.warning("Could not read network config for %s: %s. Using default image.", network_arch, str(e))
+            image = DOCKER_IMAGE_MAPPER.get(network_arch.upper(), "nvcr.io/nvidia/tao/tao-toolkit:5.0.0-tf2.11.0")
+            logger.info("Using fallback Docker image: %s", image)
 
         # StatefulSet name
         statefulset_name = f"ims-{job_id}"
@@ -68,7 +90,6 @@ class InferenceMicroserviceHandler:
         # cli_args = " ".join(cli_args)
         # logger.info("Using CLI args: %s", cli_args)
 
-        experiment_metadata = get_handler_metadata(experiment_id, kind="experiments")
         docker_env_vars = experiment_metadata.get("docker_env_vars", {})
         workspace_id = experiment_metadata.get("workspace", "")
         workspace_metadata = get_handler_metadata(workspace_id, kind="workspaces")
@@ -84,35 +105,31 @@ class InferenceMicroserviceHandler:
             "job_id": job_id,
             "specs": job_config,
             "cloud_metadata": cloud_metadata,
-            "neural_network_name": "vila",
+            "neural_network_name": network_arch,
         }
 
         # Clean TAO-compliant StatefulSet setup: Pure container_handler.py approach
         run_command = f"""
-# Start clean TAO Inference Microservice StatefulSet container (no embedded HTTP server)
 umask 0 &&
 exec python3 -m llava.cli.tao_model_server --job "{str(job_metadata)}" --docker_env_vars "{str(docker_env_vars)}"
         """
         logger.info("Using run command: %s", run_command)
 
-        # Ports for Inference Microservice (HTTP API, health check)
-        ports = (8080, 8081)
-
         try:
             # Create long-lived inference service StatefulSet
             # IMPORTANT: This overrides the default container entrypoint (e.g., "flask run")
             # with our custom command that starts the persistent model server + container_handler.py
-            success = jobDriver.create_inference_microservice_statefulset(
-                statefulset_name=statefulset_name,
+            success = jobDriver.create_statefulset(
+                job_id=job_id,
+                num_gpu_per_node=1,
+                num_nodes=replicas,
                 image=image,
-                command=run_command,  # This overrides default entrypoint with bash -c "run_command"
-                replicas=replicas,
-                num_gpu=1,
-                ports=ports,
-                is_long_lived=True,
+                api_port=api_port,
+                statefulset_type="inference_microservice",
+                custom_command=run_command,
                 org_name=org_name,
                 experiment_id=experiment_id,
-                job_id=job_id
+                is_long_lived=True
             )
 
             if not success:
@@ -120,34 +137,10 @@ exec python3 -m llava.cli.tao_model_server --job "{str(job_metadata)}" --docker_
 
             logger.info("Inference Microservice %s is ready", statefulset_name)
 
-            # Create K8s service for the StatefulSet
+            # Service is automatically created by create_statefulset, just return success
             service_id = f"ims-svc-{job_id}"
-            return InferenceMicroserviceHandler._create_inference_microservice_service(
-                service_id=service_id,
-                statefulset_name=statefulset_name,
-                ports=ports,
-                job_id=job_id
-            )
-
-        except Exception as e:
-            logger.error("Error starting Inference Microservice: %s", str(e))
-            return Code(500, {}, f"Failed to start Inference Microservice: {str(e)}")
-
-    @staticmethod
-    def _create_inference_microservice_service(service_id: str, statefulset_name: str, ports: tuple,
-                                               job_id: str) -> Code:
-        """Create Kubernetes service for Inference Microservice StatefulSet"""
-        try:
-            # Create service for external access
-            service_info = jobDriver.create_inference_microservice_service(
-                service_name=service_id,
-                statefulset_name=statefulset_name,
-                ports=ports,
-                service_type="ClusterIP"
-            )
-
-            # Get service endpoint information
-            service_url = f"http://{service_info.get('cluster_ip', 'localhost')}:{ports[0]}"
+            # For Kubernetes services, we typically use cluster IP for internal communication
+            service_url = f"http://{service_id}:{api_port}"
 
             logger.info("Inference Microservice created at %s", service_url)
 
@@ -160,12 +153,13 @@ exec python3 -m llava.cli.tao_model_server --job "{str(job_metadata)}" --docker_
                     "health": f"{service_url}/health",
                     "status": f"{service_url}/status"
                 },
-                "job_id": job_id
+                "job_id": job_id,
+                "api_port": api_port
             }, "Inference Microservice started successfully")
 
         except Exception as e:
-            logger.error("Error creating Inference Microservice: %s", str(e))
-            return Code(500, {}, f"Failed to create Inference Microservice: {str(e)}")
+            logger.error("Error starting Inference Microservice: %s", str(e))
+            return Code(500, {}, f"Failed to start Inference Microservice: {str(e)}")
 
     @staticmethod
     def stop_inference_microservice(job_id: str, auto_deletion: bool = False) -> Code:
@@ -183,17 +177,11 @@ exec python3 -m llava.cli.tao_model_server --job "{str(job_metadata)}" --docker_
 
         logger.info("%s Inference Microservice %s %s", action, job_id, reason)
 
-        statefulset_name = f"ims-{job_id}"
-        service_name = statefulset_name.replace("ims-", "ims-svc-")
-        logger.info("Using StatefulSet name: %s", statefulset_name)
-        logger.info("Using Service name: %s", service_name)
-
         try:
-            # Delete the StatefulSet and associated service directly
-            statefulset_deleted = jobDriver.delete_inference_microservice_statefulset(statefulset_name)
-            service_deleted = jobDriver.delete_inference_microservice_service(service_name)
+            # Delete the StatefulSet and associated service using the enhanced delete function
+            deletion_success = jobDriver.delete(job_id, resource_type="inference_microservice")
 
-            if statefulset_deleted and service_deleted:
+            if deletion_success:
                 success_message = "auto-deleted due to inactivity" if auto_deletion else "stopped successfully"
                 logger.info(
                     "Successfully %s Inference Microservice %s",
@@ -208,16 +196,8 @@ exec python3 -m llava.cli.tao_model_server --job "{str(job_metadata)}" --docker_
                     "auto_deletion": auto_deletion
                 }
                 return Code(200, result, f"Inference Microservice {success_message}")
-            error_details = []
-            if not statefulset_deleted:
-                error_details.append("StatefulSet deletion failed")
-            if not service_deleted:
-                error_details.append("Service deletion failed")
 
-            error_msg = (
-                f"Failed to {action.lower()} inference microservice for job {job_id}: "
-                f"{', '.join(error_details)}"
-            )
+            error_msg = f"Failed to {action.lower()} inference microservice for job {job_id}"
             logger.error(error_msg)
             return Code(500, {"error": error_msg}, f"Failed to {action.lower()} Inference Microservice")
 
@@ -231,7 +211,9 @@ exec python3 -m llava.cli.tao_model_server --job "{str(job_metadata)}" --docker_
         statefulset_name = f"ims-{job_id}"
 
         try:
-            stat_dict = jobDriver.status_inference_microservice_statefulset(statefulset_name)
+            stat_dict = jobDriver.status_statefulset(
+                statefulset_name, replicas=1, resource_type="Inference Microservice"
+            )
             status = stat_dict.get("status", "Unknown")
 
             return Code(200, {
@@ -254,7 +236,9 @@ exec python3 -m llava.cli.tao_model_server --job "{str(job_metadata)}" --docker_
 
             # Check if StatefulSet pods exist and are running
             try:
-                stat_dict = jobDriver.status_inference_microservice_statefulset(statefulset_name)
+                stat_dict = jobDriver.status_statefulset(
+                    statefulset_name, replicas=1, resource_type="Inference Microservice"
+                )
                 statefulset_status = stat_dict.get("status", "Unknown")
 
                 if statefulset_status == "Running":
@@ -284,13 +268,13 @@ exec python3 -m llava.cli.tao_model_server --job "{str(job_metadata)}" --docker_
             return {"status": "error", "error": str(e), "loaded": False}
 
     @staticmethod
-    def get_inference_microservice_url(job_id: str, endpoint: str = "inference") -> str:
+    def get_inference_microservice_url(job_id: str, endpoint: str = "inference", api_port: int = 8080) -> str:
         """Get the URL for inference microservice requests
 
         Args:
             job_id: Job ID for the microservice
             endpoint: Endpoint to call (inference, health, status)
-            use_fqdn: Deprecated parameter, kept for compatibility
+            api_port: Port number for the microservice (default: 8080)
 
         Returns:
             Full URL for the request (always uses simple service name)
@@ -300,15 +284,17 @@ exec python3 -m llava.cli.tao_model_server --job "{str(job_metadata)}" --docker_
         # Always use simple service name for both Kubernetes and docker-compose
         # This works reliably for intra-cluster communication and avoids DNS issues
         if os.environ.get('BACKEND', 'local-k8s') == 'local-docker':
-            url = f"http://{job_id}:8080/{endpoint}"
+            url = f"http://{job_id}:8000/{endpoint}"
         else:
-            url = f"http://{service_name}:8080/{endpoint}"
+            url = f"http://{service_name}:{api_port}/{endpoint}"
 
         logger.info(f"Inference microservice URL: {url}")
         return url
 
     @staticmethod
-    def process_inference_microservice_request_direct(job_id: str, request_data: Dict[str, Any]) -> Dict[str, Any]:
+    def process_inference_microservice_request_direct(
+            job_id: str, request_data: Dict[str, Any], api_port: int = 8080
+    ) -> Dict[str, Any]:
         """Process inference request directly to the StatefulSet microservice
 
         Args:
@@ -323,7 +309,7 @@ exec python3 -m llava.cli.tao_model_server --job "{str(job_metadata)}" --docker_
 
             # Get the inference URL
             inference_url = InferenceMicroserviceHandler.get_inference_microservice_url(
-                job_id, "inference"
+                job_id, "inference", api_port
             )
 
             # Make request to the microservice
@@ -391,7 +377,7 @@ exec python3 -m llava.cli.tao_model_server --job "{str(job_metadata)}" --docker_
             }
 
     @staticmethod
-    def get_inference_microservice_status_direct(job_id: str) -> Dict[str, Any]:
+    def get_inference_microservice_status_direct(job_id: str, api_port: int = 8080) -> Dict[str, Any]:
         """Get status directly from the StatefulSet microservice
 
         Args:
@@ -405,7 +391,7 @@ exec python3 -m llava.cli.tao_model_server --job "{str(job_metadata)}" --docker_
 
             # Get the status URL
             status_url = InferenceMicroserviceHandler.get_inference_microservice_url(
-                job_id, "status"
+                job_id, "status", api_port
             )
 
             # Make request to the microservice
@@ -439,7 +425,9 @@ exec python3 -m llava.cli.tao_model_server --job "{str(job_metadata)}" --docker_
         """Get Inference Microservice service status with model readiness information"""
         try:
             statefulset_name = f"ims-{job_id}"
-            stat_dict = jobDriver.status_inference_microservice_statefulset(statefulset_name)
+            stat_dict = jobDriver.status_statefulset(
+                statefulset_name, replicas=1, resource_type="Inference Microservice"
+            )
 
             # Check model readiness
             model_state = InferenceMicroserviceHandler.check_inference_microservice_model_readiness(job_id)
