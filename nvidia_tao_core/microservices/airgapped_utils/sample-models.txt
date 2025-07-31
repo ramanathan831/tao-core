@@ -9,4 +9,4 @@
 # Common TAO Models:
 
 nvstaging/tao/ocrnet:trainable_v2.0
-nvidia/tao/poseclassificationnet:trainable_v1.0
+hf_model://Falconsai/nsfw_image_detection,dino
