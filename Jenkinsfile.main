@@ -236,6 +236,13 @@ spec:
           }
         }
 
+        stage ('patch_build_files') {
+          gitlabCommitStatus(name: "patch_build_files", connection: gitLabConnection('git-lab-master')) {
+            sh "python3 release/update_version.py --version ${TAO_VERSION}"
+            echo "Build files patched with version ${TAO_VERSION}"
+          }
+        }
+
         stage ('build_pyt_wheel') {
           gitlabCommitStatus(name: "build_wheel", connection: gitLabConnection('git-lab-master')) {
             // Extract patch number from TAO_VERSION (e.g., "6.25.7" -> "7")

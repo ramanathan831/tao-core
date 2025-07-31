@@ -68,6 +68,13 @@ spec:
           }
         }
 
+        stage ('patch_build_files') {
+          gitlabCommitStatus(name: "patch_build_files", connection: gitLabConnection('git-lab-master')) {
+            sh "python3 release/update_version.py --version ${TAO_VERSION}"
+            echo "Build files patched with version ${TAO_VERSION}"
+          }
+        }
+
         stage ('static_tests') {
           gitlabCommitStatus(name: "static_tests", connection: gitLabConnection('git-lab-master')) {
             sh "pip install pylint==3.0.3 pydocstyle flake8"
