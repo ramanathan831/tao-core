@@ -70,7 +70,8 @@ class BaseExperimentMetadata:
         ngc_key: str = None,
         override: bool = False,
         dry_run: bool = False,
-        models_file: str = None,
+        use_csv: bool = False,
+        use_both: bool = False,
         model_names: str = None,
     ):
         """Initialize Base Experiment Metadata class
@@ -81,15 +82,15 @@ class BaseExperimentMetadata:
             ngc_key (str, optional): NGC Personal Key. Defaults to None.
             override (bool, optional): Override existing base experiments. Defaults to False.
             dry_run (bool, optional): Dry run mode. Defaults to False.
-                        models_file (str, optional): File containing list of model paths for specific model selection.
-                                    Supports formats: 'model_path' or 'model_path,network_arch[,display_name]'.
-                                    Defaults to None.
+            use_csv (bool, optional): Use predefined CSV file for models instead of NGC discovery. Defaults to False.
+            use_both (bool, optional): Use both CSV file and NGC auto-discovery. Defaults to False.
             model_names (str, optional): Comma-separated list of model names/entrypoints to download. Defaults to None.
         """
         self.shared_folder_path = shared_folder_path
         self.ngc_key = os.getenv("PTM_API_KEY") or ngc_key or get_admin_key()
         self.airgapped = os.getenv("AIRGAPPED_MODE", "False") == "True"
-        self.models_file = models_file
+        self.use_csv = use_csv
+        self.use_both = use_both
         self.model_names = model_names.split(",") if model_names else None
         self.org_team_list = self.prepare_org_team(org_teams)
         self.override = override
@@ -99,6 +100,11 @@ class BaseExperimentMetadata:
 
         if self.override and self.dry_run:
             raise ValueError("Cannot use both `--override` and `--dry-run` flags together!")
+
+        if self.use_csv and self.use_both:
+            raise ValueError(
+                "Cannot use both `--use-csv` and `--use-both` flags together! Use `--use-both` for CSV + NGC discovery."
+            )
 
         # set default uuids
         self.base_exp_uuid = uuid.UUID(base_exp_uuid)
@@ -116,7 +122,7 @@ class BaseExperimentMetadata:
         os.makedirs(self.rootdir, exist_ok=True)
 
         # create a list of all supported network architectures
-        self.supported_network_archs = self.get_supported_netowrk_archs()
+        self.supported_network_archs = self.get_supported_network_archs()
 
         # set tao version and comparison operators
         self.tao_version = None  # type: version.Version
@@ -197,7 +203,25 @@ class BaseExperimentMetadata:
 
     def prepare_org_team(self, org_teams: str):
         """Prepare org team list"""
-        if org_teams:
+        if self.use_csv and not self.use_both:
+            # In CSV-only mode, we don't need org/team validation since we specify exact models
+            logger.info("> CSV mode: will process specific models from CSV file.")
+            org_team_list = []
+        elif self.use_both:
+            # In both mode, we need org/team for NGC discovery but also use CSV
+            logger.info("> Both mode: will process models from CSV file AND NGC discovery.")
+            if org_teams:
+                org_team_list = []
+                for org_team in org_teams.split(","):
+                    org_team = org_team.replace("/no-team", "")
+                    org = org_team
+                    team = ""
+                    if "/" in org_team:
+                        org, team = org_team.split("/")
+                    org_team_list.append((org, team))
+            else:
+                org_team_list = self.get_org_teams()
+        elif org_teams:
             org_team_list = []
             for org_team in org_teams.split(","):
                 org_team = org_team.replace("/no-team", "")
@@ -206,16 +230,7 @@ class BaseExperimentMetadata:
                 if "/" in org_team:
                     org, team = org_team.split("/")
                 org_team_list.append((org, team))
-        elif self.models_file:
-            # In models file mode, we don't need org/team validation since we specify exact models
-            logger.info("> Models file mode: will process specific models from file.")
-            org_team_list = []
-        elif self.model_names:
-            # In model names mode, we need to discover all orgs but filter by model names
-            logger.info(f"> Model names mode: will discover models matching: {', '.join(self.model_names)}")
-            org_team_list = self.get_org_teams()
         else:
-            logger.warning("> No org/team is provided by `--org-team`.")
             org_team_list = self.get_org_teams()
         return org_team_list
 
@@ -263,7 +278,7 @@ class BaseExperimentMetadata:
         return org_teams
 
     @staticmethod
-    def get_supported_netowrk_archs():
+    def get_supported_network_archs():
         """Get the list of all supported network architectures by API"""
         # remove .config.json (12 charachter) from the end of the file name
         return [
@@ -328,6 +343,9 @@ class BaseExperimentMetadata:
             for row_num, row in enumerate(reader, 2):  # Start from 2 since we skip header
                 try:
                     display_name, model_path, network_arch = row
+                    if self.model_names and network_arch not in self.model_names:
+                        logger.info(f"Skipping {model_path} - not in requested model names: {self.model_names}")
+                        continue
 
                     # Parse model path to determine source type
                     source_type, cleaned_path = self.parse_model_path(model_path)
@@ -355,6 +373,14 @@ class BaseExperimentMetadata:
                                 f"Proceeding with custom network architecture '{network_arch}' for Hugging Face model"
                             )
 
+                        # Download model in airgapped mode
+                        spec_data = {}
+                        if self.airgapped:
+                            download_success = self.download_huggingface_model(cleaned_path, exp_id)
+                            if not download_success:
+                                logger.warning(f"Failed to download Hugging Face model: {cleaned_path}")
+                                continue
+
                         # Create basic experiment info first
                         basic_experiment = {
                             "id": exp_id,
@@ -363,8 +389,8 @@ class BaseExperimentMetadata:
                             "network_arch": network_arch,
                             "source_type": source_type,
                             "base_experiment_metadata": {
-                                "spec_file_present": False,
-                                "specs": {}
+                                "spec_file_present": bool(spec_data),
+                                "specs": spec_data
                             }
                         }
 
@@ -606,123 +632,6 @@ class BaseExperimentMetadata:
             logger.error(f"Unable to download Hugging Face model {hf_path}: {e}")
             return False
 
-    def load_base_experiments_from_file(self) -> dict:
-        """Get base experiments from models file
-
-        Supports two formats:
-        1. Simple format: model_path (network_arch defaults to model name)
-        2. Extended format: model_path,network_arch
-        """
-        base_experiments: dict[str, dict] = {}
-        if not self.models_file or not os.path.isfile(self.models_file):
-            logger.error(f"Models file not found: {self.models_file}")
-            return base_experiments
-
-        with open(self.models_file, "r", encoding="utf-8") as f:
-            for line_num, line in enumerate(f, 1):
-                line = line.strip()
-                # Skip empty lines and comments
-                if not line or line.startswith('#'):
-                    continue
-
-                # Parse line - support both "model_path" and "model_path,network_arch" formats
-                if ',' in line:
-                    parts = [part.strip() for part in line.split(',')]
-                    if len(parts) >= 2:
-                        model_path = parts[0]
-                        network_arch = parts[1]
-                        display_name = parts[2] if len(parts) > 2 else network_arch
-                    else:
-                        logger.warning(
-                            f"Line {line_num}: Invalid format '{line}'. "
-                            f"Expected: model_path,network_arch[,display_name]"
-                        )
-                        continue
-                else:
-                    model_path = line
-                    network_arch = None  # Will be determined from model path
-                    display_name = None
-
-                try:
-                    # Parse model path to determine source type
-                    source_type, cleaned_path = self.parse_model_path(model_path)
-
-                    if source_type == "ngc":
-                        # Handle NGC models
-                        org, team, _, _ = self.split_ngc_path(cleaned_path)
-                        ngc_token = self.get_ngc_token(org, team)
-
-                        # Use provided network_arch or derive from model name
-                        if not network_arch:
-                            network_arch = cleaned_path.split('/')[-1].split(':')[0]
-                        if not display_name:
-                            display_name = network_arch
-
-                        # Validate network architecture
-                        if network_arch not in self.supported_network_archs:
-                            logger.warning(
-                                f"Line {line_num}: Network architecture '{network_arch}' is not supported. "
-                                f"Supported architectures: {', '.join(self.supported_network_archs)}"
-                            )
-                            # Continue processing but log the warning
-
-                        self.add_experiment(
-                            base_experiments, display_name, cleaned_path, network_arch, ngc_token, source_type
-                        )
-
-                    elif source_type == "huggingface":
-                        # Handle Hugging Face models
-                        model_name = cleaned_path.split('/')[-1]  # Use model name from path
-                        if not network_arch:
-                            network_arch = model_name
-                        if not display_name:
-                            display_name = model_name
-
-                        # Validate network architecture for Hugging Face models
-                        if network_arch not in self.supported_network_archs:
-                            logger.warning(
-                                f"Line {line_num}: Network architecture '{network_arch}' "
-                                f"is not supported for Hugging Face model. "
-                                f"Supported architectures: {', '.join(self.supported_network_archs)}"
-                            )
-                            # For HF models, we might want to be more lenient and allow custom network archs
-                            logger.info(
-                                f"Proceeding with custom network architecture '{network_arch}' for Hugging Face model"
-                            )
-
-                        exp_id = str(uuid.uuid5(self.base_exp_uuid, f"hf:{cleaned_path}"))
-
-                        # Create experiment entry for Hugging Face model
-                        spec_data = {}
-                        if self.airgapped:
-                            download_success = self.download_huggingface_model(cleaned_path, exp_id)
-                            if not download_success:
-                                logger.warning(f"Failed to download Hugging Face model: {cleaned_path}")
-                                continue
-
-                        # Create basic experiment info first
-                        basic_experiment = {
-                            "id": exp_id,
-                            "name": display_name,
-                            "ngc_path": cleaned_path,  # Store original path
-                            "network_arch": network_arch,
-                            "source_type": source_type,
-                            "base_experiment_metadata": {
-                                "spec_file_present": bool(spec_data),
-                                "specs": spec_data
-                            }
-                        }
-
-                        # Extract full metadata using network config
-                        base_experiments[exp_id] = self.extract_huggingface_metadata(basic_experiment)
-
-                    logger.info(f"Processed model: {cleaned_path} with network_arch: {network_arch}")
-
-                except Exception as e:
-                    logger.error(f"Failed to process model on line {line_num} '{line}': {e}")
-                    continue
-        return base_experiments
-
     def convert_str_to_enum(self, string_value: str, enum_type: Enum):
         """Convert string to enum based on value."""
         if not string_value:
@@ -959,24 +868,25 @@ class BaseExperimentMetadata:
         """Get base experiments hosted on NGC"""
         model_info = {}
         valid_base_experiments = {}
+        ngc_base_experiments = {}
 
-        if self.models_file:
-            # Load specific models from file
-            ngc_base_experiments = self.load_base_experiments_from_file()
-            logger.info("Loaded base experiments from models file: %s", len(ngc_base_experiments))
-        else:
-            # Auto-discover all available models from NGC
-            ngc_base_experiments = self.load_base_experiments_from_ngc()
-            logger.info("Loaded base experiments from NGC discovery: %s", len(ngc_base_experiments))
-            if self.model_names:
-                logger.info("Applied model name filtering for: %s", ', '.join(self.model_names))
+        # Load from NGC if not CSV-only mode
+        if not (self.use_csv and not self.use_both):
+            ngc_experiments = self.load_base_experiments_from_ngc()
+            logger.info("Loaded base experiments from NGC discovery: %s", len(ngc_experiments))
+            ngc_base_experiments.update(ngc_experiments)
 
+        # Load from CSV if CSV or both mode
+        if self.use_csv or self.use_both:
+            csv_experiments = self.load_base_experiments_from_csv()
+            logger.info("Loaded base experiments from CSV file: %s", len(csv_experiments))
+            # CSV takes precedence over NGC
+            ngc_base_experiments.update(csv_experiments)
+
+        logger.info("Total experiments loaded: %s", len(ngc_base_experiments))
+        if self.model_names:
+            logger.info("Applied model name filtering for: %s", ', '.join(self.model_names))
         logger.info("--------------------------------------------------------")
-        if DEPLOYMENT_MODE == "PROD" and not self.models_file:
-            logger.info("--------------------------------------------------------")
-            experiments_form_csv = self.load_base_experiments_from_csv()
-            logger.info("Loaded base experiments from CSV (NGC + HF models): %s", len(experiments_form_csv))
-            ngc_base_experiments = {**ngc_base_experiments, **experiments_form_csv}
 
         for exp_id, base_experiment in ngc_base_experiments.items():
             ngc_path = base_experiment["ngc_path"]
@@ -989,8 +899,8 @@ class BaseExperimentMetadata:
                     org, team, model_name, model_version = self.split_ngc_path(ngc_path)
                     ngc_token = self.get_ngc_token(org, team)
 
-                    # In models file mode, process all experiments; in auto-discovery mode, check org/team membership
-                    if self.models_file or (org, team) in self.org_team_list:
+                    # In CSV or both mode, process all experiments; in auto-discovery mode, check org/team membership
+                    if self.use_csv or self.use_both or (org, team) in self.org_team_list:
                         # Get ngc model metadata and cache it
                         monai_metadata = {}
                         if ngc_path not in model_info:
@@ -1033,9 +943,6 @@ class BaseExperimentMetadata:
         """Get existing base experiments"""
         if os.path.isfile(self.metadata_file):
             existing_models = safe_load_file(self.metadata_file)
-            # In airgapped mode, JSON file contains a list, convert to dict
-            if isinstance(existing_models, list):
-                return {model.get('id', str(i)): model for i, model in enumerate(existing_models)}
             return existing_models
         return {}
 
@@ -1047,12 +954,10 @@ class BaseExperimentMetadata:
 
         if self.airgapped and self.metadata_file:
             # Write to JSON file for airgapped deployment
-            metadata_list = list(self.metadata.values())
-            output_path = self.metadata_file
-            os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
-            with open(output_path, 'w', encoding='utf-8') as f:
-                json.dump(metadata_list, f, indent=2, default=str)
-            logger.info(f"Base experiments metadata written to JSON file: {output_path}")
+            os.makedirs(os.path.dirname(os.path.abspath(self.metadata_file)), exist_ok=True)
+            with open(self.metadata_file, 'w', encoding='utf-8') as f:
+                json.dump(self.metadata, f, indent=2, default=str)
+            logger.info(f"Base experiments metadata written to JSON file: {self.metadata_file}")
         elif not self.dry_run:
             # Regular mode - write to MongoDB
             mongo_experiments = MongoHandler("tao", "experiments")
@@ -1080,9 +985,10 @@ if __name__ == "__main__":
         parser.add_argument("--ngc-key", help="NGC Key", default=get_admin_key())
         parser.add_argument("--dry-run", help="Dry run mode", default=False, action="store_true")
         parser.add_argument("--override", help="Override existing base experiments", action="store_true")
-        parser.add_argument("--models-file",
-                            help="File containing list of model paths for specific model selection. "
-                                 "Supports formats: 'model_path' or 'model_path,network_arch[,display_name]'")
+        parser.add_argument("--use-csv", help="Use predefined CSV file for model selection instead of NGC discovery",
+                            default=False, action="store_true")
+        parser.add_argument("--use-both", help="Use both CSV file and NGC auto-discovery for model selection",
+                            default=False, action="store_true")
         parser.add_argument("--model-names",
                             help="Comma-separated list of model names/entrypoints to download "
                                  "(e.g., 'classification_pyt,dino')")
@@ -1094,7 +1000,8 @@ if __name__ == "__main__":
             args.ngc_key,
             args.override,
             args.dry_run,
-            args.models_file,
+            args.use_csv,
+            args.use_both,
             args.model_names
         )
         bem.sync()

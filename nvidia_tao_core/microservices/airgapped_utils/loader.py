@@ -118,15 +118,7 @@ class AirgappedExperimentLoader:
 
         try:
             experiments = safe_load_file(json_file_to_use)
-            if isinstance(experiments, list):
-                # Convert list to dictionary with id as key for consistency
-                experiments_dict = {exp.get("id"): exp for exp in experiments if exp.get("id")}
-                logger.info("Loaded %d experiments from JSON file", len(experiments_dict))
-                return experiments_dict
-            if isinstance(experiments, dict):
-                logger.info("Loaded %d experiments from JSON file", len(experiments))
-                return experiments
-            raise ValueError("Invalid JSON format: expected list or dictionary")
+            return experiments
         except Exception as e:
             logger.error("Failed to load experiments from JSON: %s", e)
             raise
