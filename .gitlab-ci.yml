@@ -48,16 +48,32 @@ check_jenkins_status:
 
       JENKINS_URL="https://prod.blsm.nvidia.com/metropolis-iva-tlt-jenkins"
       
+      # Determine which Jenkins pipeline to trigger based on branch name
+      if [[ "$FORKED_REPO_BRANCH" =~ ^release/.* ]]; then
+        echo "Release branch detected: $FORKED_REPO_BRANCH"
+        echo "Triggering tao-core-release pipeline with RC=true"
+        JENKINS_JOB="tao-core-release"
+        JENKINS_PARAMS="token=$JENKINS_JOB_TOKEN&GITLAB_REPO_URL=$FORKED_REPO_URL&BRANCH_NAME=$FORKED_REPO_BRANCH&RC=true"
+      else
+        echo "Non-release branch detected: $FORKED_REPO_BRANCH"
+        echo "Triggering tao-core-develop pipeline"
+        JENKINS_JOB="tao-core-develop"
+        JENKINS_PARAMS="token=$JENKINS_JOB_TOKEN&GITLAB_BRANCH=$FORKED_REPO_BRANCH&GITLAB_REPO_URL=$FORKED_REPO_URL"
+      fi
+      
+      echo "Jenkins Job: $JENKINS_JOB"
+      echo "Jenkins Parameters: $JENKINS_PARAMS"
+      
       # Step 1: Fetch the last build number before triggering a new build
-      last_build_number=$(curl -s -X POST -u "$JENKINS_USER:$JENKINS_TOKEN" "$JENKINS_URL/job/tao-core-develop/lastBuild/buildNumber")
+      last_build_number=$(curl -s -X POST -u "$JENKINS_USER:$JENKINS_TOKEN" "$JENKINS_URL/job/$JENKINS_JOB/lastBuild/buildNumber")
 
       # Step 2: Trigger the new build
-      curl -X POST -u "$JENKINS_USER:$JENKINS_TOKEN" \
-      "$JENKINS_URL/view/tao-core/job/tao-core-develop/buildWithParameters?token=$JENKINS_JOB_TOKEN&GITLAB_BRANCH=$FORKED_REPO_BRANCH&GITLAB_REPO_URL=$FORKED_REPO_URL"
+      curl -s -X POST -u "$JENKINS_USER:$JENKINS_TOKEN" \
+      "$JENKINS_URL/view/tao-core/job/$JENKINS_JOB/buildWithParameters?$JENKINS_PARAMS"
 
       # Step 3: Poll until a new build number is detected
       while true; do
-          current_build_number=$(curl -s -X POST -u "$JENKINS_USER:$JENKINS_TOKEN" "$JENKINS_URL/job/tao-core-develop/lastBuild/buildNumber")
+          current_build_number=$(curl -s -X POST -u "$JENKINS_USER:$JENKINS_TOKEN" "$JENKINS_URL/job/$JENKINS_JOB/lastBuild/buildNumber")
           
           if [ "$current_build_number" -gt "$last_build_number" ]; then
               echo "New build detected: Build Number $current_build_number"
@@ -67,7 +83,7 @@ check_jenkins_status:
           sleep 1
       done
 
-      build_url="$JENKINS_URL/job/tao-core-develop/${current_build_number}/"
+      build_url="$JENKINS_URL/job/$JENKINS_JOB/${current_build_number}/"
       echo "You can view the build details at: $build_url"
 
       # Step 4 : Poll Jenkins job status and get details for each stage
@@ -79,7 +95,7 @@ check_jenkins_status:
       while true; do
           # Fetch the Console Output of the job
           response=$(curl -si -w "\n%{size_header},%{size_download}" -u "$JENKINS_USER:$JENKINS_TOKEN" \
-          "$JENKINS_URL/job/tao-core-develop/${current_build_number}/logText/progressiveText?start=${start}")
+          "$JENKINS_URL/job/$JENKINS_JOB/${current_build_number}/logText/progressiveText?start=${start}")
 
           # Extract the header and the body
           header_size=$(sed -n '$ s/^\([0-9]*\),.*$/\1/ p' <<< "${response}")
@@ -93,7 +109,7 @@ check_jenkins_status:
           # Fetch the job status (SUCCESS, FAILURE, ABORTED, etc.)
           # Use `|| true` to prevent the script from failing if `jq` encounters an error.
           job_status=$(curl -s -u "$JENKINS_USER:$JENKINS_TOKEN" \
-          "$JENKINS_URL/job/tao-core-develop/${current_build_number}/api/json?tree=result" | \
+          "$JENKINS_URL/job/$JENKINS_JOB/${current_build_number}/api/json?tree=result" | \
           jq -r '.result') || true
 
           # Output the log
