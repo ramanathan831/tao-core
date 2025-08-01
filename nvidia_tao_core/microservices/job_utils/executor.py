@@ -555,6 +555,21 @@ def create_statefulset(job_id, num_gpu_per_node, num_nodes, image, api_port=8000
                        custom_ports=None, org_name=None, experiment_id=None, is_long_lived=False):
     """Create statefulset with flexible configuration for different types"""
     try:
+        # Handle docker-compose backend for inference microservices
+        if BACKEND == "local-docker" and statefulset_type == "inference_microservice":
+            # Set default api_port for inference microservices if not explicitly provided
+            if api_port == 8000:
+                api_port = 8080  # Default port for inference microservices
+
+            # Create docker container for inference microservice
+            return create_docker_inference_microservice(
+                job_id=job_id,
+                image=image,
+                custom_command=custom_command,
+                api_port=api_port,
+                num_gpu=num_gpu_per_node
+            )
+
         # Set default api_port for inference microservices if not explicitly provided
         if statefulset_type == "inference_microservice" and api_port == 8000:
             api_port = 8080  # Default port for inference microservices
@@ -1129,15 +1144,16 @@ def create_microservice_and_send_request(
                 microservice_container = os.getenv('IMAGE_TAO_DEPLOY')
 
         if BACKEND == "local-docker":
-            docker_handler = DockerHandler(microservice_container)
             port = 8000
-            docker_handler.start_container(
-                container_name=microservice_pod_id,
-                command=["/bin/bash", "-c", f"flask run --host 0.0.0.0 --port {port}"],
-                num_gpus=num_gpu
-            )
-
-            if wait_for_container(docker_handler, microservice_pod_id, port=port):
+            # Use the reusable docker creation function
+            if create_docker_inference_microservice(
+                job_id=microservice_pod_id,
+                image=microservice_container,
+                custom_command=f"flask run --host 0.0.0.0 --port {port}",
+                api_port=port,
+                num_gpu=num_gpu
+            ):
+                docker_handler = DockerHandler.get_handler_for_container(microservice_pod_id)
                 response = docker_handler.make_container_request(
                     api_endpoint,
                     network,
@@ -2173,3 +2189,49 @@ def status_statefulset(statefulset_name, replicas=1, resource_type="StatefulSet"
     except Exception as e:
         logger.error(f"Got {type(e)} error: {e}")
         return {"status": "Error"}
+
+
+def create_docker_inference_microservice(job_id, image, custom_command=None, api_port=8080, num_gpu=1):
+    """Create a docker-compose inference microservice container
+
+    Args:
+        job_id: Unique identifier for the microservice
+        image: Docker image to use
+        custom_command: Custom command to run in the container (optional)
+        api_port: Port for the microservice API
+        num_gpu: Number of GPUs to allocate
+
+    Returns:
+        bool: True if container created successfully, False otherwise
+    """
+    try:
+        docker_handler = DockerHandler(image)
+
+        # Use custom command if provided, otherwise default to flask run
+        if custom_command:
+            # Split the custom command into a proper command array
+            command_str = custom_command.strip()
+            command = ["/bin/bash", "-c", command_str]
+        else:
+            command = ["/bin/bash", "-c", f"flask run --host 0.0.0.0 --port {api_port}"]
+
+        # Start the container
+        docker_handler.start_container(
+            container_name=job_id,
+            command=command,
+            num_gpus=num_gpu
+        )
+
+        # Wait for container to be ready
+        if wait_for_container(docker_handler, job_id, port=api_port):
+            logger.info(f"Docker inference microservice {job_id} created successfully")
+            return True
+
+        logger.error(f"Failed to start docker inference microservice {job_id}")
+        docker_handler.stop_container()
+        gpu_manager.release_gpus(job_id)
+        return False
+
+    except Exception as e:
+        logger.error(f"Error creating docker inference microservice {job_id}: {e}")
+        return False
