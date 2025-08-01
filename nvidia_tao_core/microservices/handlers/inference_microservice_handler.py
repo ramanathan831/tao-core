@@ -91,11 +91,11 @@ class InferenceMicroserviceHandler:
         # logger.info("Using CLI args: %s", cli_args)
 
         docker_env_vars = experiment_metadata.get("docker_env_vars", {})
+        docker_env_vars["BACKEND"] = os.getenv("BACKEND", "local-k8s")
         workspace_id = experiment_metadata.get("workspace", "")
         workspace_metadata = get_handler_metadata(workspace_id, kind="workspaces")
         cloud_metadata = {}
         add_workspace_to_cloud_metadata(workspace_metadata, cloud_metadata)
-        logger.info("workspace_metadata %s", workspace_metadata)
         cloud_type = workspace_metadata.get('cloud_type', '')
         cloud_details = workspace_metadata.get('cloud_specific_details', {})
         bucket_name = cloud_details.get('cloud_bucket_name', '')
@@ -135,10 +135,17 @@ exec python3 -m llava.cli.tao_model_server --job "{str(job_metadata)}" --docker_
             if not success:
                 return Code(500, {}, "Failed to create Inference Microservice StatefulSet")
 
+            # Wait for service to be ready before returning success
+            service_id = f"ims-svc-{job_id}"
+            logger.info("Waiting for Inference Microservice service %s to be ready", service_id)
+
+            service_status = jobDriver.wait_for_service(job_id, service_name=service_id)
+            if service_status != "Running":
+                logger.error("Inference Microservice service failed to become ready. Status: %s", service_status)
+                return Code(500, {}, f"Inference Microservice service failed to become ready: {service_status}")
+
             logger.info("Inference Microservice %s is ready", statefulset_name)
 
-            # Service is automatically created by create_statefulset, just return success
-            service_id = f"ims-svc-{job_id}"
             # For Kubernetes services, we typically use cluster IP for internal communication
             service_url = f"http://{service_id}:{api_port}"
 
@@ -149,9 +156,10 @@ exec python3 -m llava.cli.tao_model_server --job "{str(job_metadata)}" --docker_
                 "service_url": service_url,
                 "status": "Running",
                 "endpoints": {
-                    "inference": f"{service_url}/inference",
-                    "health": f"{service_url}/health",
-                    "status": f"{service_url}/status"
+                    "inference": f"{service_url}/api/v1/inference",
+                    "health": f"{service_url}/api/v1/health/liveness",
+                    "readiness": f"{service_url}/api/v1/health/readiness",
+                    "status": f"{service_url}/api/v1/status"
                 },
                 "job_id": job_id,
                 "api_port": api_port
@@ -284,9 +292,9 @@ exec python3 -m llava.cli.tao_model_server --job "{str(job_metadata)}" --docker_
         # Always use simple service name for both Kubernetes and docker-compose
         # This works reliably for intra-cluster communication and avoids DNS issues
         if os.environ.get('BACKEND', 'local-k8s') == 'local-docker':
-            url = f"http://{job_id}:8000/{endpoint}"
+            url = f"http://{job_id}:{api_port}/api/v1/{endpoint}"
         else:
-            url = f"http://{service_name}:{api_port}/{endpoint}"
+            url = f"http://{service_name}:{api_port}/api/v1/{endpoint}"
 
         logger.info(f"Inference microservice URL: {url}")
         return url

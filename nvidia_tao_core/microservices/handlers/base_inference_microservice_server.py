@@ -31,6 +31,12 @@ from nvidia_tao_core.microservices.handlers.container_handler import prepare_dat
 from nvidia_tao_core.cloud_handlers.utils import download_from_user_storage, get_file_path_from_cloud_string
 from nvidia_tao_core.microservices.utils import safe_load_file
 
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
+
 
 class BaseInferenceMicroserviceServer(ABC):
     """Abstract base class for TAO model servers in StatefulSet containers"""
@@ -44,7 +50,6 @@ class BaseInferenceMicroserviceServer(ABC):
             cloud_storage: Cloud storage configuration
             **model_params: Model-specific parameters (e.g., model_path, etc.)
         """
-        self.setup_logging()
         self.job_id = job_id
         self.port = port
         self.model = None
@@ -64,18 +69,10 @@ class BaseInferenceMicroserviceServer(ABC):
         self._health_monitor_thread = None
         self._shutdown_flag = threading.Event()
 
-    def setup_logging(self):
-        """Setup logging configuration"""
-        logging.basicConfig(
-            level=logging.INFO,
-            format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-        )
-        self.logger = logging.getLogger(f'tao_{self.__class__.__name__.lower()}')
-
     def update_last_request_time(self):
         """Update the last request timestamp - called on each inference request"""
         self.last_request_time = datetime.now()
-        self.logger.debug(f"Updated last request time: {self.last_request_time}")
+        logger.debug(f"Updated last request time: {self.last_request_time}")
 
     def get_idle_time_minutes(self) -> float:
         """Get the current idle time in minutes
@@ -102,7 +99,7 @@ class BaseInferenceMicroserviceServer(ABC):
                 daemon=True
             )
             self._health_monitor_thread.start()
-            self.logger.info(f"Started health monitor with {self.idle_timeout_minutes} minute timeout")
+            logger.info(f"Started health monitor with {self.idle_timeout_minutes} minute timeout")
 
     def _health_monitor_loop(self):
         """Background thread that monitors server health and triggers auto-deletion"""
@@ -110,7 +107,7 @@ class BaseInferenceMicroserviceServer(ABC):
             try:
                 if self.is_idle_timeout_exceeded():
                     idle_minutes = self.get_idle_time_minutes()
-                    self.logger.warning(
+                    logger.warning(
                         f"Server has been idle for {idle_minutes:.1f} minutes "
                         f"(timeout: {self.idle_timeout_minutes}). Triggering auto-deletion."
                     )
@@ -124,13 +121,13 @@ class BaseInferenceMicroserviceServer(ABC):
                             self.job_id, auto_deletion=True
                         )
                         if result.status_code == 200:
-                            self.logger.info("Auto-deletion executed successfully")
+                            logger.info("Auto-deletion executed successfully")
                         else:
-                            self.logger.error(f"Auto-deletion failed: {result.message}")
+                            logger.error(f"Auto-deletion failed: {result.message}")
                     except ImportError as e:
-                        self.logger.error(f"Failed to import inference handler for auto-deletion: {e}")
+                        logger.error(f"Failed to import inference handler for auto-deletion: {e}")
                     except Exception as e:
-                        self.logger.error(f"Failed to execute auto-deletion: {e}")
+                        logger.error(f"Failed to execute auto-deletion: {e}")
 
                     # Stop monitoring after triggering deletion
                     break
@@ -139,23 +136,23 @@ class BaseInferenceMicroserviceServer(ABC):
                 self._shutdown_flag.wait(300)
 
             except Exception as e:
-                self.logger.error(f"Error in health monitor loop: {e}")
+                logger.error(f"Error in health monitor loop: {e}")
                 self._shutdown_flag.wait(60)  # Wait 1 minute before retrying
 
     def shutdown_health_monitor(self):
         """Gracefully shutdown the health monitoring thread"""
         if self._health_monitor_thread:
-            self.logger.info("Shutting down health monitor")
+            logger.info("Shutting down health monitor")
             self._shutdown_flag.set()
             self._health_monitor_thread.join(timeout=10)
             if self._health_monitor_thread.is_alive():
-                self.logger.warning("Health monitor thread did not shutdown gracefully")
+                logger.warning("Health monitor thread did not shutdown gracefully")
             self._health_monitor_thread = None
 
     def _initialize_background(self, job_data: Dict[str, Any], docker_env_vars: Dict[str, Any]):
         """Initialize server configuration in background thread"""
         try:
-            self.logger.info("Starting background initialization...")
+            logger.info("Starting background initialization...")
             self.server_initializing = True
             self.initialization_error = None
 
@@ -170,14 +167,14 @@ class BaseInferenceMicroserviceServer(ABC):
             self.model_params.update(specs)
 
             self.server_initializing = False
-            self.logger.info("Background initialization completed - starting model loading")
+            logger.info("Background initialization completed - starting model loading")
 
             # Now start model loading
             self.load_model()
 
         except Exception as e:
             error_msg = f"Failed to initialize server: {e}"
-            self.logger.error(error_msg)
+            logger.error(error_msg)
             self.server_initializing = False
             self.initialization_error = str(e)
             self.save_model_state(loaded=False, loading=False, error=str(e))
@@ -282,7 +279,7 @@ class BaseInferenceMicroserviceServer(ABC):
                 self.model_loading = False
                 print(f"{self.__class__.__name__} model loaded successfully in {load_time:.2f} seconds")
                 self.save_model_state(loaded=True, loading=False, load_time=load_time)
-                self.logger.info(f"Model loaded successfully in {load_time:.2f}s - ready for inference")
+                logger.info(f"Model loaded successfully in {load_time:.2f}s - ready for inference")
             else:
                 self.model_loading = False
                 self.model_load_error = "Model loading failed"
@@ -293,7 +290,7 @@ class BaseInferenceMicroserviceServer(ABC):
             print(error_msg)
             import traceback
             print(traceback.format_exc())
-            self.logger.error(error_msg)
+            logger.error(error_msg)
             self.model_loaded = False
             self.model_loading = False
             self.model_load_error = str(e)
@@ -341,7 +338,7 @@ class BaseInferenceMicroserviceServer(ABC):
             return actual_file_path
 
         except Exception as e:
-            self.logger.error(f"Failed to process {input_file}: {e}")
+            logger.error(f"Failed to process {input_file}: {e}")
             raise
 
     def run_inference(self, **kwargs) -> Dict[str, Any]:
@@ -376,18 +373,18 @@ class BaseInferenceMicroserviceServer(ABC):
                     "model_type": self.__class__.__name__
                 })
 
-            self.logger.info(f"Inference completed in {inference_time:.2f}s")
+            logger.info(f"Inference completed in {inference_time:.2f}s")
             return result
 
         except Exception as e:
-            self.logger.error(f"Inference failed: {e}")
+            logger.error(f"Inference failed: {e}")
             raise
 
     def create_flask_app(self):
         """Create Flask app with common endpoints"""
         app = Flask(__name__)
 
-        @app.route('/health', methods=['GET'])
+        @app.route('/api/v1/health/liveness', methods=['GET'])
         def health():
             """Health check endpoint"""
             idle_minutes = self.get_idle_time_minutes()
@@ -404,7 +401,69 @@ class BaseInferenceMicroserviceServer(ABC):
                 "auto_deletion_enabled": self.auto_deletion_enabled
             })
 
-        @app.route('/status', methods=['GET'])
+        @app.route('/api/v1/health/readiness', methods=['GET'])
+        def readiness():
+            """Readiness check endpoint - returns success only when fully ready to serve requests"""
+            # Check if server is still initializing
+            if self.server_initializing:
+                return jsonify({
+                    "status": "not_ready",
+                    "reason": "server_initializing",
+                    "message": "Server is still initializing",
+                    "job_id": self.job_id,
+                    "timestamp": datetime.now().isoformat()
+                }), 503
+
+            # Check for initialization errors
+            if self.initialization_error:
+                return jsonify({
+                    "status": "not_ready",
+                    "reason": "initialization_failed",
+                    "message": f"Server initialization failed: {self.initialization_error}",
+                    "job_id": self.job_id,
+                    "timestamp": datetime.now().isoformat()
+                }), 503
+
+            # Check if model is still loading
+            if self.model_loading:
+                return jsonify({
+                    "status": "not_ready",
+                    "reason": "model_loading",
+                    "message": "Model is currently loading",
+                    "job_id": self.job_id,
+                    "timestamp": datetime.now().isoformat()
+                }), 503
+
+            # Check for model loading errors
+            if self.model_load_error:
+                return jsonify({
+                    "status": "not_ready",
+                    "reason": "model_load_failed",
+                    "message": f"Model failed to load: {self.model_load_error}",
+                    "job_id": self.job_id,
+                    "timestamp": datetime.now().isoformat()
+                }), 503
+
+            # Check if model is loaded successfully
+            if not self.model_loaded:
+                return jsonify({
+                    "status": "not_ready",
+                    "reason": "model_not_loaded",
+                    "message": "Model not loaded yet",
+                    "job_id": self.job_id,
+                    "timestamp": datetime.now().isoformat()
+                }), 503
+
+            # All checks passed - server is ready
+            return jsonify({
+                "status": "ready",
+                "message": "Server is ready to accept inference requests",
+                "job_id": self.job_id,
+                "model_type": self.__class__.__name__,
+                "timestamp": datetime.now().isoformat()
+            }), 200
+
+        @app.route('/api/v1/status', methods=['GET'])
         def status():
             """Detailed status endpoint"""
             model_state = self.get_model_state()
@@ -428,7 +487,7 @@ class BaseInferenceMicroserviceServer(ABC):
                 )
             })
 
-        @app.route('/inference', methods=['POST'])
+        @app.route('/api/v1/inference', methods=['POST'])
         def inference():
             """Inference endpoint"""
             try:
@@ -504,7 +563,7 @@ class BaseInferenceMicroserviceServer(ABC):
                 return jsonify(response_data)
 
             except Exception as e:
-                self.logger.error(f"Inference request failed: {e}")
+                logger.error(f"Inference request failed: {e}")
                 return jsonify({
                     "status": "error",
                     "error": str(e),
@@ -534,14 +593,14 @@ class BaseInferenceMicroserviceServer(ABC):
 
             # Start server immediately (don't wait for initialization or model loading)
             app = self.create_flask_app()
-            self.logger.info(f"Starting {self.__class__.__name__} Server on port {self.port}")
-            self.logger.info("Server starting immediately - initialization and model loading in background")
-            self.logger.info(f"Health monitor enabled with {self.idle_timeout_minutes} minute idle timeout")
+            logger.info(f"Starting {self.__class__.__name__} Server on port {self.port}")
+            logger.info("Server starting immediately - initialization and model loading in background")
+            logger.info(f"Health monitor enabled with {self.idle_timeout_minutes} minute idle timeout")
             app.run(host='0.0.0.0', port=self.port, debug=False, threaded=True)
             return True
 
         except Exception as e:
-            self.logger.error(f"Failed to start server: {e}")
+            logger.error(f"Failed to start server: {e}")
             return False
         finally:
             # Cleanup on server shutdown
@@ -564,14 +623,14 @@ class BaseInferenceMicroserviceServer(ABC):
 
             # Start server immediately (don't wait for model to load)
             app = self.create_flask_app()
-            self.logger.info(f"Starting {self.__class__.__name__} Server on port {self.port}")
-            self.logger.info("Server starting immediately - model will load in background")
-            self.logger.info(f"Health monitor enabled with {self.idle_timeout_minutes} minute idle timeout")
+            logger.info(f"Starting {self.__class__.__name__} Server on port {self.port}")
+            logger.info("Server starting immediately - model will load in background")
+            logger.info(f"Health monitor enabled with {self.idle_timeout_minutes} minute idle timeout")
             app.run(host='0.0.0.0', port=self.port, debug=False, threaded=True)
             return True
 
         except Exception as e:
-            self.logger.error(f"Failed to start server: {e}")
+            logger.error(f"Failed to start server: {e}")
             return False
         finally:
             # Cleanup on server shutdown
@@ -579,7 +638,7 @@ class BaseInferenceMicroserviceServer(ABC):
 
     def shutdown_server(self):
         """Gracefully shutdown the server and cleanup resources"""
-        self.logger.info("Shutting down inference microservice server")
+        logger.info("Shutting down inference microservice server")
         self.shutdown_health_monitor()
         # Additional cleanup can be added here if needed
 
