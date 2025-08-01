@@ -53,6 +53,74 @@ module = entry_points[0].module_name.split('.')[0] if entry_points else None
 entrypoint = importlib.import_module(entrypoint_paths[module]) if module else None
 
 
+def prepare_data_before_job_run(job, docker_env_vars):
+    """Prepare data before job run"""
+    cloud_storage, specs = get_results_cloud_data(
+        job.get("cloud_metadata"),
+        job["specs"],
+        f'/results/{job["job_id"]}'
+    )
+
+    ngc_key = docker_env_vars.get("TAO_API_KEY")
+    if not ngc_key:
+        ngc_key = docker_env_vars.get("TAO_USER_KEY")
+
+    # Create results directory and download files
+    os.makedirs(specs["results_dir"], exist_ok=True)
+    reprocess_files = []
+
+    # Handle additional downloads
+    additional_downloads = specs.pop("additional_downloads", [])
+    if additional_downloads:
+        logger.info("Processing additional downloads: %s", additional_downloads)
+        ContainerJobHandler._handle_additional_downloads(
+            additional_downloads,
+            job.get("cloud_metadata"),
+            job["job_id"],
+            job["neural_network_name"],
+            ngc_key,
+            docker_env_vars.get('TAO_API_UI_COOKIE', ""),
+            docker_env_vars.get('USE_NGC_STAGING', "False")
+        )
+
+    logger.info("Downloading files from normal spec")
+    download_files_from_spec(
+        cloud_data=job.get("cloud_metadata"),
+        data=specs,
+        job_id=job["job_id"],
+        network_arch=job["neural_network_name"],
+        ngc_key=ngc_key,
+        tao_api_ui_cookie=docker_env_vars.get('TAO_API_UI_COOKIE', ""),
+        use_ngc_staging=docker_env_vars.get('USE_NGC_STAGING', "False"),
+        reprocess_files=reprocess_files
+    )
+
+    # Save spec file
+    spec_path = os.path.join(specs["results_dir"], "spec.yaml")
+    with open(spec_path, 'w+', encoding='utf-8') as yaml_file:
+        yaml.dump(specs, yaml_file, default_flow_style=False)
+
+    if docker_env_vars.get("RECURSIVE_DATASET_FILE_DOWNLOAD", "False") == "True":
+        logger.info("reprocess_files: %s", reprocess_files)
+        if reprocess_files:
+            for file_name in reprocess_files:
+                file_type = file_name.split(".")[-1]
+                reprocess_file_data = safe_load_file(file_name, file_type=file_type)
+                if reprocess_file_data:
+                    download_files_from_spec(
+                        cloud_data=job.get("cloud_metadata"),
+                        data=reprocess_file_data,
+                        job_id=job["job_id"],
+                        network_arch=job["neural_network_name"],
+                        ngc_key=ngc_key,
+                        tao_api_ui_cookie=docker_env_vars.get('TAO_API_UI_COOKIE', ""),
+                        use_ngc_staging=docker_env_vars.get('USE_NGC_STAGING', "False"),
+                    )
+                    if reprocess_file_data:
+                        safe_dump_file(file_name, reprocess_file_data, file_type=file_type)
+    return cloud_storage, specs, spec_path
+
+
 class ContainerJobHandler:
     """Handler for processing jobs in a containerized environment."""
 
@@ -107,69 +175,8 @@ class ContainerJobHandler:
 
                 try:
                     # Setup cloud storage and specs
-                    cloud_storage, specs = get_results_cloud_data(
-                        job.get("cloud_metadata"),
-                        job["specs"],
-                        f'/results/{job["job_id"]}'
-                    )
 
-                    ngc_key = docker_env_vars.get("TAO_API_KEY")
-                    if not ngc_key:
-                        ngc_key = docker_env_vars.get("TAO_USER_KEY")
-
-                    # Create results directory and download files
-                    os.makedirs(specs["results_dir"], exist_ok=True)
-                    reprocess_files = []
-
-                    # Handle additional downloads
-                    additional_downloads = specs.pop("additional_downloads", [])
-                    if additional_downloads:
-                        logger.info("Processing additional downloads: %s", additional_downloads)
-                        ContainerJobHandler._handle_additional_downloads(
-                            additional_downloads,
-                            job.get("cloud_metadata"),
-                            job["job_id"],
-                            job["neural_network_name"],
-                            ngc_key,
-                            docker_env_vars.get('TAO_API_UI_COOKIE', ""),
-                            docker_env_vars.get('USE_NGC_STAGING', "False")
-                        )
-
-                    logger.info("Downloading files from normal spec")
-                    download_files_from_spec(
-                        cloud_data=job.get("cloud_metadata"),
-                        data=specs,
-                        job_id=job["job_id"],
-                        network_arch=job["neural_network_name"],
-                        ngc_key=ngc_key,
-                        tao_api_ui_cookie=docker_env_vars.get('TAO_API_UI_COOKIE', ""),
-                        use_ngc_staging=docker_env_vars.get('USE_NGC_STAGING', "False"),
-                        reprocess_files=reprocess_files
-                    )
-
-                    # Save spec file
-                    spec_path = os.path.join(specs["results_dir"], "spec.yaml")
-                    with open(spec_path, 'w+', encoding='utf-8') as yaml_file:
-                        yaml.dump(specs, yaml_file, default_flow_style=False)
-
-                    if docker_env_vars.get("RECURSIVE_DATASET_FILE_DOWNLOAD", "False") == "True":
-                        logger.info("reprocess_files: %s", reprocess_files)
-                        if reprocess_files:
-                            for file_name in reprocess_files:
-                                file_type = file_name.split(".")[-1]
-                                reprocess_file_data = safe_load_file(file_name, file_type=file_type)
-                                if reprocess_file_data:
-                                    download_files_from_spec(
-                                        cloud_data=job.get("cloud_metadata"),
-                                        data=reprocess_file_data,
-                                        job_id=job["job_id"],
-                                        network_arch=job["neural_network_name"],
-                                        ngc_key=ngc_key,
-                                        tao_api_ui_cookie=docker_env_vars.get('TAO_API_UI_COOKIE', ""),
-                                        use_ngc_staging=docker_env_vars.get('USE_NGC_STAGING', "False"),
-                                    )
-                                    if reprocess_file_data:
-                                        safe_dump_file(file_name, reprocess_file_data, file_type=file_type)
+                    cloud_storage, specs, spec_path = prepare_data_before_job_run(job, docker_env_vars)
 
                     # Get upload strategy by reading network config directly
                     network = docker_env_vars.get("ORCHESTRATION_API_NETWORK", job.get("neural_network_name", ""))

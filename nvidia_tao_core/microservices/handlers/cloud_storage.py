@@ -90,7 +90,7 @@ def retry_method(func):
                     # Clear caches before retry
                     logger.warning(f"Retrying {func.__name__} attempt {attempt + 1}/{NUM_RETRY}")
                     clear_fsspec_caches()
-                    time.sleep(30)
+                    time.sleep(1)
                 return func(*args, **kwargs)
             except Exception as e:
                 # Log or handle the exception as needed
@@ -109,11 +109,6 @@ def create_cs_instance_with_decrypted_metadata(decrypted_metadata):
     cloud_type = handler_metadata_copy.get("cloud_type", "aws")
     cloud_specific_details = handler_metadata_copy.get("cloud_specific_details", {})
     cloud_bucket_name = cloud_specific_details.get("cloud_bucket_name")
-
-    # Check if air-gapped mode is enabled
-    if os.getenv("AIRGAPPED_MODE", "false").lower() == "true" or cloud_type == "seaweedfs":
-        # Use SeaweedFS for air-gapped deployment
-        return _create_seaweedfs_instance(cloud_specific_details)
 
     # Original cloud providers
     cs_instance = None
@@ -136,6 +131,10 @@ def create_cs_instance_with_decrypted_metadata(decrypted_metadata):
                 secret=cloud_specific_details.get("access_key"),
                 client_kwargs={"endpoint_url": cloud_specific_details.get("endpoint_url")}
             )
+        elif cloud_type == "seaweedfs":
+            return _create_seaweedfs_instance(cloud_specific_details)
+        else:
+            raise ValueError(f"Unsupported cloud_type: {cloud_type}")
 
     return cs_instance, cloud_specific_details
 
@@ -148,11 +147,6 @@ def create_cs_instance(handler_metadata):
     handler_metadata_copy = copy.deepcopy(handler_metadata)
     cloud_type = handler_metadata_copy.get("cloud_type", "aws")
     cloud_specific_details = handler_metadata_copy.get("cloud_specific_details", {})
-
-    # Check if air-gapped mode is enabled
-    if os.getenv("AIRGAPPED_MODE", "false").lower() == "true" or cloud_type == "seaweedfs":
-        # Use SeaweedFS for air-gapped deployment
-        return _create_seaweedfs_instance(cloud_specific_details)
 
     # Decrypt cloud details for original cloud providers
     config_path = os.getenv("VAULT_SECRET_PATH", None)
@@ -184,6 +178,11 @@ def create_cs_instance(handler_metadata):
                 secret=cloud_specific_details.get("access_key"),
                 client_kwargs={"endpoint_url": cloud_specific_details.get("endpoint_url")}
             )
+        elif cloud_type == "seaweedfs":
+            return _create_seaweedfs_instance(cloud_specific_details)
+        else:
+            raise ValueError(f"Unsupported cloud_type: {cloud_type}")
+
     return cs_instance, cloud_specific_details
 
 
@@ -304,7 +303,7 @@ class CloudStorage:
     @retry_method
     def is_file(self, cloud_path):
         """Check if the given cloud path is a file."""
-        full_path = self.root + cloud_path
+        full_path = self.root + cloud_path.strip('/')
         try:
             return self.fs.isfile(full_path)
         except Exception as e:
@@ -314,7 +313,7 @@ class CloudStorage:
     @retry_method
     def is_folder(self, cloud_path):
         """Check if the given cloud path is a folder."""
-        full_path = self.root + cloud_path.rstrip('/') + '/'
+        full_path = self.root + cloud_path.strip('/') + '/'
         try:
             return self.fs.isdir(full_path)
         except Exception as e:
@@ -370,8 +369,11 @@ class CloudStorage:
     @retry_method
     def download_file(self, cloud_file_path, local_destination):
         """Download a file from cloud storage to local destination."""
-        full_path = self.root + cloud_file_path
+        full_path = self.root + cloud_file_path.strip('/')
         try:
+            if os.path.exists(local_destination):
+                logger.info(f"File {local_destination} already exists, skipping download")
+                return
             self.fs.download(full_path, local_destination)
             logger.info(f"Downloaded {cloud_file_path} to {local_destination}")
         except Exception as e:
@@ -388,6 +390,9 @@ class CloudStorage:
         try:
             # Use fsspec for all cloud providers (unified approach)
             if maintain_src_folder_structure:
+                if os.path.exists(local_destination):
+                    logger.info(f"Folder {local_destination} already exists, skipping download")
+                    return
                 # Download maintaining the source folder structure
                 self.fs.download(full_path, local_destination, recursive=True)
             else:
@@ -398,6 +403,12 @@ class CloudStorage:
                     if self.fs.isfile(file_path):
                         relative_path = file_path[len(full_path):]
                         local_file_path = os.path.join(local_destination, relative_path)
+                        if os.path.exists(local_file_path):
+                            logger.info(
+                                f"File {local_file_path} in folder {local_destination} "
+                                f"already exists, skipping download"
+                            )
+                            continue
                         # Create directory if needed
                         os.makedirs(os.path.dirname(local_file_path), exist_ok=True)
                         self.fs.download(file_path, local_file_path)
@@ -425,7 +436,7 @@ class CloudStorage:
     @master_node_only
     def upload_file(self, local_file_path, cloud_file_path):
         """Upload a file from local storage to cloud."""
-        full_path = self.root + cloud_file_path.strip("/")
+        full_path = self.root + cloud_file_path.strip('/')
         try:
             self.fs.upload(local_file_path, full_path)
             logger.info(f"Uploaded {local_file_path} to {cloud_file_path}")
@@ -437,7 +448,7 @@ class CloudStorage:
     @master_node_only
     def upload_folder(self, local_folder, cloud_subfolder):
         """Upload a folder from local storage to cloud."""
-        full_path = self.root + cloud_subfolder.rstrip('/') + '/'
+        full_path = self.root + cloud_subfolder.strip('/').rstrip('/') + '/'
         try:
             self.fs.upload(local_folder, full_path, recursive=True)
             logger.info(f"Uploaded folder {local_folder} to {cloud_subfolder}")
@@ -449,7 +460,7 @@ class CloudStorage:
     @master_node_only
     def delete_folder(self, folder):
         """Delete a folder and its contents from cloud storage."""
-        full_path = self.root + folder.rstrip('/') + '/'
+        full_path = self.root + folder.strip('/').rstrip('/') + '/'
         try:
             self.fs.rm(full_path, recursive=True)
             logger.info(f"Deleted folder {folder}")
@@ -461,7 +472,7 @@ class CloudStorage:
     @master_node_only
     def delete_file(self, file_path):
         """Delete a file from cloud storage."""
-        full_path = self.root + file_path
+        full_path = self.root + file_path.strip('/')
         try:
             self.fs.rm(full_path)
             logger.info(f"Deleted file {file_path}")
@@ -473,11 +484,11 @@ class CloudStorage:
     @master_node_only
     def move_file(self, source_path, destination_path):
         """Move a file within cloud storage."""
-        full_source = self.root + source_path
-        full_destination = self.root + destination_path
+        full_source = self.root + source_path.strip('/')
+        full_destination = self.root + destination_path.strip('/')
         try:
             self.fs.mv(full_source, full_destination)
-            logger.info(f"Moved {source_path} to {destination_path}")
+            logger.info(f"Moved {full_source} to {full_destination}")
         except Exception as e:
             logger.error(f"move_file error: {e}")
             raise
@@ -486,11 +497,50 @@ class CloudStorage:
     @master_node_only
     def move_folder(self, source_path, destination_path):
         """Move a folder within cloud storage."""
-        full_source = self.root + source_path.rstrip('/') + '/'
-        full_destination = self.root + destination_path.rstrip('/') + '/'
+        full_source = self.root + source_path.strip('/').rstrip('/') + '/'
+        full_destination = self.root + destination_path.strip('/').rstrip('/') + '/'
+
         try:
-            self.fs.mv(full_source, full_destination, recursive=True)
-            logger.info(f"Moved folder {source_path} to {destination_path}")
+            logger.info(f"Moving folder {full_source} to {full_destination}")
+
+            # Get all files in source
+            all_files = self.fs.find(full_source)
+            files_only = [f for f in all_files if self.fs.isfile(f)]
+
+            logger.info(f"Attempting to move {len(files_only)} files individually")
+
+            # Create destination directory
+            self.fs.makedirs(full_destination, exist_ok=True)
+
+            # Move files one by one
+            moved_files = 0
+            for file_path in files_only:
+                try:
+                    relative_path = file_path[len(full_source):]
+                    dest_file = full_destination + relative_path
+
+                    # Create intermediate directories if needed
+                    dest_dir = '/'.join(dest_file.split('/')[:-1])
+                    if dest_dir:
+                        self.fs.makedirs(dest_dir, exist_ok=True)
+
+                    # Copy then delete individual file
+                    self.fs.cp(file_path, dest_file)
+                    self.fs.rm(file_path)
+                    moved_files += 1
+
+                except Exception as file_err:
+                    logger.warning(f"Could not move file {file_path}: {file_err}")
+
+            if moved_files > 0:
+                try:
+                    self.fs.rm(full_source, recursive=True)
+                except Exception:
+                    logger.warning("Could not remove source directory after file moves")
+
+                logger.info(f"Successfully moved {moved_files} files using file-by-file approach")
+            else:
+                raise Exception("No files could be moved using any method")
         except Exception as e:
             logger.error(f"move_folder error: {e}")
             raise
@@ -499,8 +549,8 @@ class CloudStorage:
     @master_node_only
     def copy_file(self, source_object_name, destination_object_name):
         """Copy a file within cloud storage."""
-        full_source = self.root + source_object_name
-        full_destination = self.root + destination_object_name
+        full_source = self.root + source_object_name.strip('/')
+        full_destination = self.root + destination_object_name.strip('/')
         try:
             self.fs.cp(full_source, full_destination)
             logger.info(f"Copied {source_object_name} to {destination_object_name}")
@@ -512,8 +562,8 @@ class CloudStorage:
     @master_node_only
     def copy_folder(self, source_path, destination_path):
         """Copy a folder within cloud storage."""
-        full_source = self.root + source_path.rstrip('/') + '/'
-        full_destination = self.root + destination_path.rstrip('/') + '/'
+        full_source = self.root + source_path.strip('/').rstrip('/') + '/'
+        full_destination = self.root + destination_path.strip('/').rstrip('/') + '/'
         try:
             self.fs.cp(full_source, full_destination, recursive=True)
             logger.info(f"Copied folder {source_path} to {destination_path}")

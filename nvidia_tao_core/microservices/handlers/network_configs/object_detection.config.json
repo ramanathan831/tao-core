@@ -65,7 +65,8 @@
             },
             "auto_label": {
                 "set_value": {
-                    "data.ann_path": "results/{parent_id}/label.json"
+                    "data.ann_path": "results/{parent_id}/label.json",
+                    "spatial_aug.rotation.refine_box.gt_cache": "results/{parent_id}/label.json"
                 },
                 "conditional": {
                     "metadata_key": "format",

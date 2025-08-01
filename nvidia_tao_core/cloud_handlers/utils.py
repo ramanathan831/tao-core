@@ -573,11 +573,17 @@ def monitor_and_upload(local_path, cloud_storage, exit_event, seek_position=0, s
         exit_event.set()
 
 
+def get_file_path_from_cloud_string(value):
+    """Get the cloud storage class object from the value"""
+    csp_provider = value.split(":")[0]
+    bucket_name = value.split("//")[1].split("/")[0]
+    cloud_file_path = value[value.find(bucket_name) + len(bucket_name):]
+    return csp_provider, bucket_name, cloud_file_path
+
+
 def get_cloud_storage_class_object(cloud_data, cloud_string):
     """Initalize Apache LibCloud class"""
-    csp_provider = cloud_string.split(":")[0]
-    bucket_name = cloud_string.split("//")[1].split("/")[0]
-    cloud_file_path = cloud_string[cloud_string.find(bucket_name) + len(bucket_name):]
+    csp_provider, bucket_name, cloud_file_path = get_file_path_from_cloud_string(cloud_string)
     cloud_storage = initialize_cloud_storage(
         cloud_type=csp_provider,
         bucket_name=bucket_name,
@@ -589,6 +595,56 @@ def get_cloud_storage_class_object(cloud_data, cloud_string):
     while cloud_file_path.find("//") != -1:
         cloud_file_path = cloud_file_path.replace("//", "/")
     return cloud_storage, cloud_file_path
+
+
+def download_from_user_storage(
+    cloud_storage=None, job_id="", cloud_data={}, value="", dictionary={}, key="",
+    preserve_source_path=False, reset_value=False
+):
+    """Download a file/folder from user storage"""
+    try:
+        if not cloud_storage:
+            cloud_storage, cloud_file_path = get_cloud_storage_class_object(cloud_data, value)
+        else:
+            cloud_file_path = value
+
+        local_path_of_dataset_file = f"/results/{job_id}/{cloud_file_path}"
+        if preserve_source_path:
+            local_path_of_dataset_file = cloud_file_path
+        if reset_value:
+            # Update the dictionary value with the local path
+            if dictionary and key:
+                dictionary[key] = local_path_of_dataset_file.replace(".tar.gz", "")
+        destination_path = local_path_of_dataset_file
+        if cloud_file_path.startswith("/"):
+            cloud_file_path = cloud_file_path[1:]
+
+        # Create destination directory
+        os.makedirs(os.path.dirname(destination_path), exist_ok=True)
+
+        if cloud_storage.is_file(cloud_file_path):
+            cloud_storage.download_file(cloud_file_path, destination_path)
+            if cloud_file_path.endswith(".tar") or cloud_file_path.endswith(".tar.gz"):
+                _extract_images(destination_path, os.path.dirname(destination_path))
+        else:
+            cloud_storage.download_folder(cloud_file_path, destination_path)
+            for root, _, files in os.walk(destination_path):
+                for file in files:
+                    abs_filepath = os.path.join(root, file)
+                    if abs_filepath.endswith(".tar") or abs_filepath.endswith(".tar.gz"):
+                        _extract_images(abs_filepath, os.path.dirname(abs_filepath))
+
+        logger.info("Downloaded: {}".format(cloud_file_path))  # noqa pylint: disable=C0209
+        return local_path_of_dataset_file.replace(".tar.gz", "")
+    except Exception as e:
+        logger.error("Error downloading cloud file: %s", str(e))
+        logger.error(traceback.format_exc())
+        callback_data = get_internal_job_status_update_data(
+            automl_experiment_number=os.getenv("AUTOML_EXPERIMENT_NUMBER", "0"),
+            message=f"Error downloading cloud file {value}"
+        )
+        status_callback(callback_data)
+        raise e
 
 
 def download_files_from_cloud(
@@ -670,44 +726,15 @@ def download_files_from_cloud(
             raise e
 
     if "://" in value:
-        try:
-            cloud_storage, cloud_file_path = get_cloud_storage_class_object(cloud_data, value)
-            local_path_of_dataset_file = f"/results/{job_id}/{cloud_file_path}"
-            if preserve_source_path:
-                local_path_of_dataset_file = cloud_file_path
-            if reset_value:
-                # Update the dictionary value with the local path
-                dictionary[key] = local_path_of_dataset_file.replace(".tar.gz", "")
-            destination_path = local_path_of_dataset_file
-            if cloud_file_path.startswith("/"):
-                cloud_file_path = cloud_file_path[1:]
-
-            # Create destination directory
-            os.makedirs(os.path.dirname(destination_path), exist_ok=True)
-
-            if cloud_storage.is_file(cloud_file_path):
-                cloud_storage.download_file(cloud_file_path, destination_path)
-                if cloud_file_path.endswith(".tar") or cloud_file_path.endswith(".tar.gz"):
-                    _extract_images(destination_path, os.path.dirname(destination_path))
-            else:
-                cloud_storage.download_folder(cloud_file_path, destination_path)
-                for root, _, files in os.walk(destination_path):
-                    for file in files:
-                        abs_filepath = os.path.join(root, file)
-                        if abs_filepath.endswith(".tar") or abs_filepath.endswith(".tar.gz"):
-                            _extract_images(abs_filepath, os.path.dirname(abs_filepath))
-
-            logger.info("Downloaded: {}".format(cloud_file_path))  # noqa pylint: disable=C0209
-            return local_path_of_dataset_file.replace(".tar.gz", "")
-        except Exception as e:
-            logger.error("Error downloading cloud file: %s", str(e))
-            logger.error(traceback.format_exc())
-            callback_data = get_internal_job_status_update_data(
-                automl_experiment_number=os.getenv("AUTOML_EXPERIMENT_NUMBER", "0"),
-                message=f"Error downloading cloud file {value}"
-            )
-            status_callback(callback_data)
-            raise e
+        return download_from_user_storage(
+            cloud_data=cloud_data,
+            value=value,
+            job_id=job_id,
+            dictionary=dictionary,
+            key=key,
+            preserve_source_path=preserve_source_path,
+            reset_value=reset_value
+        )
     return None
 
 
@@ -821,17 +848,7 @@ def get_results_cloud_data(cloud_data, spec_data, dest_dir=None):
     """
     results_dir = spec_data["results_dir"]
     if "://" in results_dir:
-        csp_provider = results_dir.split(":")[0]
-        bucket_name = results_dir.split("//")[1].split("/")[0]
-        cloud_file_path = results_dir[results_dir.find(bucket_name) + len(bucket_name):]
-        cloud_storage = initialize_cloud_storage(
-            cloud_type=csp_provider,
-            bucket_name=bucket_name,
-            region=cloud_data[csp_provider][bucket_name].get("region"),
-            access_key=cloud_data[csp_provider][bucket_name].get("access_key"),
-            secret_key=cloud_data[csp_provider][bucket_name].get("secret_key"),
-            endpoint_url=cloud_data[csp_provider][bucket_name].get("endpoint_url")
-        )
+        cloud_storage, cloud_file_path = get_cloud_storage_class_object(cloud_data, results_dir)
         spec_data["results_dir"] = cloud_file_path
         return cloud_storage, spec_data
     if not dest_dir:

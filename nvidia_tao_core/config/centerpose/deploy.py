@@ -19,6 +19,7 @@ from dataclasses import dataclass
 from nvidia_tao_core.config.utils.types import (
     STR_FIELD,
     DATACLASS_FIELD,
+    INT_FIELD,
 )
 from nvidia_tao_core.config.common.common_config import (
     GenTrtEngineConfig,
@@ -42,6 +43,24 @@ class CenterPoseTrtConfig(TrtConfig):
         CalibrationConfig(),
         description="""The configuration elements to define the
                     TensorRT calibrator for int8 PTQ.""",
+    )
+    opt_batch_size: int = INT_FIELD(
+        value=4,
+        default_value=4,
+        valid_min=4,
+        description="""The optimum batch size in the optimization profile for
+                    the input tensor of the TensorRT engine.""",
+        display_name="Optimum batch size",
+        popular="yes",
+    )
+    max_batch_size: int = INT_FIELD(
+        value=8,
+        default_value=8,
+        valid_min=8,
+        description="""The maximum batch size in the optimization profile for
+                    the input tensor of the TensorRT engine.""",
+        display_name="Maximum batch size",
+        popular="yes",
     )
 
 
