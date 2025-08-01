@@ -32,8 +32,6 @@ def invoke_microservices(request_dict):
     job_id = request_dict.get('job_id', None)
 
     telemetry_opt_out = request_dict.get('telemetry_opt_out', "no")
-    use_ngc_staging = request_dict.get('use_ngc_staging', "False")
-    tao_api_ui_cookie = request_dict.get('tao_api_ui_cookie', "")
     tao_api_admin_key = request_dict.get('tao_api_admin_key', "")
     tao_api_base_url = request_dict.get('tao_api_base_url', "https://nvidia.com")
     tao_api_status_callback_url = request_dict.get(
@@ -64,8 +62,6 @@ def invoke_microservices(request_dict):
             "ngc_key": ngc_key,
             "job_id": job_id,
             "telemetry_opt_out": telemetry_opt_out,
-            "use_ngc_staging": use_ngc_staging,
-            "tao_api_ui_cookie": tao_api_ui_cookie,
             "tao_api_admin_key": tao_api_admin_key,
             "tao_api_base_url": tao_api_base_url,
             "tao_api_status_callback_url": tao_api_status_callback_url,

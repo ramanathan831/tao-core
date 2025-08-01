@@ -44,7 +44,7 @@ logger = logging.getLogger(__name__)
 
 def get_available_nvcf_instances(user_id, org_name):
     """For the given org, format and return the NVCF cluster info"""
-    ngc_key, _ = get_user_key(user_id, org_name, admin_key_override=True)
+    ngc_key = get_user_key(user_id, org_name, admin_key_override=True)
 
     nvcf_info_endpoint = f"https://api.ngc.nvidia.com/v2/orgs/{org_name}/ngc/nvcf/deployments/instanceTypes"
 

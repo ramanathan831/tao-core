@@ -655,8 +655,6 @@ def download_files_from_cloud(
     job_id,
     network_arch,
     ngc_key,
-    tao_api_ui_cookie="",
-    use_ngc_staging="",
     reset_value=False,
     preserve_source_path=False
 ):
@@ -691,8 +689,6 @@ def download_files_from_cloud(
                 ngc_model,
                 f"/ptm/{org}/{team}/{model_name}/{model_version}/model",
                 ngc_key,
-                is_cookie_set=tao_api_ui_cookie,
-                use_ngc_staging=use_ngc_staging
             ):
                 cleanup_cuda_contexts()
                 raise ValueError("Unable to download the PTM")
@@ -744,8 +740,6 @@ def download_files_from_spec(
     job_id,
     network_arch=None,
     ngc_key=None,
-    tao_api_ui_cookie="",
-    use_ngc_staging="",
     reprocess_files=None,
     preserve_source_path=False
 ):
@@ -759,8 +753,6 @@ def download_files_from_spec(
                     job_id,
                     network_arch=network_arch,
                     ngc_key=ngc_key,
-                    tao_api_ui_cookie=tao_api_ui_cookie,
-                    use_ngc_staging=use_ngc_staging,
                     reprocess_files=reprocess_files,
                     preserve_source_path=preserve_source_path
                 )
@@ -776,8 +768,6 @@ def download_files_from_spec(
                             job_id,
                             network_arch,
                             ngc_key,
-                            tao_api_ui_cookie=tao_api_ui_cookie,
-                            use_ngc_staging=use_ngc_staging,
                             preserve_source_path=preserve_source_path
                         )
                         if not override_value:
@@ -798,8 +788,6 @@ def download_files_from_spec(
                                     job_id,
                                     network_arch,
                                     ngc_key,
-                                    tao_api_ui_cookie=tao_api_ui_cookie,
-                                    use_ngc_staging=use_ngc_staging,
                                     preserve_source_path=preserve_source_path
                                 )
                                 if (reprocess_files is not None and override_value and
@@ -824,8 +812,6 @@ def download_files_from_spec(
                         job_id,
                         network_arch,
                         ngc_key,
-                        tao_api_ui_cookie=tao_api_ui_cookie,
-                        use_ngc_staging=use_ngc_staging,
                         reset_value=True,
                         preserve_source_path=preserve_source_path
                     )

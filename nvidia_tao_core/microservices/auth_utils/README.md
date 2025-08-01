@@ -25,16 +25,6 @@ def apiPost(url, data, token):
   assert r.status_code is 201
 ```
 
-## Example of API call with SID or SSID Cookie from NGC UI
-
-```python
-import requests
-
-def apiPost(url, data, token):
-  r = requests.post(url=endpoint, json=data, headers={'Cookie': 'SSID=' + token})
-  assert r.status_code is 201
-```
-
 ## Example URL
 
 ```

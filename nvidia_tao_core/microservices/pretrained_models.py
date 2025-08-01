@@ -53,11 +53,10 @@ logger = logging.getLogger(__name__)
 
 base_exp_uuid = "00000000-0000-0000-0000-000000000000"
 
-DEPLOYMENT_MODE = os.getenv("DEPLOYMENT_MODE", "PROD")
 PTM_PULL = os.getenv("PTMPULL", "True")
 TIMEOUT = 120
 
-ngc_api_base_url = "https://api.ngc.nvidia.com/v2" if DEPLOYMENT_MODE == "PROD" else "https://api.stg.ngc.nvidia.com/v2"
+ngc_api_base_url = "https://api.ngc.nvidia.com/v2"
 
 
 class BaseExperimentMetadata:

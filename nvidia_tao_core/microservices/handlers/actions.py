@@ -302,22 +302,17 @@ class ActionPipeline:
             self.job_context.org_name
         )
         self.job_env_variables["CLOUD_BASED"] = "True"
-        user_key, ngc_cookie = get_user_key(
+        user_key = get_user_key(
             self.job_context.user_id,
             self.job_context.org_name,
             admin_key_override=True
         )
         self.job_env_variables["TAO_USER_KEY"] = user_key
         self.job_env_variables["RECURSIVE_DATASET_FILE_DOWNLOAD"] = str(self.recursive_dataset_file_download)
-        self.job_env_variables["TAO_COOKIE_SET"] = str(ngc_cookie)
         self.job_env_variables["TAO_ADMIN_KEY"] = get_admin_key()
         self.job_env_variables["TAO_API_SERVER"] = host_base_url
         self.job_env_variables["TAO_API_JOB_ID"] = log_callback_job_id
         self.job_env_variables["TAO_LOGGING_SERVER_URL"] = status_url
-        self.job_env_variables["USE_NGC_STAGING"] = "True"
-        self.job_env_variables["DEPLOYMENT_MODE"] = os.getenv("DEPLOYMENT_MODE", "PROD")
-        if self.job_env_variables["DEPLOYMENT_MODE"] == "PROD":
-            self.job_env_variables["USE_NGC_STAGING"] = "False"
 
     def generate_nv_job_metadata(self, nv_job_metadata):
         """Convert run command generated into format that"""
