@@ -1,3 +1,7 @@
+// Global variables
+def TAO_VERSION = "6.25.7"
+def BUILD_TYPE = "dev"
+
 podTemplate (cloud:'sc-ipp-blossom-prod', yaml : """
 apiVersion: v1
 kind: Pod
@@ -41,9 +45,7 @@ spec:
   try {
     node(POD_LABEL) {
       container('pyt') {
-        def BUILD_TYPE="dev0"
-        def TAO_WHEEL_VERSION="6.0.0"
-        def VER="${TAO_WHEEL_VERSION}.${BUILD_NUMBER}.${BUILD_TYPE}"
+        def VER="${TAO_VERSION}.${BUILD_TYPE}${BUILD_NUMBER}"
         def PYTHON_VERSION=sh(script: 'python -c "import platform; print(platform.python_version())"', returnStdout: true).trim()
         def SRC="dist/nvidia_tao_core-${VER}-py3-none-any.whl"
         def TARGET="sw-tao-pypi-local/nvidia-tao-core-dev/${VER}/${PYTHON_VERSION}/"
@@ -216,9 +218,7 @@ spec:
     // Stage 3: Build and final cleanup on x86 Kubernetes pod
     node(POD_LABEL) {
       container('pyt') {
-        def BUILD_TYPE="dev0"
-        def TAO_WHEEL_VERSION="6.0.0"
-        def VER="${TAO_WHEEL_VERSION}.${BUILD_NUMBER}.${BUILD_TYPE}"
+        def VER="${TAO_VERSION}.${BUILD_TYPE}${BUILD_NUMBER}"
         def PYTHON_VERSION=sh(script: 'python -c "import platform; print(platform.python_version())"', returnStdout: true).trim()
         def SRC="dist/nvidia_tao_core-${VER}-py3-none-any.whl"
         def TARGET="sw-tao-pypi-local/nvidia-tao-core-dev/${VER}/${PYTHON_VERSION}/"
@@ -236,9 +236,19 @@ spec:
           }
         }
 
+        stage ('patch_build_files') {
+          gitlabCommitStatus(name: "patch_build_files", connection: gitLabConnection('git-lab-master')) {
+            sh "python3 release/update_version.py --version ${TAO_VERSION}"
+            echo "Build files patched with version ${TAO_VERSION}"
+          }
+        }
+
         stage ('build_pyt_wheel') {
           gitlabCommitStatus(name: "build_wheel", connection: gitLabConnection('git-lab-master')) {
-            sh "echo '${BUILD_NUMBER}-${BUILD_TYPE}' > build.info"
+            // Extract patch number from TAO_VERSION (e.g., "6.25.7" -> "7")
+            def VERSION_PARTS = TAO_VERSION.split('\\.')
+            def PATCH_NUMBER = VERSION_PARTS[-1]
+            sh "echo '${PATCH_NUMBER}.${BUILD_TYPE}${BUILD_NUMBER}' > build.info"
             sh "bash release/python/build_wheel.sh"
           }
         }

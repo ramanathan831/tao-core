@@ -25,6 +25,7 @@ import sys
 import tarfile
 import time
 import traceback
+from huggingface_hub import snapshot_download
 
 from nvidia_tao_core.microservices.handlers.cloud_storage import CloudStorage
 from nvidia_tao_core.microservices.handlers.ngc_handler import download_ngc_model, split_ngc_path
@@ -173,6 +174,27 @@ def download_huggingface_dataset(download_url, destination_folder, token):
     else:
         cmnd = f"git clone {download_url} {destination_folder}"
     run_subprocess_command(cmnd)
+
+
+def download_huggingface_model(download_url, destination_folder, token):
+    """Download a model from the Hugging Face model hub.
+
+    Args:
+        download_url (str): The URL of the model on the Hugging Face model hub.
+        destination_folder (str): The destination folder where the model will be saved.
+        token (str): The token for accessing private models (optional).
+    """
+    if token:
+        model_dir = snapshot_download(
+            repo_id=download_url,
+            local_dir=destination_folder,
+            token=token
+        )
+    else:
+        model_dir = snapshot_download(
+            repo_id=download_url,
+            local_dir=destination_folder)
+    return model_dir
 
 
 def extract_cloud_details(metadata):
@@ -683,6 +705,22 @@ def download_files_from_cloud(
             callback_data = get_internal_job_status_update_data(
                 automl_experiment_number=os.getenv("AUTOML_EXPERIMENT_NUMBER", "0"),
                 message=f"Error downloading NGC model {value}"
+            )
+            status_callback(callback_data)
+            raise e
+
+    if value.startswith("hf_model://"):
+        try:
+            huggingface_model = value.split("hf_model://")[-1]
+            download_huggingface_model(huggingface_model, "/ptm/download", os.getenv("HF_TOKEN", ""))
+            dictionary[key] = "/ptm/huggingface_models"
+            return "/ptm/huggingface_models"
+        except Exception as e:
+            logger.error("Error downloading Hugging Face model: %s", str(e))
+            logger.error(traceback.format_exc())
+            callback_data = get_internal_job_status_update_data(
+                automl_experiment_number=os.getenv("AUTOML_EXPERIMENT_NUMBER", "0"),
+                message=f"Error downloading Hugging Face model {value}"
             )
             status_callback(callback_data)
             raise e

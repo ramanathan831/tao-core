@@ -5471,6 +5471,13 @@ class ExperimentJobSchema(Schema):
     experiment_id = fields.Str(format="uuid", validate=fields.validate.Length(max=36), allow_none=True)
 
 
+class SourceType(Enum):
+    """Class defining source type enum for base experiments"""
+
+    ngc = "ngc"
+    huggingface = "huggingface"
+
+
 class ExperimentRspSchema(Schema):
     """Class defining experiment response schema"""
 
@@ -5601,6 +5608,7 @@ class ExperimentRspSchema(Schema):
     )
     bundle_url = fields.Str(format="regex", regex=r'.*', validate=fields.validate.Length(max=1000), allow_none=True)
     base_experiment_metadata = fields.Nested(BaseExperimentMetadataSchema, allow_none=True)
+    source_type = EnumField(SourceType, allow_none=True)
     experiment_actions = fields.List(
         fields.Nested(ExperimentActions, allow_none=True),
         validate=fields.validate.Length(max=sys.maxsize)
@@ -5675,6 +5683,47 @@ class ExperimentDownloadSchema(Schema):
         ordered = True
         unknown = EXCLUDE
     export_type = EnumField(ExperimentExportTypeEnum)
+
+
+class LoadAirgappedExperimentsReqSchema(Schema):
+    """Class defining load airgapped experiments request schema"""
+
+    class Meta:
+        """Class enabling sorting field values by the order in which they are declared"""
+
+        ordered = True
+        unknown = EXCLUDE
+    workspace_id = fields.Str(format="uuid", validate=fields.validate.Length(max=36))
+    models_base_dir = fields.Str(
+        format="regex",
+        regex=r'.*',
+        validate=fields.validate.Length(max=2048),
+        allow_none=True
+    )
+
+
+class LoadAirgappedExperimentsRspSchema(Schema):
+    """Class defining load airgapped experiments response schema"""
+
+    class Meta:
+        """Class enabling sorting field values by the order in which they are declared"""
+
+        ordered = True
+        unknown = EXCLUDE
+    success = fields.Bool()
+    message = fields.Str(
+        format="regex",
+        regex=r'.*',
+        validate=fields.validate.Length(max=2048)
+    )
+    experiments_loaded = fields.Int(
+        validate=fields.validate.Range(min=0, max=sys.maxsize),
+        format=sys_int_format()
+    )
+    experiments_failed = fields.Int(
+        validate=fields.validate.Range(min=0, max=sys.maxsize),
+        format=sys_int_format()
+    )
 
 
 @app.route('/api/v1/orgs/<org_name>/experiments', methods=['GET'])
@@ -5986,6 +6035,90 @@ def base_experiment_list(org_name):
     schema = ExperimentListRspSchema()
     response = make_response(jsonify(schema.dump(schema.load(metadata))))
     return response
+
+
+@app.route('/api/v1/orgs/<org_name>/experiments:load_airgapped', methods=['POST'])
+@disk_space_check
+def load_airgapped_experiments(org_name):
+    """Load Airgapped Experiments.
+
+    ---
+    post:
+      tags:
+      - EXPERIMENT
+      summary: Load base experiments from airgapped cloud storage
+      description: Loads base experiment metadata from airgapped cloud storage using workspace credentials
+      parameters:
+      - name: org_name
+        in: path
+        description: Org Name
+        required: true
+        schema:
+          type: string
+          maxLength: 255
+          pattern: '^[a-zA-Z0-9_-]+$'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: LoadAirgappedExperimentsReqSchema
+      responses:
+        200:
+          description: Successfully loaded airgapped experiments
+          content:
+            application/json:
+              schema: LoadAirgappedExperimentsRspSchema
+          headers:
+            Access-Control-Allow-Origin:
+              $ref: '#/components/headers/Access-Control-Allow-Origin'
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/X-RateLimit-Limit'
+        400:
+          description: Invalid request
+          content:
+            application/json:
+              schema: ErrorRspSchema
+        404:
+          description: Workspace not found
+          content:
+            application/json:
+              schema: ErrorRspSchema
+        500:
+          description: Internal server error
+          content:
+            application/json:
+              schema: ErrorRspSchema
+    """
+    message = validate_uuid(workspace_id=request.get_json().get('workspace_id'))
+    if message:
+        metadata = {"error_desc": message, "error_code": 1}
+        schema = ErrorRspSchema()
+        response = make_response(jsonify(schema.dump(schema.load(metadata))), 400)
+        return response
+
+    schema = LoadAirgappedExperimentsReqSchema()
+    request_dict = schema.dump(schema.load(request.get_json(force=True)))
+
+    # Authenticate user
+    user_id = authentication.get_user_id(request.headers.get('Authorization', ''), request.cookies, org_name)
+
+    # Get response from handler
+    response = app_handler.load_airgapped_experiments(
+        user_id,
+        org_name,
+        request_dict['workspace_id']
+    )
+
+    # Get appropriate schema based on response code
+    schema = None
+    if response.code == 200:
+        schema = LoadAirgappedExperimentsRspSchema()
+    else:
+        schema = ErrorRspSchema()
+
+    # Load metadata in schema and return
+    schema_dict = schema.dump(schema.load(response.data))
+    return make_response(jsonify(schema_dict), response.code)
 
 
 @app.route('/api/v1/orgs/<org_name>/experiments/<experiment_id>', methods=['GET'])

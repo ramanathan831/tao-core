@@ -133,19 +133,32 @@ def infer_ptm(job_context, handler_metadata):
                 # Check if running in air-gapped mode
                 if os.getenv("AIRGAPPED_MODE", "false").lower() == "true" and cloud_type == "seaweedfs":
                     # In air-gapped mode, check if local model exists, otherwise use the PTM root
-                    path_part, version = ngc_path.split(":", 1)
-                    model_name = path_part.split("/")[-1]
-
                     cs_instance, _ = create_cs_instance(workspace_metadata)
                     model_registry = os.getenv('LOCAL_MODEL_REGISTRY')
-                    root_path = f"{model_registry}/{path_part}/{version}/{model_name}_v{version}"
+
+                    # Check if this is a Hugging Face model or NGC model
+                    source_type = base_experiment_metadata.get("source_type", "ngc")
+                    if source_type == "huggingface" or (":" not in ngc_path and "/" in ngc_path):
+                        # Handle Hugging Face models
+                        model_name = ngc_path.replace("/", "_")
+                        root_path = f"{model_registry}/huggingface/{model_name}"
+                    else:
+                        # Handle NGC models (original logic)
+                        path_part, version = ngc_path.split(":", 1)
+                        model_name = path_part.split("/")[-1]
+                        root_path = f"{model_registry}/{path_part}/{version}/{model_name}_v{version}"
+
                     cloud_path = cs_instance.search_for_ptm(root=root_path, network=network)
                     if cloud_path:
                         bucket_name = workspace_metadata.get('cloud_specific_details').get('cloud_bucket_name')
                         ptm_file.append(f"seaweedfs://{bucket_name}/{cloud_path}")
                 else:
                     # Original cloud mode behavior
-                    ptm_file.append(f"ngc://{ngc_path}")
+                    source_type = base_experiment_metadata.get("source_type", "ngc")
+                    if source_type == "huggingface":
+                        ptm_file.append(f"hf_model://{ngc_path}")
+                    else:
+                        ptm_file.append(f"ngc://{ngc_path}")
     return ",".join(ptm_file)
 
 
