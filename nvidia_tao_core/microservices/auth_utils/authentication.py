@@ -20,8 +20,7 @@ import logging
 
 from nvidia_tao_core.microservices.auth_utils.credentials import decode_jwt_token
 from nvidia_tao_core.microservices.auth_utils import session
-
-DEPLOYMENT_MODE = os.getenv("DEPLOYMENT_MODE", "PROD")
+from nvidia_tao_core.microservices.constants import AIRGAP_DEFAULT_USER
 
 # Configure logging
 logging.basicConfig(
@@ -63,9 +62,7 @@ def get_org_name(url):
 
 def validate(url, token):
     """Validate Authentication"""
-    ngc_api_base_url = 'https://api.stg.ngc.nvidia.com/v2'
-    if DEPLOYMENT_MODE == "PROD":
-        ngc_api_base_url = 'https://api.ngc.nvidia.com/v2'
+    ngc_api_base_url = 'https://api.ngc.nvidia.com/v2'
 
     err = None
     user_id = None
@@ -88,17 +85,14 @@ def validate(url, token):
     headers = {'Accept': 'application/json'}
     jwt_token = None
     if token:
-        if token.startswith("SID=") or token.startswith("SSID="):
-            headers['Cookie'] = token
-        else:
-            # Attempt to validate JWT Token
-            creds, err = decode_jwt_token(token)
-            if creds:
-                user_id = creds.get('user_id')
-                org_name = creds.get('org_name')
-                jwt_token = token
-                token = creds.get('user_key')
-            headers['Authorization'] = 'Bearer ' + token
+        # Attempt to validate JWT Token
+        creds, err = decode_jwt_token(token)
+        if creds:
+            user_id = creds.get('user_id')
+            org_name = creds.get('org_name')
+            jwt_token = token
+            token = creds.get('user_key')
+        headers['Authorization'] = 'Bearer ' + token
     try:
         headers['Accept-Encoding'] = 'identity'
         r = requests.get(f'{ngc_api_base_url}/users/me', headers=headers, timeout=120)
@@ -137,21 +131,21 @@ def validate(url, token):
     return user_id, org_name, None
 
 
-def get_user_id(authorization, cookies, org_name):
-    """Checks authorization header and cookies and returns user_id associated with token"""
+def get_user_id(authorization: str, org_name: str) -> str:
+    """Checks authorization header and returns user_id associated with token"""
+    # special user id for air-gapped environments
+    if os.getenv("AIRGAPPED_MODE", "false").lower() == "true":
+        user_id = authorization.removeprefix("Bearer ").strip() if authorization else ""
+        if not user_id:
+            user_id = str(uuid.uuid5(uuid.UUID(int=0), AIRGAP_DEFAULT_USER))
+        logger.info("Air-gapped mode auth → user_id '%s'", user_id)
+        return user_id
+
     # Get user ID
     authorization_parts = authorization.split()
     token = None
     if len(authorization_parts) == 2 and authorization_parts[0].lower() == 'bearer':
         token = authorization_parts[1]
-    if not token:
-        sid_cookie = cookies.get('SID')
-        if sid_cookie:
-            token = 'SID=' + sid_cookie
-    if not token:
-        ssid_cookie = cookies.get('SSID')
-        if ssid_cookie:
-            token = 'SSID=' + ssid_cookie
 
     user = session.get_session(token, org_name)
     user_id = None

@@ -144,3 +144,5 @@ CV_ACTION_RULES = {
 }
 
 CV_ACTION_CHAINED_ONLY = {"prune", "distill", "retrain", "export", "gen_trt_engine", "trtexec"}
+
+AIRGAP_DEFAULT_USER = 'anonymous'

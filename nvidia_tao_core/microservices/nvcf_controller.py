@@ -183,8 +183,6 @@ async def create_nvcf_job(nvcf_cr):
     tao_api_admin_key = nvcf_cr["spec"].get("tao_api_admin_key")
     tao_api_base_url = nvcf_cr["spec"].get("tao_api_base_url")
     tao_api_status_callback_url = nvcf_cr["spec"].get("tao_api_status_callback_url", "")
-    tao_api_ui_cookie = nvcf_cr["spec"].get("tao_api_ui_cookie")
-    use_ngc_staging = nvcf_cr["spec"].get("use_ngc_staging")
     automl_experiment_number = nvcf_cr["spec"].get("automl_experiment_number", "0")
     nvcf_backend_details = nvcf_cr["spec"].get("nvcf_backend_details")
     ngc_key = nvcf_cr["spec"].get("ngc_key")
@@ -267,8 +265,6 @@ async def create_nvcf_job(nvcf_cr):
                                           tao_api_admin_key=tao_api_admin_key,
                                           tao_api_base_url=tao_api_base_url,
                                           tao_api_status_callback_url=tao_api_status_callback_url,
-                                          tao_api_ui_cookie=tao_api_ui_cookie,
-                                          use_ngc_staging=use_ngc_staging,
                                           automl_experiment_number=automl_experiment_number)
 
     if job_create_response.status_code not in [200, 202]:

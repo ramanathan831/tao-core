@@ -22,17 +22,15 @@ import logging
 from ngcbase import errors
 
 from nvidia_tao_core.microservices.handlers.encrypt import NVVaultEncryption
-from nvidia_tao_core.microservices.handlers.mongo_handler import MongoHandler
 from nvidia_tao_core.microservices.handlers.stateless_handlers import (
     get_handler_metadata, get_jobs_root, get_user, get_workspace_string_identifier
 )
 from nvidia_tao_core.microservices.handlers.cloud_storage import create_cs_instance
 from nvidia_tao_core.microservices.utils import (
-    send_delete_request_with_retry, sha256_checksum, read_network_config,
+    sha256_checksum, read_network_config,
     retry_method, get_admin_key
 )
 
-DEPLOYMENT_MODE = os.getenv("DEPLOYMENT_MODE", "PROD")
 NUM_OF_RETRY = 3
 TIMEOUT = 120
 
@@ -90,94 +88,33 @@ def split_ngc_path(ngc_path):
     return org, team, model_name, model_version
 
 
-def create_user_personal_key(org_name, cookie):
-    """Create NGC personal key"""
-    url = f"https://api.ngc.nvidia.com/v3/orgs/{org_name}/keys/type/PERSONAL_KEY"
-
-    headers = {
-        "Cookie": cookie
-    }
-
-    data = {
-        "expiryDate": "2099-12-31T08:00:00Z",
-        "name": "TAO API personal key",
-        "policies": [
-            {"product": "nv-cloud-functions"},
-            {"product": "artifact-catalog"},
-            {"product": "private-registry"}
-        ],
-        "type": "PERSONAL_KEY"
-    }
-
-    try:
-        response = requests.post(url, json=data, headers=headers, timeout=TIMEOUT)
-    except Exception as e:
-        logger.error("Exception caught during creating personal key: %s", e)
-        raise e
-    if not response.ok:
-        raise ValueError("Couldn't create personal key")
-    return response.json()
-
-
-def get_user_key(user_id, org_name, admin_key_override=False):
+def get_user_key(user_id, org_name, admin_key_override=False) -> str:
     """Return user API key"""
+    if os.getenv("AIRGAPPED_MODE", "false").lower() == "true":
+        return ""
+
     if admin_key_override and os.getenv("USE_ADMIN_KEY", "").lower() == "true":
-        return get_admin_key(), False
+        return get_admin_key()
+
     ngc_user_details = get_user(user_id)
     encrypted_ngc_key = ngc_user_details.get("key", {}).get(org_name, "")
-    encrypted_sid_cookie = ngc_user_details.get("sid_cookie")
-    encrypted_ssid_cookie = ngc_user_details.get("ssid_cookie")
 
-    use_cookie = False
     # Decrypt the ngc key
     if encrypted_ngc_key:
-        decrypted_key = encrypted_ngc_key
-    else:
-        decrypted_key = encrypted_ssid_cookie
-        if encrypted_sid_cookie:
-            decrypted_key = encrypted_sid_cookie
-        use_cookie = True
-
-    config_path = os.getenv("VAULT_SECRET_PATH", None)
-    if config_path:
-        encryption = NVVaultEncryption(config_path)
-        if decrypted_key and encryption.check_config()[0]:
-            decrypted_key = encryption.decrypt(decrypted_key)
-
-    if use_cookie:
-        cookie = decrypted_key
-        decrypted_key = f"SSID={cookie}"
-        if encrypted_sid_cookie:
-            decrypted_key = f"SID={cookie}"
-
-        personal_key_response = create_user_personal_key(org_name, decrypted_key)
-        personal_key = personal_key_response.get("apiKey", {}).get("value")
-        encrypted_key = personal_key
-        decrypted_key = personal_key
-
         config_path = os.getenv("VAULT_SECRET_PATH", None)
         if config_path:
             encryption = NVVaultEncryption(config_path)
-            encrypted_key = personal_key
             if encryption.check_config()[0]:
-                encrypted_key = encryption.encrypt(personal_key)
-            elif not os.getenv("DEV_MODE", "False").lower() in ("true", "1"):
-                raise ValueError("Vault service does not work, can't store API key")
-        mongo = MongoHandler("tao", "users")
-        user_query = {'id': user_id}
-        user = mongo.find_one(user_query)
-        if 'key' not in user or encrypted_key != user['key'].get(org_name, ""):
-            mongo.upsert(user_query, {'id': user_id, 'key': {org_name: encrypted_key}})
-        use_cookie = False
+                return encryption.decrypt(encrypted_ngc_key)
+            logger.error("Failed to decrypt NGC key for user=%s org=%s", user_id, org_name)
+            return ""
 
-    return decrypted_key, use_cookie
+    return encrypted_ngc_key
 
 
 def get_user_info(ngc_key: str, accept_encoding: str = "identity") -> requests.Response:
     """Get NGC user info from NGC"""
-    endpoint = "https://api.stg.ngc.nvidia.com/v2/users/me"
-    if DEPLOYMENT_MODE == "PROD":
-        endpoint = "https://api.ngc.nvidia.com/v2/users/me"
+    endpoint = "https://api.ngc.nvidia.com/v2/users/me"
 
     try:
         response = send_ngc_api_request(
@@ -194,32 +131,22 @@ def get_user_info(ngc_key: str, accept_encoding: str = "identity") -> requests.R
     return response
 
 
-def get_model(org_name, team_name, model_name, ngc_key, use_cookie):
+def get_model(org_name, team_name, model_name, ngc_key):
     """Get NGC Model information"""
-    endpoint = "https://api.stg.ngc.nvidia.com/v2"
-    if DEPLOYMENT_MODE == "PROD":
-        endpoint = "https://api.ngc.nvidia.com/v2"
+    endpoint = "https://api.ngc.nvidia.com/v2"
 
     endpoint += f"/org/{org_name}"
     if team_name:
         endpoint += f"/team/{team_name}"
     endpoint += f"/models/{model_name}"
 
-    if use_cookie:
-        headers = {"Cookie": ngc_key}
-        try:
-            response = requests.get(url=endpoint, headers=headers, timeout=TIMEOUT)
-        except Exception as e:
-            logger.error("Exception caught during getting NGC model %s: %s", model_name, e)
-            raise e
-    else:
-        response = send_ngc_api_request(
-            endpoint=endpoint,
-            requests_method="GET",
-            request_body={},
-            json=True,
-            ngc_key=ngc_key
-        )
+    response = send_ngc_api_request(
+        endpoint=endpoint,
+        requests_method="GET",
+        request_body={},
+        json=True,
+        ngc_key=ngc_key
+    )
 
     status_code = response.status_code
     logger.info("get_model %s status code is %s", model_name, status_code)
@@ -228,16 +155,14 @@ def get_model(org_name, team_name, model_name, ngc_key, use_cookie):
     return None
 
 
-def create_model(org_name, team_name, handler_metadata, source_file, ngc_key, use_cookie, display_name, description):
+def create_model(org_name, team_name, handler_metadata, source_file, ngc_key, display_name, description):
     """Create model in ngc private registry if not exist"""
-    model = get_model(org_name, team_name, handler_metadata.get("network_arch"), ngc_key, use_cookie)
+    model = get_model(org_name, team_name, handler_metadata.get("network_arch"), ngc_key)
     if model:
         return 200, "Model already exists"
 
     """Create model in ngc private registry"""
-    endpoint = "https://api.stg.ngc.nvidia.com/v2"
-    if DEPLOYMENT_MODE == "PROD":
-        endpoint = "https://api.ngc.nvidia.com/v2"
+    endpoint = "https://api.ngc.nvidia.com/v2"
 
     endpoint += f"/org/{org_name}"
     if team_name:
@@ -259,21 +184,13 @@ def create_model(org_name, team_name, handler_metadata, source_file, ngc_key, us
             "displayName": display_name,
             }
 
-    if use_cookie:
-        headers = {"Cookie": ngc_key}
-        try:
-            response = requests.post(url=endpoint, data=data, headers=headers, timeout=TIMEOUT)
-        except Exception as e:
-            logger.error("Exception caught during creating NGC model: %s", e)
-            raise e
-    else:
-        response = send_ngc_api_request(
-            endpoint=endpoint,
-            requests_method="POST",
-            request_body=json.dumps(data),
-            json=True,
-            ngc_key=ngc_key
-        )
+    response = send_ngc_api_request(
+        endpoint=endpoint,
+        requests_method="POST",
+        request_body=json.dumps(data),
+        json=True,
+        ngc_key=ngc_key
+    )
 
     status_code = response.status_code
     message = ""
@@ -324,7 +241,7 @@ def upload_model(org_name, team_name, handler_metadata, source_files, ngc_key, j
     return 200, "Published model into requested org"
 
 
-def download_ngc_model(ngc_path, ptm_root, key, is_cookie_set, use_ngc_staging):
+def download_ngc_model(ngc_path, ptm_root, key):
     """Download models from NGC model registry or use local models in air-gapped mode.
 
     Args:
@@ -352,7 +269,7 @@ def download_ngc_model(ngc_path, ptm_root, key, is_cookie_set, use_ngc_staging):
 
     # Get access token using k8s admin secret
     if not key:
-        logger.info("Personal key/Cookie is None")
+        logger.info("Personal key is None")
         return False
 
     # Download model with ngc sdk
@@ -439,7 +356,7 @@ def _download_local_model(ngc_path, ptm_root):
         return False
 
 
-def delete_model(org_name, team_name, handler_metadata, ngc_key, use_cookie, job_id, job_action):
+def delete_model(org_name, team_name, handler_metadata, ngc_key, job_id, job_action):
     """Delete model from ngc registry"""
     network = handler_metadata.get("network_arch")
 
@@ -447,20 +364,14 @@ def delete_model(org_name, team_name, handler_metadata, ngc_key, use_cookie, job
     epoch_number_dictionary = handler_metadata.get("checkpoint_epoch_number", {})
     epoch_number = epoch_number_dictionary.get(f"{checkpoint_choose_method}_{job_id}", 0)
 
-    endpoint = "https://api.stg.ngc.nvidia.com/v2"
-    if DEPLOYMENT_MODE == "PROD":
-        endpoint = "https://api.ngc.nvidia.com/v2"
+    endpoint = "https://api.ngc.nvidia.com/v2"
     endpoint += f"/org/{org_name}"
     if team_name:
         endpoint += f"/team/{team_name}"
     endpoint += f"/models/{network}/versions/{job_action}_{job_id}_{epoch_number}"
     logger.info("Deleting: %s/%s/%s:%s_%s_%s", org_name, team_name, network, job_action, job_id, epoch_number)
 
-    if use_cookie:
-        headers = {"Cookie": ngc_key}
-        response = send_delete_request_with_retry(endpoint, headers)
-    else:
-        response = send_ngc_api_request(endpoint=endpoint, requests_method="DELETE", request_body={}, ngc_key=ngc_key)
+    response = send_ngc_api_request(endpoint=endpoint, requests_method="DELETE", request_body={}, ngc_key=ngc_key)
 
     logger.info("Delete model response: %s", response)
     logger.info("Delete model response.text: %s", response.text)
@@ -489,7 +400,7 @@ def validate_ptm_download(base_experiment_folder, sha256_digest):
 def get_org_products(user_id, org_name):
     """Return the products the ORG has subscribe to"""
     try:
-        ngc_key, _ = get_user_key(user_id, org_name)
+        ngc_key = get_user_key(user_id, org_name)
     except Exception as e:
         logger.error("Error getting NGC key for user %s and org %s: %s", user_id, org_name, e)
         return []

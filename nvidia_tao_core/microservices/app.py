@@ -44,7 +44,8 @@ from nvidia_tao_core.microservices.filter_utils import filtering, pagination
 from nvidia_tao_core.microservices.auth_utils import credentials, authentication, access_control, metrics
 from nvidia_tao_core.microservices.health_utils import health_check
 from nvidia_tao_core.microservices.handlers.inference_microservice_handler import InferenceMicroserviceHandler
-
+from nvidia_tao_core.microservices.handlers.mongo_handler import MongoHandler
+from nvidia_tao_core.microservices.constants import AIRGAP_DEFAULT_USER
 from nvidia_tao_core.microservices.enum_constants import (
     ActionEnum,
     DatasetFormat,
@@ -72,7 +73,6 @@ from nvidia_tao_core.microservices.utils import (
     safe_load_file,
     log_monitor,
     log_api_error,
-    is_cookie_request,
     DataMonitorLogTypeEnum
 )
 from nvidia_tao_core.microservices.job_utils.workflow import Workflow
@@ -639,7 +639,6 @@ class AllowedDockerEnvVariables(Enum):
     TAO_API_KEY = "TAO_API_KEY"
     TAO_USER_KEY = "TAO_USER_KEY"
     TAO_ADMIN_KEY = "TAO_ADMIN_KEY"
-    TAO_COOKIE_SET = "TAO_COOKIE_SET"
     TAO_API_SERVER = "TAO_API_SERVER"
     TAO_LOGGING_SERVER_URL = "TAO_LOGGING_SERVER_URL"
     RECURSIVE_DATASET_FILE_DOWNLOAD = "RECURSIVE_DATASET_FILE_DOWNLOAD"
@@ -648,8 +647,6 @@ class AllowedDockerEnvVariables(Enum):
     AUTOML_EXPERIMENT_NUMBER = "AUTOML_EXPERIMENT_NUMBER"
     JOB_ID = "JOB_ID"
     TAO_API_JOB_ID = "TAO_API_JOB_ID"  # Automl brain job id
-    USE_NGC_STAGING = "USE_NGC_STAGING"
-    DEPLOYMENT_MODE = "DEPLOYMENT_MODE"
 
 
 #
@@ -985,7 +982,7 @@ def super_endpoint(org_name):
 @app.route('/api/v1/login', methods=['POST'])
 @disk_space_check
 def login():
-    """User Login.
+    """User Login or Exchange username for user_id for air-gapped mode.
 
     ---
     post:
@@ -1030,6 +1027,29 @@ def login():
             X-RateLimit-Limit:
               $ref: '#/components/headers/X-RateLimit-Limit'
     """
+    # air-gapped mode skips NGC authentication and return user_id directly
+    if os.getenv("AIRGAPPED_MODE", "false").lower() == "true":
+        try:
+            # Get username from request or use default
+            request_data = request.get_json(force=True)
+            username = request_data.get("username", AIRGAP_DEFAULT_USER)
+
+            # Create UUID mapping of username
+            user_id = str(uuid.uuid5(uuid.UUID(int=0), username))
+
+            # Store user mapping in MongoDB for consistency
+            mongo = MongoHandler("tao", "users")
+            mongo.upsert({"id": user_id}, {"user_name": username, "id": user_id})
+
+            logger.info("Airgapped mode login: Mapped username '%s' to user_id '%s'", username, user_id)
+            return make_response(jsonify({"user_id": user_id}), 200)
+        except Exception as e:
+            logger.error("Airgapped mode login failed: %s", str(e))
+            metadata = {"error_desc": "Login failed: " + str(e), "error_code": 1}
+            schema = ErrorRspSchema()
+            return make_response(jsonify(schema.dump(schema.load(metadata))), 400)
+
+    # Regular NGC authentication flow
     schema = LoginReqSchema()
     request_dict = schema.dump(schema.load(request.get_json(force=True)))
     key = request_dict.get('ngc_key', 'invalid_key')
@@ -1055,6 +1075,25 @@ ingress_enabled = os.getenv("INGRESSENABLED", "false") == "true"
 @disk_space_check
 def auth():
     """authentication endpoint"""
+    # Skip ngc authentication for air-gapped environments
+    if os.getenv("AIRGAPPED_MODE", "false").lower() == "true":
+        try:
+            # Get user_id from Authorization header
+            user_id = None
+            auth_header = request.headers.get('Authorization', '')
+            if auth_header:
+                user_id = auth_header.removeprefix("Bearer ").strip()
+
+            # fall back to anonymous user
+            if not user_id:
+                user_id = str(uuid.uuid5(uuid.UUID(int=0), AIRGAP_DEFAULT_USER))
+
+            logger.info("Airgapped mode auth with user_id '%s'", user_id)
+            return make_response(jsonify({'user_id': user_id}), 200)
+        except Exception as e:
+            logger.error("Airgapped mode auth failed: %s", str(e))
+            return make_response(jsonify({'error': str(e)}), 400)
+
     # retrieve jwt from headers
     token = ''
     url = request.headers.get('X-Original-Url', '') if ingress_enabled else request.path
@@ -1064,7 +1103,7 @@ def auth():
     # bypass authentication for http OPTIONS requests
     if method == 'OPTIONS':
         return make_response(jsonify({}), 200)
-    # retrieve authorization token, or use NGC SID/SSID cookie
+    # retrieve authorization token
     authorization = request.headers.get('Authorization', '')
     authorization_parts = authorization.split()
     if len(authorization_parts) == 2 and authorization_parts[0].lower() == 'bearer':
@@ -1081,6 +1120,7 @@ def auth():
             return response
         token = request_metadata.get("ngc_key", "")
 
+    # if token is not found, try to get it from basic auth for special endpoints
     if not token:
         logger.warning("token cannot be obtained")
         if len(authorization_parts) == 2 and authorization_parts[0].lower() == 'basic':
@@ -1111,21 +1151,19 @@ def auth():
                     schema = ErrorRspSchema()
                     response = make_response(jsonify(schema.dump(schema.load(metadata))), 401)
                     return response
-    sid_cookie = request.cookies.get('SID')
-    ssid_cookie = request.cookies.get('SSID')
+
+    # if token is still not found, return 401
     if not token:
-        if sid_cookie:
-            token = 'SID=' + sid_cookie
-    if not token:
-        if ssid_cookie:
-            token = 'SSID=' + ssid_cookie
+        schema = ErrorRspSchema()
+        metadata = {"error_desc": "Unauthorized: missing token", "error_code": 1}
+        rsp = make_response(jsonify(schema.dump(schema.load(metadata))), 401)
+        return rsp
+
     logger.info('Token: ...%s', token[-10:])
     # authentication
     user_id, org_name, err = authentication.validate(url, token)
-    from_ui = is_cookie_request(request)
-    log_content = f"user_id:{user_id}, org_name:{org_name}, from_ui:{from_ui}, method:{method}, url:{url}"
+    log_content = f"user_id:{user_id}, org_name:{org_name}, method:{method}, url:{url}"
     log_monitor(log_type=DataMonitorLogTypeEnum.api, log_content=log_content)
-    credentials.save_cookie(user_id, sid_cookie, ssid_cookie)
     if err:
         logger.warning("Unauthorized: %s", err)
         metadata = {"error_desc": str(err), "error_code": 1}
@@ -1463,7 +1501,7 @@ def org_gpu_types(org_name):
               $ref: '#/components/headers/X-RateLimit-Limit'
     """
     # Get response
-    user_id = authentication.get_user_id(request.headers.get('Authorization', ''), request.cookies, org_name)
+    user_id = authentication.get_user_id(request.headers.get('Authorization', ''), org_name)
     response = app_handler.get_gpu_types(user_id, org_name)
     # Get schema
     schema = GpuDetailsSchema()
@@ -1831,7 +1869,7 @@ def workspace_list(org_name):
             X-RateLimit-Limit:
               $ref: '#/components/headers/X-RateLimit-Limit'
     """
-    user_id = authentication.get_user_id(request.headers.get('Authorization', ''), request.cookies, org_name)
+    user_id = authentication.get_user_id(request.headers.get('Authorization', ''), org_name)
     workspaces = app_handler.list_workspaces(user_id, org_name)
     filtered_workspaces = filtering.apply(request.args, workspaces)
     paginated_workspaces = pagination.apply(request.args, filtered_workspaces)
@@ -1910,7 +1948,7 @@ def workspace_retrieve(org_name, workspace_id):
         response = make_response(jsonify(schema.dump(schema.load(metadata))), 400)
         return response
     # Get response
-    user_id = authentication.get_user_id(request.headers.get('Authorization', ''), request.cookies, org_name)
+    user_id = authentication.get_user_id(request.headers.get('Authorization', ''), org_name)
     response = app_handler.retrieve_workspace(user_id, org_name, workspace_id)
     # Get schema
     schema = None
@@ -1983,7 +2021,7 @@ def workspace_retrieve_datasets(org_name, workspace_id):
     dataset_format = request.args.get("dataset_format", None)
     dataset_intention = request.args.getlist("dataset_intention")
     # Get response
-    user_id = authentication.get_user_id(request.headers.get('Authorization', ''), request.cookies, org_name)
+    user_id = authentication.get_user_id(request.headers.get('Authorization', ''), org_name)
     response = app_handler.retrieve_cloud_datasets(
         user_id,
         org_name,
@@ -2255,7 +2293,7 @@ def workspace_create(org_name):
     schema = WorkspaceReqSchema()
     request_dict = schema.dump(schema.load(request.get_json(force=True)))
 
-    user_id = authentication.get_user_id(request.headers.get('Authorization', ''), request.cookies, org_name)
+    user_id = authentication.get_user_id(request.headers.get('Authorization', ''), org_name)
     # Get response
     response = app_handler.create_workspace(user_id, org_name, request_dict)
     # Get schema
@@ -2344,7 +2382,7 @@ def workspace_update(org_name, workspace_id):
     schema = WorkspaceReqSchema()
     request_dict = schema.dump(schema.load(request.get_json(force=True)))
     # Get response
-    user_id = authentication.get_user_id(request.headers.get('Authorization', ''), request.cookies, org_name)
+    user_id = authentication.get_user_id(request.headers.get('Authorization', ''), org_name)
     response = app_handler.update_workspace(user_id, org_name, workspace_id, request_dict)
     # Get schema
     schema = None
@@ -2432,7 +2470,7 @@ def workspace_partial_update(org_name, workspace_id):
     schema = WorkspaceRspSchema()
     request_dict = schema.dump(schema.load(request.get_json(force=True)))
     # Get response
-    user_id = authentication.get_user_id(request.headers.get('Authorization', ''), request.cookies, org_name)
+    user_id = authentication.get_user_id(request.headers.get('Authorization', ''), org_name)
     response = app_handler.update_workspace(user_id, org_name, workspace_id, request_dict)
     # Get schema
     schema = None
@@ -2976,7 +3014,7 @@ def dataset_list(org_name):
             X-RateLimit-Limit:
               $ref: '#/components/headers/X-RateLimit-Limit'
     """
-    user_id = authentication.get_user_id(request.headers.get('Authorization', ''), request.cookies, org_name)
+    user_id = authentication.get_user_id(request.headers.get('Authorization', ''), org_name)
     datasets = app_handler.list_datasets(user_id, org_name)
     filtered_datasets = filtering.apply(request.args, datasets)
     paginated_datasets = pagination.apply(request.args, filtered_datasets)
@@ -3213,10 +3251,9 @@ def dataset_create(org_name):
     schema = DatasetReqSchema()
     request_dict = schema.dump(schema.load(request.get_json(force=True)))
 
-    user_id = authentication.get_user_id(request.headers.get('Authorization', ''), request.cookies, org_name)
-    from_ui = is_cookie_request(request)
+    user_id = authentication.get_user_id(request.headers.get('Authorization', ''), org_name)
     # Get response
-    response = app_handler.create_dataset(user_id, org_name, request_dict, from_ui=from_ui)
+    response = app_handler.create_dataset(user_id, org_name, request_dict)
     # Get schema
     schema = None
     if response.code == 200:
@@ -3230,7 +3267,7 @@ def dataset_create(org_name):
         log_type = (DataMonitorLogTypeEnum.medical_dataset
                     if ds_format == "monai"
                     else DataMonitorLogTypeEnum.tao_dataset)
-        log_api_error(user_id, org_name, from_ui, schema_dict, log_type, action="creation")
+        log_api_error(user_id, org_name, schema_dict, log_type, action="creation")
 
     return make_response(jsonify(schema_dict), response.code)
 
@@ -3478,7 +3515,7 @@ def dataset_specs_schema(org_name, dataset_id, action):
         response = make_response(jsonify(schema.dump(schema.load(metadata))), 400)
         return response
     # Get response
-    user_id = authentication.get_user_id(request.headers.get('Authorization', ''), request.cookies, org_name)
+    user_id = authentication.get_user_id(request.headers.get('Authorization', ''), org_name)
     response = app_handler.get_spec_schema(user_id, org_name, dataset_id, action, "dataset")
     # Get schema
     schema = None
@@ -3582,12 +3619,11 @@ def dataset_job_run(org_name, dataset_id):
     description = request_schema_data.get('description', '')
     num_gpu = request_schema_data.get('num_gpu', -1)
     platform_id = request_schema_data.get('platform_id', None)
-    from_ui = is_cookie_request(request)
     # Get response
     response = app_handler.job_run(
         org_name, dataset_id, requested_job, requested_action, "dataset",
         specs=specs, name=name, description=description, num_gpu=num_gpu,
-        platform_id=platform_id, from_ui=from_ui
+        platform_id=platform_id
     )
     handler_metadata = resolve_metadata("dataset", dataset_id)
     dataset_format = handler_metadata.get("format")
@@ -3691,9 +3727,8 @@ def dataset_job_retry(org_name, dataset_id, job_id):
         schema = ErrorRspSchema()
         response = make_response(jsonify(schema.dump(schema.load(metadata))), 400)
         return response
-    from_ui = is_cookie_request(request)
     # Get response
-    response = app_handler.job_retry(org_name, dataset_id, "dataset", job_id, from_ui=from_ui)
+    response = app_handler.job_retry(org_name, dataset_id, "dataset", job_id)
     handler_metadata = resolve_metadata("dataset", dataset_id)
     dataset_format = handler_metadata.get("format")
     # Get schema
@@ -3810,7 +3845,7 @@ def dataset_job_list(org_name, dataset_id):
         response = make_response(jsonify(schema.dump(schema.load(metadata))), 400)
         return response
 
-    user_id = authentication.get_user_id(request.headers.get('Authorization', ''), request.cookies, org_name)
+    user_id = authentication.get_user_id(request.headers.get('Authorization', ''), org_name)
     # Get response
     response = app_handler.job_list(user_id, org_name, dataset_id, "dataset")
     # Get schema
@@ -3920,7 +3955,7 @@ def dataset_job_schema(org_name, dataset_id, job_id):
         response = make_response(jsonify(schema.dump(schema.load(metadata))), 400)
         return response
     # Get response
-    user_id = authentication.get_user_id(request.headers.get('Authorization', ''), request.cookies, org_name)
+    user_id = authentication.get_user_id(request.headers.get('Authorization', ''), org_name)
     response = app_handler.get_spec_schema_for_job(user_id, org_name, dataset_id, job_id, "dataset")
     # Get schema
     schema = None
@@ -5086,7 +5121,7 @@ def bulk_dataset_jobs_cancel(org_name):
         return make_response(jsonify(schema.dump(schema.load(metadata))), 400)
 
     results = []
-    user_id = authentication.get_user_id(request.headers.get('Authorization', ''), request.cookies, org_name)
+    user_id = authentication.get_user_id(request.headers.get('Authorization', ''), org_name)
 
     for dataset_id in dataset_ids:
         message = validate_uuid(dataset_id=dataset_id)
@@ -5178,7 +5213,7 @@ def dataset_jobs_cancel(org_name, dataset_id):
         response = make_response(jsonify(schema.dump(schema.load(metadata))), 400)
         return response
     # Get response
-    user_id = authentication.get_user_id(request.headers.get('Authorization', ''), request.cookies, org_name)
+    user_id = authentication.get_user_id(request.headers.get('Authorization', ''), org_name)
     response = app_handler.all_job_cancel(user_id, org_name, dataset_id, "dataset")
     # Get schema
     if response.code == 200:
@@ -5847,7 +5882,7 @@ def experiment_list(org_name):
               $ref: '#/components/headers/X-RateLimit-Limit'
     """
     user_only = str(request.args.get('user_only', None)) in {'True', 'yes', 'y', 'true', 't', '1', 'on'}
-    user_id = authentication.get_user_id(request.headers.get('Authorization', ''), request.cookies, org_name)
+    user_id = authentication.get_user_id(request.headers.get('Authorization', ''), org_name)
     experiments = app_handler.list_experiments(user_id, org_name, user_only)
     filtered_experiments = filtering.apply(request.args, experiments)
     paginated_experiments = pagination.apply(request.args, filtered_experiments)
@@ -5899,7 +5934,7 @@ def experiment_tags_list(org_name):
             X-RateLimit-Limit:
                $ref: '#/components/headers/X-RateLimit-Limit'
     """
-    user_id = authentication.get_user_id(request.headers.get('Authorization', ''), request.cookies, org_name)
+    user_id = authentication.get_user_id(request.headers.get('Authorization', ''), org_name)
     experiments = app_handler.list_experiments(user_id, org_name, user_only=True)
     tags = [tag for exp in experiments for tag in exp.get('tags', [])]
     unique_tags = list({t.lower(): t for t in tags}.values())
@@ -6015,7 +6050,7 @@ def base_experiment_list(org_name):
             X-RateLimit-Limit:
               $ref: '#/components/headers/X-RateLimit-Limit'
     """
-    user_id = authentication.get_user_id(request.headers.get('Authorization', ''), request.cookies, org_name)
+    user_id = authentication.get_user_id(request.headers.get('Authorization', ''), org_name)
     experiments = app_handler.list_base_experiments(user_id, org_name)
     filtered_experiments = filtering.apply(request.args, experiments)
     paginated_experiments = pagination.apply(request.args, filtered_experiments)
@@ -6100,7 +6135,7 @@ def load_airgapped_experiments(org_name):
     request_dict = schema.dump(schema.load(request.get_json(force=True)))
 
     # Authenticate user
-    user_id = authentication.get_user_id(request.headers.get('Authorization', ''), request.cookies, org_name)
+    user_id = authentication.get_user_id(request.headers.get('Authorization', ''), org_name)
 
     # Get response from handler
     response = app_handler.load_airgapped_experiments(
@@ -6404,10 +6439,9 @@ def experiment_create(org_name):
     """
     schema = ExperimentReqSchema()
     request_dict = schema.dump(schema.load(request.get_json(force=True)))
-    user_id = authentication.get_user_id(request.headers.get('Authorization', ''), request.cookies, org_name)
-    from_ui = is_cookie_request(request)
+    user_id = authentication.get_user_id(request.headers.get('Authorization', ''), org_name)
     # Get response
-    response = app_handler.create_experiment(user_id, org_name, request_dict, from_ui=from_ui)
+    response = app_handler.create_experiment(user_id, org_name, request_dict)
     # Get schema
     schema = None
     if response.code == 200:
@@ -6420,7 +6454,7 @@ def experiment_create(org_name):
         mdl_nw = request_dict.get("network_arch", None)
         is_medical = isinstance(mdl_nw, str) and mdl_nw.startswith("monai_")
         log_type = DataMonitorLogTypeEnum.medical_experiment if is_medical else DataMonitorLogTypeEnum.tao_experiment
-        log_api_error(user_id, org_name, from_ui, schema_dict, log_type, action="creation")
+        log_api_error(user_id, org_name, schema_dict, log_type, action="creation")
 
     return make_response(jsonify(schema_dict), response.code)
 
@@ -6755,7 +6789,7 @@ def experiment_specs_schema(org_name, experiment_id, action):
         response = make_response(jsonify(schema.dump(schema.load(metadata))), 400)
         return response
     # Get response
-    user_id = authentication.get_user_id(request.headers.get('Authorization', ''), request.cookies, org_name)
+    user_id = authentication.get_user_id(request.headers.get('Authorization', ''), org_name)
     response = app_handler.get_spec_schema(user_id, org_name, experiment_id, action, "experiment")
     # Get schema
     schema = None
@@ -6948,7 +6982,6 @@ def experiment_job_run(org_name, experiment_id):
     description = request_schema_data.get('description', '')
     num_gpu = request_schema_data.get('num_gpu', -1)
     platform_id = request_schema_data.get('platform_id', None)
-    from_ui = is_cookie_request(request)
     if isinstance(specs, dict) and "cluster" in specs:
         metadata = {"error_desc": "cluster is an invalid spec", "error_code": 3}
         schema = ErrorRspSchema()
@@ -6958,7 +6991,7 @@ def experiment_job_run(org_name, experiment_id):
     response = app_handler.job_run(
         org_name, experiment_id, requested_job, requested_action, "experiment",
         specs=specs, name=name, description=description, num_gpu=num_gpu,
-        platform_id=platform_id, from_ui=from_ui
+        platform_id=platform_id
     )
     # Get schema
     schema = None
@@ -7012,7 +7045,7 @@ def experiment_job_run(org_name, experiment_id):
             user_id = handler_metadata.get("user_id", None)
             if user_id:
                 log_type = DataMonitorLogTypeEnum.medical_job if is_medical else DataMonitorLogTypeEnum.tao_job
-                log_api_error(user_id, org_name, from_ui, schema_dict, log_type, action="creation")
+                log_api_error(user_id, org_name, schema_dict, log_type, action="creation")
         except Exception as e:
             logger.error(f"Exception thrown in experiment_job_run is {str(e)}")
             log_monitor(DataMonitorLogTypeEnum.api, "Cannot parse experiment info for job.")
@@ -7104,9 +7137,8 @@ def experiment_job_retry(org_name, experiment_id, job_id):
         response = make_response(jsonify(schema.dump(schema.load(metadata))), 400)
         return response
 
-    from_ui = is_cookie_request(request)
     # Get response
-    response = app_handler.job_retry(org_name, experiment_id, "experiment", job_id, from_ui=from_ui)
+    response = app_handler.job_retry(org_name, experiment_id, "experiment", job_id)
     # Get schema
     schema = None
     if response.code == 200:
@@ -7126,7 +7158,7 @@ def experiment_job_retry(org_name, experiment_id, job_id):
             user_id = handler_metadata.get("user_id", None)
             if user_id:
                 log_type = DataMonitorLogTypeEnum.medical_job if is_medical else DataMonitorLogTypeEnum.tao_job
-                log_api_error(user_id, org_name, from_ui, schema_dict, log_type, action="creation")
+                log_api_error(user_id, org_name, schema_dict, log_type, action="creation")
         except Exception as e:
             logger.error(f"Exception thrown in experiment_job_retry is {str(e)}")
             log_monitor(DataMonitorLogTypeEnum.api, "Cannot parse experiment info for job.")
@@ -7215,6 +7247,12 @@ def experiment_model_publish(org_name, experiment_id, job_id):
             X-RateLimit-Limit:
               $ref: '#/components/headers/X-RateLimit-Limit'
     """
+    if os.getenv("AIRGAPPED_MODE", "false").lower() == "true":
+        schema = MessageOnlySchema()
+        message = "Cannot publish model in air-gapped mode."
+        response = make_response(jsonify(schema.dump({"message": message})), 400)
+        return response
+
     message = validate_uuid(experiment_id=experiment_id, job_id=job_id)
     if message:
         metadata = {"error_desc": message, "error_code": 1}
@@ -7330,7 +7368,7 @@ def experiment_job_get_epoch_numbers(org_name, experiment_id, job_id):
         response = make_response(jsonify(schema.dump(schema.load(metadata))), 400)
         return response
     # Get response
-    user_id = authentication.get_user_id(request.headers.get('Authorization', ''), request.cookies, org_name)
+    user_id = authentication.get_user_id(request.headers.get('Authorization', ''), org_name)
     response = app_handler.job_get_epoch_numbers(user_id, org_name, experiment_id, job_id, "experiment")
     # Get schema
     schema_dict = None
@@ -7427,6 +7465,12 @@ def experiment_remove_published_model(org_name, experiment_id, job_id):
             X-RateLimit-Limit:
               $ref: '#/components/headers/X-RateLimit-Limit'
     """
+    if os.getenv("AIRGAPPED_MODE", "false").lower() == "true":
+        schema = MessageOnlySchema()
+        message = "Cannot remove published model in air-gapped mode."
+        response = make_response(jsonify(schema.dump({"message": message})), 400)
+        return response
+
     message = validate_uuid(experiment_id=experiment_id, job_id=job_id)
     if message:
         metadata = {"error_desc": message, "error_code": 1}
@@ -7534,7 +7578,7 @@ def experiment_job_schema(org_name, experiment_id, job_id):
         response = make_response(jsonify(schema.dump(schema.load(metadata))), 400)
         return response
     # Get response
-    user_id = authentication.get_user_id(request.headers.get('Authorization', ''), request.cookies, org_name)
+    user_id = authentication.get_user_id(request.headers.get('Authorization', ''), org_name)
     response = app_handler.get_spec_schema_for_job(user_id, org_name, experiment_id, job_id, "experiment")
     # Get schema
     schema = None
@@ -7642,7 +7686,7 @@ def experiment_job_list(org_name, experiment_id):
         schema = ErrorRspSchema()
         response = make_response(jsonify(schema.dump(schema.load(metadata))), 400)
         return response
-    user_id = authentication.get_user_id(request.headers.get('Authorization', ''), request.cookies, org_name)
+    user_id = authentication.get_user_id(request.headers.get('Authorization', ''), org_name)
 
     # Get response
     response = app_handler.job_list(user_id, org_name, experiment_id, "experiment")
@@ -8246,7 +8290,7 @@ def bulk_experiment_jobs_cancel(org_name):
         return make_response(jsonify(schema.dump(schema.load(metadata))), 400)
 
     results = []
-    user_id = authentication.get_user_id(request.headers.get('Authorization', ''), request.cookies, org_name)
+    user_id = authentication.get_user_id(request.headers.get('Authorization', ''), org_name)
 
     for experiment_id in experiment_ids:
         message = validate_uuid(experiment_id=experiment_id)
@@ -8338,7 +8382,7 @@ def experiment_jobs_cancel(org_name, experiment_id):
         response = make_response(jsonify(schema.dump(schema.load(metadata))), 400)
         return response
     # Get response
-    user_id = authentication.get_user_id(request.headers.get('Authorization', ''), request.cookies, org_name)
+    user_id = authentication.get_user_id(request.headers.get('Authorization', ''), org_name)
     response = app_handler.all_job_cancel(user_id, org_name, experiment_id, "experiment")
     # Get schema
     if response.code == 200:

@@ -30,7 +30,7 @@ def test_split_ngc_path(ngc_path):
 def test_download_ngc_model_success(ngc_key, ngc_path, tmpdir):
     ptm_root = f'.{tmpdir.strpath}'
     os.makedirs(ptm_root, exist_ok=True)
-    assert download_ngc_model(ngc_path, ptm_root, ngc_key, False, False), "NGC model download failed with valid key"
+    assert download_ngc_model(ngc_path, ptm_root, ngc_key), "NGC model download failed with valid key"
     shutil.rmtree('tmp')
 
 
@@ -38,6 +38,6 @@ def test_download_ngc_model_success(ngc_key, ngc_path, tmpdir):
 def test_download_ngc_model_invalid_key(ngc_path, tmpdir):
     ptm_root = tmpdir.strpath
     key = "test-key"
-    assert not download_ngc_model(ngc_path, ptm_root, key, False, False), (
+    assert not download_ngc_model(ngc_path, ptm_root, key), (
         "NGC model download succeeded with invalid key"
     )
