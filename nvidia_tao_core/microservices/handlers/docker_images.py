@@ -22,7 +22,6 @@ DOCKER_IMAGE_MAPPER = {
         default='nvcr.io/0544357712065245/maxine-dldk-trainer_ram:latest'
     ),
     "TAO_PYTORCH": os.getenv('IMAGE_TAO_PYTORCH', default='nvcr.io/nvidia/tao/tao-toolkit:6.0.0-pyt'),
-    "TAO_TF2": os.getenv('IMAGE_TAO_TF2', default='nvcr.io/nvidia/tao/tao-toolkit:6.0.0-tf2.11.0'),
     "TAO_DEPLOY": os.getenv('IMAGE_TAO_DEPLOY', default='nvcr.io/nvidia/tao/tao-toolkit:6.0.0-deploy'),
     "MONAI": os.getenv('IMAGE_MONAI', default='nvcr.io/iasixjqzw1hj/monai-service:script-1.1.0.dev.d5d27af'),
     "MONAI_TIS": os.getenv('IMAGE_MONAI_TIS', default='nvcr.io/iasixjqzw1hj/monai-service:infer-1.0.3'),
@@ -30,7 +29,7 @@ DOCKER_IMAGE_MAPPER = {
     "API": os.getenv('IMAGE_API', default='nvcr.io/nvidia/tao/tao-toolkit:6.0.0-api'),
     "TAO_DS": os.getenv('IMAGE_TAO_DS', default='nvcr.io/nvidia/tao/tao-toolkit:6.0.0-data-services'),
     "VILA": os.getenv('IMAGE_VILA', default='nvcr.io/nvidia/tao/tao-toolkit:6.0.0-vila'),
-    "tensorboard": os.getenv('IMAGE_TF2', default='nvcr.io/nvidia/tensorflow:24.07-tf2-py3')
+    "tensorboard": 'nvcr.io/nvidia/tensorflow:24.07-tf2-py3'
 }
 
 
@@ -39,10 +38,8 @@ DOCKER_IMAGE_VERSION = {  # (Release tao version for DNN framework, Overriden ve
     "bevfusion": ("6.25.7", "6.0.0"),
     "centerpose": ("6.25.7", "6.0.0"),
     "classification_pyt": ("6.25.7", "6.0.0"),
-    "classification_tf2": ("6.25.7", "6.0.0"),
     "deformable_detr": ("6.25.7", "6.0.0"),
     "dino": ("6.25.7", "6.0.0"),
-    "efficientdet_tf2": ("6.25.7", "6.0.0"),
     "image": ("6.25.7", "6.0.0"),
     "mae": ("6.25.7", "6.0.0"),
     "mal": ("6.25.7", "6.0.0"),

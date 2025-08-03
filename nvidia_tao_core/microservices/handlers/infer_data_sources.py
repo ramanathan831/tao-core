@@ -371,8 +371,6 @@ def apply_data_source_config(config, job_context, handler_metadata):
     """Generic data source configuration using config file"""
     workspace_cache = {}
     dataset_convert_action = "dataset_convert"
-    if job_context.network == "efficientdet_tf2":
-        dataset_convert_action = "convert_efficientdet_tf2"
 
     job_network = job_context.network
     job_action = job_context.action
