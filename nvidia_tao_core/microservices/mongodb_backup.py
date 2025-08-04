@@ -66,4 +66,4 @@ if __name__ == '__main__':
     parser.add_argument("--endpoint-url", help="AWS S3 endpoint URL to use for backup", default=None)
     args = parser.parse_args()
 
-    backup(args.access_key, args.secret_key, args.s3_bucket_name, args.endpoint_url)
+    backup(args.access_key, args.secret_key, args.s3_bucket_name, args.endpoint_url, args.region)
