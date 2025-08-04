@@ -124,8 +124,8 @@ def get_microservices_network_and_action(network, action):
         action_mapping = network_config.get("actions_mapping", {})
 
         # If this action has a mapping defined
-        if action in action_mapping:
-            mapping = action_mapping[action]
+        if action in action_mapping or "*" in action_mapping:
+            mapping = action_mapping[action] if action in action_mapping else action_mapping["*"]
             if "network" in mapping:
                 microservices_network = mapping["network"]
             if "action" in mapping:
