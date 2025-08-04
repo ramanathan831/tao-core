@@ -831,7 +831,11 @@ class TrainVal(CLIPipeline):
         # Take .json file, read in spec params, infer spec params
         if action in network_config["spec_params"].keys():
             for field_name, inference_fn in network_config["spec_params"][action].items():
-                field_value = CLI_CONFIG_TO_FUNCTIONS[inference_fn](self.job_context, self.handler_metadata)
+                field_value = (
+                    CLI_CONFIG_TO_FUNCTIONS[inference_fn](self.job_context, self.handler_metadata)
+                    if inference_fn in CLI_CONFIG_TO_FUNCTIONS
+                    else inference_fn
+                )
                 if field_value:
                     write_nested_dict(spec, field_name, field_value)
 
@@ -909,6 +913,7 @@ class AutoMLPipeline(ActionPipeline):
     def __init__(self, job_context):
         """Initialize the AutoMLPipeline class"""
         super().__init__(job_context)
+        self.network, self.action = get_microservices_network_and_action(self.network, self.action)
         self.automl_brain_job_id = self.job_context.id
         self.job_root = os.path.join(
             get_jobs_root(self.job_context.user_id, self.job_context.org_name),
@@ -978,7 +983,11 @@ class AutoMLPipeline(ActionPipeline):
                             field_value = int(read_nested_dict(spec, dependent_parameter_names[2]))
 
             else:
-                field_value = CLI_CONFIG_TO_FUNCTIONS[inference_fn](self.job_context, self.handler_metadata)
+                field_value = (
+                    CLI_CONFIG_TO_FUNCTIONS[inference_fn](self.job_context, self.handler_metadata)
+                    if inference_fn in CLI_CONFIG_TO_FUNCTIONS
+                    else inference_fn
+                )
             if field_value:
                 write_nested_dict(spec, field_name, field_value)
 
