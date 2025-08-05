@@ -29,7 +29,7 @@ DOCKER_IMAGE_MAPPER = {
     "API": os.getenv('IMAGE_API', default='nvcr.io/nvidia/tao/tao-toolkit:6.0.0-api'),
     "TAO_DS": os.getenv('IMAGE_TAO_DS', default='nvcr.io/nvidia/tao/tao-toolkit:6.0.0-data-services'),
     "VILA": os.getenv('IMAGE_VILA', default='nvcr.io/nvidia/tao/tao-toolkit:6.0.0-vila'),
-    "tensorboard": 'nvcr.io/nvidia/tensorflow:24.07-tf2-py3'
+    "tensorboard": os.getenv('IMAGE_TAO_PYTORCH', default='nvcr.io/nvidia/tao/tao-toolkit:6.0.0-pyt')
 }
 
 
