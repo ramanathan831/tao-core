@@ -2988,7 +2988,7 @@ def dataset_list(org_name):
           type: string
           enum: [
               "kitti", "pascal_voc", "raw", "coco_raw", "unet", "coco", "lprnet", "train", "test",
-              "default", "custom", "classification_pyt", "classification_tf2", "visual_changenet_segment",
+              "default", "custom", "classification_pyt", "visual_changenet_segment",
               "visual_changenet_classify"
           ]
       - name: type
@@ -3481,7 +3481,7 @@ def dataset_specs_schema(org_name, dataset_id, action):
         schema:
           type: string
           enum: [
-              "dataset_convert", "convert", "convert_efficientdet_tf2", "kmeans", "augment", "train",
+              "dataset_convert", "convert", "kmeans", "augment", "train",
               "evaluate", "prune", "retrain", "export", "gen_trt_engine", "trtexec", "inference",
               "annotation", "analyze", "validate", "auto_label", "calibration_tensorfile"
           ]
@@ -5828,10 +5828,6 @@ def experiment_list(org_name):
         schema:
           type: string
           enum: [
-              "detectnet_v2",
-              "unet",
-              "classification_tf2",
-              "efficientdet_tf2",
               "action_recognition",
               "classification_pyt",
               "mal",
@@ -6011,10 +6007,6 @@ def base_experiment_list(org_name):
         schema:
           type: string
           enum: [
-              "detectnet_v2",
-              "unet",
-              "classification_tf2",
-              "efficientdet_tf2",
               "action_recognition",
               "classification_pyt",
               "mal",
@@ -6672,7 +6664,7 @@ def specs_schema_without_handler_id(org_name, action):
         schema:
           type: string
           enum: [
-            "dataset_convert", "convert", "convert_efficientdet_tf2", "kmeans", "augment", "train",
+            "dataset_convert", "convert", "kmeans", "augment", "train",
             "evaluate", "prune", "retrain", "export", "gen_trt_engine", "trtexec", "inference",
             "annotation", "analyze", "validate", "auto_label", "calibration_tensorfile"
           ]
@@ -6755,7 +6747,7 @@ def experiment_specs_schema(org_name, experiment_id, action):
         schema:
           type: string
           enum: [
-            "dataset_convert", "convert", "convert_efficientdet_tf2", "kmeans", "augment", "train",
+            "dataset_convert", "convert", "kmeans", "augment", "train",
             "evaluate", "prune", "retrain", "export", "gen_trt_engine", "trtexec", "inference",
             "annotation", "analyze", "validate", "auto_label", "calibration_tensorfile"
           ]

@@ -1,13 +1,12 @@
 {
     "api_params": {
-        "actions": ["convert","convert_efficientdet_tf2", "annotation_format_convert", "augment", "analyze", "validate_annotations", "auto_label"],
+        "actions": ["convert", "annotation_format_convert", "augment", "analyze", "validate_annotations", "auto_label"],
         "formats":["kitti","raw","coco", "coco_raw","odvg"],
         "accepted_ds_intents": ["training", "evaluation", "testing"],
-        "image":"TAO_TF2",
+        "image":"TAO_PYTORCH",
         "spec_backend":"yaml",
         "actions_pipe":{
             "convert":"odconvert",
-            "convert_efficientdet_tf2":"odconvert",
             "annotation_format_convert":"data_services",
             "augment":"data_services",
             "analyze":"data_services",
@@ -39,10 +38,6 @@
         "validate_annotations": {
             "network": "analytics",
             "action": "validate"
-        },
-        "convert_efficientdet_tf2": {
-            "network": "efficientdet_tf2",
-            "action": "dataset_convert"
         }
     },
 
@@ -77,21 +72,6 @@
         }
     },
     "data_sources": {
-        "convert_efficientdet_tf2": {
-            "dataset_convert": {
-                "source": "id",
-                "multiple_sources": false,
-                "mapping": {
-                    "image_dir": {
-                        "path": "images.tar.gz",
-                        "transform": "handle_tar_path"
-                    },
-                    "annotations_file": {
-                        "path": "annotations.json"
-                    }
-                }
-            }
-        },
         "annotation_format_convert": {
             "coco": {
                 "source": "id",
@@ -265,9 +245,6 @@
     },
 
     "spec_params":{
-        "convert_efficientdet_tf2":{
-            "results_dir":"output_dir"
-        },
         "annotation_format_convert": {
             "results_dir":"output_dir"
         },

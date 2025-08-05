@@ -65,15 +65,15 @@ class InferenceMicroserviceHandler:
 
             if network_config:
                 image_key = network_config.get('api_params', {}).get('image', network_arch.upper())
-                image = DOCKER_IMAGE_MAPPER.get(image_key, "nvcr.io/nvidia/tao/tao-toolkit:5.0.0-tf2.11.0")
+                image = DOCKER_IMAGE_MAPPER.get(image_key, "nvcr.io/nvidia/tao/tao-toolkit:6.0.0-pyt")
                 logger.info("Using Docker image: %s (from network_arch: %s)", image, network_arch)
             else:
                 # Fallback if network config is empty
-                image = DOCKER_IMAGE_MAPPER.get(network_arch.upper(), "nvcr.io/nvidia/tao/tao-toolkit:5.0.0-tf2.11.0")
+                image = DOCKER_IMAGE_MAPPER.get(network_arch.upper(), "nvcr.io/nvidia/tao/tao-toolkit:6.0.0-pyt")
                 logger.info("Using fallback Docker image: %s", image)
         except Exception as e:
             logger.warning("Could not read network config for %s: %s. Using default image.", network_arch, str(e))
-            image = DOCKER_IMAGE_MAPPER.get(network_arch.upper(), "nvcr.io/nvidia/tao/tao-toolkit:5.0.0-tf2.11.0")
+            image = DOCKER_IMAGE_MAPPER.get(network_arch.upper(), "nvcr.io/nvidia/tao/tao-toolkit:6.0.0-pyt")
             logger.info("Using fallback Docker image: %s", image)
 
         # StatefulSet name

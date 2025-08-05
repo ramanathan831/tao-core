@@ -56,53 +56,6 @@ automl_list_helper = {
             "train.optim.lr_steps": ("lr_steps", "train.num_epochs"),
         }
     },
-    "detectnet_v2": {
-        "list_1_backbone": {
-            "model_config.freeze_blocks": {
-                "resnet": (0, 3),
-                "vgg": (1, 5),
-                "googlenet": (0, 7),
-                "mobilenet_v1": (0, 11),
-                "mobilenet_v2": (0, 13),
-                "darknet": (0, 5),
-                "efficientnet": (0, 7),
-            },
-        },
-        "list_1_normal": {},
-    },
-    "classification_tf2": {
-        "list_1_backbone": {
-            "model.freeze_blocks": {
-                "resnet_10": (0, 3),
-                "resnet_18": (0, 3),
-                "resnet_34": (0, 3),
-                "resnet_50": (0, 3),
-                "resnet_101": (0, 3),
-                "mobilenet_v1": (0, 11),
-                "mobilenet_v2": (0, 13),
-                "efficientnet-b0": (0, 7),
-                "efficientnet-b1": (0, 7),
-                "efficientnet-b2": (0, 7),
-                "efficientnet-b3": (0, 7),
-                "efficientnet-b4": (0, 7),
-                "efficientnet-b5": (0, 7),
-                "efficientnet-b6": (0, 7),
-                "efficientnet-b7": (0, 7),
-            },
-        },
-    },
-    "efficientdet_tf2": {
-        "list_1_backbone": {
-            "model.freeze_blocks": {
-                "efficientdet-d0": (0, 7),
-                "efficientdet-d1": (0, 7),
-                "efficientdet-d2": (0, 7),
-                "efficientdet-d3": (0, 7),
-                "efficientdet-d4": (0, 7),
-                "efficientdet-d5": (0, 7),
-            },
-        },
-    },
     "mal": {
         "list_1_backbone": {
             "model.frozen_stages": {
