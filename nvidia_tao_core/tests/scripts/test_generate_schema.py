@@ -18,6 +18,7 @@ import pytest
 
 from nvidia_tao_core.microservices.constants import TAO_NETWORKS
 from nvidia_tao_core.microservices.enum_constants import _get_network_architectures
+from nvidia_tao_core.microservices.utils import get_microservices_network_and_action
 from nvidia_tao_core.scripts.generate_schema import generate_schema
 
 EXCLUDED_KEYWORDS = [
@@ -34,19 +35,26 @@ constant_networks = [
 ]
 
 
+TEST_ACTIONS = ["train", "evaluate", "distill", "export", "gen_trt_engine", "inference"]
+
+
 @pytest.mark.parametrize("network", config_networks)
-def test_networks_from_enum(network):
-    """Test schema from api network_arch enum"""
-    schema = generate_schema(network)
+@pytest.mark.parametrize("action", TEST_ACTIONS)
+def test_networks_from_enum(network, action):
+    """Test schema from api network_arch enum with specific actions"""
+    network_arch, _ = get_microservices_network_and_action(network, action)
+    schema = generate_schema(network_arch, action)
     assert isinstance(schema, dict)
     assert "properties" in schema
     assert "default" in schema
 
 
 @pytest.mark.parametrize("network", constant_networks)
-def test_networks_from_constants(network):
-    """Test schema from TAO_NETWORKS constant"""
-    schema = generate_schema(network)
+@pytest.mark.parametrize("action", TEST_ACTIONS)
+def test_networks_from_constants(network, action):
+    """Test schema from TAO_NETWORKS constant with specific actions"""
+    network_arch, _ = get_microservices_network_and_action(network, action)
+    schema = generate_schema(network_arch, action)
     assert isinstance(schema, dict)
     assert "properties" in schema
     assert "default" in schema
