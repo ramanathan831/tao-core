@@ -3,7 +3,7 @@
         "dataset_type":"visual_changenet_segment",
         "actions": ["train","evaluate","export","inference","gen_trt_engine"],
         "formats":["default"],
-        "accepted_ds_intents": ["training", "evaluation", "testing"],
+        "accepted_ds_intents": ["training"],
         "image":"TAO_PYTORCH",
         "spec_backend":"yaml",
         "actions_pipe":{

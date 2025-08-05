@@ -2988,8 +2988,7 @@ def dataset_list(org_name):
           type: string
           enum: [
               "kitti", "pascal_voc", "raw", "coco_raw", "unet", "coco", "lprnet", "train", "test",
-              "default", "custom", "classification_pyt", "classification_tf2", "visual_changenet_segment",
-              "visual_changenet_classify"
+              "default", "custom", "classification_pyt", "classification_tf2"
           ]
       - name: type
         in: query
@@ -3000,7 +2999,7 @@ def dataset_list(org_name):
           enum: [
               "object_detection", "segmentation", "image_classification", "character_recognition",
               "action_recognition", "pointpillars", "pose_classification", "ml_recog", "ocdnet", "ocrnet",
-              "optical_inspection", "re_identification", "visual_changenet", "centerpose"
+              "optical_inspection", "re_identification", "centerpose"
           ]
       responses:
         200:
@@ -5845,7 +5844,8 @@ def experiment_list(org_name):
               "deformable_detr",
               "dino",
               "segformer",
-              "visual_changenet",
+              "visual_changenet_classify",
+              "visual_changenet_segment",
               "centerpose"
           ]
       - name: read_only
@@ -6028,7 +6028,8 @@ def base_experiment_list(org_name):
               "deformable_detr",
               "dino",
               "segformer",
-              "visual_changenet",
+              "visual_changenet_classify",
+              "visual_changenet_segment",
               "centerpose"
           ]
       - name: read_only

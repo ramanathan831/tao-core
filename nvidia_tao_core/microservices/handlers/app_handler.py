@@ -1359,7 +1359,6 @@ class AppHandler:
         base_experiment_spec = {}
         base_experiment_metadata = get_base_experiment_metadata(experiment_id)
         base_experiment_network = base_experiment_metadata.get("network_arch", "")
-        base_experiment_name = base_experiment_metadata.get("name", "").lower()
         if action not in base_experiment_metadata.get("actions", []):
             return Code(404, {}, "Action not found")
 
@@ -1390,14 +1389,12 @@ class AppHandler:
             json_schema = csv_to_json_schema.convert(CSV_PATH)
         if "default" in json_schema and base_experiment_spec:
             json_schema["default"] = merge_nested_dicts(json_schema["default"], base_experiment_spec)
-            if (base_experiment_network == "visual_changenet" and
-                "segmentation" in base_experiment_name and
+            if (base_experiment_network == "visual_changenet_segment" and
                     "train" in json_schema["default"]):
                 json_schema["default"]["train"].pop("tensorboard", None)
         if "popular" in json_schema and base_experiment_spec:
             json_schema["popular"] = override_dicts(json_schema["popular"], base_experiment_spec)
-            if (base_experiment_network == "visual_changenet" and
-                "segmentation" in base_experiment_name and
+            if (base_experiment_network == "visual_changenet_segment" and
                     "train" in json_schema["popular"]):
                 json_schema["popular"]["train"].pop("tensorboard", None)
         return Code(200, json_schema, "Schema retrieved")

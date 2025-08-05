@@ -13,9 +13,9 @@ OCRNET,nvidia/tao/ocrnet:trainable_v1.0,ocrnet
 OCRNET,nvstaging/tao/ocrnet:trainable_v2.0,ocrnet
 Optical Inspection,nvidia/tao/optical_inspection:trainable_v1.0,optical_inspection
 PCB Classification,nvidia/tao/pcb_classification:trainable_v1.0,classification_pyt
-Visual ChangeNet-Classification,nvstaging/tao/changenet_classification:changenet_nvpcb_trainable_v1.0,visual_changenet
-Visual ChangeNet-Segmentation,nvstaging/tao/changenet_segmentation:changenet_levircd_trainable_v1.0,visual_changenet
-Visual ChangeNet-Segmentation,nvstaging/tao/changenet_segmentation_landsatscd:trainable_v1.0,visual_changenet
+Visual ChangeNet-Classification,nvstaging/tao/changenet_classification:changenet_nvpcb_trainable_v1.0,visual_changenet_classify
+Visual ChangeNet-Segmentation,nvstaging/tao/changenet_segmentation:changenet_levircd_trainable_v1.0,visual_changenet_segment
+Visual ChangeNet-Segmentation,nvstaging/tao/changenet_segmentation_landsatscd:trainable_v1.0,visual_changenet_segment
 TAO Pretrained NVImageNet Classification,nvaie/nv_dinov2_classification_model:trainable_v1.1,classification_pyt
 TAO Pretrained NVImageNet Classification,nvaie/nv_dinov2_classification_model:trainable_v1.1,nvdinov2
 TAO Pretrained NVImageNet Classification,nvaie/imagenet_nv_dinov2:trainable_v1.1,classification_pyt
