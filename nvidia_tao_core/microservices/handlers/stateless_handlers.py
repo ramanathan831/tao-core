@@ -1055,6 +1055,10 @@ def set_metrics(metrics):
 
 def get_user_telemetry_opt_out(user_id: str, org_name: str, user_db: MongoHandler = None) -> str:
     """Returns the telemetry opt out setting for a user"""
+    # Skip sending telemetry for air-gapped environments
+    if os.getenv("AIRGAPPED_MODE", "false").lower() == "true":
+        return "yes"
+
     user = get_user(user_id, user_db)
     enable_telemetry = False
     if user:

@@ -37,7 +37,6 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 BACKEND = os.getenv("BACKEND", "local-k8s")
-DEPLOYMENT_MODE = os.getenv("DEPLOYMENT_MODE", "PROD")
 
 
 def get_from_ngc(key, org_name: str, enable_telemetry: bool | None = None) -> tuple[dict, str]:
@@ -136,7 +135,7 @@ def decode_jwt_token(token):
     try:
         raw_payload = jwt.decode(token, options={'verify_signature': False}, algorithms=["HS256"])
         user_id, org_name = raw_payload.get('user_id'), raw_payload.get('org_name')
-        user_key, _ = get_user_key(user_id, org_name)
+        user_key = get_user_key(user_id, org_name)
         if not user_key:
             err = 'Unable to retrieve user key for token'
             return {}, err
@@ -163,27 +162,3 @@ def is_token_valid(token):
     except Exception as e:
         logger.error("Exception thrown in is_token_valid is %s", str(e))
         return False
-
-
-def save_cookie(user_id, sid_cookie, ssid_cookie):
-    """Save the cookie info to User cache"""
-    encrypted_sid_cookie = sid_cookie
-    encrypted_ssid_cookie = ssid_cookie
-    config_path = os.getenv("VAULT_SECRET_PATH", None)
-    if config_path:
-        encryption = NVVaultEncryption(config_path)
-        if encryption.check_config()[0]:
-            if sid_cookie:
-                encrypted_sid_cookie = encryption.encrypt(sid_cookie)
-            if ssid_cookie:
-                encrypted_ssid_cookie = encryption.encrypt(ssid_cookie)
-
-    mongo = MongoHandler("tao", "users")
-    user_query = {'id': user_id}
-    user = mongo.find_one(user_query)
-    if sid_cookie:
-        if 'sid_cookie' not in user or encrypted_sid_cookie != user['sid_cookie']:
-            mongo.upsert(user_query, {'id': user_id, 'sid_cookie': encrypted_sid_cookie})
-    if ssid_cookie:
-        if 'ssid_cookie' not in user or encrypted_ssid_cookie != user['ssid_cookie']:
-            mongo.upsert(user_query, {'id': user_id, 'ssid_cookie': encrypted_ssid_cookie})

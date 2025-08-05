@@ -79,8 +79,6 @@ def prepare_data_before_job_run(job, docker_env_vars):
             job["job_id"],
             job["neural_network_name"],
             ngc_key,
-            docker_env_vars.get('TAO_API_UI_COOKIE', ""),
-            docker_env_vars.get('USE_NGC_STAGING', "False")
         )
 
     logger.info("Downloading files from normal spec")
@@ -90,8 +88,6 @@ def prepare_data_before_job_run(job, docker_env_vars):
         job_id=job["job_id"],
         network_arch=job["neural_network_name"],
         ngc_key=ngc_key,
-        tao_api_ui_cookie=docker_env_vars.get('TAO_API_UI_COOKIE', ""),
-        use_ngc_staging=docker_env_vars.get('USE_NGC_STAGING', "False"),
         reprocess_files=reprocess_files
     )
 
@@ -113,8 +109,6 @@ def prepare_data_before_job_run(job, docker_env_vars):
                         job_id=job["job_id"],
                         network_arch=job["neural_network_name"],
                         ngc_key=ngc_key,
-                        tao_api_ui_cookie=docker_env_vars.get('TAO_API_UI_COOKIE', ""),
-                        use_ngc_staging=docker_env_vars.get('USE_NGC_STAGING', "False"),
                     )
                     if reprocess_file_data:
                         safe_dump_file(file_name, reprocess_file_data, file_type=file_type)
@@ -421,8 +415,6 @@ class ContainerJobHandler:
         job_id,
         network_arch,
         ngc_key,
-        tao_api_ui_cookie,
-        use_ngc_staging
     ):
         """Handle downloading additional files specified in additional_downloads.
 
@@ -432,8 +424,6 @@ class ContainerJobHandler:
             job_id (str): Current job ID
             network_arch (str): Network architecture name
             ngc_key (str): NGC API key
-            tao_api_ui_cookie (str): TAO API UI cookie
-            use_ngc_staging (str): Whether to use NGC staging
         """
         try:
             if not additional_downloads:
@@ -454,8 +444,6 @@ class ContainerJobHandler:
                 job_id=job_id,
                 network_arch=network_arch,
                 ngc_key=ngc_key,
-                tao_api_ui_cookie=tao_api_ui_cookie,
-                use_ngc_staging=use_ngc_staging,
                 reprocess_files=[],
                 preserve_source_path=True
             )

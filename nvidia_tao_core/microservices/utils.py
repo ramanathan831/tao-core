@@ -249,14 +249,12 @@ def get_admin_key():
         except client.exceptions.ApiException as e:
             if e.status == 404:
                 logger.warning("Secret 'adminclustersecret' not found in 'default' namespace.")
-                if os.getenv("DEPLOYMENT_MODE", "PROD") == "PROD":
-                    logger.info("Falling back to bcpclustersecret")
-                    secret = get_bcp_key()
-                    if not secret:
-                        return ""
-                    return secret
-            else:
-                logger.error("Failed to obtain secret from k8s: %s", e)
+                logger.info("Falling back to bcpclustersecret")
+                secret = get_bcp_key()
+                if not secret:
+                    return ""
+                return secret
+            logger.error("Failed to obtain secret from k8s: %s", e)
             return ""
 
         encoded_key = base64.b64decode(next(iter(secret.data.values())))
@@ -405,8 +403,6 @@ def get_ngc_artifact_base_url(ngc_path):
     if len(ngc_configs) == 3:
         team = ngc_configs[1]
     base_url = "https://api.ngc.nvidia.com"
-    if os.getenv("DEPLOYMENT_MODE", "PROD") == 'STAGING':
-        base_url = "https://api.stg.ngc.nvidia.com"
     url_substring = ""
     if team and team != "no-team":
         url_substring = f"team/{team}"
@@ -676,7 +672,7 @@ def log_monitor(log_type, log_content):
     logger.info(print_string)
 
 
-def log_api_error(user_id, org_name, from_ui, schema_dict, log_type, action):
+def log_api_error(user_id, org_name, schema_dict, log_type, action, from_ui=False):
     """Log the api call error."""
     error_desc = schema_dict.get("error_desc", None)
     error_code = schema_dict.get("error_code", None)
@@ -685,16 +681,6 @@ def log_api_error(user_id, org_name, from_ui, schema_dict, log_type, action):
         f"action:{action}, error_code:{error_code}, error_desc:{error_desc}"
     )
     log_monitor(log_type=log_type, log_content=log_content)
-
-
-def is_cookie_request(request):
-    """Whether a request contains cookie."""
-    try:
-        sid_cookie = request.cookies.get('SID')
-        ssid_cookie = request.cookies.get('SSID')
-        return not (sid_cookie is None and ssid_cookie is None)
-    except Exception:
-        return False
 
 
 def print_start_script_path():

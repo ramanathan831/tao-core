@@ -2270,14 +2270,14 @@ class AppHandler:
                 return Code(404, [], "Unable to find a model for the given job")
 
             # Create NGC model
-            ngc_key, use_cookie = ngc_handler.get_user_key(user_id, org_name)
+            ngc_key = ngc_handler.get_user_key(user_id, org_name)
             if not ngc_key:
                 return Code(403, {}, "User does not have access to publish model")
 
             code, message = ngc_handler.create_model(
-                org_name, team_name, handler_metadata, source_files[0], ngc_key, use_cookie, display_name, description
+                org_name, team_name, handler_metadata, source_files[0], ngc_key, display_name, description
             )
-            if code not in [200, 200]:
+            if code not in [200, 201]:
                 logger.error("Error while creating NGC model")
                 return Code(code, {}, message)
 
@@ -2335,12 +2335,12 @@ class AppHandler:
             )
 
         try:
-            ngc_key, use_cookie = ngc_handler.get_user_key(user_id, org_name)
+            ngc_key = ngc_handler.get_user_key(user_id, org_name)
             if not ngc_key:
                 return Code(403, {}, "User does not have access to remove published model")
 
             response = ngc_handler.delete_model(
-                org_name, team_name, handler_metadata, ngc_key, use_cookie, job_id, job_action
+                org_name, team_name, handler_metadata, ngc_key, job_id, job_action
             )
             if response.ok:
                 return Code(response.status_code, {}, "Sucessfully deleted model")
