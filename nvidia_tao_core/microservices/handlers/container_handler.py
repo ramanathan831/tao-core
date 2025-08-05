@@ -49,9 +49,6 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-module = entry_points[0].module_name.split('.')[0] if entry_points else None
-entrypoint = importlib.import_module(entrypoint_paths[module]) if module else None
-
 
 def prepare_data_before_job_run(job, docker_env_vars):
     """Prepare data before job run"""
@@ -215,6 +212,9 @@ class ContainerJobHandler:
                         "experiment_spec_file": spec_path,
                         "results_dir": specs["results_dir"]
                     }
+
+                    module = entry_points[0].module_name.split('.')[0] if entry_points else None
+                    entrypoint = importlib.import_module(entrypoint_paths[module]) if module else None
 
                     def run_entrypoint():
                         nonlocal status_logger
