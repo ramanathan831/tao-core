@@ -183,8 +183,10 @@ class ActionPipeline:
         if self.network in DOCKER_IMAGE_VERSION.keys():
             self.tao_framework_version, self.tao_model_override_version = DOCKER_IMAGE_VERSION[self.network]
             if self.tao_model_override_version not in self.image:
-                self.image = self.image.replace(self.tao_framework_version, self.tao_model_override_version)
-                using_previous_version = True
+                image = self.image.replace(self.tao_framework_version, self.tao_model_override_version)
+                if image != self.image:
+                    self.image = image
+                    using_previous_version = True
         if self.action in self.network_config.get("api_params", {}).get("image_override_per_action", {}):
             image_override_per_action = self.api_params.get("image_override_per_action", {})
             override_key = image_override_per_action.get(self.action)
