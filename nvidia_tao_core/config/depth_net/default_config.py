@@ -31,9 +31,9 @@ from nvidia_tao_core.config.common.common_config import (
     EvaluateConfig,
     InferenceConfig
 )
-from nvidia_tao_pytorch.cv.depth_net.config.dataset import DepthNetDatasetConfig
-from nvidia_tao_pytorch.cv.depth_net.config.model import DepthNetModelConfig
-from nvidia_tao_pytorch.cv.depth_net.config.train import DepthNetTrainExpConfig
+from nvidia_tao_core.config.depth_net.dataset import DepthNetDatasetConfig
+from nvidia_tao_core.config.depth_net.model import DepthNetModelConfig
+from nvidia_tao_core.config.depth_net.train import DepthNetTrainExpConfig
 
 
 @dataclass
