@@ -28,6 +28,7 @@ from nvidia_tao_core.config.utils.types import (
 
 from nvidia_tao_core.config.common.common_config import (
     CommonExperimentConfig,
+    ExportConfig,
     EvaluateConfig,
     InferenceConfig
 )
@@ -97,6 +98,10 @@ class ExperimentConfig(CommonExperimentConfig):
     inference: DepthNetInferenceExpConfig = DATACLASS_FIELD(
         DepthNetInferenceExpConfig(),
         description="Configurable parameters to construct the inferencer for a DepthNet experiment.",
+    )
+    export: ExportConfig = DATACLASS_FIELD(
+        ExportConfig(),
+        description="Configurable parameters to construct the exporter for a DepthNet experiment.",
     )
     evaluate: DepthNetEvalExpConfig = DATACLASS_FIELD(
         DepthNetEvalExpConfig(),
