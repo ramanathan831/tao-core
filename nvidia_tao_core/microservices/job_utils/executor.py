@@ -67,6 +67,8 @@ logger = logging.getLogger(__name__)
 
 def _get_name_space():
     """Returns the namespace of the environment"""
+    if os.getenv("BACKEND") == "local-docker":
+        return "default"
     if os.getenv("DEV_MODE", "False").lower() in ("true", "1"):
         name_space = os.getenv('NAMESPACE', default="default")
         config.load_kube_config()
@@ -187,6 +189,24 @@ def create(
     command = 'umask 0 && ' + command
     if num_gpu == -1:
         num_gpu = int(os.getenv('NUM_GPU_PER_NODE', default='1'))
+
+    if BACKEND == "local-docker":
+        docker_handler = DockerHandler(image)
+        docker_env_vars = {
+            "BACKEND": BACKEND,
+            "HOST_PLATFORM": "local-docker",
+            "MONGOSECRET": mongo_secret,
+            "DOCKER_HOST": os.getenv("DOCKER_HOST", default="unix:///var/run/docker.sock"),
+            "DOCKER_NETWORK": os.getenv("DOCKER_NETWORK", default="tao_default")
+        }
+        volumes = ['/var/run/docker.sock:/var/run/docker.sock'] if automl_brain else None
+        docker_handler.start_container(
+            job_name,
+            command=["/bin/bash", "-c", command],
+            num_gpus=num_gpu,
+            volumes=volumes,
+            docker_env_vars=docker_env_vars)
+        return
 
     node_selector = None
     if accelerator:

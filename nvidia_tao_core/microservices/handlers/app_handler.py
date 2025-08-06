@@ -1938,7 +1938,7 @@ class AppHandler:
             automl_response = AutoMLHandler.stop(user_id, org_name, handler_id, job_id)
             # Remove any pending jobs from Workflow queue
             try:
-                on_delete_automl_job(org_name, handler_id, job_id)
+                on_delete_automl_job(job_id)
             except Exception as e:
                 logger.error("Exception thrown in automl_job_cancel is %s", str(e))
                 return Code(200, {"message": f"job {job_id} cancelled, and no pending recommendations"})
@@ -2033,7 +2033,7 @@ class AppHandler:
             automl_response = AutoMLHandler.stop(user_id, org_name, handler_id, job_id)
             # Remove any pending jobs from Workflow queue
             try:
-                on_delete_automl_job(org_name, handler_id, job_id)
+                on_delete_automl_job(job_id)
             except Exception as e:
                 logger.error("Exception thrown in automl job_pause is %s", str(e))
                 return Code(200, {"message": f"job {job_id} cancelled, and no pending recommendations"})

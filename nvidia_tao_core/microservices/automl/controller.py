@@ -30,7 +30,8 @@ from nvidia_tao_core.microservices.constants import (
     NO_VAL_METRICS_DURING_TRAINING_NETWORKS,
     MISSING_EPOCH_FORMAT_NETWORKS
 )
-from nvidia_tao_core.microservices.dgx_controller import overwrite_job_logs_from_bcp
+if os.getenv("BACKEND") == "NVCF":
+    from nvidia_tao_core.microservices.dgx_controller import overwrite_job_logs_from_bcp
 from nvidia_tao_core.microservices.handlers.cloud_storage import create_cs_instance_with_decrypted_metadata
 from nvidia_tao_core.microservices.handlers.utilities import (
     StatusParser,
