@@ -22,6 +22,7 @@ from kubernetes import client, config
 import logging
 
 from nvidia_tao_core.microservices.handlers.stateless_handlers import BACKEND
+from nvidia_tao_core.microservices.handlers.docker_handler import DockerHandler
 
 # Configure logging
 logging.basicConfig(
@@ -99,6 +100,13 @@ def report_healthy(path, message, clear=False):
 
 def wait_for_job_completion(job_id):
     """Check if the provided job_id is actively running and wait until completion"""
+    if BACKEND == "local-docker":
+        while True:
+            handler = DockerHandler.get_handler_for_container(job_id)
+            if not handler:
+                return
+            time.sleep(5)
+
     config.load_incluster_config()
     while True:
         dgx_active_jobs = []
