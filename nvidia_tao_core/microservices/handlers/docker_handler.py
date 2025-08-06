@@ -234,7 +234,7 @@ class DockerHandler:
             device_requests = [docker.types.DeviceRequest(count=-1, capabilities=[["gpu"]])]
         return device_requests
 
-    def start_container(self, container_name="", docker_env_vars={}, command=[], num_gpus=-1):
+    def start_container(self, container_name="", docker_env_vars={}, command=[], num_gpus=-1, volumes=None):
         """Start a container."""
         # Check if the image exists locally. If not, pull it.
         if not self._check_image_exists():
@@ -255,6 +255,7 @@ class DockerHandler:
                 detach=True,
                 remove=True,
                 environment=docker_env_vars,
+                volumes=volumes,
             )
             logger.info(f"Container {container_name} started successfully")
         except Exception as e:
