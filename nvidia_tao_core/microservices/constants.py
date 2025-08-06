@@ -15,7 +15,6 @@
 """Constants values"""
 
 TAO_NETWORKS = set([
-    "classification_tf2", "efficientdet_tf2",
     "action_recognition", "bevfusion", "classification_pyt", "grounding_dino", "mal", "mask2former",
     "mask_grounding_dino", "ml_recog", "ocdnet", "ocrnet", "optical_inspection", "pointpillars",
     "pose_classification", "re_identification", "centerpose", "visual_changenet_classify",
@@ -26,14 +25,13 @@ TAO_NETWORKS = set([
 MAXINE_NETWORKS = set(["maxine_eye_contact"])  # Maxine networks
 VLM_NETWORKS = set(["vlm"])  # VLM networks
 
-_OD_NETWORKS = set(["detectnet_v2", "efficientdet_tf2", "deformable_detr", "dino", "grounding_dino", "rtdetr"])
+_OD_NETWORKS = set(["deformable_detr", "dino", "grounding_dino", "rtdetr"])
 _PURPOSE_BUILT_MODELS = set([
     "action_recognition", "bevfusion", "ml_recog", "ocdnet", "ocrnet", "optical_inspection",
     "pose_classification", "re_identification", "centerpose", "visual_changenet_classify",
     "visual_changenet_segment"
 ])
 
-_TF2_NETWORKS = set(["classification_tf2", "efficientdet_tf2"])
 _PYT_TAO_NETWORKS = set([
     "action_recognition", "bevfusion", "deformable_detr", "dino", "grounding_dino", "mask_grounding_dino",
     "mal", "mask2former", "ml_recog", "ocdnet", "ocrnet", "optical_inspection", "pointpillars",
@@ -72,12 +70,12 @@ TENSORBOARD_DISABLED_NETWORKS = [
 TENSORBOARD_EXPERIMENT_LIMIT = 10  # Maximum number of Tensorboard enabled experiments per user
 # These networks can't support writing validation metrics at regular intervals during training,
 # only at end of training they run evaluation
-NO_VAL_METRICS_DURING_TRAINING_NETWORKS = set(["unet"])
+NO_VAL_METRICS_DURING_TRAINING_NETWORKS = set([])
 MISSING_EPOCH_FORMAT_NETWORKS = set([
     "pointpillars", "bevfusion"
 ])  # These networks have the epoch/iter number not following a format; ex: 1.pth instead of 001.pth
 STATUS_CALLBACK_MISMATCH_WITH_CHECKPOINT_EPOCH = set([
-    "pointpillars", "detectnet_v2"
+    "pointpillars"
 ])  # status json epoch number is 1 less than epoch number generated in checkppoint file
 STATUS_CALLBACK_MISMATCH_WITH_CHECKPOINT_EPOCH_TMP = set(["ml_recog"])
 
@@ -109,11 +107,8 @@ NETWORK_CONTAINER_MAPPING = {"action_recognition": "TAO_PYTORCH",
                              "bevfusion": "TAO_PYTORCH",
                              "centerpose": "TAO_PYTORCH",
                              "classification_pyt": "TAO_PYTORCH",
-                             "classification_tf2": "TAO_TF2",
                              "deformable_detr": "TAO_PYTORCH",
-                             "detectnet_v2": "TAO_TF2",
                              "dino": "TAO_PYTORCH",
-                             "efficientdet_tf2": "TAO_TF2",
                              "grounding_dino": "TAO_PYTORCH",
                              "image": "TAO_DS",
                              "mal": "TAO_PYTORCH",
@@ -128,7 +123,6 @@ NETWORK_CONTAINER_MAPPING = {"action_recognition": "TAO_PYTORCH",
                              "re_identification": "TAO_PYTORCH",
                              "rtdetr": "TAO_PYTORCH",
                              "segformer": "TAO_PYTORCH",
-                             "unet": "TAO_TF2",
                              "visual_changenet_classify": "TAO_PYTORCH",
                              "visual_changenet_segment": "TAO_PYTORCH",
                              "maxine_eye_contact": "MAXINE_DLDK",

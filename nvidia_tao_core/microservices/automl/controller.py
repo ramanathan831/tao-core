@@ -26,7 +26,6 @@ from nvidia_tao_core.microservices.automl.utils import Recommendation, ResumeRec
 from nvidia_tao_core.microservices.utils import get_monitoring_metric
 from nvidia_tao_core.microservices.constants import (
     _ITER_MODELS,
-    _TF2_NETWORKS,
     NO_VAL_METRICS_DURING_TRAINING_NETWORKS,
     MISSING_EPOCH_FORMAT_NETWORKS
 )
@@ -752,7 +751,7 @@ class Controller:
         """Get checkpoints from cloud_path and filter based on epoch number"""
         checkpoint_files = get_file_list_from_cloud_storage(self.decrypted_workspace_metadata, path)
         format_epoch_number = format_epoch(self.network, self.best_epoch_number[rec_id])
-        if self.network in MISSING_EPOCH_FORMAT_NETWORKS | _TF2_NETWORKS:
+        if self.network in MISSING_EPOCH_FORMAT_NETWORKS:
             regex_pattern = fr".*{self.checkpoint_delimiter}{format_epoch_number}"
         else:
             regex_pattern = fr".*epoch_{format_epoch_number}(?:_step_\d+)?"

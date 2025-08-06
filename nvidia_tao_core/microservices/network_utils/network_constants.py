@@ -21,11 +21,8 @@ epochs_mapper = {
     "augmentation": "",
     "auto_label": "",
     "classification_pyt": "train.num_epochs",
-    "classification_tf2": "train.num_epochs",
     "deformable_detr": "train.num_epochs",
-    "detectnet_v2": "training_config.num_epochs",
     "dino": "train.num_epochs",
-    "efficientdet_tf2": "train.num_epochs",
     "mal": "train.num_epochs",
     "ml_recog": "train.num_epochs",
     "ocdnet": "train.num_epochs",
@@ -35,7 +32,6 @@ epochs_mapper = {
     "pose_classification": "train.num_epochs",
     "re_identification": "train.num_epochs",
     "segformer": "train.num_epochs",
-    "unet": "training_config.epochs",
 }
 
 backbone_mapper = {
@@ -45,11 +41,8 @@ backbone_mapper = {
     "augmentation": "",
     "auto_label": "",
     "classification_pyt": "model.backbone.type",
-    "classification_tf2": "model.backbone",
     "deformable_detr": "model.backbone",
-    "detectnet_v2": "model_config.arch",
     "dino": "model.backbone",
-    "efficientdet_tf2": "model.name",
     "mal": "model.arch",
     "ml_recog": "model.backbone",
     "ocdnet": "model.backbone",
@@ -59,7 +52,6 @@ backbone_mapper = {
     "pose_classification": "",
     "re_identification": "model.backbone",
     "segformer": "model.backbone.type",
-    "unet": "model_config.arch",
 }
 
 image_size_mapper = {
@@ -69,14 +61,8 @@ image_size_mapper = {
     "augmentation": "",
     "auto_label": "",
     "classification_pyt": "",
-    "classification_tf2": "model.input_height,model.input_width",
     "deformable_detr": "",
-    "detectnet_v2": (
-        "augmentation_config.preprocessing.output_image_height,"
-        "augmentation_config.preprocessing.output_image_width"
-    ),
     "dino": "",
-    "efficientdet_tf2": "model.input_height,model.input_width",
     "mal": "",
     "ml_recog": "model.input_height,model.input_width",
     "ocdnet": "",
@@ -86,7 +72,6 @@ image_size_mapper = {
     "pose_classification": "",
     "re_identification": "model.input_height,model.input_width",
     "segformer": "dataset.segment.img_size",
-    "unet": "model_config.model_input_height,model_config.model_input_width",
 }
 
 # Include your network if it has spec fields to load full network as PTM and loading backbone portion alone
