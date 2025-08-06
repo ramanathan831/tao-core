@@ -630,9 +630,6 @@ class ActionPipeline:
                 if file_type == "json":
                     kitti_out = self.spec
                     kitti_out = json.dumps(kitti_out)
-                elif self.job_context.action == "convert_efficientdet_tf2":
-                    file_type = "yaml"
-                    kitti_out = SPEC_BACKEND_TO_FUNCTIONS[file_type](self.spec)
                 else:
                     kitti_out = SPEC_BACKEND_TO_FUNCTIONS[file_type](self.spec)
                 # Save specs to DB
@@ -746,7 +743,7 @@ class CLIPipeline(ActionPipeline):
     def generate_run_command(self):
         """Generate run command"""
         if self.action == "dataset_convert":
-            if self.network not in ("efficientdet_tf2", "ocrnet", "pointpillars"):
+            if self.network not in ("ocrnet", "pointpillars"):
                 self.config["results_dir"] = CLI_CONFIG_TO_FUNCTIONS["output_dir"](
                     self.job_context,
                     self.handler_metadata
@@ -856,7 +853,7 @@ class TrainVal(CLIPipeline):
         """Carry's out functions after the job is executed"""
         # copy pruned model so that evaluate can access via parent relation
         action = self.job_context.action
-        if self.network in ("efficientdet_tf2", "classification_tf2", "ocdnet", "ocrnet") and action == "retrain":
+        if self.network in ("ocdnet", "ocrnet") and action == "retrain":
             inference_fn = "parent_model"
             pruned_model_path = CLI_CONFIG_TO_FUNCTIONS[inference_fn](self.job_context, self.handler_metadata)
             bucket_name = pruned_model_path.split("//")[1].split("/")[0]
@@ -1672,12 +1669,10 @@ class Auto3DSegInfer(BundleTrain):
 ACTIONS_TO_FUNCTIONS = {"train": TrainVal,
                         "evaluate": TrainVal,
                         "prune": CLIPipeline,
-                        "prune_tf2": TrainVal,
                         "prune_with_spec": TrainVal,
                         "retrain": TrainVal,
                         "export": CLIPipeline,
                         "export_with_spec": TrainVal,
-                        "export_tf2": TrainVal,
                         "inference": TrainVal,
                         "gen_trt_engine": TrainVal,
                         "trtexec": TrainVal,

@@ -315,9 +315,7 @@ def infer_automl_ptm_if_no_resume_model(job_context, handler_metadata, job_root,
 
 def infer_automl_assign_resume_epoch(job_context, handler_metadata, job_root, rec_number, exp_job_id):
     """Returns path automl spec file"""
-    additional_epoch = 0
-    if job_context.network != "efficientdet_tf2":
-        additional_epoch = 1  # epoch numbers indexed by 1
+    additional_epoch = 1  # epoch numbers indexed by 1
     resume_epoch_number = 0 + additional_epoch
     if infer_automl_resume_model(job_context, handler_metadata, job_root, rec_number, exp_job_id):
         brain_dict = get_automl_brain_info(job_context.id)

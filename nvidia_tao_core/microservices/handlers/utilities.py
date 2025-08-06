@@ -49,7 +49,6 @@ from nvidia_tao_core.microservices.constants import (
     CONTINUOUS_STATUS_KEYS,
     _PYT_TAO_NETWORKS,
     STATUS_CALLBACK_MISMATCH_WITH_CHECKPOINT_EPOCH,
-    _TF2_NETWORKS,
     MISSING_EPOCH_FORMAT_NETWORKS,
     MONAI_NETWORKS
 )
@@ -538,11 +537,7 @@ class StatusParser:
                             trimmed_list.append((epoch, value))
                     else:
                         trimmed_list.append((epoch, value))
-                elif (self.network in _TF2_NETWORKS or
-                      self.network in (
-                          "bevfusion",
-                          "ml_recog"
-                      ) and epoch <= brain_epoch_number):
+                elif (self.network in ("bevfusion", "ml_recog") and epoch <= brain_epoch_number):
                     trimmed_list.append((epoch, value))
                 elif epoch < brain_epoch_number:
                     trimmed_list.append((epoch, value))
