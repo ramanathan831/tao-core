@@ -47,7 +47,7 @@ def alert(title, text, duration=300, level=0, is_master=True):
 
 def is_wandb_initialized():
     """Check if wandb has been initialized."""
-    global _WANDB_INITIALIZED  # pylint: disable=W0602,W0603,F824 # noqa: F824
+    global _WANDB_INITIALIZED  # pylint: disable=W0602,W0603 # noqa: F824
     return _WANDB_INITIALIZED
 
 
@@ -115,7 +115,7 @@ def initialize_wandb(project: str = "TAO Toolkit",
             config=config,
             dir=wandb_dir
         )
-        global _WANDB_INITIALIZED  # pylint: disable=W0602,W0603
+        global _WANDB_INITIALIZED  # pylint: disable=W0602,W0603 # noqa: F824
         _WANDB_INITIALIZED = True
     except Exception as e:
         logger.warning("Wandb logging failed with error %s", e)

@@ -4,7 +4,7 @@ echo "Installing required packages"
 pip install --upgrade pip setuptools
 pip install pyarmor==8.5.8 pyinstaller pybind11
 echo "Registering pyarmor"
-pyarmor reg release/python/pyarmor-regfile-1219.zip || exit $?
+pyarmor -d reg release/python/pyarmor-regfile-1219.zip || exit $?
 
 echo "Clearing build and dists"
 python setup.py clean --all
@@ -13,7 +13,7 @@ find . | grep -E "(__pycache__|\.pyc|\.pyo$)" | xargs rm -rf
 
 echo "Obfuscating metrics.py using pyarmor"
 cp -r nvidia_tao_core obf_src
-pyarmor gen --output obf_src/telemetry nvidia_tao_core/telemetry/metrics.py || exit $?
+pyarmor -d gen --output obf_src/telemetry nvidia_tao_core/telemetry/metrics.py || exit $?
 
 echo "Migrating codebase"
 # Move sources to orig_src
