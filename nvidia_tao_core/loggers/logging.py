@@ -251,7 +251,7 @@ def set_status_logger(status_logger):
     Args:
         status_logger: An instance of the logger class.
     """
-    global _STATUS_LOGGER  # pylint: disable=W0603
+    global _STATUS_LOGGER  # pylint: disable=W0603 # noqa: F824
     _STATUS_LOGGER = status_logger
 
 
