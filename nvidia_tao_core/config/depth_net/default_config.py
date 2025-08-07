@@ -57,12 +57,19 @@ class WandBConfig:
 class DepthNetInferenceExpConfig(InferenceConfig):
     """Inference experiment config."""
 
-    conf_threshold: float = FLOAT_FIELD(
-        value=0.5,
-        default_value=0.5,
-        description="""The value of the confidence threshold to be used when
-                    filtering out the final list of boxes.""",
-        display_name="confidence threshold"
+    input_width: Optional[int] = INT_FIELD(
+        value=None,
+        default_value=960,
+        description="Width of the input image tensor.",
+        display_name="input width",
+        valid_min=32,
+    )
+    input_height: Optional[int] = INT_FIELD(
+        value=None,
+        default_value=544,
+        description="Height of the input image tensor.",
+        display_name="input height",
+        valid_min=32,
     )
 
 
