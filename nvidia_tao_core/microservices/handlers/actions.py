@@ -183,8 +183,10 @@ class ActionPipeline:
         if self.network in DOCKER_IMAGE_VERSION.keys():
             self.tao_framework_version, self.tao_model_override_version = DOCKER_IMAGE_VERSION[self.network]
             if self.tao_model_override_version not in self.image:
-                self.image = self.image.replace(self.tao_framework_version, self.tao_model_override_version)
-                using_previous_version = True
+                image = self.image.replace(self.tao_framework_version, self.tao_model_override_version)
+                if image != self.image:
+                    self.image = image
+                    using_previous_version = True
         if self.action in self.network_config.get("api_params", {}).get("image_override_per_action", {}):
             image_override_per_action = self.api_params.get("image_override_per_action", {})
             override_key = image_override_per_action.get(self.action)
@@ -828,7 +830,11 @@ class TrainVal(CLIPipeline):
         # Take .json file, read in spec params, infer spec params
         if action in network_config["spec_params"].keys():
             for field_name, inference_fn in network_config["spec_params"][action].items():
-                field_value = CLI_CONFIG_TO_FUNCTIONS[inference_fn](self.job_context, self.handler_metadata)
+                field_value = (
+                    CLI_CONFIG_TO_FUNCTIONS[inference_fn](self.job_context, self.handler_metadata)
+                    if inference_fn in CLI_CONFIG_TO_FUNCTIONS
+                    else inference_fn
+                )
                 if field_value:
                     write_nested_dict(spec, field_name, field_value)
 
@@ -906,6 +912,7 @@ class AutoMLPipeline(ActionPipeline):
     def __init__(self, job_context):
         """Initialize the AutoMLPipeline class"""
         super().__init__(job_context)
+        self.network, self.action = get_microservices_network_and_action(self.network, self.action)
         self.automl_brain_job_id = self.job_context.id
         self.job_root = os.path.join(
             get_jobs_root(self.job_context.user_id, self.job_context.org_name),
@@ -975,7 +982,11 @@ class AutoMLPipeline(ActionPipeline):
                             field_value = int(read_nested_dict(spec, dependent_parameter_names[2]))
 
             else:
-                field_value = CLI_CONFIG_TO_FUNCTIONS[inference_fn](self.job_context, self.handler_metadata)
+                field_value = (
+                    CLI_CONFIG_TO_FUNCTIONS[inference_fn](self.job_context, self.handler_metadata)
+                    if inference_fn in CLI_CONFIG_TO_FUNCTIONS
+                    else inference_fn
+                )
             if field_value:
                 write_nested_dict(spec, field_name, field_value)
 

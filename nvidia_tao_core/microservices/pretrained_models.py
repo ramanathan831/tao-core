@@ -651,8 +651,6 @@ class BaseExperimentMetadata:
 
         # Common network architecture processing
         accepted_ds_intents = api_params.get("accepted_ds_intents", ["training", "evaluation"])
-        if "visual_changenet" in experiment_info["ngc_path"] and "segment" in experiment_info["ngc_path"]:
-            accepted_ds_intents = ["training"]
 
         base_experiment_pull_complete = "starting"
         if network_arch in TAO_NETWORKS:

@@ -16,7 +16,6 @@
 
 from typing import Optional, List, Dict
 from dataclasses import dataclass
-from omegaconf import MISSING
 
 from nvidia_tao_core.config.utils.types import (
     STR_FIELD,
@@ -385,8 +384,8 @@ class CNAugmentationClassifyConfig:
 class DataPathFormat:
     """Dataset Path experiment config."""
 
-    csv_path: str = STR_FIELD(value=MISSING, default_value="", description="Path to csv file for dataset")
-    images_dir: str = STR_FIELD(value=MISSING, default_value="", description="Path to images directory for dataset")
+    csv_path: str = STR_FIELD(value="", default_value="", description="Path to csv file for dataset")
+    images_dir: str = STR_FIELD(value="", default_value="", description="Path to images directory for dataset")
 
 
 @dataclass
@@ -483,7 +482,7 @@ class CNDatasetClassifyConfig:
 class CNDatasetSegmentConfig:
     """Segmentation Dataset Config."""
 
-    root_dir: str = STR_FIELD(value=MISSING, default_value="", description="Path to root directory for dataset")
+    root_dir: str = STR_FIELD(value="", default_value="", description="Path to root directory for dataset")
     label_transform: str = STR_FIELD(
         value="norm",
         default_value="norm",

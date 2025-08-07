@@ -50,8 +50,4 @@ def filter_schema(schema, valid_actions, current_action):
     # Filter top-level properties and default
     schema['properties'] = {k: v for k, v in schema['properties'].items() if k in allowed_keys}
     schema['default'] = {k: v for k, v in schema['default'].items() if k in allowed_keys}
-    # Optionally filter automl/popular/required lists if present
-    for key in ['automl_default_parameters', 'automl_disabled_parameters', 'popular', 'required']:
-        if key in schema:
-            schema[key] = [k for k in schema[key] if k in allowed_keys]
     return schema

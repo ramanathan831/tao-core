@@ -17,7 +17,8 @@
 TAO_NETWORKS = set([
     "action_recognition", "bevfusion", "classification_pyt", "grounding_dino", "mal", "mask2former",
     "mask_grounding_dino", "ml_recog", "ocdnet", "ocrnet", "optical_inspection", "pointpillars",
-    "pose_classification", "re_identification", "centerpose", "visual_changenet", "deformable_detr",
+    "pose_classification", "re_identification", "centerpose", "visual_changenet_classify",
+    "visual_changenet_segment", "deformable_detr",
     "dino", "rtdetr", "segformer",  # PYT CV MODELS
     "annotations", "analytics", "augmentation", "auto_label", "image"  # Data_Service tasks.
 ])
@@ -27,13 +28,15 @@ VLM_NETWORKS = set(["vlm"])  # VLM networks
 _OD_NETWORKS = set(["deformable_detr", "dino", "grounding_dino", "rtdetr"])
 _PURPOSE_BUILT_MODELS = set([
     "action_recognition", "bevfusion", "ml_recog", "ocdnet", "ocrnet", "optical_inspection",
-    "pose_classification", "re_identification", "centerpose", "visual_changenet"
+    "pose_classification", "re_identification", "centerpose", "visual_changenet_classify",
+    "visual_changenet_segment"
 ])
 
 _PYT_TAO_NETWORKS = set([
     "action_recognition", "bevfusion", "deformable_detr", "dino", "grounding_dino", "mask_grounding_dino",
     "mal", "mask2former", "ml_recog", "ocdnet", "ocrnet", "optical_inspection", "pointpillars",
-    "pose_classification", "re_identification", "rtdetr", "centerpose", "segformer", "visual_changenet"
+    "pose_classification", "re_identification", "rtdetr", "centerpose", "segformer",
+    "visual_changenet_classify", "visual_changenet_segment"
 ])
 _DATA_SERVICES_ACTIONS = set([
     "annotation_format_convert", "auto_label", "augment", "analyze",
@@ -78,7 +81,7 @@ STATUS_CALLBACK_MISMATCH_WITH_CHECKPOINT_EPOCH_TMP = set(["ml_recog"])
 
 COPY_MODEL_PARAMS_FROM_TRAIN_NETWORKS = [
     "centerpose", "deformable_detr", "dino", "grounding_dino",
-    "mask_grounding_dino", "mask2former", "visual_changenet"
+    "mask_grounding_dino", "mask2former", "visual_changenet_classify", "visual_changenet_segment"
 ]
 
 MONAI_DATASET_DEFAULT_SPECS = {
@@ -120,7 +123,8 @@ NETWORK_CONTAINER_MAPPING = {"action_recognition": "TAO_PYTORCH",
                              "re_identification": "TAO_PYTORCH",
                              "rtdetr": "TAO_PYTORCH",
                              "segformer": "TAO_PYTORCH",
-                             "visual_changenet": "TAO_PYTORCH",
+                             "visual_changenet_classify": "TAO_PYTORCH",
+                             "visual_changenet_segment": "TAO_PYTORCH",
                              "maxine_eye_contact": "MAXINE_DLDK",
                              "mae": "TAO_PYTORCH",
                              "vila": "VILA"}

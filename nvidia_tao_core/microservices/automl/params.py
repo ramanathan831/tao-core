@@ -19,6 +19,7 @@ from nvidia_tao_core.microservices.constants import AUTOML_DISABLED_NETWORKS
 from nvidia_tao_core.microservices.handlers.utilities import get_flatten_specs
 from nvidia_tao_core.microservices.handlers.stateless_handlers import get_job_specs
 from nvidia_tao_core.scripts.generate_schema import generate_schema
+from nvidia_tao_core.microservices.utils import get_microservices_network_and_action
 
 _VALID_TYPES = ["int", "integer",
                 "float",
@@ -70,7 +71,7 @@ def generate_hyperparams_to_search(
 
     Returns: a list of dict for AutoML supported networks
     """
-    network_arch = job_context.network
+    network_arch, _ = get_microservices_network_and_action(job_context.network, job_context.action)
     if network_arch not in AUTOML_DISABLED_NETWORKS:
         try:
             json_schema = generate_schema(network_arch)

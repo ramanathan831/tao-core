@@ -588,7 +588,7 @@ class CloudStorage:
             models.extend(self.glob_files(search_path + "**/*.pt"))
 
             # Special cases for specific networks (mimic utils.py)
-            if network in ("classification_pyt", "visual_changenet", "nvdinov2"):
+            if network in ("classification_pyt", "visual_changenet_classify", "visual_changenet_segment", "nvdinov2"):
                 models.extend(self.glob_files(search_path + "**/*.ckpt"))
 
             if network == "stylegan_xl":
