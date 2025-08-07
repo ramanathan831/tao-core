@@ -30,8 +30,8 @@ class DepthNetModelConfig:
     """DepthNet model config."""
 
     model_type: str = STR_FIELD(
-        value="MetricDepthAnythingV2",
-        default_value="MetricDepthAnythingV2",
+        value="MetricDepthAnything",
+        default_value="MetricDepthAnything",
         description="Network name",
         valid_options=",".join([
             "FoundationStereo", "MetricDepthAnything", "RelativeDepthAnything"
