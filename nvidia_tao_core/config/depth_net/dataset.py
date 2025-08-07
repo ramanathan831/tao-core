@@ -268,6 +268,12 @@ class BaseDepthNetDatasetConfig:
                     * data_file : The path of the data file""",
         display_name="train data sources",
     )
+    data_dir: Optional[str] = STR_FIELD(
+        value=None,
+        default_value="",
+        description="The directory path for inference",
+        display_name="inference data directory",
+    )
     batch_size: int = INT_FIELD(
         value=1,
         default_value=1,
