@@ -86,7 +86,7 @@ class BaseExperimentMetadata:
             model_names (str, optional): Comma-separated list of model names/entrypoints to download. Defaults to None.
         """
         self.shared_folder_path = shared_folder_path
-        self.ngc_key = os.getenv("PTM_API_KEY") or ngc_key or get_admin_key()
+        self.ngc_key = os.getenv("NGC_API_KEY") or ngc_key or get_admin_key()
         self.airgapped = os.getenv("AIRGAPPED_MODE", "False") == "True"
         self.use_csv = use_csv
         self.use_both = use_both
@@ -96,6 +96,7 @@ class BaseExperimentMetadata:
         self.metadata: dict = {}
         self.dry_run = dry_run
         self._cached_tao_version: str | None = None
+        self._ngc_clients_cache: dict = {}  # Cache for NGC clients per org/team
 
         if self.override and self.dry_run:
             raise ValueError("Cannot use both `--override` and `--dry-run` flags together!")
@@ -158,6 +159,38 @@ class BaseExperimentMetadata:
             self._cached_tao_version = "6.0.0"
 
         return self._cached_tao_version
+
+    def get_ngc_client(self, org: str, team: str, ngc_token: str):
+        """Get or create a cached NGC client for the given org/team
+
+        Returns:
+            Client: Configured NGC client, unconfigured client, or None for failed auth
+            None: If authentication failed (also cached to prevent retry)
+        """
+        client_key = (org, team, ngc_token)
+
+        if client_key not in self._ngc_clients_cache:
+            from ngcsdk import Client  # pylint: disable=C0415
+            client = Client()
+            try:
+                client.configure(api_key=ngc_token, org_name=org, team_name=team)
+                self._ngc_clients_cache[client_key] = client
+                logger.info(f"Created and cached NGC client for org: {org}, team: {team}")
+            except Exception as e:
+                if not ("Invalid org" in str(e) or "Invalid team" in str(e)):
+                    logger.error(f"Can't configure the passed NGC KEY for Org {org}, team {team}")
+                    # Cache the failed authentication to avoid repeated attempts
+                    self._ngc_clients_cache[client_key] = None
+                    logger.info(f"Cached failed authentication for org: {org}, team: {team}")
+                    return None
+                logger.warning(
+                    f"Can't validate the passed NGC KEY for Org {org}, team {team}, "
+                    "going to try download without configuring credentials"
+                )
+                # Store unconfigured client for this case
+                self._ngc_clients_cache[client_key] = client
+
+        return self._ngc_clients_cache[client_key]
 
     def check_version_compatibility(self, version_list: list):
         """Check if the current TAO version is compatible with the provided version list"""
@@ -530,21 +563,11 @@ class BaseExperimentMetadata:
     def get_base_spec(self, ngc_path, exp_id, ngc_token):
         """Retrieves base experiment specs if present"""
         org, team, model, version = self.split_ngc_path(ngc_path)
-        from ngcsdk import Client  # pylint: disable=C0415
-        clt = Client()
-        try:
-            clt.configure(api_key=self.ngc_key, org_name=org, team_name=team)
-        except Exception as e:
-            if not ("Invalid org" in str(e) or "Invalid team" in str(e)):
-                logger.error(
-                    "Can't configure the passed NGC KEY "  # noqa pylint: disable=C0209
-                    "for Org {}, team {}".format(org, team)
-                )
-                return False
-            logger.warning(
-                "Can't validate the passed NGC KEY for Org {}, team {}, "
-                "going to try download without configuring credentials".format(org, team)
-            )  # noqa pylint: disable=C0209
+
+        # Get cached NGC client
+        clt = self.get_ngc_client(org, team, ngc_token)
+        if clt is None:
+            return {}
         # Check and download experiment.yaml file
         try:
             model_files = list(clt.registry.model.list_files(ngc_path))
@@ -570,21 +593,11 @@ class BaseExperimentMetadata:
         print(f"Downloading complete model: {ngc_path}")
 
         org, team, model, version = self.split_ngc_path(ngc_path)
-        from ngcsdk import Client  # pylint: disable=C0415
-        clt = Client()
-        try:
-            clt.configure(api_key=self.ngc_key, org_name=org, team_name=team)
-        except Exception as e:
-            if not ("Invalid org" in str(e) or "Invalid team" in str(e)):
-                logger.error(
-                    "Can't configure the passed NGC KEY "  # noqa pylint: disable=C0209
-                    "for Org {}, team {}".format(org, team)
-                )
-                return False
-            logger.warning(
-                "Can't validate the passed NGC KEY for Org {}, team {}, "
-                "going to try download without configuring credentials".format(org, team)
-            )  # noqa pylint: disable=C0209
+
+        # Get cached NGC client
+        clt = self.get_ngc_client(org, team, ngc_token)
+        if clt is None:
+            return False
 
         # Download complete model
         try:
