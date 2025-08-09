@@ -278,7 +278,13 @@ class BaseDepthNetDatasetConfig:
         value=None,
         default_value="",
         description="The directory path for right image",
-        display_name="inference right image directory or image file path",
+        display_name="inference right image directory or right image file path",
+    )
+    depth_image_path: Optional[str] = STR_FIELD(
+        value=None,
+        default_value="",
+        description="The directory path for depth image",
+        display_name="inference depth directory or depth file path",
     )
     batch_size: int = INT_FIELD(
         value=1,
