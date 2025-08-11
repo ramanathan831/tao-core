@@ -438,7 +438,7 @@ class AppHandler:
                 "format": dataset_format,
                 "use_for": dataset_intention
             }
-            is_cloud_dataset_present = validate_dataset(
+            is_cloud_dataset_present, _ = validate_dataset(
                 org_name,
                 dataset_handler_metadata,
                 temp_dir=f"/{cloud_folder}",
@@ -1004,6 +1004,11 @@ class AppHandler:
 
         return_metadata = sanitize_handler_metadata(handler_metadata)
         if return_metadata.get("status") == "invalid_pull":
+            # Include detailed validation error information if available
+            validation_details = return_metadata.get("validation_details", {})
+            if validation_details:
+                error_msg = validation_details.get("error_details", "Dataset validation failed")
+                return Code(404, return_metadata, error_msg, use_data_as_response=True)
             return Code(404, return_metadata, "Dataset pulled from cloud doesn't match folder structure required")
         return Code(200, return_metadata, "Dataset retrieved")
 
@@ -1103,21 +1108,50 @@ class AppHandler:
 
             def validate_dataset_thread():
                 try:
-                    valid_datset_structure = validate_dataset(
+                    valid_dataset_structure, validation_result = validate_dataset(
                         org_name,
                         metadata,
                         temp_dir=temp_dir
                     )
                     shutil.rmtree(temp_dir)
-                    metadata["status"] = "pull_complete"
-                    if not valid_datset_structure:
-                        logger.error("Dataset structure validation failed: %s", metadata)
+
+                    if valid_dataset_structure:
+                        metadata["status"] = "pull_complete"
+                    else:
                         metadata["status"] = "invalid_pull"
+                        # Store detailed validation information in metadata for user feedback
+                        metadata["validation_details"] = {
+                            "error_details": validation_result.get("error_details", "Unknown validation error"),
+                            "expected_structure": validation_result.get("expected_structure", {}),
+                            "actual_structure": validation_result.get("actual_structure", []),
+                            "missing_files": validation_result.get("missing_files", []),
+                            "network_type": validation_result.get("network_type", ""),
+                            "dataset_format": validation_result.get("dataset_format", ""),
+                            "dataset_intent": validation_result.get("dataset_intent", [])
+                        }
+                        logger.error(
+                            "Dataset structure validation failed for dataset %s. "
+                            "Expected structure: %s. Actual files: %s. Missing files: %s. Error: %s",
+                            dataset_id,
+                            validation_result.get("expected_structure", {}),
+                            validation_result.get("actual_structure", []),
+                            validation_result.get("missing_files", []),
+                            validation_result.get("error_details", ""))
+
                     write_handler_metadata(dataset_id, metadata, "dataset")
                 except Exception as e:
                     logger.error("Exception thrown in validate_dataset_thread is %s", str(e))
                     logger.error(traceback.format_exc())
                     metadata["status"] = "invalid_pull"
+                    metadata["validation_details"] = {
+                        "error_details": f"Validation process failed: {str(e)}",
+                        "expected_structure": {},
+                        "actual_structure": [],
+                        "missing_files": [],
+                        "network_type": metadata.get("type", ""),
+                        "dataset_format": metadata.get("format", ""),
+                        "dataset_intent": metadata.get("use_for", [])
+                    }
                     write_handler_metadata(dataset_id, metadata, "dataset")
 
             thread = threading.Thread(target=validate_dataset_thread)
