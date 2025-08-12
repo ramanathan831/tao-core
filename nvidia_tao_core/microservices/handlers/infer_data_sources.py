@@ -139,11 +139,25 @@ def get_job_id_of_action(dataset_id, kind, action):
     """Gets job ID for a specific action on a dataset."""
     # Implementation of getting job ID from dataset and action
     dataset_metadata = get_handler_metadata(dataset_id, kind)
+    job_id = None
     for job in dataset_metadata.get("jobs", []):
         job_metadata = get_handler_job_metadata(job)
         if job_metadata.get("action") == action and job_metadata.get("status") == "Done":
-            return job_metadata.get("id")
-    return None
+            job_id = job_metadata.get("id")
+    return job_id
+
+
+def get_dataset_convert_downloaded_locally(network_config):
+    """Get if dataset convert is downloaded locally"""
+    dataset_convert_downloaded_locally = False
+    if network_config and "upload_strategy" in network_config:
+        upload_strategy = network_config["upload_strategy"]
+        dataset_convert_strategy = upload_strategy.get("dataset_convert")
+        # If dataset_convert has tarball strategy, it will be downloaded locally
+        if (dataset_convert_strategy == "tarball_after_completion" or
+                (isinstance(dataset_convert_strategy, dict) and "selective_tarball" in dataset_convert_strategy)):
+            dataset_convert_downloaded_locally = True
+    return dataset_convert_downloaded_locally
 
 
 def apply_transforms(
@@ -152,7 +166,8 @@ def apply_transforms(
     source_root=None,
     source_ds=None,
     dataset_convert_action=None,
-    workspace_identifier=None
+    workspace_identifier=None,
+    dataset_convert_downloaded_locally=None
 ):
     """Apply a list of transforms to a value.
 
@@ -185,6 +200,9 @@ def apply_transforms(
 
             # Check if the value already has the results path format
             value = value.replace("{dataset_convert_job_id}", dataset_convert_job_id)
+            if dataset_convert_downloaded_locally:
+                return value
+
             if value.startswith("/results/"):
                 # It's already in the correct format, just prepend workspace identifier
                 value = f"{workspace_identifier}{value}"
@@ -212,7 +230,8 @@ def get_dataset_metadata_and_paths(source_ds, workspace_cache, kind="datasets"):
     return source_ds_metadata, workspace_identifier, source_root
 
 
-def process_mapping_entry(mapping, source_root, source_ds, dataset_convert_action, workspace_identifier):
+def process_mapping_entry(mapping, source_root, source_ds, dataset_convert_action,
+                          workspace_identifier, network_config=None):
     """Process a single mapping entry.
 
     Handles two types of mappings:
@@ -237,7 +256,7 @@ def process_mapping_entry(mapping, source_root, source_ds, dataset_convert_actio
                     value = apply_transforms(
                         value, sub_mapping["transform"],
                         source_root, source_ds, dataset_convert_action,
-                        workspace_identifier)
+                        workspace_identifier, network_config)
                 result[key] = value
         return result if result else None
 
@@ -255,7 +274,7 @@ def process_mapping_entry(mapping, source_root, source_ds, dataset_convert_actio
             value = apply_transforms(
                 value, mapping["transform"],
                 source_root, source_ds, dataset_convert_action,
-                workspace_identifier)
+                workspace_identifier, network_config)
         return value
 
     return None
@@ -274,10 +293,48 @@ def get_metadata_value(metadata, path_type):
 
 
 def process_additional_downloads(
-    network_config, job_context, handler_metadata, workspace_cache, dataset_convert_action
+    network_config, job_context, handler_metadata, workspace_cache, dataset_convert_action, endpoint_action
 ):
     """Process additional downloads configuration from network config"""
     additional_downloads = []
+
+    # Auto-generate additional downloads based on upload strategy for dataset_convert
+    if job_context.action in ["train", "evaluate", "inference", "retrain", "prune", "export"]:
+        upload_strategy = network_config.get("upload_strategy", {})
+        dataset_convert_strategy = upload_strategy.get("dataset_convert")
+
+        if dataset_convert_strategy:
+            # Get datasets that might have dataset_convert results
+            train_datasets = get_datasets_from_metadata(handler_metadata, "train_datasets")
+            eval_datasets = get_datasets_from_metadata(handler_metadata, "eval_dataset")
+            inference_datasets = get_datasets_from_metadata(handler_metadata, "inference_dataset")
+
+            # Use the first available dataset to get dataset_convert_job_id
+            source_datasets = train_datasets or eval_datasets or inference_datasets
+            if source_datasets:
+                dataset_convert_job_id = get_job_id_of_action(
+                    source_datasets[0], kind="datasets", action=dataset_convert_action
+                )
+
+                if dataset_convert_job_id:
+                    # Get workspace identifier
+                    source_ds_metadata = get_handler_metadata(source_datasets[0], kind="datasets")
+                    workspace_identifier = get_workspace_string_identifier(
+                        source_ds_metadata.get('workspace'),
+                        workspace_cache
+                    )
+
+                    # Generate download path based on strategy
+                    if dataset_convert_strategy == "tarball_after_completion":
+                        # For simple tarball strategy (like pointpillars)
+                        download_path = (f"{workspace_identifier}/results/{dataset_convert_job_id}/"
+                                         f"{endpoint_action}_results.tar.gz")
+                        additional_downloads.append(download_path)
+                    elif isinstance(dataset_convert_strategy, dict) and "selective_tarball" in dataset_convert_strategy:
+                        # For selective tarball strategy (like sparse4d)
+                        download_path = (f"{workspace_identifier}/results/{dataset_convert_job_id}/"
+                                         f"{endpoint_action}_selective.tar.gz")
+                        additional_downloads.append(download_path)
 
     # Get additional downloads for the current action
     downloads_config = network_config.get("additional_download", {}).get(job_context.action, [])
@@ -600,7 +657,7 @@ def apply_data_source_config(config, job_context, handler_metadata):
                         value = apply_transforms(
                             value, source_config.get("transform", []),
                             source_root, source_datasets[0], dataset_convert_action,
-                            workspace_identifier)
+                            workspace_identifier, network_config)
                         set_nested_config_value(config, config_path, value)
                         already_configured_paths.add(config_path)  # Mark as configured
                         continue
@@ -632,7 +689,7 @@ def apply_data_source_config(config, job_context, handler_metadata):
                     value = apply_transforms(
                         value, source_config.get("transform", []),
                         source_root, source_datasets[0], dataset_convert_action,
-                        workspace_identifier)
+                        workspace_identifier, network_config)
                 set_nested_config_value(config, config_path, value)
                 already_configured_paths.add(config_path)  # Mark as configured
                 continue
@@ -663,7 +720,7 @@ def apply_data_source_config(config, job_context, handler_metadata):
                     for key, mapping in source_config["mapping"].items():
                         value = process_mapping_entry(
                             mapping, source_root, source_ds,
-                            dataset_convert_action, workspace_identifier)
+                            dataset_convert_action, workspace_identifier, network_config)
                         if value is not None:
                             entry[key] = value
                     if entry:
@@ -696,24 +753,33 @@ def apply_data_source_config(config, job_context, handler_metadata):
                 for key, mapping in source_config["mapping"].items():
                     value = process_mapping_entry(
                         mapping, source_root, source_ds,
-                        dataset_convert_action, workspace_identifier)
+                        dataset_convert_action, workspace_identifier, network_config)
                     if value is not None:
                         result[key] = value
 
                 if result:
                     set_nested_config_value(config, config_path, result)
             else:
+                dataset_convert_downloaded_locally = get_dataset_convert_downloaded_locally(network_config)
                 path = source_config.get("path", "")
-                value = source_root if path == "" else os.path.join(source_root, path)
+                value = path
+                if path == "":
+                    value = source_root
+                elif dataset_convert_downloaded_locally:
+                    value = path
+                else:
+                    value = os.path.join(source_root, path)
+
                 value = apply_transforms(
                     value, source_config.get("transform", []),
                     source_root, source_ds, dataset_convert_action,
-                    workspace_identifier)
+                    workspace_identifier, dataset_convert_downloaded_locally)
                 set_nested_config_value(config, config_path, value)
 
     # Process additional downloads
+    endpoint_action = network_config.get("actions_mapping", {}).get(dataset_convert_action, {}).get("action", dataset_convert_action)
     additional_downloads = process_additional_downloads(
-        network_config, job_context, handler_metadata, workspace_cache, dataset_convert_action
+        network_config, job_context, handler_metadata, workspace_cache, dataset_convert_action, endpoint_action
     )
     if additional_downloads:
         config["additional_downloads"] = additional_downloads
