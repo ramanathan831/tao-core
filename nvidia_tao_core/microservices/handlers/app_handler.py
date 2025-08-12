@@ -1108,12 +1108,20 @@ class AppHandler:
 
             def validate_dataset_thread():
                 try:
+                    # For cloud-based validation, resolve workspace metadata
+                    workspace_metadata = None
+                    if metadata.get("workspace"):
+                        workspace_metadata = resolve_metadata("workspace", metadata.get("workspace"))
+
                     valid_dataset_structure, validation_result = validate_dataset(
                         org_name,
                         metadata,
-                        temp_dir=temp_dir
+                        temp_dir=temp_dir,
+                        workspace_metadata=workspace_metadata
                     )
-                    shutil.rmtree(temp_dir)
+                    # Only remove temp_dir if it was actually created (not empty for cloud validation)
+                    if temp_dir and os.path.exists(temp_dir):
+                        shutil.rmtree(temp_dir)
 
                     if valid_dataset_structure:
                         metadata["status"] = "pull_complete"
@@ -1166,7 +1174,7 @@ class AppHandler:
 
     @staticmethod
     def pull_dataset(user_id, org_name, dataset_id):
-        """Initiates the process of downloading and validating a dataset.
+        """Initiates the process of validating a dataset, optimizing for cloud-based datasets.
 
         Args:
             user_id (str): UUID of the user requesting the dataset pull.
@@ -1174,12 +1182,35 @@ class AppHandler:
             dataset_id (str): UUID of the dataset to be pulled.
 
         Notes:
-            - Downloads the dataset and triggers validation.
+            - For cloud-based datasets: validates structure directly without downloading.
+            - For public URLs/HuggingFace: downloads first then validates.
             - Updates dataset status upon failure.
         """
         try:
-            temp_dir, file_path = download_dataset(dataset_id)
-            AppHandler.validate_dataset(user_id, org_name, dataset_id, temp_dir=temp_dir, file_path=file_path)
+            metadata = resolve_metadata("dataset", dataset_id)
+            if not metadata:
+                logger.error("Dataset metadata not found for %s", dataset_id)
+                return
+
+            # Check if this is a cloud-based dataset that can use cloud peek validation
+            cloud_file_path = metadata.get("cloud_file_path")
+            workspace_id = metadata.get("workspace")
+            dataset_url = metadata.get("url")
+
+            # Determine if we can use cloud peek validation (avoid download)
+            can_use_cloud_peek = (
+                cloud_file_path and
+                workspace_id and
+                not dataset_url  # No external URL means it's cloud storage based
+            )
+
+            if can_use_cloud_peek:
+                # Validate directly from cloud without downloading
+                AppHandler.validate_dataset(user_id, org_name, dataset_id, temp_dir="", file_path="")
+            else:
+                logger.info("Using download validation for dataset %s (url: %s)", dataset_id, dataset_url)
+                temp_dir, file_path = download_dataset(dataset_id)
+                AppHandler.validate_dataset(user_id, org_name, dataset_id, temp_dir=temp_dir, file_path=file_path)
         except Exception as e:
             logger.error("Exception thrown in pull_dataset is %s", str(e))
             logger.error(traceback.format_exc())

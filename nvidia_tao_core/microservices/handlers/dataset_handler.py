@@ -19,6 +19,7 @@ import glob
 import logging
 
 from nvidia_tao_core.microservices.handlers.cloud_storage import create_cs_instance
+from nvidia_tao_core.microservices.handlers.stateless_handlers import get_handler_metadata
 from nvidia_tao_core.microservices.utils import read_network_config
 
 # Configure logging
@@ -154,6 +155,12 @@ def write_dir_contents(directory, file):
 def validate_dataset(org_name, handler_metadata, temp_dir="", workspace_metadata=None):
     """Generic dataset validator using config
 
+    Args:
+        org_name (str): Organization name
+        handler_metadata (dict): Dataset metadata containing type, format, cloud_file_path, etc.
+        temp_dir (str): Local temp directory path (empty for cloud-only validation)
+        workspace_metadata (dict): Workspace metadata for cloud storage access
+
     Returns:
         tuple: (is_valid, validation_result)
             - is_valid (bool): True if validation passes, False otherwise
@@ -164,6 +171,10 @@ def validate_dataset(org_name, handler_metadata, temp_dir="", workspace_metadata
                 - missing_files (list): Files that are required but missing
                 - error_details (str): Human-readable error description
     """
+    # For cloud-based datasets, workspace_metadata may need to be resolved from handler_metadata
+    if not workspace_metadata and handler_metadata.get("workspace"):
+        workspace_metadata = get_handler_metadata(handler_metadata.get("workspace"), kind="workspace")
+
     handler = SimpleHandler(org_name, handler_metadata, temp_dir=temp_dir, workspace_metadata=workspace_metadata)
 
     # Initialize detailed validation result
@@ -207,7 +218,11 @@ def validate_dataset(org_name, handler_metadata, temp_dir="", workspace_metadata
 
         for req in format_reqs:
             if "path" in req:
-                path = os.path.join(handler.root, req["path"])
+                # For cloud validation, use the relative path directly instead of joining with temp_dir
+                if handler.cloud_instance:
+                    path = req["path"]
+                else:
+                    path = os.path.join(handler.root, req["path"])
                 file_type = req.get("type", "file")
                 file_extension = req.get("regex", "") if file_type == "regex" else ""
 
@@ -224,7 +239,11 @@ def validate_dataset(org_name, handler_metadata, temp_dir="", workspace_metadata
                 # Check if all requirements are met
                 all_of_missing = []
                 for subreq in req["all_of"]:
-                    path = os.path.join(handler.root, subreq["path"])
+                    # For cloud validation, use the relative path directly instead of joining with temp_dir
+                    if handler.cloud_instance:
+                        path = subreq["path"]
+                    else:
+                        path = os.path.join(handler.root, subreq["path"])
                     file_type = subreq.get("type", "file")
                     file_extension = subreq.get("regex", "") if file_type == "regex" else ""
 
@@ -248,7 +267,11 @@ def validate_dataset(org_name, handler_metadata, temp_dir="", workspace_metadata
 
                 for subreq in req["any_of"]:
                     if "path" in subreq:
-                        path = os.path.join(handler.root, subreq["path"])
+                        # For cloud validation, use the relative path directly instead of joining with temp_dir
+                        if handler.cloud_instance:
+                            path = subreq["path"]
+                        else:
+                            path = os.path.join(handler.root, subreq["path"])
                         file_type = subreq.get("type", "file")
                         file_extension = subreq.get("regex", "") if file_type == "regex" else ""
                         any_of_options.append(subreq["path"])
@@ -262,7 +285,11 @@ def validate_dataset(org_name, handler_metadata, temp_dir="", workspace_metadata
                         all_valid = True
                         subreq_paths = []
                         for subsubreq in subreq["all_of"]:
-                            path = os.path.join(handler.root, subsubreq["path"])
+                            # For cloud validation, use the relative path directly instead of joining with temp_dir
+                            if handler.cloud_instance:
+                                path = subsubreq["path"]
+                            else:
+                                path = os.path.join(handler.root, subsubreq["path"])
                             file_type = subsubreq.get("type", "file")
                             file_extension = subsubreq.get("regex", "") if file_type == "regex" else ""
                             subreq_paths.append(subsubreq["path"])
@@ -295,7 +322,11 @@ def validate_dataset(org_name, handler_metadata, temp_dir="", workspace_metadata
                     validation_errors.append(f"No path requirement found for intent: {intent}")
                     continue
 
-                path = os.path.join(handler.root, intent_req["path"])
+                # For cloud validation, use the relative path directly instead of joining with temp_dir
+                if handler.cloud_instance:
+                    path = intent_req["path"]
+                else:
+                    path = os.path.join(handler.root, intent_req["path"])
                 file_type = intent_req.get("type", "file")
                 file_extension = intent_req.get("regex", "") if file_type == "regex" else ""
 
