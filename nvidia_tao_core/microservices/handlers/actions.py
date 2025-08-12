@@ -401,10 +401,10 @@ class ActionPipeline:
             base_experiment_metadata = get_base_experiment_metadata(base_experiment_id)
             if base_experiment_metadata.get("base_experiment_metadata", {}).get("is_backbone"):
                 # if ptm is a backbone remove end_to_end field from config and spec
-                parameter_to_remove = ptm_mapper.get("end_to_end", {}).get(self.network)
+                parameter_to_remove = ptm_mapper.get("end_to_end", {}).get(base_experiment_metadata.get("network_arch"))
             else:
                 # if ptm is not a backbone remove it field from config and spec
-                parameter_to_remove = ptm_mapper.get("backbone", {}).get(self.network)
+                parameter_to_remove = ptm_mapper.get("backbone", {}).get(base_experiment_metadata.get("network_arch"))
             if parameter_to_remove:
                 remove_key_by_flattened_string(self.spec, parameter_to_remove)
                 remove_key_by_flattened_string(self.config, parameter_to_remove)
