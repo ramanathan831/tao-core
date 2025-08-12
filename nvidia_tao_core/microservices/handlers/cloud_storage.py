@@ -34,6 +34,53 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+class CloudStorageCredentialError(Exception):
+    """Exception raised for invalid cloud storage credentials."""
+
+    pass
+
+
+class CloudStorageConnectionError(Exception):
+    """Exception raised when unable to connect to cloud storage."""
+
+    pass
+
+
+def validate_credentials(cs_instance):
+    """Validate cloud storage credentials by exercising the provided CloudStorage instance.
+
+    Args:
+        cs_instance (CloudStorage): An initialized CloudStorage instance.
+
+    Raises:
+        CloudStorageCredentialError: If credentials are invalid
+        CloudStorageConnectionError: If unable to connect to cloud storage
+        ValueError: If cs_instance is invalid
+    """
+    try:
+        cs_instance.validate_connection()
+    except (CloudStorageCredentialError, CloudStorageConnectionError):
+        raise
+    except Exception as e:
+        # Normalize and classify unexpected exceptions
+        error_msg = str(e).lower()
+        if "nosuchbucket" in error_msg or "containernotfound" in error_msg or "does not exist" in error_msg:
+            raise CloudStorageConnectionError(
+                f"Bucket/container '{cs_instance.bucket_name}' does not exist or is not accessible"
+            ) from e
+        if any(k in error_msg for k in [
+            "invalidaccesskeyid", "signaturedoesnotmatch", "authenticationfailed", "unauthorized", "forbidden"
+        ]):
+            raise CloudStorageCredentialError(
+                f"Invalid credentials for {cs_instance.cloud_type}: {str(e)}"
+            ) from e
+        raise CloudStorageConnectionError(
+            f"Failed to connect to {cs_instance.cloud_type}: {str(e)}"
+        ) from e
+    finally:
+        clear_fsspec_caches()
+
+
 def clear_fsspec_caches():
     """Clear all fsspec caches to prevent state corruption."""
     try:
@@ -140,7 +187,19 @@ def create_cs_instance_with_decrypted_metadata(decrypted_metadata):
 
 
 def create_cs_instance(handler_metadata):
-    """Create a cloud storage instance based on handler metadata"""
+    """Create a cloud storage instance based on handler metadata
+
+    Args:
+        handler_metadata (dict): Metadata containing cloud configuration
+
+    Returns:
+        tuple: (CloudStorage instance, cloud_specific_details dict)
+
+    Raises:
+        CloudStorageCredentialError: If credentials are invalid
+        CloudStorageConnectionError: If unable to connect to cloud storage
+        ValueError: If configuration is invalid
+    """
     # Clear caches before creating new instance
     clear_fsspec_caches()
 
@@ -179,9 +238,21 @@ def create_cs_instance(handler_metadata):
                 client_kwargs={"endpoint_url": cloud_specific_details.get("endpoint_url")}
             )
         elif cloud_type == "seaweedfs":
-            return _create_seaweedfs_instance(cloud_specific_details)
+            cs_instance, _ = _create_seaweedfs_instance(cloud_specific_details)
         else:
             raise ValueError(f"Unsupported cloud_type: {cloud_type}")
+
+    if cs_instance and cloud_bucket_name:
+        logger.info(f"Validating {cloud_type} credentials...")
+        try:
+            validate_credentials(cs_instance)
+            logger.info("Credentials validated successfully")
+        except (CloudStorageCredentialError, CloudStorageConnectionError) as e:
+            logger.error(f"Credential validation failed: {e}")
+            raise
+        except Exception as e:
+            logger.error(f"Unexpected error during credential validation: {e}")
+            raise CloudStorageConnectionError(f"Failed to validate credentials: {e}") from e
 
     return cs_instance, cloud_specific_details
 
@@ -299,6 +370,34 @@ class CloudStorage:
             logger.info("Filesystem state reset complete")
         except Exception as e:
             logger.warning(f"Error resetting filesystem state: {e}")
+
+    def validate_connection(self):
+        """Validate the connection to cloud storage by performing a basic operation.
+
+        Raises:
+            CloudStorageCredentialError: If credentials are invalid
+            CloudStorageConnectionError: If unable to connect to cloud storage
+        """
+        try:
+            # Test basic connectivity by listing the bucket
+            bucket_path = f"{self.bucket_name}/"
+            self.fs.ls(bucket_path, detail=False)
+            logger.info(f"Successfully validated connection to {self.cloud_type} bucket: {self.bucket_name}")
+        except Exception as e:
+            error_msg = str(e).lower()
+            if "nosuchbucket" in error_msg or "containernotfound" in error_msg or "does not exist" in error_msg:
+                raise CloudStorageConnectionError(
+                    f"Bucket/container '{self.bucket_name}' does not exist or is not accessible"
+                ) from e
+            if any(keyword in error_msg for keyword in [
+                "invalidaccesskeyid", "signaturedoesnotmatch", "authenticationfailed", "unauthorized", "forbidden"
+            ]):
+                raise CloudStorageCredentialError(
+                    f"Invalid credentials for {self.cloud_type}: {str(e)}"
+                ) from e
+            raise CloudStorageConnectionError(
+                f"Failed to connect to {self.cloud_type}: {str(e)}"
+            ) from e
 
     @retry_method
     def is_file(self, cloud_path):

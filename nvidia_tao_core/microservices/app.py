@@ -1691,21 +1691,21 @@ class CloudPullTypesEnum(Enum):
 class AWSCloudPullSchema(Schema):
     """Class defining AWS Cloud pull schema"""
 
-    access_key = fields.Str(validate=validate.Length(max=2048))
-    secret_key = fields.Str(validate=validate.Length(max=2048))
+    access_key = fields.Str(required=True, validate=validate.Length(min=1, max=2048))
+    secret_key = fields.Str(required=True, validate=validate.Length(min=1, max=2048))
     cloud_region = fields.Str(validate=validate.Length(max=2048), allow_none=True)
-    endpoint_url = fields.URL(validate=fields.validate.Length(max=2048))
-    cloud_bucket_name = fields.Str(validate=validate.Length(max=2048), allow_none=True)
+    endpoint_url = fields.URL(validate=fields.validate.Length(max=2048), allow_none=True)
+    cloud_bucket_name = fields.Str(validate=validate.Length(min=1, max=2048), allow_none=True)
 
 
 class AzureCloudPullSchema(Schema):
-    """Class defining AWS Cloud pull schema"""
+    """Class defining Azure Cloud pull schema"""
 
-    account_name = fields.Str(validate=validate.Length(max=2048))
-    access_key = fields.Str(validate=validate.Length(max=2048))
+    account_name = fields.Str(required=True, validate=validate.Length(min=1, max=2048))
+    access_key = fields.Str(required=True, validate=validate.Length(min=1, max=2048))
     cloud_region = fields.Str(validate=validate.Length(max=2048), allow_none=True)
-    endpoint_url = fields.URL(validate=fields.validate.Length(max=2048))
-    cloud_bucket_name = fields.Str(validate=validate.Length(max=2048), allow_none=True)
+    endpoint_url = fields.URL(validate=fields.validate.Length(max=2048), allow_none=True)
+    cloud_bucket_name = fields.Str(validate=validate.Length(min=1, max=2048), allow_none=True)
 
 
 class HuggingFaceCloudPullSchema(Schema):
@@ -1737,21 +1737,28 @@ class WorkspaceReqSchema(Schema):
 
     @validates_schema
     def validate_cloud_specific_details(self, data, **kwargs):
-        """Return schema based on cloud_type"""
+        """Return schema based on cloud_type and validate credentials"""
         cloud_type = data.get('cloud_type')
 
         if cloud_type:
+            # First, validate the schema structure
             if cloud_type == CloudPullTypesEnum.aws:
                 schema = AWSCloudPullSchema()
             elif cloud_type == CloudPullTypesEnum.azure:
                 schema = AzureCloudPullSchema()
+            elif cloud_type == CloudPullTypesEnum.seaweedfs:
+                schema = AWSCloudPullSchema()
             elif cloud_type == CloudPullTypesEnum.huggingface:
                 schema = HuggingFaceCloudPullSchema()
             else:
                 schema = Schema()
 
             try:
-                schema.load(data['cloud_specific_details'], unknown=EXCLUDE)
+                # Validate schema structure
+                schema.load(data.get('cloud_specific_details', {}), unknown=EXCLUDE)
+            except ValidationError:
+                # Re-raise ValidationError as-is
+                raise
             except Exception as e:
                 raise fields.ValidationError(str(e))
 
