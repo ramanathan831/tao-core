@@ -844,23 +844,58 @@ def get_results_cloud_data(cloud_data, spec_data, dest_dir=None):
     return None, spec_data
 
 
-def create_tarball(source_dir, tarball_path):
+def create_tarball(source_dir, tarball_path, exclude_paths=None):
     """Create a tarball from the source directory.
 
     Args:
         source_dir (str): Directory to tarball
         tarball_path (str): Path where the tarball will be created
+        exclude_paths (set, optional): Set of relative paths to exclude from tarball
 
     Returns:
         bool: True if successful, False otherwise
     """
     try:
-        logger.info("Creating tarball: %s from source: %s", tarball_path, source_dir)
+        if exclude_paths:
+            logger.info("Creating tarball excluding %d pre-existing items: %s from source: %s",
+                        len(exclude_paths), tarball_path, source_dir)
+        else:
+            logger.info("Creating tarball: %s from source: %s", tarball_path, source_dir)
 
         with tarfile.open(tarball_path, 'w:gz') as tar:
-            tar.add(source_dir, arcname=os.path.basename(source_dir))
+            if exclude_paths:
+                # Walk through directory and selectively add files
+                files_added = 0
+                files_excluded = 0
 
-        logger.info("Tarball created successfully: %s", tarball_path)
+                for root, dirs, files in os.walk(source_dir):
+                    # Process files
+                    for file in files:
+                        file_path = os.path.join(root, file)
+                        rel_path = os.path.relpath(file_path, source_dir)
+
+                        if rel_path not in exclude_paths:
+                            tar.add(file_path, arcname=rel_path)
+                            files_added += 1
+                        else:
+                            files_excluded += 1
+
+                    # Process directories (only add empty directories that weren't in exclusion set)
+                    for dir_name in dirs:
+                        dir_path = os.path.join(root, dir_name)
+                        rel_path = os.path.relpath(dir_path, source_dir)
+
+                        # Check if directory is empty and wasn't in exclusion set
+                        if (rel_path not in exclude_paths and not os.listdir(dir_path)):  # Empty directory
+                            tar.add(dir_path, arcname=rel_path)
+
+                logger.info("Tarball created successfully: %s (%d files added, %d files excluded)",
+                            tarball_path, files_added, files_excluded)
+            else:
+                # Original behavior - add entire directory
+                tar.add(source_dir, arcname=os.path.basename(source_dir))
+                logger.info("Tarball created successfully: %s", tarball_path)
+
         return True
     except Exception as e:
         logger.error("Error creating tarball: %s", str(e))
