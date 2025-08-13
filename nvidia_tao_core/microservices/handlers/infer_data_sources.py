@@ -231,7 +231,7 @@ def get_dataset_metadata_and_paths(source_ds, workspace_cache, kind="datasets"):
 
 
 def process_mapping_entry(mapping, source_root, source_ds, dataset_convert_action,
-                          workspace_identifier, network_config=None):
+                          workspace_identifier, dataset_convert_downloaded_locally=False):
     """Process a single mapping entry.
 
     Handles two types of mappings:
@@ -256,7 +256,7 @@ def process_mapping_entry(mapping, source_root, source_ds, dataset_convert_actio
                     value = apply_transforms(
                         value, sub_mapping["transform"],
                         source_root, source_ds, dataset_convert_action,
-                        workspace_identifier, network_config)
+                        workspace_identifier, dataset_convert_downloaded_locally)
                 result[key] = value
         return result if result else None
 
@@ -274,7 +274,7 @@ def process_mapping_entry(mapping, source_root, source_ds, dataset_convert_actio
             value = apply_transforms(
                 value, mapping["transform"],
                 source_root, source_ds, dataset_convert_action,
-                workspace_identifier, network_config)
+                workspace_identifier, dataset_convert_downloaded_locally)
         return value
 
     return None
@@ -435,6 +435,7 @@ def apply_data_source_config(config, job_context, handler_metadata):
         job_network = "image"
         job_action = "validate"
     network_config = read_network_config(job_network)
+    dataset_convert_downloaded_locally = get_dataset_convert_downloaded_locally(network_config)
 
     # Keep track of paths that have already been set by special handlers
     already_configured_paths = set()
@@ -657,7 +658,7 @@ def apply_data_source_config(config, job_context, handler_metadata):
                         value = apply_transforms(
                             value, source_config.get("transform", []),
                             source_root, source_datasets[0], dataset_convert_action,
-                            workspace_identifier, network_config)
+                            workspace_identifier, dataset_convert_downloaded_locally)
                         set_nested_config_value(config, config_path, value)
                         already_configured_paths.add(config_path)  # Mark as configured
                         continue
@@ -689,7 +690,7 @@ def apply_data_source_config(config, job_context, handler_metadata):
                     value = apply_transforms(
                         value, source_config.get("transform", []),
                         source_root, source_datasets[0], dataset_convert_action,
-                        workspace_identifier, network_config)
+                        workspace_identifier, dataset_convert_downloaded_locally)
                 set_nested_config_value(config, config_path, value)
                 already_configured_paths.add(config_path)  # Mark as configured
                 continue
@@ -760,7 +761,6 @@ def apply_data_source_config(config, job_context, handler_metadata):
                 if result:
                     set_nested_config_value(config, config_path, result)
             else:
-                dataset_convert_downloaded_locally = get_dataset_convert_downloaded_locally(network_config)
                 path = source_config.get("path", "")
                 value = path
                 if path == "":
@@ -777,7 +777,11 @@ def apply_data_source_config(config, job_context, handler_metadata):
                 set_nested_config_value(config, config_path, value)
 
     # Process additional downloads
-    endpoint_action = network_config.get("actions_mapping", {}).get(dataset_convert_action, {}).get("action", dataset_convert_action)
+    endpoint_action = (
+        network_config.get("actions_mapping", {})
+        .get(dataset_convert_action, {})
+        .get("action", dataset_convert_action)
+    )
     additional_downloads = process_additional_downloads(
         network_config, job_context, handler_metadata, workspace_cache, dataset_convert_action, endpoint_action
     )
