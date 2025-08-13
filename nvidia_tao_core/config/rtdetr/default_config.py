@@ -43,6 +43,9 @@ from nvidia_tao_core.config.rtdetr.dataset import (
 from nvidia_tao_core.config.rtdetr.deploy import RTGenTrtEngineExpConfig
 from nvidia_tao_core.config.rtdetr.model import RTModelConfig
 from nvidia_tao_core.config.rtdetr.train import RTTrainExpConfig
+from nvidia_tao_core.config.common.quantization.default_config import (
+    ModelQuantizationConfig,
+)
 
 
 @dataclass
@@ -196,4 +199,8 @@ class ExperimentConfig(CommonExperimentConfig):
     distill: Optional[RTDistillationConfig] = DATACLASS_FIELD(
         None,
         description="Configurable parameters to construct the distiller for a RT-DETR experiment.",
+    )
+    quantize: ModelQuantizationConfig = DATACLASS_FIELD(
+        ModelQuantizationConfig(),
+        description="Configurable parameters to run model quantization for a RT-DETR experiment.",
     )

@@ -39,6 +39,7 @@ from nvidia_tao_core.config.common.common_config import (
 )
 
 from nvidia_tao_core.config.common.distillation_config import DistillationConfig
+from nvidia_tao_core.config.common.quantization import ModelQuantizationConfig
 
 
 @dataclass
@@ -707,3 +708,4 @@ class ExperimentConfig(CommonExperimentConfig):
     export: ExportExpConfig = DATACLASS_FIELD(ExportExpConfig())
     gen_trt_engine: GenTrtEngineExpConfig = DATACLASS_FIELD(GenTrtEngineExpConfig())
     distill: ClassDistillationConfig = DATACLASS_FIELD(ClassDistillationConfig())
+    quantize: ModelQuantizationConfig = DATACLASS_FIELD(ModelQuantizationConfig())
