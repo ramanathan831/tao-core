@@ -620,7 +620,9 @@ class ClassDistillationConfig(DistillationConfig):
         L1 (L1 loss),
         L2 (L2 loss),
         FD (smooth L1),
-        CS (cosine similarity)""",
+        CS (cosine similarity),
+        BALANCED (balanced feature loss),
+        MSE (mean squared error)""",
         description="Loss function for logits distillation."
     )
     loss_lambda: Optional[float] = FLOAT_FIELD(
@@ -634,6 +636,31 @@ class ClassDistillationConfig(DistillationConfig):
         value=MISSING,
         display_name="Pretrained teacher model path",
         description="Path to the pre-trained teacher model."
+    )
+    mode: str = STR_FIELD(
+        value="auto",
+        default_value="auto",
+        description="Distillation mode",
+        valid_options="logits, summary, spatial, auto"
+    )
+    use_mlp: bool = BOOL_FIELD(
+        value=True,
+        default_value=True,
+        description="Flag to use MLP for projection"
+    )
+    mlp_hidden_size: int = INT_FIELD(
+        value=1024,
+        default_value=1024,
+        valid_min=0,
+        valid_max="inf",
+        description="MLP hidden size"
+    )
+    mlp_num_inner: int = INT_FIELD(
+        value=0,
+        default_value=0,
+        valid_min=0,
+        valid_max=10,
+        description="MLP number of inner layers"
     )
     results_dir: Optional[str] = STR_FIELD(
         value=None,
