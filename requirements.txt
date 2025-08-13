@@ -17,6 +17,7 @@ marshmallow-enum==1.5.1
 ngcsdk==3.151.0
 grpcio==1.67.1
 numpy==1.26.4
+nvidia-modelopt[all]
 omegaconf==2.3.0
 orjson
 packaging<=24.2 # Requirement from nvidia-dali-cuda120, remove once we upgrade to cuda13
