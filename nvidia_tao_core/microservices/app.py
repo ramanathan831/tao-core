@@ -244,6 +244,42 @@ class MessageOnlySchema(Schema):
     message = fields.Str(allow_none=True, format="regex", regex=r'.*', validate=fields.validate.Length(max=1000))
 
 
+class MissingFileSchema(Schema):
+    """Schema for individual missing file entries"""
+
+    class Meta:
+        """Class enabling sorting field values by the order in which they are declared"""
+
+        ordered = True
+        unknown = EXCLUDE
+
+    path = fields.Str(format="regex", regex=r'.*', validate=fields.validate.Length(max=500))
+    type = fields.Str(format="regex", regex=r'.*', validate=fields.validate.Length(max=50))
+    regex = fields.Str(format="regex", regex=r'.*', allow_none=True)
+
+
+class ValidationDetailsSchema(Schema):
+    """Class defining dataset validation details schema"""
+
+    class Meta:
+        """Class enabling sorting field values by the order in which they are declared"""
+
+        ordered = True
+        unknown = EXCLUDE
+
+    error_details = fields.Str(format="regex", regex=r'.*', validate=fields.validate.Length(max=1000))
+    expected_structure = fields.Dict(
+        keys=fields.Str(format="regex", regex=r'.*', validate=fields.validate.Length(max=100)),
+        values=fields.Raw(),
+        validate=validate.Length(max=sys.maxsize)
+    )
+    actual_structure = fields.List(fields.Str(format="regex", regex=r'.*'))
+    missing_files = fields.List(fields.Nested(MissingFileSchema))
+    network_type = fields.Str(format="regex", regex=r'.*', validate=fields.validate.Length(max=100))
+    dataset_format = fields.Str(format="regex", regex=r'.*', validate=fields.validate.Length(max=100))
+    dataset_intent = fields.List(fields.Str(format="regex", regex=r'.*'))
+
+
 class ErrorRspSchema(Schema):
     """Class defining error response schema"""
 
@@ -2840,6 +2876,7 @@ class DatasetRspSchema(Schema):
         validate=fields.validate.Length(max=2048),
         allow_none=True
     )
+    validation_details = fields.Nested(ValidationDetailsSchema, allow_none=True)
 
 
 class DatasetListRspSchema(Schema):
@@ -3105,7 +3142,15 @@ def dataset_retrieve(org_name, dataset_id):
     if response.code == 200:
         schema = DatasetRspSchema()
     else:
-        schema = ErrorRspSchema()
+        # Check if this is a dataset validation error that should include structured details
+        if (response.code == 404 and
+                isinstance(response.data, dict) and
+                response.data.get("validation_details")):
+            # Use DatasetRspSchema for validation errors to include structured details
+            schema = DatasetRspSchema()
+        else:
+            # Use ErrorRspSchema for other error types
+            schema = ErrorRspSchema()
     # Load metadata in schema and return
     schema_dict = schema.dump(schema.load(response.data))
     return make_response(jsonify(schema_dict), response.code)

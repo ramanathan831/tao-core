@@ -103,12 +103,24 @@ class TAOResponse:
         self.attachment_key = None
 
 
-def Code(code, data={}, msg=""):
-    """Wraps TAOResponse and returns appropriate responses"""
+def Code(code, data={}, msg="", use_data_as_response=False):
+    """Wraps TAOResponse and returns appropriate responses
+
+    Args:
+        code (int): HTTP status code
+        data (dict): Response data
+        msg (str): Error message
+        use_data_as_response (bool): If True, use data directly as response (like 200 responses)
+                                   If False, format as standard error response
+    """
     if code == 200:
         return TAOResponse(code, data)
 
     if code in [400, 404]:
+        if use_data_as_response:
+            # Use data directly as response, just like 200 responses
+            return TAOResponse(code, data)
+        # Standard error formatting
         error_data = {"error_desc": msg, "error_code": code}
         return TAOResponse(code, error_data)
 
