@@ -18,6 +18,10 @@
         }
     },
 
+    "upload_strategy": {
+        "inference": "tarball_after_completion"
+    },
+
     "dataset_validation": {
         "required_files": {
             "default": [
