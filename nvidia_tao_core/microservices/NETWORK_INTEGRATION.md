@@ -84,9 +84,9 @@ The network configuration file follows a standardized JSON structure with well-d
 
 ## Core Configuration Sections
 
-## 1. API Parameters (`api_params`)
+### 1. API Parameters (`api_params`)
 
-The `api_params` section serves as the foundation of your network configuration, defining the basic metadata that the FTMS needs to understand how to work with your network. This section tells the system what types of datasets your network can handle, what actions it supports, what Docker image to use for execution, and how API calls map to internal commands. Think of this as the "business card" for your network that introduces it to the TAO API system.
+The `api_params` section serves as the foundation of your network configuration, defining the basic metadata that the FTMS needs to understand how to work with your network. This section tells the system what types of datasets your network can handle, what actions it supports, what Docker image to use for execution, and how API calls map to internal commands. Think of this as the configuration entry point that introduces your network to the TAO API system.
 
 **Example from object_detection.config.json:** The object detection network demonstrates a comprehensive API parameter configuration with multiple formats and dataset actions, showing how to handle both training and data processing workflows.
 
@@ -109,7 +109,7 @@ The `api_params` section serves as the foundation of your network configuration,
 }
 ```
 
-### Required Fields:
+#### Required Fields:
 
 - **`dataset_type`**: Type of dataset this network works with  
 - **`actions`**: List of supported actions for this network  
@@ -119,9 +119,9 @@ The `api_params` section serves as the foundation of your network configuration,
 - **`spec_backend`**: Configuration format (yaml, json)  
 - **`actions_pipe`**: Maps API actions to internal command names
 
-### Optional Fields:
+#### Optional Fields:
 
-#### Dataset Download Behavior
+**Dataset Download Behavior**
 
 **Example from vila.config.json:** Vision-Language Models may require recursive dataset file downloading for complex dataset structures. For normal networks like dino, centerpose, downloading the json file for dataset.train_data_sources.json_file is sufficient, but for vila, this json/yaml file should be downloaded first, and inside this it'll contain the actual dataset paths to be downloaded like videos folder or annotations.json
 
@@ -135,7 +135,7 @@ The `api_params` section serves as the foundation of your network configuration,
 
 - **`recursive_dataset_file_download`**: Enable recursive downloading of dataset files
 
-#### Docker Image Override per Action
+**Docker Image Override per Action**
 
 **Example from sparse4d.config.json:** Some networks need different Docker images for different actions. This allows overriding the main image on a per-action basis.
 
@@ -152,11 +152,13 @@ The `api_params` section serves as the foundation of your network configuration,
 
 - **`image_override_per_action`**: Override Docker image for specific actions
 
-## 2. Data Sources Configuration (`data_sources`)
+### 2. Data Sources Configuration (`data_sources`)
 
-The `data_sources` section is the heart of your network configuration. It defines the precise mapping between your dataset files and the configuration parameters that your network expects. This section eliminates the need for hardcoded path logic in Python functions by declaratively specifying how different types of dataset files should be incorporated into your network's configuration. Each action (train, evaluate, inference, etc.) can have its own set of data source mappings.
+The `data_sources` section is the heart of your network configuration. It defines the precise mapping between your dataset files and the configuration parameters that your network expects.
 
-### Basic Structure
+This section allows you to declaratively specify how different types of dataset files should be incorporated into your network's configuration without requiring hardcoded path logic in Python functions. Each action (train, evaluate, inference, etc.) can have its own set of data source mappings.
+
+#### Basic Structure
 
 The most fundamental data source mapping connects a single dataset file to a configuration parameter. This pattern is used when you have a straightforward relationship between a dataset file and where it needs to appear in your network's configuration. The `source` field specifies which dataset collection to use, `multiple_sources` indicates whether to process one or many datasets, and `path` specifies the file within the dataset.
 
@@ -174,7 +176,7 @@ The most fundamental data source mapping connects a single dataset file to a con
 }
 ```
 
-### Source Types
+#### Source Types
 
 - **`train_datasets`**: Training datasets  
 - **`eval_dataset`**: Evaluation dataset  
@@ -182,9 +184,11 @@ The most fundamental data source mapping connects a single dataset file to a con
 - **`calibration_dataset`**: Calibration dataset  
 - **`id`**: If the action is on the dataset itself - like dataset_convert
 
-### Simple Path Mapping
+#### Simple Path Mapping
 
-  When you need to map a single file from a dataset directly to a configuration parameter, use this simple pattern. This is the most common use case and handles the majority of dataset-to-config mappings. The example below shows how to take the `train.tar.gz` file from training datasets and place it at the `dataset.train_dataset_dir` path in your network's configuration.  
+When you need to map a single file from a dataset directly to a configuration parameter, use this simple pattern. This is the most common use case and handles the majority of dataset-to-config mappings.
+
+The example below shows how to take the `train.tar.gz` file from training datasets and place it at the `dataset.train_dataset_dir` path in your network's configuration.  
     
 **Example from action_recognition.config.json:** The action recognition network uses simple path mappings to connect dataset files directly to configuration parameters, demonstrating the most straightforward approach to data source configuration.
 
@@ -198,9 +202,11 @@ The most fundamental data source mapping connects a single dataset file to a con
 }
 ```
 
-### Multiple Sources
+#### Multiple Sources
 
-Some networks need to combine data from multiple datasets into a single configuration parameter. For instance, you might want to train on several datasets simultaneously. The `multiple_sources: true` setting tells the system to process all datasets from the specified source and create a list of mappings. Each dataset will contribute its files according to the mapping structure you define.
+Some networks need to combine data from multiple datasets into a single configuration parameter. For instance, you might want to train on several datasets simultaneously.
+
+The `multiple_sources: true` setting tells the system to process all datasets from the specified source and create a list of mappings. Each dataset will contribute its files according to the mapping structure you define.
 
 **Example from deformable_detr.config.json:** The Deformable DETR network demonstrates multiple source handling by processing several training datasets and creating structured mappings for each one, allowing training on combined datasets.
 
@@ -221,12 +227,11 @@ Some networks need to combine data from multiple datasets into a single configur
 }
 ```
 
-  ### Complex Mapping with Nested Objects
+#### Complex Mapping with Nested Objects
 
-  When your network expects complex nested structures in its configuration, you can define sophisticated mappings that include transformations and multiple file types. The mapping creates a structured object with multiple properties, each potentially sourced from different files within the dataset. Transforms can be applied to individual paths to handle special cases like TAR file processing.
+When your network expects complex nested structures in its configuration, you can define sophisticated mappings that include transformations and multiple file types. The mapping creates a structured object with multiple properties, each potentially sourced from different files within the dataset. Transforms can be applied to individual paths to handle special cases like TAR file processing.
 
-
-  **Example from deformable\_detr.config.json:** This example shows how the Deformable DETR network handles complex mappings with transforms, creating structured objects that include both image directories and annotation files with appropriate transformations.
+**Example from deformable_detr.config.json:** This example shows how the Deformable DETR network handles complex mappings with transforms, creating structured objects that include both image directories and annotation files with appropriate transformations.
 
 
 ```json
@@ -423,7 +428,9 @@ Some networks need to combine data from multiple datasets into a single configur
 
   ### Transforms
 
-  Transforms allow you to modify path values programmatically to handle special cases or format requirements. They're applied after the basic path is determined but before the final configuration is generated. Multiple transforms can be chained together and are applied in the order specified. This provides a clean way to handle edge cases without cluttering the main mapping logic.
+Transforms allow you to modify path values programmatically to handle special cases or format requirements. They're applied after the basic path is determined but before the final configuration is generated.
+
+Multiple transforms can be chained together and are applied in the order specified. This provides a clean way to handle edge cases without cluttering the main mapping logic.
 
 
   **Example from deformable\_detr.config.json:** The Deformable DETR network chains multiple transforms to handle data service integration and list formatting, showing how transforms can solve complex path processing requirements.
@@ -499,7 +506,7 @@ Some networks need to combine data from multiple datasets into a single configur
 }
 ```
 
-## 3. Dataset Validation (`dataset_validation`)
+### 3. Dataset Validation (`dataset_validation`)
 
   The `dataset_validation` section ensures that uploaded datasets contain all the necessary files and follow the expected structure for your network. This validation happens before any processing begins, preventing runtime errors and providing clear feedback to users about dataset requirements. The validation rules are organized by dataset format, allowing different formats to have different requirements while sharing common validation logic.
 
@@ -533,7 +540,9 @@ Some networks need to combine data from multiple datasets into a single configur
 
   #### All files required:
 
-  When your network requires multiple files to be present simultaneously, use the `all_of` rule. This ensures that every specified file exists before validation passes. This is common for datasets that need both images and corresponding labels or annotations. All files in the `all_of` array must be present for the validation to succeed.  
+When your network requires multiple files to be present simultaneously, use the `all_of` rule. This ensures that every specified file exists before validation passes.
+
+This is common for datasets that need both images and corresponding labels or annotations. All files in the `all_of` array must be present for the validation to succeed.  
     
   **Example from object\_detection.config.json:** The object detection network requires both images and annotations for COCO format datasets, ensuring complete dataset integrity before processing begins.
 
@@ -549,7 +558,9 @@ Some networks need to combine data from multiple datasets into a single configur
 
   #### Any file from alternatives:
 
-Some networks can work with different types of annotation files or formats. The `any_of` rule validates that at least one of the specified alternatives is present. This provides flexibility for users while ensuring that some form of required data is available. This is useful when your network can accept multiple annotation formats.
+Some networks can work with different types of annotation files or formats. The `any_of` rule validates that at least one of the specified alternatives is present.
+
+This provides flexibility for users while ensuring that some form of required data is available. This is useful when your network can accept multiple annotation formats.
 
 
 **Example from centerpose.config.json:** The CenterPose network demonstrates flexible validation where either training or validation data files can satisfy the requirement.
@@ -681,7 +692,7 @@ Some file types or dataset configurations should only be used with specific inte
 }
 ```
 
-## 4. Dynamic Configuration (`dynamic_config`)
+### 4. Dynamic Configuration (`dynamic_config`)
 
   The `dynamic_config` section handles complex configuration logic that goes beyond simple file mappings. This is where you define rules for modifying configurations based on model types, parent job actions, or other runtime conditions. Dynamic configuration eliminates the need for complex conditional logic in your network code by handling these adjustments declaratively in the configuration file.
 
@@ -835,7 +846,7 @@ Some file types or dataset configurations should only be used with specific inte
 }
 ```
 
-## 5. Additional Downloads (`additional_download`)
+### 5. Additional Downloads (`additional_download`)
 
   The `additional_download` section specifies additional files that need to be downloaded for specific actions beyond the main data source mappings. This is useful when actions require supplementary files from dataset conversion jobs or other sources.
 
@@ -870,7 +881,7 @@ Some file types or dataset configurations should only be used with specific inte
 - **Path from convert job spec**: Similar to data sources, can use conversion job specifications  
 - **Placeholders**: Support for `{dataset_convert_job_id}` and `{dataset_path}` replacement
 
-## 6. Upload Strategy (`upload_strategy`)
+### 6. Upload Strategy (`upload_strategy`)
 
   The `upload_strategy` section controls how results are uploaded during job execution. Different strategies can be applied per action to optimize upload behavior.
 
@@ -900,7 +911,7 @@ Some file types or dataset configurations should only be used with specific inte
   - **`patterns`**: Array of glob patterns to include
   - **`base_path`**: Base path for pattern matching
 
-## 7. Actions Mapping (`actions_mapping`)
+### 7. Actions Mapping (`actions_mapping`)
 
   The `actions_mapping` section handles cases where dataset actions should be processed by different networks or with different action names. This is common when certain dataset operations (like augmentation or analysis) are handled by specialized networks rather than the main network. The mapping redirects these actions to the appropriate network while preserving the user's intent.
 
@@ -928,7 +939,7 @@ Some file types or dataset configurations should only be used with specific inte
 
   ### Wildcard Action Mapping
 
-  **Example from visual\_changenet\_segment.config.json:** You can use wildcards to map all actions to a different network - Used when you create config file for each subtask of a network, example, visual_changenet_classify and visual_changenet_segment.
+  **Example from visual_changenet_segment.config.json:** You can use wildcards to map all actions to a different network. This is used when you create config files for each sub-task of a network, for example, visual_changenet_classify and visual_changenet_segment.
 
 ```json
 {
@@ -983,9 +994,11 @@ Some file types or dataset configurations should only be used with specific inte
 }
 ```
 
-## 8. Spec Parameters (`spec_params`)
+### 8. Spec Parameters (`spec_params`)
 
-The `spec_params` section defines how configuration paths map to parameter types used by the FTMS's experiment specification system. This mapping tells the API how to handle different types of parameters (model paths, output directories, encryption keys, etc.) and ensures that the right parameter handling logic is applied. Each action can have its own parameter mappings to handle action-specific requirements. This section is crucial for proper parameter processing, model management, and workflow orchestration.
+The `spec_params` section defines how configuration paths map to parameter types used by the FTMS's experiment specification system. This mapping tells the API how to handle different types of parameters (model paths, output directories, encryption keys, etc.) and ensures that the right parameter handling logic is applied.
+
+Each action can have its own parameter mappings to handle action-specific requirements. This section is crucial for proper parameter processing, model management, and workflow orchestration.
 
   ### Common Parameter Types
 
@@ -1158,7 +1171,7 @@ Export actions handle model conversion to different formats, particularly ONNX f
 }
 ```
 
-## 9. AutoML Spec Parameters (`automl_spec_params`)
+### 9. AutoML Spec Parameters (`automl_spec_params`)
 
 The `automl_spec_params` section defines parameter mappings specifically for AutoML workflows. AutoML requires specialized parameter handling for automated model selection, hyperparameter optimization, and experiment management. These parameters ensure proper integration with the AutoML system while maintaining compatibility with manual workflows.
 
@@ -1189,7 +1202,7 @@ The `automl_spec_params` section defines parameter mappings specifically for Aut
 }
 ```
 
-## 10. Metrics (`metrics`)
+### 10. Metrics (`metrics`)
 
 The `metrics` section defines the evaluation metrics that your network supports and which metric should be used for monitoring training progress and AutoML optimization. This section is crucial for proper experiment tracking, model selection, and automated hyperparameter optimization. The metrics configuration tells the FTMS which metrics to extract from training logs and which metric to use for determining the best model.
 
