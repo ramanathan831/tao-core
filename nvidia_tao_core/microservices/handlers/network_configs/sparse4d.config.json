@@ -40,7 +40,8 @@
     },
 
     "upload_strategy": {
-        "dataset_convert": "tarball_after_completion"
+        "dataset_convert": "tarball_after_completion",
+        "inference": "tarball_after_completion"
     },
 
     "data_sources": {
