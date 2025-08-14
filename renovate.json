@@ -19,9 +19,14 @@
     },
     "packageRules": [
         {
-            "ignoreDeps": [
-              "pyarmor", "marshmallow", "packaging", "pandas" 
-            ]
+            "description": "Globally ignore specific deps in requirements files",
+            "matchManagers": ["pip_requirements"],
+            "ignoreDeps": ["pyarmor", "marshmallow", "packaging", "pandas"]
+        },
+        {
+            "description": "Wait 14 days before updating non-security dependencies",
+            "matchCategories": ["!security"],
+            "minimumReleaseAge": "14 days"
         },
         {
             "description": "Ignore ranged specs for PyPI deps in requirements files",
