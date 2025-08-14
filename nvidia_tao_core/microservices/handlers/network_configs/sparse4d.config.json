@@ -40,15 +40,7 @@
     },
 
     "upload_strategy": {
-        "dataset_convert": {
-            "default": "continuous",
-            "selective_tarball": {
-                "patterns": [
-                    "**/Camera*/**"
-                ],
-                "base_path": "data"
-            }
-        }
+        "dataset_convert": "tarball_after_completion"
     },
 
     "data_sources": {
@@ -256,31 +248,6 @@
                 "transform": ["use_dataset_convert_job"]
             }
         }
-    },
-
-    "additional_download": {
-        "train": [
-            {
-                "source": "train_datasets",
-                "path": "/results/{dataset_convert_job_id}/convert_selective.tar.gz"
-            },
-            {
-                "source": "eval_dataset",
-                "path": "/results/{dataset_convert_job_id}/convert_selective.tar.gz"
-            }
-        ],
-        "evaluate": [
-            {
-                "source": "eval_dataset",
-                "path": "/results/{dataset_convert_job_id}/convert_selective.tar.gz"
-            }
-        ],
-        "inference": [
-            {
-                "source": "inference_dataset",
-                "path": "/results/{dataset_convert_job_id}/convert_selective.tar.gz"
-            }
-        ]
     },
 
     "spec_params": {

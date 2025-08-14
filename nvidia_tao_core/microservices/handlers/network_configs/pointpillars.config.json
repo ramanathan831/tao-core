@@ -18,6 +18,11 @@
         }
     },
 
+    "upload_strategy": {
+        "dataset_convert": "tarball_after_completion",
+        "inference": "tarball_after_completion"
+    },
+
     "dataset_validation": {
         "required_files": {
             "default": [
@@ -48,7 +53,7 @@
             "dataset.data_info_path": {
                 "source": "train_datasets",
                 "multiple_sources": false,
-                "path": "results/{dataset_convert_job_id}/data_info/",
+                "path": "/results/{dataset_convert_job_id}/data_info/",
                 "transform": "use_dataset_convert_job"
             }
         },
@@ -61,7 +66,7 @@
             "dataset.data_info_path": {
                 "source": "train_datasets",
                 "multiple_sources": false,
-                "path": "results/{dataset_convert_job_id}/data_info/",
+                "path": "/results/{dataset_convert_job_id}/data_info/",
                 "transform": "use_dataset_convert_job"
             }
         },
@@ -74,7 +79,7 @@
             "dataset.data_info_path": {
                 "source": "train_datasets",
                 "multiple_sources": false,
-                "path": "results/{dataset_convert_job_id}/data_info/",
+                "path": "/results/{dataset_convert_job_id}/data_info/",
                 "transform": "use_dataset_convert_job"
             }
         },
@@ -87,7 +92,7 @@
             "dataset.data_info_path": {
                 "source": "train_datasets",
                 "multiple_sources": false,
-                "path": "results/{dataset_convert_job_id}/data_info/",
+                "path": "/results/{dataset_convert_job_id}/data_info/",
                 "transform": "use_dataset_convert_job"
             }
         },
@@ -100,7 +105,7 @@
             "dataset.data_info_path": {
                 "source": "train_datasets",
                 "multiple_sources": false,
-                "path": "results/{dataset_convert_job_id}/data_info/",
+                "path": "/results/{dataset_convert_job_id}/data_info/",
                 "transform": "use_dataset_convert_job"
             }
         },
@@ -113,7 +118,7 @@
             "dataset.data_info_path": {
                 "source": "train_datasets",
                 "multiple_sources": false,
-                "path": "results/{dataset_convert_job_id}/data_info/",
+                "path": "/results/{dataset_convert_job_id}/data_info/",
                 "transform": "use_dataset_convert_job"
             }
         }
