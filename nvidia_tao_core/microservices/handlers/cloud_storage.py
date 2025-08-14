@@ -46,41 +46,6 @@ class CloudStorageConnectionError(Exception):
     pass
 
 
-def validate_credentials(cs_instance):
-    """Validate cloud storage credentials by exercising the provided CloudStorage instance.
-
-    Args:
-        cs_instance (CloudStorage): An initialized CloudStorage instance.
-
-    Raises:
-        CloudStorageCredentialError: If credentials are invalid
-        CloudStorageConnectionError: If unable to connect to cloud storage
-        ValueError: If cs_instance is invalid
-    """
-    try:
-        cs_instance.validate_connection()
-    except (CloudStorageCredentialError, CloudStorageConnectionError):
-        raise
-    except Exception as e:
-        # Normalize and classify unexpected exceptions
-        error_msg = str(e).lower()
-        if "nosuchbucket" in error_msg or "containernotfound" in error_msg or "does not exist" in error_msg:
-            raise CloudStorageConnectionError(
-                f"Bucket/container '{cs_instance.bucket_name}' does not exist or is not accessible"
-            ) from e
-        if any(k in error_msg for k in [
-            "invalidaccesskeyid", "signaturedoesnotmatch", "authenticationfailed", "unauthorized", "forbidden"
-        ]):
-            raise CloudStorageCredentialError(
-                f"Invalid credentials for {cs_instance.cloud_type}: {str(e)}"
-            ) from e
-        raise CloudStorageConnectionError(
-            f"Failed to connect to {cs_instance.cloud_type}: {str(e)}"
-        ) from e
-    finally:
-        clear_fsspec_caches()
-
-
 def clear_fsspec_caches():
     """Clear all fsspec caches to prevent state corruption."""
     try:
@@ -245,7 +210,8 @@ def create_cs_instance(handler_metadata):
     if cs_instance and cloud_bucket_name:
         logger.info(f"Validating {cloud_type} credentials...")
         try:
-            validate_credentials(cs_instance)
+            # Directly validate the connection using the instance method
+            cs_instance.validate_connection()
             logger.info("Credentials validated successfully")
         except (CloudStorageCredentialError, CloudStorageConnectionError) as e:
             logger.error(f"Credential validation failed: {e}")
