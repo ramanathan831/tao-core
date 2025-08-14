@@ -24,11 +24,12 @@
             ]
         },
         {
-            "matchDatasources": ["pip_requirements"],
-            "matchCurrentVersion": "/^[^0-9]/",
-            "enabled": false,
-            "description": "Disable updates for non-standard pip requirements (git+https, file:, etc.)"
-        },
+            "description": "Ignore ranged specs for PyPI deps in requirements files",
+            "matchManagers": ["pip_requirements"],
+            "matchDatasources": ["pypi"],
+            "matchCurrentVersion": "/^(<=|>=|!=|~=|<|>)/",
+            "enabled": false
+        }, 
         {
             "description": "Group all non-security patch updates into one MR",
             "matchCategories": ["!security"],
