@@ -2103,8 +2103,11 @@ class AppHandler:
             return automl_response
 
         job_action = job_metadata.get("action", "")
-        if job_action not in ("train", "distill", "retrain"):
-            return Code(404, [], f"Only train or retrain jobs can be paused. The current action is {job_action}")
+        if job_action not in ("train", "distill", "quantize", "retrain"):
+            return Code(
+                404, [],
+                f"Only train, distill, quantize or retrain jobs can be paused. The current action is {job_action}"
+            )
         job_status = job_metadata.get("status", "Error")
 
         # If job is error / done, or one of cancel or pause states then pause is NoOp
@@ -2306,11 +2309,12 @@ class AppHandler:
         if job_status not in ("Success", "Done"):
             return Code(404, {}, "Job is not in success or Done state")
         job_action = job_metadata.get("action", "")
-        if job_action not in ("train", "distill", "prune", "retrain", "export", "gen_trt_engine"):
+        if job_action not in ("train", "distill", "quantize", "prune", "retrain", "export", "gen_trt_engine"):
             return Code(
                 404,
                 {},
-                "Publish model is available only for train, distill, prune, retrain, export, gen_trt_engine actions"
+                "Publish model is available only for train, distill, quantize, prune, retrain, export, "
+                "gen_trt_engine actions"
             )
 
         try:
@@ -2388,12 +2392,12 @@ class AppHandler:
         if job_status not in ("Success", "Done"):
             return Code(404, {}, "Job is not in success or Done state")
         job_action = job_metadata.get("action", "")
-        if job_action not in ("train", "distill", "prune", "retrain", "export", "gen_trt_engine"):
+        if job_action not in ("train", "distill", "quantize", "prune", "retrain", "export", "gen_trt_engine"):
             return Code(
                 404,
                 {},
                 "Delete published model is available only for train, distill, ",
-                "prune, retrain, export, gen_trt_engine actions"
+                "quantize, prune, retrain, export, gen_trt_engine actions"
             )
 
         try:
@@ -2551,7 +2555,7 @@ class AppHandler:
                 if best_model or latest_model:
                     job_root = os.path.join(root, job_id)
                     if (handler_metadata.get("automl_settings", {}).get("automl_enabled") is True and
-                       action in ("train", "distill")):
+                       action in ("train", "distill", "quantize")):
                         job_root = os.path.join(job_root, "best_model")
                     find_trained_tlt = (
                         glob.glob(f"{job_root}/*{format_epoch_number}.tlt") +
@@ -3615,8 +3619,8 @@ class AppHandler:
         status = job_metadata.get("status", "")
         if status != "Paused":
             return Code(400, [], f"Job status should be paused, not {status}")
-        if action not in ("train", "distill", "retrain"):
-            return Code(400, [], f"Action should be train, distill, retrain, not {action}")
+        if action not in ("train", "distill", "quantize", "retrain"):
+            return Code(400, [], f"Action should be train, distill, quantize, retrain, not {action}")
         network = handler_metadata.get("network_arch", None)
         if network in MAXINE_NETWORKS:
             return Code(400, [], "Maxine networks do not support resume.")

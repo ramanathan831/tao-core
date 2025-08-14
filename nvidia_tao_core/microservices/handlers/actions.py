@@ -455,7 +455,7 @@ class ActionPipeline:
         status_parser = StatusParser(self.job_context.network, outdir)
 
         total_epochs = 1
-        if self.job_context.action in ['train', 'distill', 'retrain']:
+        if self.job_context.action in ['train', 'distill', 'retrain', 'quantize']:
             total_epochs = get_total_epochs(self.job_context, self.job_context.specs)
 
         metric = self.handler_metadata.get("metric", "")
@@ -505,7 +505,7 @@ class ActionPipeline:
                     self.detailed_print("Post running")
                     # If post run is done, make it done
                     self.post_run()
-                    if self.job_context.action in ['train', 'distill', 'retrain']:
+                    if self.job_context.action in ['train', 'distill', 'retrain', 'quantize']:
                         _, best_checkpoint_epoch_number, latest_checkpoint_epoch_number = status_parser.read_metric(
                             results=new_results[self.job_name],
                             metric=metric,
@@ -798,7 +798,7 @@ class TrainVal(CLIPipeline):
                 parent_action = parent_job_metadata.get("action", "")
                 if not parent_action:
                     break
-                if parent_action in ("train", "distill"):
+                if parent_action in ("train", "distill", "quantize"):
                     from nvidia_tao_core.microservices.handlers.app_handler import AppHandler  # pylint: disable=C0415
                     default_spec_schema_response = AppHandler.get_spec_schema(
                         self.job_context.user_id,
