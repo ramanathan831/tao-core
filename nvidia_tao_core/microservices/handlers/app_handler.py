@@ -1024,11 +1024,11 @@ class AppHandler:
         """
         handler_metadata = resolve_metadata("dataset", dataset_id)
         if not handler_metadata:
-            return Code(200, {}, "Dataset deleted")
+            return Code(200, {}, f"Dataset {dataset_id} deleted")
 
         user_id = handler_metadata.get("user_id")
         if not check_write_access(user_id, org_name, dataset_id, kind="datasets"):
-            return Code(404, {}, "Dataset not available")
+            return Code(404, {}, f"Dataset {dataset_id} not available")
 
         # If dataset is being used by user's experiments.
         experiments = get_user_experiments(user_id)
@@ -1040,20 +1040,20 @@ class AppHandler:
                 if additional_dataset_id:
                     datasets_in_use.add(additional_dataset_id)
             if dataset_id in datasets_in_use:
-                return Code(400, {}, f"Dataset in use by {experiment_id}")
+                return Code(400, {}, f"Dataset {dataset_id} in use by {experiment_id}")
 
         # Check if any job running
         for job in handler_metadata.get("jobs", {}):
             if handler_metadata["jobs"][job]["status"] == "Running":
-                return Code(400, {}, f"Dataset in use by job {job}")
+                return Code(400, {}, f"Dataset {dataset_id} in use by job {job}")
 
         # Check if dataset is public, then someone could be running it
         if handler_metadata.get("public", False):
-            return Code(400, {}, "Dataset is Public. Cannot delete")
+            return Code(400, {}, f"Dataset {dataset_id} is Public. Cannot delete")
 
         # Check if dataset is read only, if yes, cannot delete
         if handler_metadata.get("read_only", False):
-            return Code(400, {}, "Dataset is read only. Cannot delete")
+            return Code(400, {}, f"Dataset {dataset_id} is read only. Cannot delete")
 
         mongo_users = MongoHandler("tao", "users")
         datasets = get_user_datasets(user_id, mongo_users)
@@ -3461,24 +3461,24 @@ class AppHandler:
         experiments = get_user_experiments(user_id)
 
         if experiment_id not in experiments:
-            return Code(404, {}, "Experiment cannot be deleted")
+            return Code(404, {}, f"Experiment {experiment_id} cannot be deleted")
 
         for handler_id in experiments:
             metadata = get_experiment(handler_id)
             if experiment_id == metadata.get("base_experiment", None):
-                return Code(400, {}, "Experiment in use as a base_experiment")
+                return Code(400, {}, f"Experiment {experiment_id} in use as a base_experiment")
 
         for job in handler_metadata.get("jobs", {}):
             if handler_metadata["jobs"][job]["status"] in ("Pending", "Running"):
-                return Code(400, {}, f"Experiment in use by job {job}")
+                return Code(400, {}, f"Experiment {experiment_id} in use by job {job}")
 
         # Check if experiment is public, then someone could be running it
         if handler_metadata.get("public", False):
-            return Code(400, {}, "Experiment is Public. Cannot delete")
+            return Code(400, {}, f"Experiment {experiment_id} is Public. Cannot delete")
 
         # Check if experiment is read only, if yes, cannot delete
         if handler_metadata.get("read_only", False):
-            return Code(400, {}, "Experiment is read only. Cannot delete")
+            return Code(400, {}, f"Experiment {experiment_id} is read only. Cannot delete")
 
         # Check if the experiment is being used by a realtime infer job
         if handler_metadata.get("realtime_infer", False):
