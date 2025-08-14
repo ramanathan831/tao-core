@@ -365,8 +365,16 @@ class BaseExperimentMetadata:
     def load_base_experiments_from_csv(self) -> dict:
         """Get base experiments from CSV file
 
-        CSV format: display_name, model_path, network_arch
-        Supports both NGC and Hugging Face models
+        CSV format: display_name, model_path, network_arch[, is_backbone]
+        The is_backbone column is optional for backwards compatibility.
+
+        Supports both NGC and Hugging Face models.
+
+        Args:
+            display_name: Human-readable name for the model
+            model_path: NGC path or HF model path (with ngc:// or hf_model:// prefix)
+            network_arch: Network architecture identifier
+            is_backbone: Optional boolean (True/False/empty) indicating if model is a backbone
         """
         base_experiments: dict[str, dict] = {}
         with open(f"{os.path.dirname(os.path.abspath(__file__))}/pretrained_models.csv", "r", encoding="utf-8") as f:
@@ -374,7 +382,23 @@ class BaseExperimentMetadata:
             next(reader)  # skip header
             for row_num, row in enumerate(reader, 2):  # Start from 2 since we skip header
                 try:
-                    display_name, model_path, network_arch = row
+                    # Handle both 3-column and 4-column CSV formats for backwards compatibility
+                    if len(row) == 3:
+                        display_name, model_path, network_arch = row
+                        is_backbone = None  # Use default value
+                    elif len(row) == 4:
+                        display_name, model_path, network_arch, is_backbone_str = row
+                        # Parse is_backbone string to boolean, handling empty values
+                        if is_backbone_str.strip().lower() in ['true', '1', 'yes']:
+                            is_backbone = True
+                        elif is_backbone_str.strip().lower() in ['false', '0', 'no']:
+                            is_backbone = False
+                        else:
+                            is_backbone = None  # Use default value for empty or invalid strings
+                    else:
+                        logger.error(f"CSV row {row_num}: Invalid number of columns. Expected 3 or 4, got {len(row)}")
+                        continue
+
                     if self.model_names and network_arch not in self.model_names:
                         logger.info(f"Skipping {model_path} - not in requested model names: {self.model_names}")
                         continue
@@ -387,7 +411,8 @@ class BaseExperimentMetadata:
                         org, team, _, _ = self.split_ngc_path(cleaned_path)
                         ngc_token = self.get_ngc_token(org, team)
                         self.add_experiment(
-                            base_experiments, display_name, cleaned_path, network_arch, ngc_token, source_type
+                            base_experiments, display_name, cleaned_path, network_arch,
+                            ngc_token, source_type, is_backbone
                         )
 
                     elif source_type == "huggingface":
@@ -420,6 +445,7 @@ class BaseExperimentMetadata:
                             "ngc_path": cleaned_path,  # Store original path
                             "network_arch": network_arch,
                             "source_type": source_type,
+                            "is_backbone": is_backbone,  # Store is_backbone value from CSV
                             "base_experiment_metadata": {
                                 "spec_file_present": bool(spec_data),
                                 "specs": spec_data
@@ -440,7 +466,8 @@ class BaseExperimentMetadata:
 
         return base_experiments
 
-    def add_experiment(self, base_experiments, display_name, ngc_path, network_arch, ngc_token, source_type="ngc"):
+    def add_experiment(self, base_experiments, display_name, ngc_path, network_arch,
+                       ngc_token, source_type="ngc", is_backbone=None):
         """Add experiment to the base experiments list with unique id"""
         hash_str = f"{ngc_path}:{network_arch}"
         exp_id = str(uuid.uuid5(self.base_exp_uuid, hash_str))
@@ -468,6 +495,7 @@ class BaseExperimentMetadata:
             "ngc_path": ngc_path,
             "network_arch": network_arch,
             "source_type": source_type,
+            "is_backbone": is_backbone,  # Store is_backbone value from CSV
             "base_experiment_metadata": {
                 "spec_file_present": bool(spec_data),
                 "specs": spec_data
@@ -556,7 +584,8 @@ class BaseExperimentMetadata:
                                                 ngc_path,
                                                 network_arch,
                                                 ngc_token,
-                                                "ngc"
+                                                "ngc",
+                                                None  # NGC discovery doesn't have CSV is_backbone value
                                             )
         return base_experiments
 
@@ -710,7 +739,7 @@ class BaseExperimentMetadata:
                 "backbone_class": None,
                 "domain": None,
                 "license": None,
-                "is_backbone": True,
+                "is_backbone": experiment_info.get("is_backbone", True),  # Use CSV value or default to True
                 "is_trainable": False,  # Default, can be overridden
                 "num_parameters": "Unknown",
                 "accuracy": "Unknown",
@@ -842,7 +871,11 @@ class BaseExperimentMetadata:
                 ),
                 "domain": self.convert_str_to_enum(attr.get("domain", None), BaseExperimentDomain),
                 "license": self.convert_str_to_enum(attr.get("license", None), BaseExperimentLicense),
-                "is_backbone": attr.get("is_backbone", True),
+                "is_backbone": (
+                    experiment_info.get("is_backbone")
+                    if experiment_info.get("is_backbone") is not None
+                    else attr.get("is_backbone", True)
+                ),
                 "is_trainable": attr.get("trainable", False),
                 "num_parameters": (
                     f"{round(random.uniform(1, 150))}M"
