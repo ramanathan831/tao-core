@@ -341,14 +341,14 @@ class DepthNetDatasetConfig:
         value=None,
         valid_min=1.0,
         valid_max="inf",
-        description="The maximum depth in meters in MetricDepthAnythingV2",
+        description="The maximum depth in meters in MetricDepthAnything",
         display_name="max depth in meters"
     )
     min_depth: Optional[float] = FLOAT_FIELD(
         value=None,
         valid_min=0.0,
         valid_max="inf",
-        description="The minimum depth in meters in MetricDepthAnythingV2",
+        description="The minimum depth in meters in MetricDepthAnything",
         display_name="min depth in meters"
     )
     train_dataset: BaseDepthNetDatasetConfig = DATACLASS_FIELD(

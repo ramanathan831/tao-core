@@ -119,11 +119,6 @@ class DepthNetTrainExpConfig(TrainConfig):
         description="The number of steps to save the checkpoint.",
         display_name="checkpoint interval steps"
     )
-    pretrained_backbone_path: Optional[str] = STR_FIELD(
-        value=None,
-        default_value='',
-        description="Path to a pre-trained RT-DETR model to initialize the current training from."
-    )
     clip_grad_norm: float = FLOAT_FIELD(
         value=0.1,
         math_cond="> 0.0",

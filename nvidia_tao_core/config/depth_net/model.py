@@ -15,14 +15,42 @@
 """Configuration hyperparameter schema for the model."""
 
 from dataclasses import dataclass
-from typing import List
+from typing import List, Optional
 
 from nvidia_tao_core.config.utils.types import (
     BOOL_FIELD,
     INT_FIELD,
     LIST_FIELD,
     STR_FIELD,
+    DATACLASS_FIELD,
 )
+
+
+@dataclass
+class MonoBackbone:
+    """Define MonoBackbone dependency config"""
+
+    pretrained_path: Optional[str] = STR_FIELD(
+        value="",
+        default_value="",
+        description="""Path to load pretrained model for monocular depth estimation""",
+    )
+
+
+@dataclass
+class StereoBackBone:
+    """Define StereoBackBone dependency config"""
+
+    depth_anything_v2_pretrained_path: Optional[str] = STR_FIELD(
+        value="",
+        default_value="",
+        description="""Path to load depth anything v2 as an encoder for Stereo DepthNet (FoundationStereo)""",
+    )
+    edgenext_pretrained_path: Optional[str] = STR_FIELD(
+        value="",
+        default_value="",
+        description="""Path to load edgenext encoder for Stereo DepthNet (FoundationStereo)""",
+    )
 
 
 @dataclass
@@ -36,6 +64,14 @@ class DepthNetModelConfig:
         valid_options=",".join([
             "FoundationStereo", "MetricDepthAnything", "RelativeDepthAnything"
         ])
+    )
+    mono_backbone: MonoBackbone = DATACLASS_FIELD(
+        MonoBackbone(),
+        description="Configurable parameters to construct the mono backbone for a DepthNet experiment.",
+    )
+    stereo_backbone: StereoBackBone = DATACLASS_FIELD(
+        StereoBackBone(),
+        description="Configurable parameters to construct the stereo backbone for a DepthNet experiment.",
     )
     hidden_dims: List[int] = LIST_FIELD(
         arrList=[128, 128, 128],

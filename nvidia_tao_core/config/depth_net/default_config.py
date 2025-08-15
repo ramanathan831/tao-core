@@ -125,8 +125,5 @@ class ExperimentConfig(CommonExperimentConfig):
     )
     gen_trt_engine: DepthNetGenTrtEngineExpConfig = DATACLASS_FIELD(
         DepthNetGenTrtEngineExpConfig(),
-        description=(
-            "Configurable parameters to construct the TensorRT engine builder "
-            "for a Deformable DETR experiment."
-        ),
+        description="Configurable parameters to construct the TensorRT engine builder for a DepthNet experiment.",
     )
