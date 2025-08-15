@@ -127,7 +127,8 @@ class RTInferenceExpConfig(InferenceConfig):
     is_quantized: bool = BOOL_FIELD(
         value=False,
         default_value=False,
-        description="Flag to indicate if the model is quantized"
+        description="Flag to indicate if the model is quantized",
+        display_name="Flag to indicate if the model is quantized"
     )
 
 
@@ -157,7 +158,8 @@ class RTEvalExpConfig(EvaluateConfig):
     is_quantized: bool = BOOL_FIELD(
         value=False,
         default_value=False,
-        description="Flag to indicate if the model is quantized"
+        description="Flag to indicate if the model is quantized",
+        display_name="Flag to indicate if the model is quantized"
     )
 
 
@@ -175,7 +177,8 @@ class RTExportExpConfig(ExportConfig):
     is_quantized: bool = BOOL_FIELD(
         value=False,
         default_value=False,
-        description="Flag to indicate if the model is quantized"
+        description="Flag to indicate if the model is quantized",
+        display_name="Flag to indicate if the model is quantized"
     )
 
 

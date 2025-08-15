@@ -607,7 +607,8 @@ class EvalExpConfig(EvaluateConfig):
     is_quantized: bool = BOOL_FIELD(
         value=False,
         default_value=False,
-        description="Flag to indicate if the model is quantized"
+        description="Flag to indicate if the model is quantized",
+        display_name="Flag to indicate if the model is quantized"
     )
 
 
@@ -700,7 +701,8 @@ class InferenceExpConfig(InferenceConfig):
     is_quantized: bool = BOOL_FIELD(
         value=False,
         default_value=False,
-        description="Flag to indicate if the model is quantized"
+        description="Flag to indicate if the model is quantized",
+        display_name="Flag to indicate if the model is quantized"
     )
 
 
@@ -719,7 +721,8 @@ class ExportExpConfig(ExportConfig):
     is_quantized: bool = BOOL_FIELD(
         value=False,
         default_value=False,
-        description="Flag to indicate if the model is quantized"
+        description="Flag to indicate if the model is quantized",
+        display_name="Flag to indicate if the model is quantized"
     )
 
 
