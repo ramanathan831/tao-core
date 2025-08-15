@@ -124,6 +124,12 @@ class RTInferenceExpConfig(InferenceConfig):
         display_name="outline width",
         valid_min=1,
     )
+    is_quantized: bool = BOOL_FIELD(
+        value=False,
+        default_value=False,
+        description="Flag to indicate if the model is quantized",
+        display_name="Flag to indicate if the model is quantized"
+    )
 
 
 @dataclass
@@ -149,6 +155,12 @@ class RTEvalExpConfig(EvaluateConfig):
                     filtering out the final list of boxes.""",
         display_name="confidence threshold"
     )
+    is_quantized: bool = BOOL_FIELD(
+        value=False,
+        default_value=False,
+        description="Flag to indicate if the model is quantized",
+        display_name="Flag to indicate if the model is quantized"
+    )
 
 
 @dataclass
@@ -161,6 +173,12 @@ class RTExportExpConfig(ExportConfig):
         display_name="Serialize DeepStream config.",
         description="""Flag to enable serializing the required
                     configs for integrating with DeepStream."""
+    )
+    is_quantized: bool = BOOL_FIELD(
+        value=False,
+        default_value=False,
+        description="Flag to indicate if the model is quantized",
+        display_name="Flag to indicate if the model is quantized"
     )
 
 

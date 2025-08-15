@@ -520,6 +520,11 @@ class DatasetConfig:
         description="Configuration for the testing dataset path",
         display_name="Testing Dataset"
     )
+    quant_calibration_dataset: DataPathFormat = DATACLASS_FIELD(
+        DataPathFormat(),
+        description="Configuration for the quantization calibration dataset path",
+        display_name="Quantization Calibration Dataset"
+    )
     classes_file: str = STR_FIELD(
         value="",
         default_value="",
@@ -598,6 +603,12 @@ class EvalExpConfig(EvaluateConfig):
         default_value="",
         description="Path to checkpoint file",
         display_name="Path to checkpoint file"
+    )
+    is_quantized: bool = BOOL_FIELD(
+        value=False,
+        default_value=False,
+        description="Flag to indicate if the model is quantized",
+        display_name="Flag to indicate if the model is quantized"
     )
 
 
@@ -687,6 +698,12 @@ class InferenceExpConfig(InferenceConfig):
         description="Path to checkpoint file",
         display_name="Path to checkpoint file"
     )
+    is_quantized: bool = BOOL_FIELD(
+        value=False,
+        default_value=False,
+        description="Flag to indicate if the model is quantized",
+        display_name="Flag to indicate if the model is quantized"
+    )
 
 
 @dataclass
@@ -700,6 +717,12 @@ class ExportExpConfig(ExportConfig):
         description=(
             "Flag to enable serializing the required configs for integrating with DeepStream."
         )
+    )
+    is_quantized: bool = BOOL_FIELD(
+        value=False,
+        default_value=False,
+        description="Flag to indicate if the model is quantized",
+        display_name="Flag to indicate if the model is quantized"
     )
 
 
