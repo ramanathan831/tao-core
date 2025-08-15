@@ -127,8 +127,13 @@ class RTInferenceExpConfig(InferenceConfig):
     quantization_config_path: Optional[str] = STR_FIELD(
         value=None,
         default_value="",
-        description="Path to the saved quantization config file if the model is quantized",
-        display_name="Path to saved quantization config file if the model is quantized"
+        description="Optional path to the saved quantization config file if the model is quantized",
+        display_name="Optional path to saved quantization config file if the model is quantized"
+    )
+    is_quantized: bool = BOOL_FIELD(
+        value=False,
+        default_value=False,
+        description="Flag to indicate if the model is quantized"
     )
 
 
@@ -161,6 +166,11 @@ class RTEvalExpConfig(EvaluateConfig):
         description="Path to the saved quantization config file if the model is quantized",
         display_name="Path to saved quantization config file if the model is quantized"
     )
+    is_quantized: bool = BOOL_FIELD(
+        value=False,
+        default_value=False,
+        description="Flag to indicate if the model is quantized"
+    )
 
 
 @dataclass
@@ -179,6 +189,11 @@ class RTExportExpConfig(ExportConfig):
         default_value="",
         description="Path to the saved quantization config file if the model is quantized",
         display_name="Path to saved quantization config file if the model is quantized"
+    )
+    is_quantized: bool = BOOL_FIELD(
+        value=False,
+        default_value=False,
+        description="Flag to indicate if the model is quantized"
     )
 
 

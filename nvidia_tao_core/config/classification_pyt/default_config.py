@@ -610,6 +610,11 @@ class EvalExpConfig(EvaluateConfig):
         description="Path to the saved quantization config file if the model is quantized",
         display_name="Path to saved quantization config file if the model is quantized"
     )
+    is_quantized: bool = BOOL_FIELD(
+        value=False,
+        default_value=False,
+        description="Flag to indicate if the model is quantized"
+    )
 
 
 @dataclass
@@ -704,6 +709,11 @@ class InferenceExpConfig(InferenceConfig):
         description="Path to the saved quantization config file if the model is quantized",
         display_name="Path to saved quantization config file if the model is quantized"
     )
+    is_quantized: bool = BOOL_FIELD(
+        value=False,
+        default_value=False,
+        description="Flag to indicate if the model is quantized"
+    )
 
 
 @dataclass
@@ -723,6 +733,11 @@ class ExportExpConfig(ExportConfig):
         default_value="",
         description="Path to the saved quantization config file if the model is quantized",
         display_name="Path to saved quantization config file if the model is quantized"
+    )
+    is_quantized: bool = BOOL_FIELD(
+        value=False,
+        default_value=False,
+        description="Flag to indicate if the model is quantized"
     )
 
 
