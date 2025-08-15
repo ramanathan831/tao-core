@@ -39,6 +39,7 @@ from nvidia_tao_core.config.common.common_config import (
 )
 
 from nvidia_tao_core.config.common.distillation_config import DistillationConfig
+from nvidia_tao_core.config.common.quantization import ModelQuantizationConfig
 
 
 @dataclass
@@ -519,6 +520,11 @@ class DatasetConfig:
         description="Configuration for the testing dataset path",
         display_name="Testing Dataset"
     )
+    quant_calibration_dataset: DataPathFormat = DATACLASS_FIELD(
+        DataPathFormat(),
+        description="Configuration for the quantization calibration dataset path",
+        display_name="Quantization Calibration Dataset"
+    )
     classes_file: str = STR_FIELD(
         value="",
         default_value="",
@@ -598,6 +604,12 @@ class EvalExpConfig(EvaluateConfig):
         description="Path to checkpoint file",
         display_name="Path to checkpoint file"
     )
+    is_quantized: bool = BOOL_FIELD(
+        value=False,
+        default_value=False,
+        description="Flag to indicate if the model is quantized",
+        display_name="Flag to indicate if the model is quantized"
+    )
 
 
 @dataclass
@@ -619,7 +631,9 @@ class ClassDistillationConfig(DistillationConfig):
         L1 (L1 loss),
         L2 (L2 loss),
         FD (smooth L1),
-        CS (cosine similarity)""",
+        CS (cosine similarity),
+        BALANCED (balanced feature loss),
+        MSE (mean squared error)""",
         description="Loss function for logits distillation."
     )
     loss_lambda: Optional[float] = FLOAT_FIELD(
@@ -633,6 +647,31 @@ class ClassDistillationConfig(DistillationConfig):
         value=MISSING,
         display_name="Pretrained teacher model path",
         description="Path to the pre-trained teacher model."
+    )
+    mode: str = STR_FIELD(
+        value="auto",
+        default_value="auto",
+        description="Distillation mode",
+        valid_options="logits, summary, spatial, auto"
+    )
+    use_mlp: bool = BOOL_FIELD(
+        value=True,
+        default_value=True,
+        description="Flag to use MLP for projection"
+    )
+    mlp_hidden_size: int = INT_FIELD(
+        value=1024,
+        default_value=1024,
+        valid_min=0,
+        valid_max="inf",
+        description="MLP hidden size"
+    )
+    mlp_num_inner: int = INT_FIELD(
+        value=0,
+        default_value=0,
+        valid_min=0,
+        valid_max=10,
+        description="MLP number of inner layers"
     )
     results_dir: Optional[str] = STR_FIELD(
         value=None,
@@ -659,6 +698,12 @@ class InferenceExpConfig(InferenceConfig):
         description="Path to checkpoint file",
         display_name="Path to checkpoint file"
     )
+    is_quantized: bool = BOOL_FIELD(
+        value=False,
+        default_value=False,
+        description="Flag to indicate if the model is quantized",
+        display_name="Flag to indicate if the model is quantized"
+    )
 
 
 @dataclass
@@ -672,6 +717,12 @@ class ExportExpConfig(ExportConfig):
         description=(
             "Flag to enable serializing the required configs for integrating with DeepStream."
         )
+    )
+    is_quantized: bool = BOOL_FIELD(
+        value=False,
+        default_value=False,
+        description="Flag to indicate if the model is quantized",
+        display_name="Flag to indicate if the model is quantized"
     )
 
 
@@ -707,3 +758,4 @@ class ExperimentConfig(CommonExperimentConfig):
     export: ExportExpConfig = DATACLASS_FIELD(ExportExpConfig())
     gen_trt_engine: GenTrtEngineExpConfig = DATACLASS_FIELD(GenTrtEngineExpConfig())
     distill: ClassDistillationConfig = DATACLASS_FIELD(ClassDistillationConfig())
+    quantize: ModelQuantizationConfig = DATACLASS_FIELD(ModelQuantizationConfig())

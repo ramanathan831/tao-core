@@ -244,6 +244,42 @@ class MessageOnlySchema(Schema):
     message = fields.Str(allow_none=True, format="regex", regex=r'.*', validate=fields.validate.Length(max=1000))
 
 
+class MissingFileSchema(Schema):
+    """Schema for individual missing file entries"""
+
+    class Meta:
+        """Class enabling sorting field values by the order in which they are declared"""
+
+        ordered = True
+        unknown = EXCLUDE
+
+    path = fields.Str(format="regex", regex=r'.*', validate=fields.validate.Length(max=500))
+    type = fields.Str(format="regex", regex=r'.*', validate=fields.validate.Length(max=50))
+    regex = fields.Str(format="regex", regex=r'.*', allow_none=True)
+
+
+class ValidationDetailsSchema(Schema):
+    """Class defining dataset validation details schema"""
+
+    class Meta:
+        """Class enabling sorting field values by the order in which they are declared"""
+
+        ordered = True
+        unknown = EXCLUDE
+
+    error_details = fields.Str(format="regex", regex=r'.*', validate=fields.validate.Length(max=1000))
+    expected_structure = fields.Dict(
+        keys=fields.Str(format="regex", regex=r'.*', validate=fields.validate.Length(max=100)),
+        values=fields.Raw(),
+        validate=validate.Length(max=sys.maxsize)
+    )
+    actual_structure = fields.List(fields.Str(format="regex", regex=r'.*'))
+    missing_files = fields.List(fields.Nested(MissingFileSchema))
+    network_type = fields.Str(format="regex", regex=r'.*', validate=fields.validate.Length(max=100))
+    dataset_format = fields.Str(format="regex", regex=r'.*', validate=fields.validate.Length(max=100))
+    dataset_intent = fields.List(fields.Str(format="regex", regex=r'.*'))
+
+
 class ErrorRspSchema(Schema):
     """Class defining error response schema"""
 
@@ -1655,21 +1691,21 @@ class CloudPullTypesEnum(Enum):
 class AWSCloudPullSchema(Schema):
     """Class defining AWS Cloud pull schema"""
 
-    access_key = fields.Str(validate=validate.Length(max=2048))
-    secret_key = fields.Str(validate=validate.Length(max=2048))
+    access_key = fields.Str(required=True, validate=validate.Length(min=1, max=2048))
+    secret_key = fields.Str(required=True, validate=validate.Length(min=1, max=2048))
     cloud_region = fields.Str(validate=validate.Length(max=2048), allow_none=True)
-    endpoint_url = fields.URL(validate=fields.validate.Length(max=2048))
-    cloud_bucket_name = fields.Str(validate=validate.Length(max=2048), allow_none=True)
+    endpoint_url = fields.URL(validate=fields.validate.Length(max=2048), allow_none=True)
+    cloud_bucket_name = fields.Str(validate=validate.Length(min=1, max=2048), allow_none=True)
 
 
 class AzureCloudPullSchema(Schema):
-    """Class defining AWS Cloud pull schema"""
+    """Class defining Azure Cloud pull schema"""
 
-    account_name = fields.Str(validate=validate.Length(max=2048))
-    access_key = fields.Str(validate=validate.Length(max=2048))
+    account_name = fields.Str(required=True, validate=validate.Length(min=1, max=2048))
+    access_key = fields.Str(required=True, validate=validate.Length(min=1, max=2048))
     cloud_region = fields.Str(validate=validate.Length(max=2048), allow_none=True)
-    endpoint_url = fields.URL(validate=fields.validate.Length(max=2048))
-    cloud_bucket_name = fields.Str(validate=validate.Length(max=2048), allow_none=True)
+    endpoint_url = fields.URL(validate=fields.validate.Length(max=2048), allow_none=True)
+    cloud_bucket_name = fields.Str(validate=validate.Length(min=1, max=2048), allow_none=True)
 
 
 class HuggingFaceCloudPullSchema(Schema):
@@ -1701,21 +1737,28 @@ class WorkspaceReqSchema(Schema):
 
     @validates_schema
     def validate_cloud_specific_details(self, data, **kwargs):
-        """Return schema based on cloud_type"""
+        """Return schema based on cloud_type and validate credentials"""
         cloud_type = data.get('cloud_type')
 
         if cloud_type:
+            # First, validate the schema structure
             if cloud_type == CloudPullTypesEnum.aws:
                 schema = AWSCloudPullSchema()
             elif cloud_type == CloudPullTypesEnum.azure:
                 schema = AzureCloudPullSchema()
+            elif cloud_type == CloudPullTypesEnum.seaweedfs:
+                schema = AWSCloudPullSchema()
             elif cloud_type == CloudPullTypesEnum.huggingface:
                 schema = HuggingFaceCloudPullSchema()
             else:
                 schema = Schema()
 
             try:
-                schema.load(data['cloud_specific_details'], unknown=EXCLUDE)
+                # Validate schema structure
+                schema.load(data.get('cloud_specific_details', {}), unknown=EXCLUDE)
+            except ValidationError:
+                # Re-raise ValidationError as-is
+                raise
             except Exception as e:
                 raise fields.ValidationError(str(e))
 
@@ -2840,6 +2883,7 @@ class DatasetRspSchema(Schema):
         validate=fields.validate.Length(max=2048),
         allow_none=True
     )
+    validation_details = fields.Nested(ValidationDetailsSchema, allow_none=True)
 
 
 class DatasetListRspSchema(Schema):
@@ -3105,7 +3149,15 @@ def dataset_retrieve(org_name, dataset_id):
     if response.code == 200:
         schema = DatasetRspSchema()
     else:
-        schema = ErrorRspSchema()
+        # Check if this is a dataset validation error that should include structured details
+        if (response.code == 404 and
+                isinstance(response.data, dict) and
+                response.data.get("validation_details")):
+            # Use DatasetRspSchema for validation errors to include structured details
+            schema = DatasetRspSchema()
+        else:
+            # Use ErrorRspSchema for other error types
+            schema = ErrorRspSchema()
     # Load metadata in schema and return
     schema_dict = schema.dump(schema.load(response.data))
     return make_response(jsonify(schema_dict), response.code)

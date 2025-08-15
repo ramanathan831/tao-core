@@ -678,11 +678,15 @@ class Controller:
         result_dict = {}
         try:
             if self.recommendations[-1].result == 0.0:
-                result_dict[f"best_{self.metric_key}"] = self.min_max(
-                    self.recommendations[:-1], key=lambda rec: rec.result).result
+                best_metric_value = 0.0
+                if self.recommendations[:-1]:
+                    best_metric_value = self.min_max(self.recommendations[:-1], key=lambda rec: rec.result).result
+                result_dict[f"best_{self.metric_key}"] = best_metric_value
             else:
-                result_dict[f"best_{self.metric_key}"] = self.min_max(
-                    self.recommendations, key=lambda rec: rec.result).result
+                best_metric_value = 0.0
+                if self.recommendations:
+                    best_metric_value = self.min_max(self.recommendations, key=lambda rec: rec.result).result
+                result_dict[f"best_{self.metric_key}"] = best_metric_value
         except Exception as e:
             logger.error("Exception thrown in write_results is %s", str(e))
             result_dict[f"best_{self.metric_key}"] = 0.0
