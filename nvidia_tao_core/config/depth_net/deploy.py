@@ -19,11 +19,11 @@ from dataclasses import dataclass
 from nvidia_tao_core.config.utils.types import (
     DATACLASS_FIELD,
     STR_FIELD,
+    INT_FIELD,
 )
 from nvidia_tao_core.config.common.common_config import (
     GenTrtEngineConfig,
-    TrtConfig,
-    CalibrationConfig
+    TrtConfig
 )
 
 
@@ -36,14 +36,25 @@ class DepthNetTrtConfig(TrtConfig):
         default_value="FP32",
         description="The precision to be set for building the TensorRT engine.",
         display_name="data type",
-        valid_options=",".join(["FP32", "FP16", "INT8"])
+        valid_options=",".join(["FP32", "FP16"])
     )
-    calibration: CalibrationConfig = DATACLASS_FIELD(
-        CalibrationConfig(),
-        description=(
-            "The configuration elements to define the "
-            "TensorRT calibrator for int8 PTQ."
-        ),
+    height: int = INT_FIELD(
+        value=-1,
+        default_value=-1,
+        valid_min=-1,
+        description="""The height of the input Tensor for the engine.
+                    A value of :code:`-1` implies dynamic tensor shapes.""",
+        display_name="Height",
+        popular="yes",
+    )
+    width: int = INT_FIELD(
+        value=-1,
+        default_value=-1,
+        valid_min=-1,
+        description="""The height of the input Tensor for the engine.
+                    A value of :code:`-1` implies dynamic tensor shapes.""",
+        display_name="Height",
+        popular="yes",
     )
 
 
