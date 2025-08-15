@@ -116,7 +116,44 @@ class ContainerJobHandler:
     """Handler for processing jobs in a containerized environment."""
 
     @staticmethod
-    def create_and_upload_tarball(results_dir, cloud_storage, job_id, action_name):
+    def capture_directory_snapshot(directory):
+        """Capture a snapshot of all files and directories in the given directory.
+
+        Args:
+            directory (str): Directory to snapshot
+
+        Returns:
+            set: Set of relative file paths from the directory
+        """
+        try:
+            if not os.path.exists(directory):
+                logger.warning("Directory does not exist for snapshot: %s", directory)
+                return set()
+
+            snapshot = set()
+            for root, dirs, files in os.walk(directory):
+                # Add all files
+                for file in files:
+                    file_path = os.path.join(root, file)
+                    rel_path = os.path.relpath(file_path, directory)
+                    snapshot.add(rel_path)
+
+                # Add all directories
+                for dir_name in dirs:
+                    dir_path = os.path.join(root, dir_name)
+                    rel_path = os.path.relpath(dir_path, directory)
+                    snapshot.add(rel_path)
+
+            logger.info("Captured snapshot of %d items in directory: %s", len(snapshot), directory)
+            return snapshot
+
+        except Exception as e:
+            logger.error("Error capturing directory snapshot: %s", str(e))
+            logger.error("Traceback: %s", traceback.format_exc())
+            return set()
+
+    @staticmethod
+    def create_and_upload_tarball(results_dir, cloud_storage, job_id, action_name, exclude_snapshot=None):
         """Create a tarball of the results directory and upload it.
 
         Args:
@@ -124,13 +161,14 @@ class ContainerJobHandler:
             cloud_storage: CloudStorage instance for uploading
             job_id (str): Job ID for naming the tarball
             action_name (str): Action name for naming the tarball
+            exclude_snapshot (set, optional): Set of relative paths to exclude from tarball
         """
         try:
             tarball_name = f"{action_name}_results.tar.gz"
             tarball_path = os.path.join(results_dir, tarball_name)
 
             # Create tarball using utility function
-            if create_tarball(results_dir, tarball_path):
+            if create_tarball(results_dir, tarball_path, exclude_snapshot):
                 # Upload tarball using utility function
                 if cloud_storage and os.path.exists(tarball_path):
                     upload_tarball_to_cloud(cloud_storage, tarball_path, remove_after_upload=True)
@@ -163,11 +201,15 @@ class ContainerJobHandler:
                 exit_event = None
                 upload_thread = None
                 status_logger = None
+                results_dir_snapshot = None
 
                 try:
                     # Setup cloud storage and specs
 
                     cloud_storage, specs, spec_path = prepare_data_before_job_run(job, docker_env_vars)
+
+                    # Capture snapshot of results directory after downloads but before job execution
+                    results_dir_snapshot = ContainerJobHandler.capture_directory_snapshot(specs["results_dir"])
 
                     # Get upload strategy by reading network config directly
                     network = docker_env_vars.get("ORCHESTRATION_API_NETWORK", job.get("neural_network_name", ""))
@@ -272,7 +314,8 @@ class ContainerJobHandler:
                                 cloud_storage,
                                 upload_strategy,
                                 specs["results_dir"],
-                                selective_tarball_config
+                                selective_tarball_config,
+                                results_dir_snapshot
                             )
 
                     # Launch job asynchronously
@@ -292,7 +335,8 @@ class ContainerJobHandler:
                         )
                     ContainerJobHandler._cleanup(
                         exit_event=exit_event,
-                        upload_thread=upload_thread
+                        upload_thread=upload_thread,
+                        results_dir_snapshot=results_dir_snapshot
                     )
 
             # Launch the async setup and execution
@@ -336,7 +380,8 @@ class ContainerJobHandler:
         cloud_storage=None,
         upload_strategy="continuous",
         results_dir=None,
-        selective_tarball_config=None
+        selective_tarball_config=None,
+        results_dir_snapshot=None
     ):
         """Clean up resources and log final status."""
         if exit_event:
@@ -352,7 +397,8 @@ class ContainerJobHandler:
                 results_dir,
                 cloud_storage,
                 job["job_id"],
-                job["action_name"]
+                job["action_name"],
+                results_dir_snapshot
             )
 
         # Handle selective tarball creation if needed

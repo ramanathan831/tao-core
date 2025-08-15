@@ -15,6 +15,10 @@
         }
     },
 
+    "upload_strategy": {
+        "inference": "tarball_after_completion"
+    },
+
     "data_sources": {
         "train": {
             "dataset.segment.root_dir": {

@@ -15,6 +15,10 @@
         }
     },
 
+    "upload_strategy": {
+        "inference": "tarball_after_completion"
+    },
+
     "actions_mapping": {
         "*": {
             "network": "visual_changenet"

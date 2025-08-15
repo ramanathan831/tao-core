@@ -16,6 +16,10 @@
         }
     },
 
+    "upload_strategy": {
+        "inference": "tarball_after_completion"
+    },
+
     "data_sources": {
         "train": {
             "dataset.train_dataset.images_dir": {

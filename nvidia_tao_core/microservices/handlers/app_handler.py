@@ -438,7 +438,7 @@ class AppHandler:
                 "format": dataset_format,
                 "use_for": dataset_intention
             }
-            is_cloud_dataset_present = validate_dataset(
+            is_cloud_dataset_present, _ = validate_dataset(
                 org_name,
                 dataset_handler_metadata,
                 temp_dir=f"/{cloud_folder}",
@@ -1004,6 +1004,11 @@ class AppHandler:
 
         return_metadata = sanitize_handler_metadata(handler_metadata)
         if return_metadata.get("status") == "invalid_pull":
+            # Include detailed validation error information if available
+            validation_details = return_metadata.get("validation_details", {})
+            if validation_details:
+                error_msg = validation_details.get("error_details", "Dataset validation failed")
+                return Code(404, return_metadata, error_msg, use_data_as_response=True)
             return Code(404, return_metadata, "Dataset pulled from cloud doesn't match folder structure required")
         return Code(200, return_metadata, "Dataset retrieved")
 
@@ -1024,11 +1029,11 @@ class AppHandler:
         """
         handler_metadata = resolve_metadata("dataset", dataset_id)
         if not handler_metadata:
-            return Code(200, {}, "Dataset deleted")
+            return Code(200, {}, f"Dataset {dataset_id} deleted")
 
         user_id = handler_metadata.get("user_id")
         if not check_write_access(user_id, org_name, dataset_id, kind="datasets"):
-            return Code(404, {}, "Dataset not available")
+            return Code(404, {}, f"Dataset {dataset_id} not available")
 
         # If dataset is being used by user's experiments.
         experiments = get_user_experiments(user_id)
@@ -1040,20 +1045,20 @@ class AppHandler:
                 if additional_dataset_id:
                     datasets_in_use.add(additional_dataset_id)
             if dataset_id in datasets_in_use:
-                return Code(400, {}, f"Dataset in use by {experiment_id}")
+                return Code(400, {}, f"Dataset {dataset_id} in use by {experiment_id}")
 
         # Check if any job running
         for job in handler_metadata.get("jobs", {}):
             if handler_metadata["jobs"][job]["status"] == "Running":
-                return Code(400, {}, f"Dataset in use by job {job}")
+                return Code(400, {}, f"Dataset {dataset_id} in use by job {job}")
 
         # Check if dataset is public, then someone could be running it
         if handler_metadata.get("public", False):
-            return Code(400, {}, "Dataset is Public. Cannot delete")
+            return Code(400, {}, f"Dataset {dataset_id} is Public. Cannot delete")
 
         # Check if dataset is read only, if yes, cannot delete
         if handler_metadata.get("read_only", False):
-            return Code(400, {}, "Dataset is read only. Cannot delete")
+            return Code(400, {}, f"Dataset {dataset_id} is read only. Cannot delete")
 
         mongo_users = MongoHandler("tao", "users")
         datasets = get_user_datasets(user_id, mongo_users)
@@ -1103,21 +1108,58 @@ class AppHandler:
 
             def validate_dataset_thread():
                 try:
-                    valid_datset_structure = validate_dataset(
+                    # For cloud-based validation, resolve workspace metadata
+                    workspace_metadata = None
+                    if metadata.get("workspace"):
+                        workspace_metadata = resolve_metadata("workspace", metadata.get("workspace"))
+
+                    valid_dataset_structure, validation_result = validate_dataset(
                         org_name,
                         metadata,
-                        temp_dir=temp_dir
+                        temp_dir=temp_dir,
+                        workspace_metadata=workspace_metadata
                     )
-                    shutil.rmtree(temp_dir)
-                    metadata["status"] = "pull_complete"
-                    if not valid_datset_structure:
-                        logger.error("Dataset structure validation failed: %s", metadata)
+                    # Only remove temp_dir if it was actually created (not empty for cloud validation)
+                    if temp_dir and os.path.exists(temp_dir):
+                        shutil.rmtree(temp_dir)
+
+                    if valid_dataset_structure:
+                        metadata["status"] = "pull_complete"
+                    else:
                         metadata["status"] = "invalid_pull"
+                        # Store detailed validation information in metadata for user feedback
+                        metadata["validation_details"] = {
+                            "error_details": validation_result.get("error_details", "Unknown validation error"),
+                            "expected_structure": validation_result.get("expected_structure", {}),
+                            "actual_structure": validation_result.get("actual_structure", []),
+                            "missing_files": validation_result.get("missing_files", []),
+                            "network_type": validation_result.get("network_type", ""),
+                            "dataset_format": validation_result.get("dataset_format", ""),
+                            "dataset_intent": validation_result.get("dataset_intent", [])
+                        }
+                        logger.error(
+                            "Dataset structure validation failed for dataset %s. "
+                            "Expected structure: %s. Actual files: %s. Missing files: %s. Error: %s",
+                            dataset_id,
+                            validation_result.get("expected_structure", {}),
+                            validation_result.get("actual_structure", []),
+                            validation_result.get("missing_files", []),
+                            validation_result.get("error_details", ""))
+
                     write_handler_metadata(dataset_id, metadata, "dataset")
                 except Exception as e:
                     logger.error("Exception thrown in validate_dataset_thread is %s", str(e))
                     logger.error(traceback.format_exc())
                     metadata["status"] = "invalid_pull"
+                    metadata["validation_details"] = {
+                        "error_details": f"Validation process failed: {str(e)}",
+                        "expected_structure": {},
+                        "actual_structure": [],
+                        "missing_files": [],
+                        "network_type": metadata.get("type", ""),
+                        "dataset_format": metadata.get("format", ""),
+                        "dataset_intent": metadata.get("use_for", [])
+                    }
                     write_handler_metadata(dataset_id, metadata, "dataset")
 
             thread = threading.Thread(target=validate_dataset_thread)
@@ -1132,7 +1174,7 @@ class AppHandler:
 
     @staticmethod
     def pull_dataset(user_id, org_name, dataset_id):
-        """Initiates the process of downloading and validating a dataset.
+        """Initiates the process of validating a dataset, optimizing for cloud-based datasets.
 
         Args:
             user_id (str): UUID of the user requesting the dataset pull.
@@ -1140,12 +1182,35 @@ class AppHandler:
             dataset_id (str): UUID of the dataset to be pulled.
 
         Notes:
-            - Downloads the dataset and triggers validation.
+            - For cloud-based datasets: validates structure directly without downloading.
+            - For public URLs/HuggingFace: downloads first then validates.
             - Updates dataset status upon failure.
         """
         try:
-            temp_dir, file_path = download_dataset(dataset_id)
-            AppHandler.validate_dataset(user_id, org_name, dataset_id, temp_dir=temp_dir, file_path=file_path)
+            metadata = resolve_metadata("dataset", dataset_id)
+            if not metadata:
+                logger.error("Dataset metadata not found for %s", dataset_id)
+                return
+
+            # Check if this is a cloud-based dataset that can use cloud peek validation
+            cloud_file_path = metadata.get("cloud_file_path")
+            workspace_id = metadata.get("workspace")
+            dataset_url = metadata.get("url")
+
+            # Determine if we can use cloud peek validation (avoid download)
+            can_use_cloud_peek = (
+                cloud_file_path and
+                workspace_id and
+                not dataset_url  # No external URL means it's cloud storage based
+            )
+
+            if can_use_cloud_peek:
+                # Validate directly from cloud without downloading
+                AppHandler.validate_dataset(user_id, org_name, dataset_id, temp_dir="", file_path="")
+            else:
+                logger.info("Using download validation for dataset %s (url: %s)", dataset_id, dataset_url)
+                temp_dir, file_path = download_dataset(dataset_id)
+                AppHandler.validate_dataset(user_id, org_name, dataset_id, temp_dir=temp_dir, file_path=file_path)
         except Exception as e:
             logger.error("Exception thrown in pull_dataset is %s", str(e))
             logger.error(traceback.format_exc())
@@ -3461,24 +3526,24 @@ class AppHandler:
         experiments = get_user_experiments(user_id)
 
         if experiment_id not in experiments:
-            return Code(404, {}, "Experiment cannot be deleted")
+            return Code(404, {}, f"Experiment {experiment_id} cannot be deleted")
 
         for handler_id in experiments:
             metadata = get_experiment(handler_id)
             if experiment_id == metadata.get("base_experiment", None):
-                return Code(400, {}, "Experiment in use as a base_experiment")
+                return Code(400, {}, f"Experiment {experiment_id} in use as a base_experiment")
 
         for job in handler_metadata.get("jobs", {}):
             if handler_metadata["jobs"][job]["status"] in ("Pending", "Running"):
-                return Code(400, {}, f"Experiment in use by job {job}")
+                return Code(400, {}, f"Experiment {experiment_id} in use by job {job}")
 
         # Check if experiment is public, then someone could be running it
         if handler_metadata.get("public", False):
-            return Code(400, {}, "Experiment is Public. Cannot delete")
+            return Code(400, {}, f"Experiment {experiment_id} is Public. Cannot delete")
 
         # Check if experiment is read only, if yes, cannot delete
         if handler_metadata.get("read_only", False):
-            return Code(400, {}, "Experiment is read only. Cannot delete")
+            return Code(400, {}, f"Experiment {experiment_id} is read only. Cannot delete")
 
         # Check if the experiment is being used by a realtime infer job
         if handler_metadata.get("realtime_infer", False):
