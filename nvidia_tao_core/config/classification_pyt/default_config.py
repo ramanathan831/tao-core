@@ -604,12 +604,6 @@ class EvalExpConfig(EvaluateConfig):
         description="Path to checkpoint file",
         display_name="Path to checkpoint file"
     )
-    quantization_config_path: Optional[str] = STR_FIELD(
-        value=None,
-        default_value="",
-        description="Path to the saved quantization config file if the model is quantized",
-        display_name="Path to saved quantization config file if the model is quantized"
-    )
     is_quantized: bool = BOOL_FIELD(
         value=False,
         default_value=False,
@@ -703,12 +697,6 @@ class InferenceExpConfig(InferenceConfig):
         description="Path to checkpoint file",
         display_name="Path to checkpoint file"
     )
-    quantization_config_path: Optional[str] = STR_FIELD(
-        value=None,
-        default_value="",
-        description="Path to the saved quantization config file if the model is quantized",
-        display_name="Path to saved quantization config file if the model is quantized"
-    )
     is_quantized: bool = BOOL_FIELD(
         value=False,
         default_value=False,
@@ -727,12 +715,6 @@ class ExportExpConfig(ExportConfig):
         description=(
             "Flag to enable serializing the required configs for integrating with DeepStream."
         )
-    )
-    quantization_config_path: Optional[str] = STR_FIELD(
-        value=None,
-        default_value="",
-        description="Path to the saved quantization config file if the model is quantized",
-        display_name="Path to saved quantization config file if the model is quantized"
     )
     is_quantized: bool = BOOL_FIELD(
         value=False,
