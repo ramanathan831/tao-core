@@ -38,24 +38,6 @@ class DepthNetTrtConfig(TrtConfig):
         display_name="data type",
         valid_options=",".join(["FP32", "FP16"])
     )
-    height: int = INT_FIELD(
-        value=-1,
-        default_value=-1,
-        valid_min=-1,
-        description="""The height of the input Tensor for the engine.
-                    A value of :code:`-1` implies dynamic tensor shapes.""",
-        display_name="Height",
-        popular="yes",
-    )
-    width: int = INT_FIELD(
-        value=-1,
-        default_value=-1,
-        valid_min=-1,
-        description="""The height of the input Tensor for the engine.
-                    A value of :code:`-1` implies dynamic tensor shapes.""",
-        display_name="Height",
-        popular="yes",
-    )
 
 
 @dataclass
