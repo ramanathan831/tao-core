@@ -124,6 +124,12 @@ class RTInferenceExpConfig(InferenceConfig):
         display_name="outline width",
         valid_min=1,
     )
+    quantization_config_path: Optional[str] = STR_FIELD(
+        value=None,
+        default_value="",
+        description="Path to the saved quantization config file if the model is quantized",
+        display_name="Path to saved quantization config file if the model is quantized"
+    )
 
 
 @dataclass
@@ -149,6 +155,12 @@ class RTEvalExpConfig(EvaluateConfig):
                     filtering out the final list of boxes.""",
         display_name="confidence threshold"
     )
+    quantization_config_path: Optional[str] = STR_FIELD(
+        value=None,
+        default_value="",
+        description="Path to the saved quantization config file if the model is quantized",
+        display_name="Path to saved quantization config file if the model is quantized"
+    )
 
 
 @dataclass
@@ -161,6 +173,12 @@ class RTExportExpConfig(ExportConfig):
         display_name="Serialize DeepStream config.",
         description="""Flag to enable serializing the required
                     configs for integrating with DeepStream."""
+    )
+    quantization_config_path: Optional[str] = STR_FIELD(
+        value=None,
+        default_value="",
+        description="Path to the saved quantization config file if the model is quantized",
+        display_name="Path to saved quantization config file if the model is quantized"
     )
 
 
