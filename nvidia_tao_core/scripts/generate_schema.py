@@ -43,7 +43,7 @@ def generate_schema(neural_network_name, action=""):
 def filter_schema(schema, valid_actions, current_action):
     """Filter the schema to only include the allowed keys"""
     # Always keep 'train' and the current action, plus all non-action keys
-    allowed_keys = set(['train', current_action])
+    allowed_keys = set(['train', 'distill', 'quantize', current_action])
     # Add all non-action keys (not in valid_actions)
     allowed_keys.update([k for k in schema['properties'] if k not in valid_actions])
 
