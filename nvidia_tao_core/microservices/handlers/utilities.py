@@ -1335,9 +1335,13 @@ def download_log_from_cloud(handler_metadata, job_id, log_file_path, automl_inde
     if cs_instance.is_file(f"/results/{lookup_job_id}/microservices_log.txt"):
         cs_instance.download_file(f"/results/{lookup_job_id}/microservices_log.txt", log_file_path)
     else:
+        logger.error("Log file not found at %s", f"/results/{lookup_job_id}/microservices_log.txt")
         # Best model files are moved under /results/brain_job_id
         log_path = f"/results/{job_id}/microservices_log.txt"
-        cs_instance.download_file(log_path, log_file_path)
+        if cs_instance.is_file(log_path):
+            cs_instance.download_file(log_path, log_file_path)
+        else:
+            logger.error("Log file not found at %s", log_path)
 
 
 def format_epoch(network, epoch_number):
