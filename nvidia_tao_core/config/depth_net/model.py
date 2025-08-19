@@ -15,14 +15,43 @@
 """Configuration hyperparameter schema for the model."""
 
 from dataclasses import dataclass
-from typing import List
+from typing import List, Optional
 
 from nvidia_tao_core.config.utils.types import (
     BOOL_FIELD,
     INT_FIELD,
     LIST_FIELD,
     STR_FIELD,
+    DATACLASS_FIELD,
 )
+
+
+@dataclass
+class StereoBackBone:
+    """Define StereoBackBone dependency config"""
+
+    depth_anything_v2_pretrained_path: Optional[str] = STR_FIELD(
+        value="",
+        default_value="",
+        description="""Path to load depth anything v2 as an encoder for Stereo DepthNet (FoundationStereo)""",
+    )
+    edgenext_pretrained_path: Optional[str] = STR_FIELD(
+        value="",
+        default_value="",
+        description="""Path to load edgenext encoder for Stereo DepthNet (FoundationStereo)""",
+    )
+    use_bn: bool = BOOL_FIELD(
+        value=False,
+        default_value=False,
+        display_name="batch normalization in DepthAnythingV2",
+        description="""A flag specifying whether to use batch normalization in DepthAnythingV2""",
+    )
+    use_clstoken: bool = BOOL_FIELD(
+        value=False,
+        default_value=False,
+        display_name="class token in DepthAnythingV2",
+        description="""A flag specifying whether to use class token""",
+    )
 
 
 @dataclass
@@ -36,6 +65,12 @@ class DepthNetModelConfig:
         valid_options=",".join([
             "FoundationStereo", "MetricDepthAnything", "RelativeDepthAnything"
         ])
+    )
+    stereo_back_bone: StereoBackBone = DATACLASS_FIELD(
+        StereoBackBone(),
+        value="",
+        default_value="",
+        description="Network defined paths for Edgenext and Depthanythingv2",
     )
     hidden_dims: List[int] = LIST_FIELD(
         arrList=[128, 128, 128],
@@ -67,8 +102,8 @@ class DepthNetModelConfig:
         automl_enabled="TRUE"
     )
     valid_iters: int = INT_FIELD(
-        value=32,
-        default_value=32,
+        value=22,
+        default_value=22,
         description="Validation Iteration",
         display_name="Validation iteration",
         valid_min=1,
@@ -124,15 +159,17 @@ class DepthNetModelConfig:
             "vits", "vitb", "vitl", "vitg"
         ])
     )
-    use_bn: bool = BOOL_FIELD(
+    load_checkpoint_strict: bool = BOOL_FIELD(
         value=False,
-        default_value=False,
-        display_name="batch normalization in DepthAnythingV2",
-        description="""A flag specifying whether to use batch normalization in DepthAnythingV2""",
+        display_name="checkpoint load check",
+        description="""
+        A boolean flag to expose how we load a pretrained checkpoint, whether strict or non strict.
+        """
     )
-    use_clstoken: bool = BOOL_FIELD(
-        value=False,
-        default_value=False,
-        display_name="class token in DepthAnythingV2",
-        description="""A flag specifying whether to use class token""",
+    max_disparity: int = INT_FIELD(
+        value=416,
+        display_name="max disparity",
+        description="""
+        The maximum disparity of the model used in the training of a stereo model
+        """
     )
