@@ -69,10 +69,15 @@ class StereoBackbone:
             "vits", "vitb", "vitl", "vitg"
         ])
     )
-    pretrained_path: Optional[str] = STR_FIELD(
+    depth_anything_v2_pretrained_path: Optional[str] = STR_FIELD(
         value="",
         default_value="",
-        description="""Path to load pretrained model for stereo depth estimation""",
+        description="""Path to load depth anything v2 as an encoder for Stereo DepthNet (FoundationStereo)""",
+    )
+    edgenext_pretrained_path: Optional[str] = STR_FIELD(
+        value="",
+        default_value="",
+        description="""Path to load edgenext encoder for Stereo DepthNet (FoundationStereo)""",
     )
     use_bn: bool = BOOL_FIELD(
         value=False,
