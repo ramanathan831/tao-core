@@ -1,7 +1,7 @@
 {
     "api_params": {
         "dataset_type":"image_classification",
-        "actions": ["train", "distill", "evaluate","export","gen_trt_engine","inference"],
+        "actions": ["train", "distill", "quantize", "evaluate","export","gen_trt_engine","inference"],
         "formats":["classification_pyt"],
         "accepted_ds_intents": ["training", "evaluation", "testing"],
         "image":"TAO_PYTORCH",
@@ -9,6 +9,7 @@
         "actions_pipe":{
             "train":"train",
             "distill":"train",
+            "quantize":"train",
             "evaluate":"evaluate",
             "export":"export_with_spec",
             "gen_trt_engine":"gen_trt_engine",
@@ -39,6 +40,23 @@
             }
         },
         "distill": {
+            "dataset.train_dataset.images_dir": {
+                "source": "train_datasets",
+                "multiple_sources": false,
+                "path": "images_train.tar.gz"
+            },
+            "dataset.classes_file": {
+                "source": "train_datasets",
+                "multiple_sources": false,
+                "path": "classes.txt"
+            },
+            "dataset.val_dataset.images_dir": {
+                "source": "eval_dataset",
+                "multiple_sources": false,
+                "path": "images_val.tar.gz"
+            }
+        },
+        "quantize": {
             "dataset.train_dataset.images_dir": {
                 "source": "train_datasets",
                 "multiple_sources": false,
@@ -108,6 +126,10 @@
         "distill": {
             "results_dir":"output_dir",
             "distill.pretrained_teacher_model_path":"parent_model"
+        },
+        "quantize": {
+            "results_dir":"output_dir",
+            "quantize.model_path":"parent_model"
         },
         "evaluate":{
             "results_dir":"output_dir",
