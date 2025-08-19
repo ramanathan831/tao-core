@@ -30,26 +30,30 @@ from nvidia_tao_core.config.utils.types import (
 class MonoBackbone:
     """Define MonoBackbone dependency config"""
 
+    encoder: str = STR_FIELD(
+        value="vitl",
+        default_value="vitl",
+        description="DepthAnythingV2 Encoder options",
+        valid_options=",".join([
+            "vits", "vitb", "vitl", "vitg"
+        ])
+    )
     pretrained_path: Optional[str] = STR_FIELD(
         value="",
         default_value="",
         description="""Path to load pretrained model for monocular depth estimation""",
     )
-
-
-@dataclass
-class StereoBackBone:
-    """Define StereoBackBone dependency config"""
-
-    depth_anything_v2_pretrained_path: Optional[str] = STR_FIELD(
-        value="",
-        default_value="",
-        description="""Path to load depth anything v2 as an encoder for Stereo DepthNet (FoundationStereo)""",
+    use_bn: bool = BOOL_FIELD(
+        value=False,
+        default_value=False,
+        display_name="batch normalization in DepthAnythingV2",
+        description="""A flag specifying whether to use batch normalization in DepthAnythingV2""",
     )
-    edgenext_pretrained_path: Optional[str] = STR_FIELD(
-        value="",
-        default_value="",
-        description="""Path to load edgenext encoder for Stereo DepthNet (FoundationStereo)""",
+    use_clstoken: bool = BOOL_FIELD(
+        value=False,
+        default_value=False,
+        display_name="class token in DepthAnythingV2",
+        description="""A flag specifying whether to use class token""",
     )
 
 
@@ -68,10 +72,6 @@ class DepthNetModelConfig:
     mono_backbone: MonoBackbone = DATACLASS_FIELD(
         MonoBackbone(),
         description="Configurable parameters to construct the mono backbone for a DepthNet experiment.",
-    )
-    stereo_backbone: StereoBackBone = DATACLASS_FIELD(
-        StereoBackBone(),
-        description="Configurable parameters to construct the stereo backbone for a DepthNet experiment.",
     )
     hidden_dims: List[int] = LIST_FIELD(
         arrList=[128, 128, 128],
@@ -151,24 +151,4 @@ class DepthNetModelConfig:
         valid_max=2,
         description="resolution of the disparity field (1/2^K)",
         display_name="disparity field resoultion"
-    )
-    encoder: str = STR_FIELD(
-        value="vitl",
-        default_value="vitl",
-        description="DepthAnythingV2 Encoder options",
-        valid_options=",".join([
-            "vits", "vitb", "vitl", "vitg"
-        ])
-    )
-    use_bn: bool = BOOL_FIELD(
-        value=False,
-        default_value=False,
-        display_name="batch normalization in DepthAnythingV2",
-        description="""A flag specifying whether to use batch normalization in DepthAnythingV2""",
-    )
-    use_clstoken: bool = BOOL_FIELD(
-        value=False,
-        default_value=False,
-        display_name="class token in DepthAnythingV2",
-        description="""A flag specifying whether to use class token""",
     )
