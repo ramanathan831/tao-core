@@ -84,14 +84,29 @@ class DNDatasetConvertConfig:
     depth_extension: str = STR_FIELD(
         value="png",
         default_value="png",
-        description="The extension of the depth images in the directory.",
+        description="The file extension of the depth images in the directory.",
         display_name="depth image extension"
     )
     image_extension: str = STR_FIELD(
         value="jpg",
         default_value="jpg",
-        description="The extension of the images in the directory.",
+        description="The file extension of the images in the directory.",
         display_name="image extension"
+    )
+    nocc_mask_dir_name: str = STR_FIELD(
+        value="",
+        default_value="",
+        description="The relative directory path to find "
+                    "non-occluded masks from the root directory",
+        display_name="Non occluded mask"
+    )
+    nocc_extension: str = STR_FIELD(
+        value="png",
+        default_value="png",
+        description="The file extension of the non-occluded mask. "
+                    "Non-occluded masks are generally used to exclude "
+                    "image regions that are hidded from a camera",
+        display_name="Nocc image extension"
     )
 
 
@@ -351,6 +366,30 @@ class DepthNetDatasetConfig:
         description="The minimum depth in meters in MetricDepthAnything",
         display_name="min depth in meters"
     )
+    max_disparity: int = INT_FIELD(
+        value=416,
+        valid_min=1,
+        valid_max=416,
+        description="The maximum allowed disparity for which we compute losses during training",
+        display_name="maximum dispairty"
+    )
+    baseline: float = FLOAT_FIELD(
+        value=193.001 / 1e3,
+        default_value=193.001 / 1e3,
+        description="The baseline for stereo datasets",
+        valid_min=0.0,
+        valid_max="inf",
+        display_name="Stereo baseline"
+    )
+    focal_x: float = FLOAT_FIELD(
+        value=1998.842,
+        default_value=1998.842,
+        description="The focal length along x-axis",
+        valid_min=0.0,
+        valid_max="inf",
+        display_name="The focal length along x-axis"
+    )
+
     train_dataset: BaseDepthNetDatasetConfig = DATACLASS_FIELD(
         BaseDepthNetDatasetConfig(),
         description="Configurable parameters to construct the train dataset for a DepthNet experiment.",

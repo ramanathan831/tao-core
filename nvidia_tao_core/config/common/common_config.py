@@ -153,6 +153,13 @@ class EvaluateConfig:
         description="""
         Path to where all the assets generated from a task are stored.
         """)
+    batch_size: int = INT_FIELD(
+        value=-1,
+        default_value=-1,
+        valid_min=-1,
+        description="""The batch size of the input Tensor. This is important if batch_size > 1 for large dataset.""",
+        display_name="batch size"
+    )
 
 
 @dataclass
@@ -198,6 +205,13 @@ class InferenceConfig:
         description="""
         Path to where all the assets generated from a task are stored.
         """)
+    batch_size: int = INT_FIELD(
+        value=-1,
+        default_value=-1,
+        valid_min=-1,
+        description="""The batch size of the input Tensor. This is important if batch_size > 1 for large dataset.""",
+        display_name="batch size"
+    )
 
 
 @dataclass

@@ -76,7 +76,8 @@ class OptimConfig:
                     * StepLR : Decrease the lr by lr_decay at every lr_step_size.""",
         display_name="learning rate scheduler",
         valid_options=",".join(
-            ["MultiStep", "StepLR", "CustomMultiStepLRScheduler", "LambdaLR"]
+            ["MultiStep", "StepLR", "CustomMultiStepLRScheduler",
+             "LambdaLR", "PolynomialLR", "OneCycleLR", "CosineAnnealingLR"]
         )
     )
     lr_steps: List[int] = LIST_FIELD(
@@ -89,21 +90,29 @@ class OptimConfig:
         value=1000,
         math_cond="> 0",
         display_name="learning rate step size",
-        description="The number of steps to decrease the learning rate in the StepLR.",
+        description="""The number of steps to decrease the learning rate in the StepLR.""",
         automl_enabled="TRUE"
     )
     lr_decay: float = FLOAT_FIELD(
         value=0.1,
         math_cond="> 0.0",
         display_name="learning rate decay",
-        description="The decreasing factor for the learning rate scheduler.",
+        description="""The decreasing factor for the learning rate scheduler.""",
+        automl_enabled="TRUE"
+    )
+    min_lr: float = FLOAT_FIELD(
+        value=1e-7,
+        math_cond="> 0.0",
+        display_name="minimum learning rate",
+        description="""The minimum learning rate value for the learning rate scheduler.""",
         automl_enabled="TRUE"
     )
     warmup_steps: int = INT_FIELD(
-        value=0,
-        default_value=0,
-        description="The number of steps to perform linear learning rate warm-up.",
-        display_name="warm up steps",
+        value=20,
+        default_value=20,
+        description="""The number of steps to perform linear learning rate" \
+                    warm-up before engaging a learning rate scheduler""",
+        display_name="Warm up steps",
         valid_min=0,
         valid_max="inf"
     )
@@ -189,4 +198,33 @@ class DepthNetTrainExpConfig(TrainConfig):
         description="""
         Flag to enable printing of detailed learning rate scaling from the optimizer.
         """
+    )
+    inference_tile: bool = BOOL_FIELD(
+        value=False,
+        display_name="tile inference",
+        description="""Use tiled inference, particularly for transformers
+                    which expect fixed size of sequences.
+                    """
+    )
+    tile_wtype: str = STR_FIELD(
+        value="gaussian",
+        display_name="tile weight type",
+        description="Use tiled inference weight type"
+    )
+    tile_min_overlap: List[int] = LIST_FIELD(
+        arrList=[16, 16],
+        display_name="tile weight type",
+        description="Use tiled inference weight type"
+    )
+    verbose: bool = BOOL_FIELD(
+        value=False,
+        display_name="verbose printouts",
+        description="""
+        Whether to display verbose logs to console"""
+    )
+    log_every_n_steps: int = INT_FIELD(
+        value=500,
+        display_name='log steps',
+        description="""
+        Interval steps of logging training results and running validation numbers within 1 epoch"""
     )

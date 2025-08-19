@@ -138,8 +138,8 @@ class DepthNetModelConfig:
         automl_enabled="TRUE"
     )
     valid_iters: int = INT_FIELD(
-        value=32,
-        default_value=32,
+        value=22,
+        default_value=22,
         description="Validation Iteration",
         display_name="Validation iteration",
         valid_min=1,
@@ -186,4 +186,18 @@ class DepthNetModelConfig:
         valid_max=2,
         description="resolution of the disparity field (1/2^K)",
         display_name="disparity field resoultion"
+    )
+    load_checkpoint_strict: bool = BOOL_FIELD(
+        value=False,
+        display_name="checkpoint load check",
+        description="""
+        A boolean flag to expose how we load a pretrained checkpoint, whether strict or non strict.
+        """
+    )
+    max_disparity: int = INT_FIELD(
+        value=416,
+        display_name="max disparity",
+        description="""
+        The maximum disparity of the model used in the training of a stereo model
+        """
     )
