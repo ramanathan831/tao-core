@@ -28,7 +28,6 @@ from nvidia_tao_core.config.utils.types import (
 
 from nvidia_tao_core.config.common.common_config import (
     CommonExperimentConfig,
-    ExportConfig,
     EvaluateConfig,
     InferenceConfig
 )
@@ -63,12 +62,6 @@ class DepthNetInferenceExpConfig(InferenceConfig):
                     filtering out the final list of boxes.""",
         display_name="confidence threshold"
     )
-
-
-@dataclass
-class DepthNetEvalExpConfig(EvaluateConfig):
-    """Evaluation experiment config."""
-
     input_width: Optional[int] = INT_FIELD(
         value=None,
         description="Width of the input image tensor.",
@@ -77,6 +70,24 @@ class DepthNetEvalExpConfig(EvaluateConfig):
     )
     input_height: Optional[int] = INT_FIELD(
         value=None,
+        description="Height of the input image tensor.",
+        display_name="input height",
+        valid_min=1,
+    )
+
+
+@dataclass
+class DepthNetEvalExpConfig(EvaluateConfig):
+    """Evaluation experiment config."""
+
+    input_width: Optional[int] = INT_FIELD(
+        value=736,
+        description="Width of the input image tensor.",
+        display_name="input width",
+        valid_min=1,
+    )
+    input_height: Optional[int] = INT_FIELD(
+        value=320,
         description="Height of the input image tensor.",
         display_name="input height",
         valid_min=1,
@@ -98,10 +109,6 @@ class ExperimentConfig(CommonExperimentConfig):
     inference: DepthNetInferenceExpConfig = DATACLASS_FIELD(
         DepthNetInferenceExpConfig(),
         description="Configurable parameters to construct the inferencer for a DepthNet experiment.",
-    )
-    export: ExportConfig = DATACLASS_FIELD(
-        ExportConfig(),
-        description="Configurable parameters to construct the exporter for a DepthNet experiment.",
     )
     evaluate: DepthNetEvalExpConfig = DATACLASS_FIELD(
         DepthNetEvalExpConfig(),
