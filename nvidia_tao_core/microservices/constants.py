@@ -132,6 +132,7 @@ NETWORK_CONTAINER_MAPPING = {"action_recognition": "TAO_PYTORCH",
 CV_ACTION_RULES = {
     'train': [],
     'distill': ["train", "retrain"],
+    'quantize': ["train", "retrain"],
     'evaluate': ["train", "prune", "retrain", "export", "gen_trt_engine", "trtexec"],
     'prune': ["train", "retrain"],
     'inference': ["train", "prune", "retrain", "export", "gen_trt_engine", "trtexec"],
@@ -141,6 +142,6 @@ CV_ACTION_RULES = {
     'trtexec': ['export'],
 }
 
-CV_ACTION_CHAINED_ONLY = {"prune", "distill", "retrain", "export", "gen_trt_engine", "trtexec"}
+CV_ACTION_CHAINED_ONLY = {"prune", "distill", "quantize", "retrain", "export", "gen_trt_engine", "trtexec"}
 
 AIRGAP_DEFAULT_USER = 'anonymous'

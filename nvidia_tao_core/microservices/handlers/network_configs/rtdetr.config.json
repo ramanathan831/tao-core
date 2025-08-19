@@ -1,7 +1,7 @@
 {
     "api_params": {
         "dataset_type":"object_detection",
-        "actions": ["train", "distill", "evaluate","export","inference","gen_trt_engine"],
+        "actions": ["train", "distill", "quantize", "evaluate","export","inference","gen_trt_engine"],
         "formats":["coco", "coco_raw"],
         "accepted_ds_intents": ["training", "evaluation", "testing"],
         "image":"TAO_PYTORCH",
@@ -10,6 +10,7 @@
         "actions_pipe":{
             "train":"train",
             "distill":"train",
+            "quantize":"train",
             "evaluate":"evaluate",
             "export":"export_with_spec",
             "inference":"inference",
@@ -51,6 +52,34 @@
             }
         },
         "distill": {
+            "dataset.train_data_sources": {
+                "source": "train_datasets",
+                "multiple_sources": true,
+                "mapping": {
+                    "image_dir": {
+                        "path": "images.tar.gz",
+                        "transform": "data_services_as_parent_possible"
+                    },
+                    "json_file": {
+                        "path": "annotations.json"
+                    }
+                }
+            },
+            "dataset.val_data_sources": {
+                "source": "eval_dataset",
+                "multiple_sources": false,
+                "mapping": {
+                    "image_dir": {
+                        "path": "images.tar.gz",
+                        "transform": "data_services_as_parent_possible"
+                    },
+                    "json_file": {
+                        "path": "annotations.json"
+                    }
+                }
+            }
+        },
+        "quantize": {
             "dataset.train_data_sources": {
                 "source": "train_datasets",
                 "multiple_sources": true,
@@ -158,6 +187,11 @@
         "distill": {
             "results_dir":"output_dir",
             "distill.pretrained_teacher_model_path":"parent_model",
+            "encryption_key":"key"
+        },
+        "quantize": {
+            "results_dir":"output_dir",
+            "quantize.model_path":"parent_model",
             "encryption_key":"key"
         },
         "evaluate":{

@@ -1003,7 +1003,7 @@ def validate_num_gpu(num_gpu=None, action: str = ""):
     # Use single GPU for actions not supporting multi-GPU
     multi_gpu_supported_actions = [
         "train", "distill", "retrain", "finetune",
-        "auto3dseg", "inference"
+        "evaluate", "inference"
     ]
     if action not in multi_gpu_supported_actions:
         if num_gpu > 1:
@@ -1335,9 +1335,13 @@ def download_log_from_cloud(handler_metadata, job_id, log_file_path, automl_inde
     if cs_instance.is_file(f"/results/{lookup_job_id}/microservices_log.txt"):
         cs_instance.download_file(f"/results/{lookup_job_id}/microservices_log.txt", log_file_path)
     else:
+        logger.error("Log file not found at %s", f"/results/{lookup_job_id}/microservices_log.txt")
         # Best model files are moved under /results/brain_job_id
         log_path = f"/results/{job_id}/microservices_log.txt"
-        cs_instance.download_file(log_path, log_file_path)
+        if cs_instance.is_file(log_path):
+            cs_instance.download_file(log_path, log_file_path)
+        else:
+            logger.error("Log file not found at %s", log_path)
 
 
 def format_epoch(network, epoch_number):
@@ -1414,7 +1418,7 @@ def resolve_checkpoint_root_and_search(handler_metadata, job_id, folder=False, r
     if action == "retrain":
         action = "train"
 
-    if action in ("train", "distill"):
+    if action in ("train", "distill", "quantize"):
         checkpoint_choose_method = handler_metadata.get("checkpoint_choose_method", "best_model")
         result_file = search_for_checkpoint(
             handler_metadata=handler_metadata,
