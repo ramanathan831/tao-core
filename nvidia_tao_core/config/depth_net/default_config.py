@@ -36,21 +36,7 @@ from nvidia_tao_core.config.depth_net.dataset import DepthNetDatasetConfig
 from nvidia_tao_core.config.depth_net.model import DepthNetModelConfig
 from nvidia_tao_core.config.depth_net.train import DepthNetTrainExpConfig
 from nvidia_tao_core.config.depth_net.deploy import DepthNetGenTrtEngineExpConfig
-
-
-@dataclass
-class WandBConfig:
-    """Configuration element wandb client."""
-
-    enable: bool = BOOL_FIELD(value=True)
-    project: str = STR_FIELD(value="TAO Toolkit")
-    entity: Optional[str] = STR_FIELD(value="")
-    tags: List[str] = LIST_FIELD(arrList=["tao-toolkit"])
-    reinit: bool = BOOL_FIELD(value=False)
-    sync_tensorboard: bool = BOOL_FIELD(value=False)
-    save_code: bool = BOOL_FIELD(value=False)
-    name: str = BOOL_FIELD(value="TAO Toolkit Training")
-    run_id: str = STR_FIELD(value="")
+from nvidia_tao_core.config.common.mlops import WandBConfig
 
 
 @dataclass
@@ -117,7 +103,7 @@ class ExperimentConfig(CommonExperimentConfig):
     )
     train: DepthNetTrainExpConfig = DATACLASS_FIELD(
         DepthNetTrainExpConfig(),
-        description="Configurable parameters to construct the trainer for a RT-DETR experiment.",
+        description="Configurable parameters to construct the trainer for a DepthNet experiment.",
     )
     wandb: WandBConfig = DATACLASS_FIELD(
         WandBConfig(),

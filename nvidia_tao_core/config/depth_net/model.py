@@ -58,6 +58,37 @@ class MonoBackbone:
 
 
 @dataclass
+class StereoBackbone:
+    """Define StereoBackbone dependency config"""
+
+    encoder: str = STR_FIELD(
+        value="vitl",
+        default_value="vitl",
+        description="StereoBackbone Encoder options",
+        valid_options=",".join([
+            "vits", "vitb", "vitl", "vitg"
+        ])
+    )
+    pretrained_path: Optional[str] = STR_FIELD(
+        value="",
+        default_value="",
+        description="""Path to load pretrained model for stereo depth estimation""",
+    )
+    use_bn: bool = BOOL_FIELD(
+        value=False,
+        default_value=False,
+        display_name="batch normalization in StereoBackbone",
+        description="""A flag specifying whether to use batch normalization in StereoBackbone""",
+    )
+    use_clstoken: bool = BOOL_FIELD(
+        value=False,
+        default_value=False,
+        display_name="class token in StereoBackbone",
+        description="""A flag specifying whether to use class token""",
+    )
+
+
+@dataclass
 class DepthNetModelConfig:
     """DepthNet model config."""
 
@@ -72,6 +103,10 @@ class DepthNetModelConfig:
     mono_backbone: MonoBackbone = DATACLASS_FIELD(
         MonoBackbone(),
         description="Configurable parameters to construct the mono backbone for a DepthNet experiment.",
+    )
+    stereo_backbone: StereoBackbone = DATACLASS_FIELD(
+        StereoBackbone(),
+        description="Configurable parameters to construct the stereo backbone for a DepthNet experiment.",
     )
     hidden_dims: List[int] = LIST_FIELD(
         arrList=[128, 128, 128],

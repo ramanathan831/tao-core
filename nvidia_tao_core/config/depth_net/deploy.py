@@ -18,8 +18,7 @@ from dataclasses import dataclass
 
 from nvidia_tao_core.config.utils.types import (
     DATACLASS_FIELD,
-    STR_FIELD,
-    INT_FIELD,
+    STR_FIELD
 )
 from nvidia_tao_core.config.common.common_config import (
     GenTrtEngineConfig,
