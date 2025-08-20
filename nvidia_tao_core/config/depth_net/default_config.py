@@ -19,7 +19,8 @@ from dataclasses import dataclass
 
 from nvidia_tao_core.config.utils.types import (
     DATACLASS_FIELD,
-    INT_FIELD
+    INT_FIELD,
+    BOOL_FIELD
 )
 
 from nvidia_tao_core.config.common.common_config import (
@@ -52,6 +53,11 @@ class DepthNetInferenceExpConfig(InferenceConfig):
         description="Height of the input image tensor.",
         display_name="input height",
         valid_min=32,
+    )
+    output_raw_depth: bool = BOOL_FIELD(
+        value=False,
+        description="Whether to output the raw depth map.",
+        display_name="output raw depth",
     )
 
 
