@@ -25,7 +25,8 @@ from nvidia_tao_core.config.utils.types import (
 from nvidia_tao_core.config.common.common_config import (
     CommonExperimentConfig,
     EvaluateConfig,
-    InferenceConfig
+    InferenceConfig,
+    ExportConfig
 )
 from nvidia_tao_core.config.depth_net.dataset import DepthNetDatasetConfig
 from nvidia_tao_core.config.depth_net.model import DepthNetModelConfig
@@ -91,6 +92,10 @@ class ExperimentConfig(CommonExperimentConfig):
     evaluate: DepthNetEvalExpConfig = DATACLASS_FIELD(
         DepthNetEvalExpConfig(),
         description="Configurable parameters to construct the evaluator for a DepthNet experiment.",
+    )
+    export: ExportConfig = DATACLASS_FIELD(
+        ExportConfig(),
+        description="Configurable parameters to construct the exporter for a DepthNet experiment.",
     )
     train: DepthNetTrainExpConfig = DATACLASS_FIELD(
         DepthNetTrainExpConfig(),
