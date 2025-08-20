@@ -14,16 +14,12 @@
 
 """Default config file."""
 
-from typing import List, Optional
+from typing import Optional
 from dataclasses import dataclass
 
 from nvidia_tao_core.config.utils.types import (
     DATACLASS_FIELD,
-    FLOAT_FIELD,
-    INT_FIELD,
-    BOOL_FIELD,
-    STR_FIELD,
-    LIST_FIELD
+    INT_FIELD
 )
 
 from nvidia_tao_core.config.common.common_config import (
