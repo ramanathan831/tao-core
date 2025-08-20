@@ -61,14 +61,6 @@ class MonoBackbone:
 class StereoBackbone:
     """Define StereoBackbone dependency config"""
 
-    encoder: str = STR_FIELD(
-        value="vitl",
-        default_value="vitl",
-        description="StereoBackbone Encoder options",
-        valid_options=",".join([
-            "vits", "vitb", "vitl", "vitg"
-        ])
-    )
     depth_anything_v2_pretrained_path: Optional[str] = STR_FIELD(
         value="",
         default_value="",
@@ -105,11 +97,19 @@ class DepthNetModelConfig:
             "FoundationStereo", "MetricDepthAnything", "RelativeDepthAnything"
         ])
     )
+    encoder: str = STR_FIELD(
+        value="vitl",
+        default_value="vitl",
+        description="StereoBackbone Encoder options",
+        valid_options=",".join([
+            "vits", "vitb", "vitl", "vitg"
+        ])
+    )
     mono_backbone: MonoBackbone = DATACLASS_FIELD(
         MonoBackbone(),
         description="Configurable parameters to construct the mono backbone for a DepthNet experiment.",
     )
-    stereo_backbone: StereoBackbone = DATACLASS_FIELD(
+    stereo_back_bone: StereoBackbone = DATACLASS_FIELD(
         StereoBackbone(),
         description="Configurable parameters to construct the stereo backbone for a DepthNet experiment.",
     )
