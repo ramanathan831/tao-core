@@ -52,18 +52,6 @@ class DepthNetInferenceExpConfig(InferenceConfig):
         display_name="input height",
         valid_min=32,
     )
-    input_width: Optional[int] = INT_FIELD(
-        value=None,
-        description="Width of the input image tensor.",
-        display_name="input width",
-        valid_min=1,
-    )
-    input_height: Optional[int] = INT_FIELD(
-        value=None,
-        description="Height of the input image tensor.",
-        display_name="input height",
-        valid_min=1,
-    )
 
 
 @dataclass
