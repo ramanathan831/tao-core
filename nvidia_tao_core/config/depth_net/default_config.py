@@ -56,8 +56,10 @@ class DepthNetInferenceExpConfig(InferenceConfig):
     )
     output_raw_depth: bool = BOOL_FIELD(
         value=False,
+        default_value=False,
         description="Whether to output the raw depth map.",
         display_name="output raw depth",
+        valid_values=[True, False],
     )
 
 
