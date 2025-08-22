@@ -1,6 +1,12 @@
+variables:
+  SONAR_USER_HOME: "${CI_PROJECT_DIR}/.sonar"  # Defines the location of the analysis task cache
+  GIT_DEPTH: "0"  # Tells git to fetch all the branches of the project, required by the analysis task
+
 stages:
   - validate-mr-title
   - check-mr-lines
+  - static-tests
+  - build-sonar
   - check-jenkins-status
 
 validate_mr_title:
@@ -38,6 +44,39 @@ check_mr_lines:
     GITLAB_PRIVATE_TOKEN: $GITLAB_PRIVATE_TOKEN
   allow_failure: true
 
+static_tests:
+  stage: static-tests
+  image: nvcr.io/nvidia/pytorch:24.03-py3
+  script:
+    - pip install pylint==3.0.3 pydocstyle flake8
+    - python3 ci/run_static_tests.py
+  tags: ["trigger-jenkins"]
+  only:
+    refs:
+      - merge_requests
+
+build-sonar:
+  stage: build-sonar
+  image: 
+    name: sonarsource/sonar-scanner-cli:11
+    entrypoint: [""]
+  cache:
+    policy: pull-push
+    key: "sonar-cache-$CI_COMMIT_REF_SLUG"
+    paths:
+      - "${SONAR_USER_HOME}/cache"
+      - sonar-scanner/
+  script: 
+    - sonar-scanner -Dsonar.host.url="${SONAR_HOST_URL}"
+  allow_failure: true
+  tags: ["trigger-jenkins"]
+  rules:
+    - if: $CI_PIPELINE_SOURCE == 'merge_request_event'
+    - if: $CI_COMMIT_BRANCH == 'master'
+    - if: $CI_COMMIT_BRANCH == 'main'
+    - if: $CI_COMMIT_BRANCH == 'develop'
+    - if: $CI_COMMIT_BRANCH =~ /^release\/.*/ 
+
 check_jenkins_status:
   stage: check-jenkins-status
   script:
@@ -49,7 +88,12 @@ check_jenkins_status:
       JENKINS_URL="https://prod.blsm.nvidia.com/metropolis-iva-tlt-jenkins"
       
       # Determine which Jenkins pipeline to trigger based on branch name
-      if [[ "$FORKED_REPO_BRANCH" =~ ^release/.* ]]; then
+      if [[ "$FORKED_REPO_BRANCH" =~ ^dev/.* ]]; then
+        echo "Dev branch detected: $FORKED_REPO_BRANCH"
+        echo "Triggering tao-core-dev pipeline"
+        JENKINS_JOB="tao-core-dev"
+        JENKINS_PARAMS="token=$JENKINS_JOB_TOKEN&GITLAB_BRANCH=$FORKED_REPO_BRANCH&GITLAB_REPO_URL=$FORKED_REPO_URL"
+      elif [[ "$FORKED_REPO_BRANCH" =~ ^release/.* ]]; then
         echo "Release branch detected: $FORKED_REPO_BRANCH"
         echo "Triggering tao-core-release pipeline with RC=true"
         JENKINS_JOB="tao-core-release"
