@@ -35,55 +35,43 @@ spec:
       tty: true
     restartPolicy: Never
     backoffLimit: 4
-    nodeSelector:
-      kubernetes.io/os: linux
-      nvidia.com/driver_version: "510.41"
-      nvidia.com/gpu_type: TITAN_V
+    affinity:
+      nodeAffinity:
+        requiredDuringSchedulingIgnoredDuringExecution:
+          nodeSelectorTerms:
+          - matchExpressions:
+            - key: nvidia.com/gpu_type
+              operator: In
+              values:
+              - A100_PCIE_40GB
+              - A40
+              - L40
+              - H100_PCIe
+              - A100_80GB_PCIe
+              - H100_80GB_HBM3
+              - NVIDIA_GH200_480GB
+              - TITAN_V
+            - key: nvidia.com/driver_version
+              operator: In
+              values:
+              - 580.35
+              - 570.41
+              - 570.14
+              - 560.35.03
+              - 550.54.15
+              - 535.104.05
+              - 535.74
+              - 525.60.13
+              - 510.41
+            - key: kubernetes.io/os
+              operator: In
+              values:
+              - linux
     """
 )
 {
   try {
-    node(POD_LABEL) {
-      container('pyt') {
-        def VER="${TAO_VERSION}.${BUILD_TYPE}${BUILD_NUMBER}"
-        def PYTHON_VERSION=sh(script: 'python -c "import platform; print(platform.python_version())"', returnStdout: true).trim()
-        def SRC="dist/nvidia_tao_core-${VER}-py3-none-any.whl"
-        def TARGET="sw-tao-pypi-local/nvidia-tao-core-dev/${VER}/${PYTHON_VERSION}/"
-        def PROP="component_name=nvidia-tao-core;arch=x86_64;os=linux;build_source=None;version=${VER};branch=main;release_approver=vpraveen"
-        
-        // GitLab Related
-        def GITLAB_PROJECT_ID = "140075" 
-        def TAG_NAME = "v${VER}"
-        def RELEASE_NAME = "Release ${VER}"
-        def RELEASE_DESCRIPTION = "Release ${VER} with third-party packages"
-        
-        stage ('checkout') {
-          gitlabCommitStatus(name: "checkout", connection: gitLabConnection('git-lab-master')) {
-            checkout scm
-          }
-        }
-
-        stage ('static_tests') {
-          gitlabCommitStatus(name: "static_tests", connection: gitLabConnection('git-lab-master')) {
-            sh "pip install pylint==3.0.3 pydocstyle flake8"
-            sh "python3 ci/run_static_tests.py"
-          }
-        }
-
-        stage ('clean_up'){
-          gitlabCommitStatus(name: "clean_up", connection: gitLabConnection('git-lab-master')) {
-            sh """
-              echo "Clearing build and dists"
-              python setup.py clean --all
-              echo "Clearing pycache and pycs"
-              find . | grep -E '(__pycache__|[.]pyc|[.]pyo\$)' | xargs rm -rf
-            """
-          }
-        }
-      }
-    }
-
-    // Stage 2: Parallel execution of x86 and ARM tests
+    // Stage 1: Parallel execution of x86 and ARM tests
     parallel (
       "x86_tests": {
         node(POD_LABEL) {
@@ -215,7 +203,7 @@ spec:
       }
     )
 
-    // Stage 3: Build and final cleanup on x86 Kubernetes pod
+    // Stage 2: Build and final cleanup on x86 Kubernetes pod
     node(POD_LABEL) {
       container('pyt') {
         def VER="${TAO_VERSION}.${BUILD_TYPE}${BUILD_NUMBER}"
@@ -318,20 +306,6 @@ spec:
         }
         
       }
-      
-      // container('docker') {
-      //   stage ('wheeltamer_tests') {
-      //     gitlabCommitStatus(name: "wheeltamer_tests", connection: gitLabConnection('git-lab-master')) {
-      //       docker.withRegistry('https://gitlab-master.nvidia.com:5005', 'tao-launcher-api-ptkn') {
-      //         sh "docker pull gitlab-master.nvidia.com:5005/dl/pypi/wheel-ci-cd:wheeltamer"
-      //         sh "docker run --rm -v ${WORKSPACE}/dist:/workspace \
-      //             -e 'EXPECTED_PKG_LICENSE=NVIDIA Proprietary Software' \
-      //             -e 'ALLOWED_NOSEC_COUNT=0' \
-      //             gitlab-master.nvidia.com:5005/dl/pypi/wheel-ci-cd:wheeltamer /bin/bash -c 'wheeltamer'"
-      //       }
-      //     }
-      //   }
-      // }
     }
   }
   catch (Exception e) {
@@ -359,80 +333,3 @@ spec:
     throw e
   }
 }
-
-// podTemplate (cloud:'sc-ipp-blossom-prod', yaml : """
-// apiVersion: v1
-// kind: Pod
-// metadata:
-//     labels:
-//         some-label: tao-core-build
-// spec:
-//     imagePullSecrets:
-//       - name: tltimagepullsecret
-//     containers:
-//     - name: docker
-//       image: docker:24.0.5-dind
-//       securityContext:
-//         privileged: true
-//       env:
-//         - name: DOCKER_TLS_CERTDIR
-//           value: ""
-//     - name: tf2
-//       image: nvcr.io/nvidia/tensorflow:24.03-tf2-py3
-//       securityContext:
-//         privileged: true
-//       command:
-//       - cat
-//       resources:
-//         requests:
-//           nvidia.com/gpu: 1
-//           memory: "16Gi"
-//         limits:
-//           nvidia.com/gpu: 1
-//           memory: "32Gi"
-//       tty: true
-//     restartPolicy: Never
-//     backoffLimit: 4
-//     nodeSelector:
-//       kubernetes.io/os: linux
-//       nvidia.com/driver_version: "510.41"
-//       nvidia.com/gpu_type: TITAN_V
-//     """
-// )
-// {
-//   node(POD_LABEL) {
-//     container('tf2') {
-//       def BUILD_TYPE="dev0"
-//       def TAO_WHEEL_VERSION="5.3.0"
-//       def VER="${TAO_WHEEL_VERSION}.${BUILD_NUMBER}.${BUILD_TYPE}"
-//       def PYTHON_VERSION = sh(script: 'python -c "import platform; print(platform.python_version())"', returnStdout: true).trim()
-//       def SRC="dist/nvidia_tao_core-${VER}-py3-none-any.whl"
-//       def TARGET="sw-tao-pypi-local/nvidia-tao-core-dev/${VER}/${PYTHON_VERSION}/"
-//       def PROP="component_name=nvidia-tao-core;arch=x86_64;os=linux;build_source=None;version=${VER};branch=main;release_approver=vpraveen"
-
-//       stage ('build_tf2_wheel') {
-//         checkout scm
-//         gitlabCommitStatus(name: "build_wheel", connection: gitLabConnection('git-lab-master')) {
-//           sh "echo '${BUILD_NUMBER}-${BUILD_TYPE}' > build.info"
-//           sh "bash release/python/build_wheel.sh"
-//         }
-//       }
-
-//       stage ('publish_tf2_wheel') {
-//         gitlabCommitStatus(name: "build_wheel", connection: gitLabConnection('git-lab-master')) {
-//           sh "echo '${BUILD_NUMBER}-${BUILD_TYPE}' > build.info"
-//           withCredentials([usernamePassword(credentialsId: 'tao-artifactory-tkn', passwordVariable: 'JFROG_PASSWORD', usernameVariable: 'JFROG_USERNAME')]) {
-//             sh "bash release/python/install_jfrog.sh"
-//             def is_present=sh(script: "jfrog rt s --url=https://urm.nvidia.com/artifactory/ --user=${JFROG_USERNAME} --apikey=${JFROG_PASSWORD} --count ${TARGET}", returnStdout: true)
-//             script {
-//               if (is_present.toInteger() == 0) {
-//                 sh "bash release/python/build_wheel.sh"
-//                 sh "jfrog rt u --url=https://urm.nvidia.com/artifactory/ --user=${JFROG_USERNAME} --apikey=${JFROG_PASSWORD} --target-props '${PROP}' ${SRC} ${TARGET}"
-//               }
-//             }
-//           }
-//         }
-//       }
-//     }
-//   }
-// }

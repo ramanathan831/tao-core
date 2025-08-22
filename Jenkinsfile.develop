@@ -35,46 +35,42 @@ spec:
       tty: true
     restartPolicy: Never
     backoffLimit: 4
-    nodeSelector:
-      kubernetes.io/os: linux
-      nvidia.com/driver_version: "510.41"
-      nvidia.com/gpu_type: TITAN_V
+    affinity:
+      nodeAffinity:
+        requiredDuringSchedulingIgnoredDuringExecution:
+          nodeSelectorTerms:
+          - matchExpressions:
+            - key: nvidia.com/gpu_type
+              operator: In
+              values:
+              - A100_PCIE_40GB
+              - A40
+              - L40
+              - H100_PCIe
+              - A100_80GB_PCIe
+              - H100_80GB_HBM3
+              - NVIDIA_GH200_480GB
+              - TITAN_V
+            - key: nvidia.com/driver_version
+              operator: In
+              values:
+              - 580.35
+              - 570.41
+              - 570.14
+              - 560.35.03
+              - 550.54.15
+              - 535.104.05
+              - 535.74
+              - 525.60.13
+              - 510.41
+            - key: kubernetes.io/os
+              operator: In
+              values:
+              - linux
     """
 )
 {
-  // Stage 1: Initial setup and basic tests
-  node(POD_LABEL) {
-    container('pyt') {
-      def VER="${TAO_VERSION}.${BUILD_TYPE}${BUILD_NUMBER}"
-      def PYTHON_VERSION=sh(script: 'python -c "import platform; print(platform.python_version())"', returnStdout: true).trim()
-      
-      stage ('checkout') {
-        gitlabCommitStatus(name: "checkout", connection: gitLabConnection('git-lab-master')) {
-          checkout scm
-        }
-      }
-
-      stage ('static_tests') {
-        gitlabCommitStatus(name: "static_tests", connection: gitLabConnection('git-lab-master')) {
-          sh "pip install pylint==3.0.3 pydocstyle flake8"
-          sh "python3 ci/run_static_tests.py"
-        }
-      }
-
-      stage ('clean_up'){
-        gitlabCommitStatus(name: "clean_up", connection: gitLabConnection('git-lab-master')) {
-          sh """
-            echo "Clearing build and dists"
-            python setup.py clean --all
-            echo "Clearing pycache and pycs"
-            find . | grep -E '(__pycache__|[.]pyc|[.]pyo\$)' | xargs rm -rf
-          """
-        }
-      }
-    }
-  }
-
-  // Stage 2: Parallel execution of x86 and ARM tests
+  // Stage 1: Parallel execution of x86 and ARM tests
   parallel (
     "x86_tests": {
       node(POD_LABEL) {
