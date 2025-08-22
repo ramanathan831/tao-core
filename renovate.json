@@ -39,10 +39,21 @@
             "description": "Group all non-security patch updates into one MR",
             "matchCategories": ["!security"],
             "matchUpdateTypes": ["patch"],
+            "excludePackageNames": ["numpy", "transformers"],
             "groupName": "Non-security patch updates",
             "groupSlug": "non-security-patch",
-            "prTitle": "[TAO-524][Chore] Bulk non-security patch updates",
+            "prTitle": "[TAO-524][Chore] Group non-security patch updates",
             "labels": ["renovate", "patch-update", "bulk"]
+        },
+        {
+            "description": "Group all non-security minor updates into one MR",
+            "matchCategories": ["!security"],
+            "matchUpdateTypes": ["minor"],
+            "excludePackageNames": ["numpy", "transformers"],
+            "groupName": "Non-security minor updates",
+            "groupSlug": "non-security-minor",
+            "prTitle": "[TAO-524][Chore] Group non-security minor updates",
+            "labels": ["renovate", "minor-update", "bulk"]
         },
         {
             "matchUpdateTypes": ["major"],
@@ -52,7 +63,12 @@
         {
             "matchUpdateTypes": ["minor"],
             "prTitle": "[TAO-524][Chore] Update {{depName}} to {{newVersion}} (minor)",
-            "labels": ["dependencies", "renovate", "minor-update"]
+            "labels": ["renovate", "minor-update"]
+        },
+        {
+            "matchUpdateTypes": ["patch"],
+            "prTitle": "[TAO-524][Chore] Update {{depName}} to {{newVersion}} (patch)",
+            "labels": ["renovate", "patch-update"]
         }
     ]
   }
