@@ -66,7 +66,7 @@ class DepthNetModelConfig:
             "FoundationStereo", "MetricDepthAnything", "RelativeDepthAnything"
         ])
     )
-    stereo_back_bone: StereoBackBone = DATACLASS_FIELD(
+    stereo_backbone: StereoBackBone = DATACLASS_FIELD(
         StereoBackBone(),
         value="",
         default_value="",

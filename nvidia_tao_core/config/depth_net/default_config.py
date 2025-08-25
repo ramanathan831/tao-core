@@ -34,7 +34,7 @@ from nvidia_tao_core.config.common.common_config import (
 from nvidia_tao_core.config.depth_net.dataset import DepthNetDatasetConfig
 from nvidia_tao_core.config.depth_net.model import DepthNetModelConfig
 from nvidia_tao_core.config.depth_net.train import DepthNetTrainExpConfig
-
+from nvidia_tao_core.config.common.common_config import ExportConfig
 
 @dataclass
 class WandBConfig:
@@ -74,20 +74,24 @@ class DepthNetInferenceExpConfig(InferenceConfig):
         display_name="input height",
         valid_min=1,
     )
-
+    dump_raw_output: Optional[bool] = BOOL_FIELD(
+        value=False,
+        description="Whether to dump the raw pfm output during inference.",
+        display_name="Dump Output"
+    )
 
 @dataclass
 class DepthNetEvalExpConfig(EvaluateConfig):
     """Evaluation experiment config."""
 
     input_width: Optional[int] = INT_FIELD(
-        value=736,
+        value=None,
         description="Width of the input image tensor.",
         display_name="input width",
         valid_min=1,
     )
     input_height: Optional[int] = INT_FIELD(
-        value=320,
+        value=None,
         description="Height of the input image tensor.",
         display_name="input height",
         valid_min=1,
@@ -116,9 +120,13 @@ class ExperimentConfig(CommonExperimentConfig):
     )
     train: DepthNetTrainExpConfig = DATACLASS_FIELD(
         DepthNetTrainExpConfig(),
-        description="Configurable parameters to construct the trainer for a RT-DETR experiment.",
+        description="Configurable parameters to construct the trainer for a DepthNet experiment.",
     )
     wandb: WandBConfig = DATACLASS_FIELD(
         WandBConfig(),
         description="Configurable parameters to construct the wandb client for a DepthNet experiment.",
+    )
+    export: ExportConfig = DATACLASS_FIELD(
+        ExportConfig(),
+        description="Configurable parameters to construct the onnx export for a DepthNet experiment."
     )
