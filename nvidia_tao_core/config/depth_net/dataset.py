@@ -46,22 +46,26 @@ class DNDatasetConvertConfig:
     )
     image_dir_pattern: list = LIST_FIELD(
         arrList=[],
-        description="List of patterns for any path that should be included in the image path list, relative to the dataset root",
+        description="""List of patterns for any path that should be included"
+                    in the image path list, relative to the dataset root""",
         display_name="Image Path Pattern List"
     )
     right_dir_pattern: list = LIST_FIELD(
         arrList=[],
-        description="List of patterns for any path that should be included in the right image path list, relative to the dataset root",
+        description="""List of patterns for any path that should be included"
+                    in the right image path list, relative to the dataset root""",
         display_name="Right Image Path Pattern List"
     )
     depth_dir_pattern: list = LIST_FIELD(
         arrList=[],
-        description="List of patterns for any path that should be included in the depth path list, relative to the dataset root",
+        description="""List of patterns for any path that should be included"
+                    in the depth path list, relative to the dataset root""",
         display_name="Depth Map Path Pattern List"
     )
     nocc_dir_pattern: list = LIST_FIELD(
         arrList=[],
-        description="List of patterns for any path that should be included in the non-occuluded map path list, relative to the dataset root",
+        description="""List of patterns for any path that should be included"
+                    in the non-occuluded map path list, relative to the dataset root""",
         display_name="Non-Occuluded Path Pattern List"
     )
     split_ratio: float = FLOAT_FIELD(

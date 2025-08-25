@@ -36,6 +36,7 @@ from nvidia_tao_core.config.depth_net.model import DepthNetModelConfig
 from nvidia_tao_core.config.depth_net.train import DepthNetTrainExpConfig
 from nvidia_tao_core.config.common.common_config import ExportConfig
 
+
 @dataclass
 class WandBConfig:
     """Configuration element wandb client."""
@@ -79,6 +80,7 @@ class DepthNetInferenceExpConfig(InferenceConfig):
         description="Whether to dump the raw pfm output during inference.",
         display_name="Dump Output"
     )
+
 
 @dataclass
 class DepthNetEvalExpConfig(EvaluateConfig):
