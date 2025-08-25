@@ -27,18 +27,21 @@ from nvidia_tao_core.config.utils.types import (
 
 
 @dataclass
-class StereoBackBone:
-    """Define StereoBackBone dependency config"""
+class MonoBackbone:
+    """Define MonoBackbone dependency config"""
 
-    depth_anything_v2_pretrained_path: Optional[str] = STR_FIELD(
-        value="",
-        default_value="",
-        description="""Path to load depth anything v2 as an encoder for Stereo DepthNet (FoundationStereo)""",
+    encoder: str = STR_FIELD(
+        value="vitl",
+        default_value="vitl",
+        description="DepthAnythingV2 Encoder options",
+        valid_options=",".join([
+            "vits", "vitb", "vitl", "vitg"
+        ])
     )
-    edgenext_pretrained_path: Optional[str] = STR_FIELD(
+    pretrained_path: Optional[str] = STR_FIELD(
         value="",
         default_value="",
-        description="""Path to load edgenext encoder for Stereo DepthNet (FoundationStereo)""",
+        description="""Path to load pretrained model for monocular depth estimation""",
     )
     use_bn: bool = BOOL_FIELD(
         value=False,
@@ -55,22 +58,60 @@ class StereoBackBone:
 
 
 @dataclass
+class StereoBackbone:
+    """Define StereoBackbone dependency config"""
+
+    depth_anything_v2_pretrained_path: Optional[str] = STR_FIELD(
+        value="",
+        default_value="",
+        description="""Path to load depth anything v2 as an encoder for Stereo DepthNet (FoundationStereo)""",
+    )
+    edgenext_pretrained_path: Optional[str] = STR_FIELD(
+        value="",
+        default_value="",
+        description="""Path to load edgenext encoder for Stereo DepthNet (FoundationStereo)""",
+    )
+    use_bn: bool = BOOL_FIELD(
+        value=False,
+        default_value=False,
+        display_name="batch normalization in StereoBackbone",
+        description="""A flag specifying whether to use batch normalization in StereoBackbone""",
+    )
+    use_clstoken: bool = BOOL_FIELD(
+        value=False,
+        default_value=False,
+        display_name="class token in StereoBackbone",
+        description="""A flag specifying whether to use class token""",
+    )
+
+
+@dataclass
 class DepthNetModelConfig:
     """DepthNet model config."""
 
     model_type: str = STR_FIELD(
-        value="MetricDepthAnythingV2",
-        default_value="MetricDepthAnythingV2",
+        value="MetricDepthAnything",
+        default_value="MetricDepthAnything",
         description="Network name",
         valid_options=",".join([
             "FoundationStereo", "MetricDepthAnything", "RelativeDepthAnything"
         ])
     )
-    stereo_back_bone: StereoBackBone = DATACLASS_FIELD(
-        StereoBackBone(),
-        value="",
-        default_value="",
-        description="Network defined paths for Edgenext and Depthanythingv2",
+    encoder: str = STR_FIELD(
+        value="vitl",
+        default_value="vitl",
+        description="StereoBackbone Encoder options",
+        valid_options=",".join([
+            "vits", "vitb", "vitl", "vitg"
+        ])
+    )
+    mono_backbone: MonoBackbone = DATACLASS_FIELD(
+        MonoBackbone(),
+        description="Configurable parameters to construct the mono backbone for a DepthNet experiment.",
+    )
+    stereo_back_bone: StereoBackbone = DATACLASS_FIELD(
+        StereoBackbone(),
+        description="Configurable parameters to construct the stereo backbone for a DepthNet experiment.",
     )
     hidden_dims: List[int] = LIST_FIELD(
         arrList=[128, 128, 128],
@@ -150,14 +191,6 @@ class DepthNetModelConfig:
         valid_max=2,
         description="resolution of the disparity field (1/2^K)",
         display_name="disparity field resoultion"
-    )
-    encoder: str = STR_FIELD(
-        value="vitl",
-        default_value="vitl",
-        description="DepthAnythingV2 Encoder options",
-        valid_options=",".join([
-            "vits", "vitb", "vitl", "vitg"
-        ])
     )
     load_checkpoint_strict: bool = BOOL_FIELD(
         value=False,

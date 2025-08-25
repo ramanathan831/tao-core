@@ -14,65 +14,52 @@
 
 """Default config file."""
 
-from typing import List, Optional
+from typing import Optional
 from dataclasses import dataclass
 
 from nvidia_tao_core.config.utils.types import (
     DATACLASS_FIELD,
-    FLOAT_FIELD,
     INT_FIELD,
-    BOOL_FIELD,
-    STR_FIELD,
-    LIST_FIELD
+    BOOL_FIELD
 )
 
 from nvidia_tao_core.config.common.common_config import (
     CommonExperimentConfig,
     EvaluateConfig,
-    InferenceConfig
+    InferenceConfig,
+    ExportConfig
 )
 from nvidia_tao_core.config.depth_net.dataset import DepthNetDatasetConfig
 from nvidia_tao_core.config.depth_net.model import DepthNetModelConfig
 from nvidia_tao_core.config.depth_net.train import DepthNetTrainExpConfig
-
-
-@dataclass
-class WandBConfig:
-    """Configuration element wandb client."""
-
-    enable: bool = BOOL_FIELD(value=True)
-    project: str = STR_FIELD(value="TAO Toolkit")
-    entity: Optional[str] = STR_FIELD(value="")
-    tags: List[str] = LIST_FIELD(arrList=["tao-toolkit"])
-    reinit: bool = BOOL_FIELD(value=False)
-    sync_tensorboard: bool = BOOL_FIELD(value=False)
-    save_code: bool = BOOL_FIELD(value=False)
-    name: str = BOOL_FIELD(value="TAO Toolkit Training")
-    run_id: str = STR_FIELD(value="")
+from nvidia_tao_core.config.depth_net.deploy import DepthNetGenTrtEngineExpConfig
+from nvidia_tao_core.config.common.mlops import WandBConfig
 
 
 @dataclass
 class DepthNetInferenceExpConfig(InferenceConfig):
     """Inference experiment config."""
 
-    conf_threshold: float = FLOAT_FIELD(
-        value=0.5,
-        default_value=0.5,
-        description="""The value of the confidence threshold to be used when
-                    filtering out the final list of boxes.""",
-        display_name="confidence threshold"
-    )
     input_width: Optional[int] = INT_FIELD(
         value=None,
+        default_value=960,
         description="Width of the input image tensor.",
         display_name="input width",
-        valid_min=1,
+        valid_min=32,
     )
     input_height: Optional[int] = INT_FIELD(
         value=None,
+        default_value=544,
         description="Height of the input image tensor.",
         display_name="input height",
-        valid_min=1,
+        valid_min=32,
+    )
+    output_raw_depth: bool = BOOL_FIELD(
+        value=False,
+        default_value=False,
+        description="Whether to output the raw depth map.",
+        display_name="output raw depth",
+        valid_values=[True, False],
     )
 
 
@@ -114,11 +101,19 @@ class ExperimentConfig(CommonExperimentConfig):
         DepthNetEvalExpConfig(),
         description="Configurable parameters to construct the evaluator for a DepthNet experiment.",
     )
+    export: ExportConfig = DATACLASS_FIELD(
+        ExportConfig(),
+        description="Configurable parameters to construct the exporter for a DepthNet experiment.",
+    )
     train: DepthNetTrainExpConfig = DATACLASS_FIELD(
         DepthNetTrainExpConfig(),
-        description="Configurable parameters to construct the trainer for a RT-DETR experiment.",
+        description="Configurable parameters to construct the trainer for a DepthNet experiment.",
     )
     wandb: WandBConfig = DATACLASS_FIELD(
         WandBConfig(),
         description="Configurable parameters to construct the wandb client for a DepthNet experiment.",
+    )
+    gen_trt_engine: DepthNetGenTrtEngineExpConfig = DATACLASS_FIELD(
+        DepthNetGenTrtEngineExpConfig(),
+        description="Configurable parameters to construct the TensorRT engine builder for a DepthNet experiment.",
     )
