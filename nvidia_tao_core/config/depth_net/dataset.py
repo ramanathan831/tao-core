@@ -283,24 +283,6 @@ class BaseDepthNetDatasetConfig:
                     * data_file : The path of the data file""",
         display_name="train data sources",
     )
-    image_path: Optional[str] = STR_FIELD(
-        value=None,
-        default_value="",
-        description="The directory path for left image",
-        display_name="Inference image directory or image file path",
-    )
-    right_image_path: Optional[str] = STR_FIELD(
-        value=None,
-        default_value="",
-        description="The directory path for right image",
-        display_name="inference right image directory or right image file path",
-    )
-    depth_image_path: Optional[str] = STR_FIELD(
-        value=None,
-        default_value="",
-        description="The directory path for depth image",
-        display_name="inference depth directory or depth file path",
-    )
     batch_size: int = INT_FIELD(
         value=1,
         default_value=1,
@@ -356,14 +338,14 @@ class DepthNetDatasetConfig:
         value=None,
         valid_min=1.0,
         valid_max="inf",
-        description="The maximum depth in meters in MetricDepthAnything",
+        description="The maximum depth in meters in MetricDepthAnythingV2",
         display_name="max depth in meters"
     )
     min_depth: Optional[float] = FLOAT_FIELD(
         value=None,
         valid_min=0.0,
         valid_max="inf",
-        description="The minimum depth in meters in MetricDepthAnything",
+        description="The minimum depth in meters in MetricDepthAnythingV2",
         display_name="min depth in meters"
     )
     max_disparity: int = INT_FIELD(
