@@ -173,3 +173,16 @@ class DepthNetModelConfig:
         The maximum disparity of the model used in the training of a stereo model
         """
     )
+    use_bn: bool = BOOL_FIELD(
+        value=False,
+        default_value=False,
+        display_name="batch normalization in DepthAnythingV2",
+        description="""A flag specifying whether to use batch normalization in DepthAnythingV2""",
+    )
+    use_clstoken: bool = BOOL_FIELD(
+        value=False,
+        default_value=False,
+        display_name="class token in DepthAnythingV2",
+        description="""A flag specifying whether to use class token""",
+    )
+
