@@ -65,8 +65,8 @@ class DNDatasetConvertConfig:
     nocc_dir_pattern: list = LIST_FIELD(
         arrList=[],
         description="""List of patterns for any path that should be included"
-                    in the non-occuluded map path list, relative to the dataset root""",
-        display_name="Non-Occuluded Path Pattern List"
+                    in the non-occluded map path list, relative to the dataset root""",
+        display_name="Non-Occluded Path Pattern List"
     )
     split_ratio: float = FLOAT_FIELD(
         value=0.0,

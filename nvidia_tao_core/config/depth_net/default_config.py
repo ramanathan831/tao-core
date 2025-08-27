@@ -29,12 +29,12 @@ from nvidia_tao_core.config.utils.types import (
 from nvidia_tao_core.config.common.common_config import (
     CommonExperimentConfig,
     EvaluateConfig,
-    InferenceConfig
+    InferenceConfig,
+    ExportConfig
 )
 from nvidia_tao_core.config.depth_net.dataset import DepthNetDatasetConfig
 from nvidia_tao_core.config.depth_net.model import DepthNetModelConfig
 from nvidia_tao_core.config.depth_net.train import DepthNetTrainExpConfig
-from nvidia_tao_core.config.common.common_config import ExportConfig
 
 
 @dataclass
@@ -77,6 +77,7 @@ class DepthNetInferenceExpConfig(InferenceConfig):
     )
     dump_raw_output: Optional[bool] = BOOL_FIELD(
         value=False,
+        default_value=False,
         description="Whether to dump the raw pfm output during inference.",
         display_name="Dump Output"
     )
@@ -88,12 +89,14 @@ class DepthNetEvalExpConfig(EvaluateConfig):
 
     input_width: Optional[int] = INT_FIELD(
         value=None,
+        default_value=736,
         description="Width of the input image tensor.",
         display_name="input width",
         valid_min=1,
     )
     input_height: Optional[int] = INT_FIELD(
         value=None,
+        default_value=320,
         description="Height of the input image tensor.",
         display_name="input height",
         valid_min=1,

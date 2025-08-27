@@ -185,4 +185,3 @@ class DepthNetModelConfig:
         display_name="class token in DepthAnythingV2",
         description="""A flag specifying whether to use class token""",
     )
-
