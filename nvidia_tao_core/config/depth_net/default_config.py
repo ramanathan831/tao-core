@@ -75,11 +75,11 @@ class DepthNetInferenceExpConfig(InferenceConfig):
         display_name="input height",
         valid_min=1,
     )
-    dump_raw_output: Optional[bool] = BOOL_FIELD(
+    save_raw_pfm: Optional[bool] = BOOL_FIELD(
         value=False,
         default_value=False,
-        description="Whether to dump the raw pfm output during inference.",
-        display_name="Dump Output"
+        description="Whether to save the raw pfm output during inference.",
+        display_name="Save PFM Output"
     )
 
 
