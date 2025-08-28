@@ -164,6 +164,10 @@ check_jenkins_status:
               echo "-------------- End of the Console Output --------------"
               echo "Jenkins job succeeded"
               break
+          elif [ "$job_status" == "UNSTABLE" ]; then
+              echo "-------------- End of the Console Output --------------"
+              echo "Jenkins job is UNSTABLE"
+              break
           elif [ "$job_status" == "FAILURE" ]; then
               echo "-------------- End of the Console Output --------------"
               echo "Jenkins job failed"
