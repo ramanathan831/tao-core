@@ -29,7 +29,8 @@ from nvidia_tao_core.config.utils.types import (
 from nvidia_tao_core.config.common.common_config import (
     CommonExperimentConfig,
     EvaluateConfig,
-    InferenceConfig
+    InferenceConfig,
+    ExportConfig
 )
 from nvidia_tao_core.config.depth_net.dataset import DepthNetDatasetConfig
 from nvidia_tao_core.config.depth_net.model import DepthNetModelConfig
@@ -74,6 +75,12 @@ class DepthNetInferenceExpConfig(InferenceConfig):
         display_name="input height",
         valid_min=1,
     )
+    save_raw_pfm: Optional[bool] = BOOL_FIELD(
+        value=False,
+        default_value=False,
+        description="Whether to save the raw pfm output during inference.",
+        display_name="Save PFM Output"
+    )
 
 
 @dataclass
@@ -81,13 +88,15 @@ class DepthNetEvalExpConfig(EvaluateConfig):
     """Evaluation experiment config."""
 
     input_width: Optional[int] = INT_FIELD(
-        value=736,
+        value=None,
+        default_value=736,
         description="Width of the input image tensor.",
         display_name="input width",
         valid_min=1,
     )
     input_height: Optional[int] = INT_FIELD(
-        value=320,
+        value=None,
+        default_value=320,
         description="Height of the input image tensor.",
         display_name="input height",
         valid_min=1,
@@ -116,9 +125,13 @@ class ExperimentConfig(CommonExperimentConfig):
     )
     train: DepthNetTrainExpConfig = DATACLASS_FIELD(
         DepthNetTrainExpConfig(),
-        description="Configurable parameters to construct the trainer for a RT-DETR experiment.",
+        description="Configurable parameters to construct the trainer for a DepthNet experiment.",
     )
     wandb: WandBConfig = DATACLASS_FIELD(
         WandBConfig(),
         description="Configurable parameters to construct the wandb client for a DepthNet experiment.",
+    )
+    export: ExportConfig = DATACLASS_FIELD(
+        ExportConfig(),
+        description="Configurable parameters to construct the onnx export for a DepthNet experiment."
     )
