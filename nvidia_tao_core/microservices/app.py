@@ -1678,6 +1678,45 @@ def metrics_upsert():
 #
 
 
+def validate_endpoint_url(url):
+    """Custom URL validator that accepts internal hostnames and services.
+
+    This validator is more lenient than marshmallow's default URL validator,
+    specifically allowing internal hostnames like 'seaweedfs-s3', 'localhost',
+    IP addresses, and service names common in containerized environments.
+    """
+    if not url:
+        return True  # allow_none=True is handled by the field
+
+    # Basic URL structure validation using regex
+    # This pattern allows for:
+    # - http/https protocols
+    # - hostnames with hyphens, underscores, alphanumeric characters
+    # - IP addresses
+    # - ports
+    # - paths, query strings, fragments
+    url_pattern = re.compile(
+        r'^https?://'  # http or https protocol
+        r'(?:'
+        r'(?:[a-zA-Z0-9](?:[a-zA-Z0-9-_]*[a-zA-Z0-9])?\.)*[a-zA-Z0-9](?:[a-zA-Z0-9-_]*[a-zA-Z0-9])?'  # hostname
+        r'|'
+        r'[a-zA-Z0-9](?:[a-zA-Z0-9-_]*[a-zA-Z0-9])?'  # simple hostname (like 'seaweedfs-s3')
+        r'|'
+        r'\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}'  # IPv4
+        r'|'
+        r'\[[0-9a-fA-F:]+\]'  # IPv6
+        r')'
+        r'(?::\d+)?'  # optional port
+        r'(?:/[^\s]*)?$',  # optional path
+        re.IGNORECASE
+    )
+
+    if not url_pattern.match(url):
+        raise ValidationError('Invalid URL format.')
+
+    return True
+
+
 class CloudPullTypesEnum(Enum):
     """Class defining cloud pull types enum"""
 
@@ -1694,7 +1733,7 @@ class AWSCloudPullSchema(Schema):
     access_key = fields.Str(required=True, validate=validate.Length(min=1, max=2048))
     secret_key = fields.Str(required=True, validate=validate.Length(min=1, max=2048))
     cloud_region = fields.Str(validate=validate.Length(max=2048), allow_none=True)
-    endpoint_url = fields.URL(validate=fields.validate.Length(max=2048), allow_none=True)
+    endpoint_url = fields.Str(validate=[validate_endpoint_url, validate.Length(max=2048)], allow_none=True)
     cloud_bucket_name = fields.Str(validate=validate.Length(min=1, max=2048), allow_none=True)
 
 
@@ -1704,7 +1743,7 @@ class AzureCloudPullSchema(Schema):
     account_name = fields.Str(required=True, validate=validate.Length(min=1, max=2048))
     access_key = fields.Str(required=True, validate=validate.Length(min=1, max=2048))
     cloud_region = fields.Str(validate=validate.Length(max=2048), allow_none=True)
-    endpoint_url = fields.URL(validate=fields.validate.Length(max=2048), allow_none=True)
+    endpoint_url = fields.Str(validate=[validate_endpoint_url, validate.Length(max=2048)], allow_none=True)
     cloud_bucket_name = fields.Str(validate=validate.Length(min=1, max=2048), allow_none=True)
 
 
