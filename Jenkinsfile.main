@@ -12,13 +12,11 @@ spec:
     imagePullSecrets:
       - name: tltimagepullsecret
     containers:
-    - name: docker
-      image: docker:24.0.5-dind
-      securityContext:
-        privileged: true
-      env:
-        - name: DOCKER_TLS_CERTDIR
-          value: ""
+    - name: sonar
+      image: sonarsource/sonar-scanner-cli:11
+      command:
+      - cat
+      tty: true
     - name: pyt
       image: nvcr.io/nvidia/pytorch:24.03-py3
       securityContext:
@@ -46,10 +44,7 @@ spec:
               - A100_PCIE_40GB
               - A40
               - L40
-              - H100_PCIe
               - A100_80GB_PCIe
-              - H100_80GB_HBM3
-              - NVIDIA_GH200_480GB
               - TITAN_V
             - key: nvidia.com/driver_version
               operator: In
@@ -91,10 +86,15 @@ spec:
                   }
                 }
                 gitlabCommitStatus(name: "functional_tests_x86", connection: gitLabConnection('git-lab-master')) {
-                  sh "pip install . && pytest"
+                  sh "pip install pytest-cov"
+                  sh "pip install . && pytest --cov=nvidia_tao_core --cov-report=xml:coverage.xml --cov-report=term"
+                  // Archive the coverage report
+                  archiveArtifacts artifacts: 'coverage.xml', fingerprint: true, allowEmptyArchive: true
                 }
               }
-            } finally {
+
+            }
+          } finally {
               stage ('cleanup_x86') {
                 catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
                   sh """
@@ -104,6 +104,33 @@ spec:
                     find . | grep -E '(__pycache__|[.]pyc|[.]pyo\$)' | xargs rm -rf
                   """
                 }
+              }
+            }
+          }
+        }
+        
+        // Run SonarQube analysis in sonar container within the same node
+        container('sonar') {
+          stage ('sonarqube_analysis_x86') {
+            gitlabCommitStatus(name: "sonarqube_analysis_x86", connection: gitLabConnection('git-lab-master')) {
+              try {
+                def branchName = params.GITLAB_BRANCH ?: params.BRANCH_NAME ?: env.BRANCH_NAME ?: env.GIT_BRANCH?.replaceFirst(/^origin\//, '') ?: 'main'
+                echo "Analyzing branch: ${branchName}"
+                echo "Available parameters: GITLAB_BRANCH=${params.GITLAB_BRANCH}, BRANCH_NAME=${params.BRANCH_NAME}"
+                echo "Available env vars: BRANCH_NAME=${env.BRANCH_NAME}, GIT_BRANCH=${env.GIT_BRANCH}"
+                
+                // Verify coverage file exists and show its location
+                sh "pwd && ls -la coverage.xml || echo 'Coverage file not found!'"
+                
+                withSonarQubeEnv() {
+                  sh "sonar-scanner -Dsonar.python.coverage.reportPaths=\${PWD}/coverage.xml -Dsonar.sources=nvidia_tao_core -Dsonar.tests=nvidia_tao_core/tests -Dsonar.exclusions=nvidia_tao_core/tests/** -Dsonar.branch.name=${branchName}"
+                }
+                echo "SonarQube analysis completed successfully"
+              } catch (Exception e) {
+                echo "SonarQube analysis failed: ${e.message}"
+                echo "Continuing pipeline execution..."
+                // Mark stage as unstable but don't fail the pipeline
+                currentBuild.result = 'UNSTABLE'
               }
             }
           }
