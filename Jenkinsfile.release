@@ -12,6 +12,11 @@ spec:
     imagePullSecrets:
       - name: tltimagepullsecret
     containers:
+    - name: sonar
+      image: sonarsource/sonar-scanner-cli:11
+      command:
+      - cat
+      tty: true
     - name: pyt
       image: nvcr.io/nvidia/pytorch:24.03-py3
       securityContext:
@@ -39,10 +44,7 @@ spec:
               - A100_PCIE_40GB
               - A40
               - L40
-              - H100_PCIe
               - A100_80GB_PCIe
-              - H100_80GB_HBM3
-              - NVIDIA_GH200_480GB
               - TITAN_V
             - key: nvidia.com/driver_version
               operator: In
@@ -65,30 +67,36 @@ spec:
 {
   try {
     node(POD_LABEL) {
+      // Extract major.minor from TAO_VERSION and construct VER to be PEP 440 compliant
+      def VERSION_PARTS = TAO_VERSION.split('\\.')
+      def MAJOR_MINOR = "${VERSION_PARTS[0]}.${VERSION_PARTS[1]}"
+      def PATCH_NUMBER = VERSION_PARTS[-1]
+      
+      def VER
+      if (params.RC) {
+        // RC builds: major.minor.patchbuildtypebuildnumber (no dot before rc per PEP 440)
+        VER = "${MAJOR_MINOR}.${PATCH_NUMBER}${BUILD_TYPE}${BUILD_NUMBER}"
+      } else {
+        // Non-RC builds: major.minor.patch (e.g., "6.25.7")
+        VER = "${MAJOR_MINOR}.${PATCH_NUMBER}"
+      }
+      
+      def PYTHON_VERSION
+      def SRC
+      def TARGET
+      def PROP
+      
+      // GitLab Related
+      def GITLAB_PROJECT_ID = "140075" 
+      def TAG_NAME = "v${VER}"
+      def RELEASE_NAME = "Release ${VER}"
+      def RELEASE_DESCRIPTION = "Release ${VER} with third-party packages"
+      
       container('pyt') {
-        // Extract major.minor from TAO_VERSION and construct VER to be PEP 440 compliant
-        def VERSION_PARTS = TAO_VERSION.split('\\.')
-        def MAJOR_MINOR = "${VERSION_PARTS[0]}.${VERSION_PARTS[1]}"
-        def PATCH_NUMBER = VERSION_PARTS[-1]
-        
-        def VER
-        if (params.RC) {
-          // RC builds: major.minor.patchbuildtypebuildnumber (no dot before rc per PEP 440)
-          VER = "${MAJOR_MINOR}.${PATCH_NUMBER}${BUILD_TYPE}${BUILD_NUMBER}"
-        } else {
-          // Non-RC builds: major.minor.patch (e.g., "6.25.7")
-          VER = "${MAJOR_MINOR}.${PATCH_NUMBER}"
-        }
-        def PYTHON_VERSION=sh(script: 'python -c "import platform; print(platform.python_version())"', returnStdout: true).trim()
-        def SRC="dist/nvidia_tao_core-${VER}-py3-none-any.whl"
-        def TARGET="sw-tao-pypi-local/nvidia-tao-core/${VER}/${PYTHON_VERSION}/"
-        def PROP="component_name=nvidia-tao-core;arch=x86_64;os=linux;build_source=None;version=${VER};branch=release;release_approver=vpraveen"
-        
-        // GitLab Related
-        def GITLAB_PROJECT_ID = "140075" 
-        def TAG_NAME = "v${VER}"
-        def RELEASE_NAME = "Release ${VER}"
-        def RELEASE_DESCRIPTION = "Release ${VER} with third-party packages"
+        PYTHON_VERSION=sh(script: 'python -c "import platform; print(platform.python_version())"', returnStdout: true).trim()
+        SRC="dist/nvidia_tao_core-${VER}-py3-none-any.whl"
+        TARGET="sw-tao-pypi-local/nvidia-tao-core/${VER}/${PYTHON_VERSION}/"
+        PROP="component_name=nvidia-tao-core;arch=x86_64;os=linux;build_source=None;version=${VER};branch=release;release_approver=vpraveen"
         
         stage ('checkout') {
           gitlabCommitStatus(name: "checkout", connection: gitLabConnection('git-lab-master')) {
@@ -103,18 +111,56 @@ spec:
           }
         }
 
-        stage ("functional_tests") {
-          withCredentials([string(credentialsId: 'NGC_CLI_API_KEY_SVC_TLT_CI', variable: 'NGC_CLI_API_KEY')]) {
-            script{
-              env.NGC_KEY=NGC_CLI_API_KEY
-              env.NGC_PATH='ea-tlt/tao_ea/pretrained_dino_imagenet:fan_hybrid_tiny'
+        // Functional tests only for RC builds
+        if (params.RC) {
+          stage ("functional_tests") {
+            withCredentials([string(credentialsId: 'NGC_CLI_API_KEY_SVC_TLT_CI', variable: 'NGC_CLI_API_KEY')]) {
+              script{
+                env.NGC_KEY=NGC_CLI_API_KEY
+                env.NGC_PATH='ea-tlt/tao_ea/pretrained_dino_imagenet:fan_hybrid_tiny'
+              }
+            }
+            gitlabCommitStatus(name: "functional_tests", connection: gitLabConnection('git-lab-master')) {
+              sh "pip install pytest-cov"
+              sh "pip install . && pytest --cov=nvidia_tao_core --cov-report=xml:coverage.xml --cov-report=term"
+              // Archive the coverage report
+              archiveArtifacts artifacts: 'coverage.xml', fingerprint: true, allowEmptyArchive: true
             }
           }
-          gitlabCommitStatus(name: "functional_tests", connection: gitLabConnection('git-lab-master')) {
-            sh "pip install . && pytest"
+        }
+      }
+      
+      // SonarQube analysis for RC builds only - run in sonar container
+      if (params.RC) {
+        container('sonar') {
+          stage ('sonarqube_analysis') {
+            gitlabCommitStatus(name: "sonarqube_analysis", connection: gitLabConnection('git-lab-master')) {
+              try {
+                def branchName = params.GITLAB_BRANCH ?: params.BRANCH_NAME ?: env.BRANCH_NAME ?: env.GIT_BRANCH?.replaceFirst(/^origin\//, '') ?: 'main'
+                echo "Analyzing branch: ${branchName}"
+                echo "Available parameters: GITLAB_BRANCH=${params.GITLAB_BRANCH}, BRANCH_NAME=${params.BRANCH_NAME}"
+                echo "Available env vars: BRANCH_NAME=${env.BRANCH_NAME}, GIT_BRANCH=${env.GIT_BRANCH}"
+                
+                // Verify coverage file exists and show its location
+                sh "pwd && ls -la coverage.xml || echo 'Coverage file not found!'"
+                
+                withSonarQubeEnv() {
+                  sh "sonar-scanner -Dsonar.python.coverage.reportPaths=\${PWD}/coverage.xml -Dsonar.sources=nvidia_tao_core -Dsonar.tests=nvidia_tao_core/tests -Dsonar.exclusions=nvidia_tao_core/tests/** -Dsonar.branch.name=${branchName}"
+                }
+                echo "SonarQube analysis completed successfully"
+              } catch (Exception e) {
+                echo "SonarQube analysis failed: ${e.message}"
+                echo "Continuing pipeline execution..."
+                // Mark stage as unstable but don't fail the pipeline
+                currentBuild.result = 'UNSTABLE'
+              }
+            }
           }
         }
-
+      }
+      
+      // Continue with remaining stages in pyt container
+      container('pyt') {
         stage ('build_wheel') {
           gitlabCommitStatus(name: "build_wheel", connection: gitLabConnection('git-lab-master')) {
             if (params.RC) {
@@ -181,8 +227,8 @@ spec:
             """
           }
         }
-      }
-    }
+      }  // End of pyt container
+    }  // End of node
   }
   catch (Exception e) {
     // Mark build as failed.
