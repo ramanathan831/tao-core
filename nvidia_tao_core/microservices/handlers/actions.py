@@ -312,7 +312,7 @@ class ActionPipeline:
         self.job_env_variables["TAO_USER_KEY"] = user_key
         self.job_env_variables["RECURSIVE_DATASET_FILE_DOWNLOAD"] = str(self.recursive_dataset_file_download)
         self.job_env_variables["TAO_ADMIN_KEY"] = get_admin_key()
-        self.job_env_variables["TAO_API_KEY"] = os.getenv("PTM_API_KEY")
+        self.job_env_variables["TAO_API_KEY"] = get_admin_key(legacy_key=True)
         self.job_env_variables["TAO_API_SERVER"] = host_base_url
         self.job_env_variables["TAO_API_JOB_ID"] = log_callback_job_id
         self.job_env_variables["TAO_LOGGING_SERVER_URL"] = status_url

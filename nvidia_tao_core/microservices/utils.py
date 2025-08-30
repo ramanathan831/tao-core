@@ -222,7 +222,7 @@ def merge_nested_dicts(dict1, dict2):
     return merged_dict
 
 
-def get_admin_key():
+def get_admin_key(legacy_key=False):
     """Get admin api key from k8s secret or NVCF secret"""
     try:
         # TODO: Use a better way to get the secret for various deployments
@@ -231,8 +231,13 @@ def get_admin_key():
             if os.path.exists(NVCF_SECRET_FILE):
                 with open(NVCF_SECRET_FILE, "r", encoding="utf-8") as secret_file:
                     secrets = json.load(secret_file)
-                if secrets and "ngc_api_key" in secrets:
-                    return secrets["ngc_api_key"]
+                if secrets:
+                    if legacy_key and "ptm_api_key" in secrets:
+                        logger.info(f"Returning ptm_api_key: {secrets['ptm_api_key']}")
+                        return secrets["ptm_api_key"]
+                    if "ngc_api_key" in secrets:
+                        logger.info(f"Returning ngc_api_key: {secrets['ngc_api_key']}")
+                        return secrets["ngc_api_key"]
                 logger.error("Failed to obtain ngc_api_key from NVCF secret")
                 return ""
             if os.getenv("DEV_MODE", "False").lower() in ("true", "1"):
