@@ -1,0 +1,39 @@
+{
+    "api_params": {
+        "dataset_type": "object_detection",
+        "actions": ["train"],
+        "formats": ["coco", "coco_raw"],
+        "accepted_ds_intents": ["training", "evaluation", "testing"],
+        "image": "COSMOS_RL",
+        "spec_backend": "yaml",
+        "actions_pipe": {
+            "train": "train"
+        }
+    },
+
+    "data_sources": {
+        "train": {
+            "custom.dataset.annotation_path": {
+                "source": "train_datasets",
+                "multiple_sources": false,
+                "path": "annotations.json"
+            },
+            "custom.dataset.media_dir": {
+                "source": "train_datasets",
+                "multiple_sources": false,
+                "path": "images.tar.gz"
+            }
+        }
+    },
+    "spec_params":{
+        "train": {
+            "results_dir":"output_dir",
+            "train.output_dir":"output_dir"
+        }
+    },
+
+    "automl_spec_params":{
+        "results_dir":"automl_output_dir",
+        "train.output_dir":"automl_output_dir"
+    }
+}
