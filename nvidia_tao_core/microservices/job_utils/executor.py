@@ -1186,6 +1186,10 @@ def create_microservice_and_send_request(
                 )
                 if response.status_code != 200 and response.text:
                     logger.error(f"Error when sending microservice request {response.text}")
+                    internal_job_status_update(
+                        microservice_pod_id,
+                        message=f"Error when sending microservice request {response.text}"
+                    )
                     docker_handler.stop_container()
                     gpu_manager.release_gpus(microservice_pod_id)
                     return None
@@ -1193,6 +1197,11 @@ def create_microservice_and_send_request(
                     docker_handler.stop_container()
                     gpu_manager.release_gpus(microservice_pod_id)
                 return response
+            internal_job_status_update(
+                microservice_pod_id,
+                message=f"Error when creating microservice pod {microservice_pod_id}"
+            )
+            return None
 
         if BACKEND == "local-k8s":
             service_name = get_statefulset_service_name(microservice_pod_id)
@@ -1217,6 +1226,10 @@ def create_microservice_and_send_request(
                 )
                 if response.status_code != 200 and response.text:
                     logger.error(f"Error when sending microservice request {response.text}")
+                    internal_job_status_update(
+                        microservice_pod_id,
+                        message=f"Error when sending microservice request {response.text}"
+                    )
                     delete(microservice_pod_id, use_ngc=False)
                     return None
                 if api_endpoint != "post_action":
@@ -1227,6 +1240,10 @@ def create_microservice_and_send_request(
         logger.error(f"Exception thrown in create_microservice_and_send_request is {str(e)}")
         logger.error("Exception in create ms pod and send request")
         logger.error(traceback.format_exc())
+        internal_job_status_update(
+            microservice_pod_id,
+            message=f"Error when creating microservice pod {microservice_pod_id}"
+        )
         delete(microservice_pod_id, use_ngc=False)
         return None
 

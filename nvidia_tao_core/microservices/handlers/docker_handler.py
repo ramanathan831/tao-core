@@ -21,7 +21,6 @@ import traceback
 # pylint: disable=c-extension-no-member
 import docker
 import os
-import sys
 import logging
 import requests
 from nvidia_tao_core.microservices.utils import get_admin_key
@@ -221,7 +220,7 @@ class DockerHandler:
                 docker_pull_progress(line)
         except docker.errors.APIError as e:
             logger.error(f"Docker pull failed. {e}")
-            sys.exit(1)
+            raise e
         logger.info("Container pull complete.")
 
     @staticmethod
@@ -236,13 +235,13 @@ class DockerHandler:
 
     def start_container(self, container_name="", docker_env_vars={}, command=[], num_gpus=-1, volumes=None):
         """Start a container."""
-        # Check if the image exists locally. If not, pull it.
-        if not self._check_image_exists():
-            logger.info(
-                "The required docker doesn't exist locally/the manifest has changed. "
-                "Pulling a new docker.")
-            self.pull()
         try:
+            # Check if the image exists locally. If not, pull it.
+            if not self._check_image_exists():
+                logger.info(
+                    "The required docker doesn't exist locally/the manifest has changed. "
+                    "Pulling a new docker.")
+                self.pull()
             gpu_ids = gpu_manager.assign_gpus(container_name, num_gpus)
             logger.info(f"Starting Container: {self._docker_image}")
             self._container = self._docker_client.containers.run(
@@ -261,6 +260,7 @@ class DockerHandler:
         except Exception as e:
             logger.error(f"Exception thrown in start_container is {str(e)}")
             logger.error(traceback.format_exc())
+            raise e
 
     def check_container_health(self, port=8000):
         """Check if the microservice container is running and healthy."""
