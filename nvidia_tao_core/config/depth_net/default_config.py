@@ -35,6 +35,7 @@ from nvidia_tao_core.config.common.common_config import (
 from nvidia_tao_core.config.depth_net.dataset import DepthNetDatasetConfig
 from nvidia_tao_core.config.depth_net.model import DepthNetModelConfig
 from nvidia_tao_core.config.depth_net.train import DepthNetTrainExpConfig
+from nvidia_tao_core.config.depth_net.deploy import DepthNetGenTrtEngineExpConfig
 
 
 @dataclass
@@ -134,4 +135,8 @@ class ExperimentConfig(CommonExperimentConfig):
     export: ExportConfig = DATACLASS_FIELD(
         ExportConfig(),
         description="Configurable parameters to construct the onnx export for a DepthNet experiment."
+    )
+    gen_trt_engine: DepthNetGenTrtEngineExpConfig = DATACLASS_FIELD(
+        DepthNetGenTrtEngineExpConfig(),
+        description="Configurable parameters to construct the TensorRT engine builder for a DepthNet experiment.",
     )
