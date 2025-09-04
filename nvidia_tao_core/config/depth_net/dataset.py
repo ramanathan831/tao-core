@@ -277,6 +277,24 @@ class BaseDepthNetDatasetConfig:
                     * data_file : The path of the data file""",
         display_name="train data sources",
     )
+    image_path: Optional[str] = STR_FIELD(
+        value="",
+        default_value="",
+        description="The path to the image directory for tao-deploy",
+        display_name="image path"
+    )
+    right_image_path: Optional[str] = STR_FIELD(
+        value="",
+        default_value="",
+        description="The path to the right image directory for tao-deploy",
+        display_name="right image path"
+    )
+    depth_image_path: Optional[str] = STR_FIELD(
+        value="",
+        default_value="",
+        description="The path to the depth image directory for tao-deploy",
+        display_name="depth image path"
+    )
     batch_size: int = INT_FIELD(
         value=1,
         default_value=1,
