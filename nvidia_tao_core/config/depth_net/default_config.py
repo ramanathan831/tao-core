@@ -105,6 +105,19 @@ class DepthNetEvalExpConfig(EvaluateConfig):
 
 
 @dataclass
+class DepthNetExportExpConfig(ExportConfig):
+    """Inference experiment config."""
+
+    valid_iters: Optional[int] = INT_FIELD(
+        value=22,
+        default_value=22,
+        description="Number of GRU iterations to export the model.",
+        display_name="Valid Iterations",
+        valid_min=1,
+    )
+
+
+@dataclass
 class ExperimentConfig(CommonExperimentConfig):
     """Experiment config."""
 
@@ -132,8 +145,8 @@ class ExperimentConfig(CommonExperimentConfig):
         WandBConfig(),
         description="Configurable parameters to construct the wandb client for a DepthNet experiment.",
     )
-    export: ExportConfig = DATACLASS_FIELD(
-        ExportConfig(),
+    export: DepthNetExportExpConfig = DATACLASS_FIELD(
+        DepthNetExportExpConfig(),
         description="Configurable parameters to construct the onnx export for a DepthNet experiment."
     )
     gen_trt_engine: DepthNetGenTrtEngineExpConfig = DATACLASS_FIELD(
