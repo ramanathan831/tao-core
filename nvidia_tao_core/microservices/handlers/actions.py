@@ -609,7 +609,9 @@ class ActionPipeline:
             # Generate run command
             self.run_command, outdir = self.generate_run_command()
             if self.network not in MONAI_NETWORKS and self.spec:
-                self.num_gpu = get_num_gpus_from_spec(self.spec, self.job_context.action, default=self.num_gpu)
+                self.num_gpu = get_num_gpus_from_spec(
+                    self.spec, self.job_context.action, network=self.network, default=self.num_gpu
+                )
                 self.num_nodes = get_num_nodes_from_spec(self.spec, self.job_context.action, default=self.num_nodes)
                 self.detailed_print(f"Job {self.job_name} running with {self.num_gpu} GPUs and {self.num_nodes} nodes")
             if not outdir:
@@ -996,7 +998,7 @@ class AutoMLPipeline(ActionPipeline):
 
         for param_name, param_value in recommended_values.items():
             write_nested_dict(spec, param_name, param_value)
-        self.num_gpu = get_num_gpus_from_spec(spec, "train", default=self.num_gpu)
+        self.num_gpu = get_num_gpus_from_spec(spec, "train", network=self.network, default=self.num_gpu)
         self.num_nodes = get_num_nodes_from_spec(spec, "train", default=self.num_nodes)
 
         return spec

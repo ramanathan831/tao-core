@@ -1660,7 +1660,7 @@ class AppHandler:
 
                     num_gpu = 1
                     if specs:
-                        num_gpu = get_num_gpus_from_spec(specs, action, default=1)
+                        num_gpu = get_num_gpus_from_spec(specs, action, network=network_arch, default=1)
                     gpu_based_subset = {}
                     valid_gpu_counts = get_powers_of_2(num_gpu)
                     for nvcf_instance_id, nvcf_instance_info in available_nvcf_instances.items():

@@ -52,6 +52,7 @@ from nvidia_tao_core.microservices.constants import (
     MISSING_EPOCH_FORMAT_NETWORKS,
     MONAI_NETWORKS
 )
+from nvidia_tao_core.microservices.network_utils.network_constants import gpu_mapper
 from nvidia_tao_core.microservices.handlers.cloud_storage import create_cs_instance
 from nvidia_tao_core.microservices.handlers.encrypt import NVVaultEncryption
 from nvidia_tao_core.microservices.handlers.stateless_handlers import (
@@ -890,11 +891,50 @@ def _check_gpu_conditions(field_name, field_value):
             )
 
 
-def get_num_gpus_from_spec(spec, action, default=0):
+def get_nested_dict_value(data, key_path):
+    """Get value from nested dictionary using dot notation key path.
+
+    Args:
+        data (dict): The dictionary to search in
+        key_path (str): Dot-separated key path (e.g., "policy.parallelism.dp_shard_size")
+
+    Returns:
+        The value at the key path, or None if not found
+    """
+    if not key_path or not isinstance(data, dict):
+        return None
+
+    keys = key_path.split('.')
+    current = data
+
+    for key in keys:
+        if isinstance(current, dict) and key in current:
+            current = current[key]
+        else:
+            return None
+
+    return current
+
+
+def get_num_gpus_from_spec(spec, action, network=None, default=0):
     """Validate the gpus requested"""
     if not isinstance(spec, dict):
         return default
+
     gpu_set_values = []
+
+    # First check for network-specific GPU parameter using gpu_mapper
+    if network and network in gpu_mapper:
+        gpu_param_path = gpu_mapper[network]
+        if gpu_param_path:  # Only check if there's a non-empty path defined
+            network_gpu_value = get_nested_dict_value(spec, gpu_param_path)
+            if network_gpu_value is not None and network_gpu_value != 0:
+                if isinstance(network_gpu_value, (int, float)):
+                    gpu_set_values.append(int(network_gpu_value))
+                elif isinstance(network_gpu_value, list):
+                    gpu_set_values.append(len(set(network_gpu_value)))
+
+    # Fall back to original logic for standard GPU parameters
     for gpu_param_name in ("gpus", "num_gpus", "gpu_ids", "gpu_id"):
         field_value = 0
         field_name = ""
