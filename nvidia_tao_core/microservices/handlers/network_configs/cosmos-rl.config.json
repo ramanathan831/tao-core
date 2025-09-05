@@ -1,8 +1,8 @@
 {
     "api_params": {
-        "dataset_type": "object_detection",
+        "dataset_type": "vlm",
         "actions": ["train"],
-        "formats": ["coco", "coco_raw"],
+        "formats": ["llava"],
         "accepted_ds_intents": ["training", "evaluation", "testing"],
         "image": "COSMOS_RL",
         "spec_backend": "yaml",
@@ -18,7 +18,7 @@
                 "multiple_sources": false,
                 "path": "annotations.json"
             },
-            "custom.dataset.media_dir": {
+            "custom.dataset.media_path": {
                 "source": "train_datasets",
                 "multiple_sources": false,
                 "path": "images.tar.gz"
