@@ -103,6 +103,7 @@ class DepthNetEvalExpConfig(EvaluateConfig):
         valid_min=1,
     )
 
+
 @dataclass
 class DepthNetExportExpConfig(ExportConfig):
     """Inference experiment config."""
