@@ -101,6 +101,25 @@ def read_network_config(network):
     return cli_config
 
 
+def get_spec_file_extension(backend):
+    """Get file extension for the given spec backend"""
+    backend_to_extension = {
+        "yaml": "yaml",
+        "protobuf": "txt",
+        "toml": "toml",
+        "json": "json"
+    }
+    return backend_to_extension.get(backend, "yaml")  # default to yaml if unknown
+
+
+def get_spec_backend_info(network):
+    """Get spec backend and file extension from network config"""
+    config = read_network_config(network)
+    spec_backend = config.get("api_params", {}).get("spec_backend", "yaml")
+    file_extension = get_spec_file_extension(spec_backend)
+    return spec_backend, file_extension
+
+
 def get_microservices_network_and_action(network, action):
     """Maps a network and action to the appropriate microservices network and action.
 

@@ -40,7 +40,13 @@ from nvidia_tao_core.cloud_handlers.utils import (
 )
 import nvidia_tao_core.loggers.logging as status_logging
 from nvidia_tao_core.api_utils.module_utils import entrypoint_paths, entry_points
-from nvidia_tao_core.microservices.utils import safe_load_file, safe_dump_file, read_network_config
+from nvidia_tao_core.microservices.utils import (
+    safe_load_file,
+    safe_dump_file,
+    read_network_config,
+    get_spec_backend_info
+)
+from nvidia_tao_core.microservices.specs_utils import json_to_kitti, json_to_yaml, json_to_toml
 
 # Configure logging
 logging.basicConfig(
@@ -48,6 +54,13 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+
+# Spec backend to conversion functions mapping
+SPEC_BACKEND_TO_FUNCTIONS = {
+    "protobuf": json_to_kitti.kitti,
+    "yaml": json_to_yaml.yml,
+    "toml": json_to_toml.toml_format
+}
 
 
 def prepare_data_before_job_run(job, docker_env_vars):
@@ -88,10 +101,26 @@ def prepare_data_before_job_run(job, docker_env_vars):
         reprocess_files=reprocess_files
     )
 
-    # Save spec file
-    spec_path = os.path.join(specs["results_dir"], "spec.yaml")
-    with open(spec_path, 'w+', encoding='utf-8') as yaml_file:
-        yaml.dump(specs, yaml_file, default_flow_style=False)
+    # Save spec file with dynamic backend
+    network_arch = job["neural_network_name"]
+    spec_backend, file_extension = get_spec_backend_info(network_arch)
+    spec_path = os.path.join(specs["results_dir"], f"spec.{file_extension}")
+
+    if spec_backend == "yaml":
+        # Use yaml format
+        with open(spec_path, 'w+', encoding='utf-8') as spec_file:
+            yaml.dump(specs, spec_file, default_flow_style=False)
+    elif spec_backend in SPEC_BACKEND_TO_FUNCTIONS:
+        # Use appropriate conversion function
+        conversion_func = SPEC_BACKEND_TO_FUNCTIONS[spec_backend]
+        converted_specs = conversion_func(specs)
+        with open(spec_path, 'w+', encoding='utf-8') as spec_file:
+            spec_file.write(converted_specs)
+    else:
+        # Fallback to yaml if unknown backend
+        logger.warning(f"Unknown spec backend '{spec_backend}', falling back to yaml")
+        with open(spec_path, 'w+', encoding='utf-8') as spec_file:
+            yaml.dump(specs, spec_file, default_flow_style=False)
 
     if docker_env_vars.get("RECURSIVE_DATASET_FILE_DOWNLOAD", "False") == "True":
         logger.info("reprocess_files: %s", reprocess_files)
@@ -289,7 +318,8 @@ class ContainerJobHandler:
                                 is_completed = vlm_entrypoint.vlm_launch(
                                     job["neural_network_name"],
                                     job["action_name"],
-                                    specs
+                                    specs,
+                                    job["job_id"]
                                 )
 
                         except Exception:
