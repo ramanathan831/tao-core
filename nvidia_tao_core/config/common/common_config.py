@@ -312,6 +312,7 @@ class ExportConfig:
     valid_iters: Optional[int] = INT_FIELD(
         value=22,
         default_value=22,
+        valid_min=1,
         display_name="Valid Iterations",
         description="""The number of valid GRU iterations when exporting the model.""",
     )
