@@ -160,20 +160,20 @@ class BaseExperimentMetadata:
 
         return self._cached_tao_version
 
-    def get_ngc_client(self, org: str, team: str, ngc_token: str):
+    def get_ngc_client(self, org: str, team: str, ngc_key: str):
         """Get or create a cached NGC client for the given org/team
 
         Returns:
             Client: Configured NGC client, unconfigured client, or None for failed auth
             None: If authentication failed (also cached to prevent retry)
         """
-        client_key = (org, team, ngc_token)
+        client_key = (org, team, ngc_key)
 
         if client_key not in self._ngc_clients_cache:
             from ngcsdk import Client  # pylint: disable=C0415
             client = Client()
             try:
-                client.configure(api_key=ngc_token, org_name=org, team_name=team)
+                client.configure(api_key=ngc_key, org_name=org, team_name=team)
                 self._ngc_clients_cache[client_key] = client
                 logger.info(f"Created and cached NGC client for org: {org}, team: {team}")
             except Exception as e:
@@ -215,6 +215,7 @@ class BaseExperimentMetadata:
         """Authenticate to NGC"""
         # Get the NGC login token
         ngc_api_key = os.getenv("PTM_API_KEY")
+        ngc_token = ""
         if not ngc_api_key:
             secrets_file = "/var/secrets/secrets.json"
             with open(secrets_file, "r", encoding="utf-8") as f:
@@ -223,10 +224,9 @@ class BaseExperimentMetadata:
 
         if ngc_api_key:
             ngc_token = get_ngc_token_from_api_key(ngc_api_key, org, team)
-            if ngc_token:
-                return ngc_token
+            return ngc_api_key, ngc_token
         if self.ngc_key.startswith("nvapi"):
-            return self.ngc_key
+            return self.ngc_key, ngc_token
         raise ValueError(
             'Credentials error: Invalid NGC_PERSONAL_KEY, NGC_API_KEYs are no longer valid, '
             'generate a personal key with Cloud Functions, NGC Catalog and Private registry services '
@@ -271,7 +271,7 @@ class BaseExperimentMetadata:
         logger.info("--------------------------------------------------------")
         logger.info("Getting accessible org/team for the provided NGC Personal key")
         logger.info("--------------------------------------------------------")
-        ngc_token = self.get_ngc_token()
+        ngc_key, ngc_token = self.get_ngc_token()
         headers = {
             "Accept": "application/json",
             "Authorization": f"Bearer {ngc_token}",
@@ -409,10 +409,10 @@ class BaseExperimentMetadata:
                     if source_type == "ngc":
                         # Handle NGC models (existing logic)
                         org, team, _, _ = self.split_ngc_path(cleaned_path)
-                        ngc_token = self.get_ngc_token(org, team)
+                        ngc_key, _ = self.get_ngc_token(org, team)
                         self.add_experiment(
                             base_experiments, display_name, cleaned_path, network_arch,
-                            ngc_token, source_type, is_backbone
+                            ngc_key, source_type, is_backbone
                         )
 
                     elif source_type == "huggingface":
@@ -467,7 +467,7 @@ class BaseExperimentMetadata:
         return base_experiments
 
     def add_experiment(self, base_experiments, display_name, ngc_path, network_arch,
-                       ngc_token, source_type="ngc", is_backbone=None):
+                       ngc_key, source_type="ngc", is_backbone=None):
         """Add experiment to the base experiments list with unique id"""
         hash_str = f"{ngc_path}:{network_arch}"
         exp_id = str(uuid.uuid5(self.base_exp_uuid, hash_str))
@@ -475,7 +475,7 @@ class BaseExperimentMetadata:
         if self.airgapped and source_type == "ngc":
             # In airgapped mode, download complete NGC model instead of just specs
             spec_data = {}
-            download_success = self.download_complete_model(ngc_path, exp_id, ngc_token)
+            download_success = self.download_complete_model(ngc_path, exp_id, ngc_key)
             if download_success:
                 # Try to get spec data if experiment.yaml exists
                 org, team, model, version = self.split_ngc_path(ngc_path)
@@ -484,7 +484,7 @@ class BaseExperimentMetadata:
                     spec_data = safe_load_file(spec_file_path, file_type="yaml") or {}
         elif source_type == "ngc":
             # Regular mode - only download experiment specs for NGC models
-            spec_data = self.get_base_spec(ngc_path, exp_id, ngc_token)
+            spec_data = self.get_base_spec(ngc_path, exp_id, ngc_key)
         else:
             # For non-NGC sources (like Hugging Face), no specs available
             spec_data = {}
@@ -507,7 +507,7 @@ class BaseExperimentMetadata:
         base_experiments: dict[str, dict] = {}
         for org, team in self.org_team_list:
             logger.info(f"Querying base experiments from '{org}{'/' + team if team else ''}'")
-            ngc_token = self.get_ngc_token(org, team)
+            ngc_key, ngc_token = self.get_ngc_token(org, team)
             headers = {
                 "Accept": "application/json",
                 "Authorization": f"Bearer {ngc_token}",
@@ -583,18 +583,18 @@ class BaseExperimentMetadata:
                                                 model.get("displayName", network_arch),
                                                 ngc_path,
                                                 network_arch,
-                                                ngc_token,
+                                                ngc_key,
                                                 "ngc",
                                                 None  # NGC discovery doesn't have CSV is_backbone value
                                             )
         return base_experiments
 
-    def get_base_spec(self, ngc_path, exp_id, ngc_token):
+    def get_base_spec(self, ngc_path, exp_id, ngc_key):
         """Retrieves base experiment specs if present"""
         org, team, model, version = self.split_ngc_path(ngc_path)
 
         # Get cached NGC client
-        clt = self.get_ngc_client(org, team, ngc_token)
+        clt = self.get_ngc_client(org, team, ngc_key)
         if clt is None:
             return {}
         # Check and download experiment.yaml file
@@ -617,15 +617,16 @@ class BaseExperimentMetadata:
             logger.error(e)
         return {}
 
-    def download_complete_model(self, ngc_path, exp_id, ngc_token):
+    def download_complete_model(self, ngc_path, exp_id, ngc_key):
         """Download complete model for airgapped deployment"""
-        print(f"Downloading complete model: {ngc_path}")
+        logger.info(f"Downloading complete model: {ngc_path}")
 
         org, team, model, version = self.split_ngc_path(ngc_path)
 
         # Get cached NGC client
-        clt = self.get_ngc_client(org, team, ngc_token)
+        clt = self.get_ngc_client(org, team, ngc_key)
         if clt is None:
+            logger.error(f"Failed to get NGC client for {ngc_path}")
             return False
 
         # Download complete model
@@ -940,7 +941,7 @@ class BaseExperimentMetadata:
                 # Handle NGC models
                 try:
                     org, team, model_name, model_version = self.split_ngc_path(ngc_path)
-                    ngc_token = self.get_ngc_token(org, team)
+                    ngc_key, ngc_token = self.get_ngc_token(org, team)
 
                     # In CSV or both mode, process all experiments; in auto-discovery mode, check org/team membership
                     if self.use_csv or self.use_both or (org, team) in self.org_team_list:
