@@ -36,6 +36,21 @@
             "enabled": false
         }, 
         {
+            "matchUpdateTypes": ["major"],
+            "prTitle": "[TAO-524][Chore] Update {{depName}} to {{newVersion}} (major)",
+            "labels": ["renovate", "major-update"]
+        },
+        {
+            "matchUpdateTypes": ["minor"],
+            "prTitle": "[TAO-524][Chore] Update {{depName}} to {{newVersion}} (minor)",
+            "labels": ["renovate", "minor-update"]
+        },
+        {
+            "matchUpdateTypes": ["patch"],
+            "prTitle": "[TAO-524][Chore] Update {{depName}} to {{newVersion}} (patch)",
+            "labels": ["renovate", "patch-update"]
+        },
+        {
             "description": "Group all non-security patch updates into one MR",
             "matchCategories": ["!security"],
             "matchUpdateTypes": ["patch"],
@@ -54,21 +69,6 @@
             "groupSlug": "non-security-minor",
             "prTitle": "[TAO-524][Chore] Group non-security minor updates",
             "labels": ["renovate", "minor-update", "bulk"]
-        },
-        {
-            "matchUpdateTypes": ["major"],
-            "prTitle": "[TAO-524][Chore] Update {{depName}} to {{newVersion}} (major)",
-            "labels": ["renovate", "major-update"]
-        },
-        {
-            "matchUpdateTypes": ["minor"],
-            "prTitle": "[TAO-524][Chore] Update {{depName}} to {{newVersion}} (minor)",
-            "labels": ["renovate", "minor-update"]
-        },
-        {
-            "matchUpdateTypes": ["patch"],
-            "prTitle": "[TAO-524][Chore] Update {{depName}} to {{newVersion}} (patch)",
-            "labels": ["renovate", "patch-update"]
         }
     ]
   }
