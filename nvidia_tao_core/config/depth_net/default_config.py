@@ -14,7 +14,7 @@
 
 """Default config file."""
 
-from typing import List, Optional
+from typing import Optional
 from dataclasses import dataclass
 
 from nvidia_tao_core.config.utils.types import (
@@ -22,8 +22,6 @@ from nvidia_tao_core.config.utils.types import (
     FLOAT_FIELD,
     INT_FIELD,
     BOOL_FIELD,
-    STR_FIELD,
-    LIST_FIELD
 )
 
 from nvidia_tao_core.config.common.common_config import (
@@ -36,21 +34,7 @@ from nvidia_tao_core.config.depth_net.dataset import DepthNetDatasetConfig
 from nvidia_tao_core.config.depth_net.model import DepthNetModelConfig
 from nvidia_tao_core.config.depth_net.train import DepthNetTrainExpConfig
 from nvidia_tao_core.config.depth_net.deploy import DepthNetGenTrtEngineExpConfig
-
-
-@dataclass
-class WandBConfig:
-    """Configuration element wandb client."""
-
-    enable: bool = BOOL_FIELD(value=True)
-    project: str = STR_FIELD(value="TAO Toolkit")
-    entity: Optional[str] = STR_FIELD(value="")
-    tags: List[str] = LIST_FIELD(arrList=["tao-toolkit"])
-    reinit: bool = BOOL_FIELD(value=False)
-    sync_tensorboard: bool = BOOL_FIELD(value=False)
-    save_code: bool = BOOL_FIELD(value=False)
-    name: str = BOOL_FIELD(value="TAO Toolkit Training")
-    run_id: str = STR_FIELD(value="")
+from nvidia_tao_core.config.common.mlops import WandBConfig
 
 
 @dataclass
