@@ -134,8 +134,8 @@ spec:
       if (params.RC) {
         container('sonar') {
           stage ('sonarqube_analysis') {
-            gitlabCommitStatus(name: "sonarqube_analysis", connection: gitLabConnection('git-lab-master')) {
-              try {
+            catchError(buildResult: 'SUCCESS', stageResult: 'FAILURE') {
+              gitlabCommitStatus(name: "sonarqube_analysis", connection: gitLabConnection('git-lab-master')) {
                 def branchName = params.GITLAB_BRANCH ?: params.BRANCH_NAME ?: env.BRANCH_NAME ?: env.GIT_BRANCH?.replaceFirst(/^origin\//, '') ?: 'main'
                 echo "Analyzing branch: ${branchName}"
                 echo "Available parameters: GITLAB_BRANCH=${params.GITLAB_BRANCH}, BRANCH_NAME=${params.BRANCH_NAME}"
@@ -148,11 +148,6 @@ spec:
                   sh "sonar-scanner -Dsonar.python.coverage.reportPaths=\${PWD}/coverage.xml -Dsonar.sources=nvidia_tao_core -Dsonar.tests=nvidia_tao_core/tests -Dsonar.exclusions=nvidia_tao_core/tests/** -Dsonar.branch.name=${branchName}"
                 }
                 echo "SonarQube analysis completed successfully"
-              } catch (Exception e) {
-                echo "SonarQube analysis failed: ${e.message}"
-                echo "Continuing pipeline execution..."
-                // Mark stage as unstable but don't fail the pipeline
-                currentBuild.result = 'UNSTABLE'
               }
             }
           }
