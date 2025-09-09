@@ -36,6 +36,7 @@ from apispec_webframeworks.flask import FlaskPlugin
 from flask import Flask, request, jsonify, make_response, render_template, send_from_directory, send_file
 from flask_limiter import Limiter
 from flask_limiter.util import get_remote_address
+from flask_wtf.csrf import CSRFProtect
 from requests_toolbelt.multipart.encoder import MultipartEncoder
 from marshmallow import Schema, fields, exceptions, validate, validates_schema, ValidationError, EXCLUDE
 from marshmallow_enum import EnumField, Enum
@@ -342,6 +343,8 @@ class CustomProfilerMiddleware(ProfilerMiddleware):
 
 
 app = Flask(__name__)
+csrf = CSRFProtect()
+csrf.init_app(app)
 app.json.sort_keys = False
 app.config['TRAP_HTTP_EXCEPTIONS'] = True
 if os.getenv("PROFILER", "FALSE") == "True":
