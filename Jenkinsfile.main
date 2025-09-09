@@ -92,7 +92,8 @@ spec:
                   archiveArtifacts artifacts: 'coverage.xml', fingerprint: true, allowEmptyArchive: true
                 }
               }
-            } finally {
+            }
+            finally {
               stage ('cleanup_x86') {
                 catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
                   sh """
@@ -183,40 +184,42 @@ spec:
                   }
                 }
               }
-            } finally {
-            stage('cleanup_arm') {
-              catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
-                echo "Cleaning up ARM node workspace and pipeline-specific Docker resources"
-                sh """
-                  # Only clean up Docker resources specific to this pipeline run (safe for concurrent pipelines)
-                  echo "Cleaning up containers for this pipeline run..."
-                  PIPELINE_CONTAINERS=\$(docker ps -a --filter "label=pipeline=tao-core-arm" --filter "label=build=${BUILD_NUMBER}" --format "{{.ID}}" 2>/dev/null || echo "")
-                  if [ ! -z "\$PIPELINE_CONTAINERS" ]; then
-                    echo "Removing pipeline-specific containers: \$PIPELINE_CONTAINERS"
-                    docker rm -f \$PIPELINE_CONTAINERS || echo "Some containers already removed"
-                  else
-                    echo "No pipeline-specific containers to clean up"
-                  fi
-                  
-                  # Clean up any containers with our specific job label that are exited (broader safety net)
-                  JOB_CONTAINERS=\$(docker ps -a --filter "label=job=${JOB_NAME}" --filter "status=exited" --format "{{.ID}}" 2>/dev/null || echo "")
-                  if [ ! -z "\$JOB_CONTAINERS" ]; then
-                    echo "Removing exited containers from this job: \$JOB_CONTAINERS"
-                    docker rm \$JOB_CONTAINERS || echo "Some job containers already removed"
-                  else
-                    echo "No exited job containers to clean up"
-                  fi
-                  
-                  echo "Cleaning up dangling images only (safe for concurrent pipelines)..."
-                  docker image prune -f --filter "dangling=true" || echo "No dangling images to clean up"
-                  
-                  # Remove workspace contents
-                  rm -rf "${WORKSPACE}"/*
-                  
-                  echo "ARM cleanup completed (pipeline-specific, safe for concurrent runs)"
-                """
-              }
             }
+          }
+            finally {
+              stage('cleanup_arm') {
+                catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
+                  echo "Cleaning up ARM node workspace and pipeline-specific Docker resources"
+                  sh """
+                    # Only clean up Docker resources specific to this pipeline run (safe for concurrent pipelines)
+                    echo "Cleaning up containers for this pipeline run..."
+                    PIPELINE_CONTAINERS=\$(docker ps -a --filter "label=pipeline=tao-core-arm" --filter "label=build=${BUILD_NUMBER}" --format "{{.ID}}" 2>/dev/null || echo "")
+                    if [ ! -z "\$PIPELINE_CONTAINERS" ]; then
+                      echo "Removing pipeline-specific containers: \$PIPELINE_CONTAINERS"
+                      docker rm -f \$PIPELINE_CONTAINERS || echo "Some containers already removed"
+                    else
+                      echo "No pipeline-specific containers to clean up"
+                    fi
+                    
+                    # Clean up any containers with our specific job label that are exited (broader safety net)
+                    JOB_CONTAINERS=\$(docker ps -a --filter "label=job=${JOB_NAME}" --filter "status=exited" --format "{{.ID}}" 2>/dev/null || echo "")
+                    if [ ! -z "\$JOB_CONTAINERS" ]; then
+                      echo "Removing exited containers from this job: \$JOB_CONTAINERS"
+                      docker rm \$JOB_CONTAINERS || echo "Some job containers already removed"
+                    else
+                      echo "No exited job containers to clean up"
+                    fi
+                    
+                    echo "Cleaning up dangling images only (safe for concurrent pipelines)..."
+                    docker image prune -f --filter "dangling=true" || echo "No dangling images to clean up"
+                    
+                    # Remove workspace contents
+                    rm -rf "${WORKSPACE}"/*
+                    
+                    echo "ARM cleanup completed (pipeline-specific, safe for concurrent runs)"
+                  """
+                }
+              }
           }
         }
       }
