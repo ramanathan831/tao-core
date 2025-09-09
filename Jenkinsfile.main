@@ -92,9 +92,7 @@ spec:
                   archiveArtifacts artifacts: 'coverage.xml', fingerprint: true, allowEmptyArchive: true
                 }
               }
-
-            }
-          } finally {
+            } finally {
               stage ('cleanup_x86') {
                 catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
                   sh """
@@ -185,8 +183,7 @@ spec:
                   }
                 }
               }
-            }
-          } finally {
+            } finally {
             stage('cleanup_arm') {
               catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
                 echo "Cleaning up ARM node workspace and pipeline-specific Docker resources"
