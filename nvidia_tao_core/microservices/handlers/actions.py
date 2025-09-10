@@ -95,9 +95,13 @@ from nvidia_tao_core.microservices.utils import (
 )
 from nvidia_tao_core.microservices.job_utils import executor as jobDriver
 from nvidia_tao_core.microservices.network_utils.network_constants import ptm_mapper
-from nvidia_tao_core.microservices.specs_utils import json_to_kitti, json_to_yaml
+from nvidia_tao_core.microservices.specs_utils import json_to_kitti, json_to_yaml, json_to_toml
 
-SPEC_BACKEND_TO_FUNCTIONS = {"protobuf": json_to_kitti.kitti, "yaml": json_to_yaml.yml}
+SPEC_BACKEND_TO_FUNCTIONS = {
+    "protobuf": json_to_kitti.kitti,
+    "yaml": json_to_yaml.yml,
+    "toml": json_to_toml.toml_format
+}
 HOST_PLATFORM = os.getenv("HOST_PLATFORM", "local-k8s")
 
 # Configure logging
