@@ -144,7 +144,6 @@ def save_job_specs(job_id, specs, automl=False, automl_experiment_id="0"):
         try:
             import toml
             specs = toml.loads(specs)
-            logger.info(f"Parsed TOML spec: {specs}")
         except Exception as e:
             logger.error(f"Failed to parse TOML spec: {e}")
 

@@ -14,7 +14,7 @@
 
 """Default config file"""
 
-from typing import Optional
+from typing import List, Optional
 from dataclasses import dataclass
 
 from nvidia_tao_core.config.utils.types import (
@@ -22,7 +22,8 @@ from nvidia_tao_core.config.utils.types import (
     FLOAT_FIELD,
     STR_FIELD,
     INT_FIELD,
-    DATACLASS_FIELD
+    DATACLASS_FIELD,
+    LIST_FIELD
 )
 
 
@@ -37,11 +38,34 @@ class DatasetConfig:
         description="Path to the annotation file"
     )
 
-    media_dir: Optional[str] = STR_FIELD(
+    media_path: Optional[str] = STR_FIELD(
         default_value="data/sft/train2017",
         value="data/sft/train2017",
         display_name="Media directory path",
         description="Path to the media directory"
+    )
+
+
+@dataclass
+class logging:
+    """Validation config."""
+
+    logger: List[str] = LIST_FIELD(
+        arrList=["console", "tao"],
+        display_name="Logger",
+        description="Logger to use."
+    )
+    project_name: str = STR_FIELD(
+        value="cosmos-rl",
+        default_value="cosmos-rl",
+        display_name="Project name",
+        description="Project name."
+    )
+    experiment_name: str = STR_FIELD(
+        value="cosmos-rl",
+        default_value="cosmos-rl",
+        display_name="Experiment name",
+        description="Experiment name."
     )
 
 
@@ -54,6 +78,35 @@ class TrainCheckpointConfig:
         default_value=True,
         display_name="Enable checkpoint",
         description="Enable checkpoint."
+    )
+    save_freq: int = INT_FIELD(
+        value=50,
+        default_value=50,
+        valid_min=1,
+        valid_max="inf",
+        display_name="Save frequency",
+        description="Save every N training steps."
+    )
+    save_mode: str = STR_FIELD(
+        value="sync",
+        default_value="sync",
+        valid_options="async,sync",
+        display_name="Save mode",
+        description="Checkpoint save mode for training steps."
+    )
+    max_keep: int = INT_FIELD(
+        value=8,
+        default_value=8,
+        valid_min=-1,
+        valid_max="inf",
+        display_name="Max keep",
+        description="Maximum number of checkpoints to keep. If set to -1, all checkpoints will be kept."
+    )
+    export_safetensors: bool = BOOL_FIELD(
+        value=True,
+        default_value=True,
+        display_name="Export safetensors",
+        description="Export HuggingFace compatible format."
     )
 
 
@@ -110,6 +163,13 @@ class TrainFP8Config:
 @dataclass
 class TrainConfig:
     """Train Config."""
+
+    resume: bool = BOOL_FIELD(
+        value=False,
+        default_value=False,
+        display_name="Resume",
+        description="Whether to resume training."
+    )
 
     epoch: int = INT_FIELD(
         value=1,
@@ -190,14 +250,20 @@ class TrainConfig:
         description="Gradient norm clip."
     )
 
-    epoch: int = INT_FIELD(
-        value=1,
-        default_value=1,
+    enable_validation: bool = BOOL_FIELD(
+        value=False,
+        default_value=False,
+        display_name="Enable validation",
+        description="Whether to enable validation."
+    )
+
+    validation_step: int = INT_FIELD(
+        value=50,
+        default_value=50,
         valid_min=1,
         valid_max="inf",
-        display_name="Number of Epochs",
-        description="The number of epochs.",
-        popular="yes"
+        display_name="Validation frequency",
+        description="Validation frequency."
     )
 
     ckpt: TrainCheckpointConfig = DATACLASS_FIELD(TrainCheckpointConfig(), description="Train checkpoint config.")

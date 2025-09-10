@@ -87,7 +87,7 @@ class HyperBand(AutoMLAlgorithmBase):
         for key1 in spec:
             if key1 in ("training_config", "train_config", "train"):
                 for key2 in spec[key1]:
-                    if key2 in ("num_epochs", "epochs", "n_epochs", "max_iters"):
+                    if key2 in ("num_epochs", "epochs", "n_epochs", "max_iters", "epoch"):
                         spec[key1][key2] = num_epochs
                     elif key2 in ("train_config"):
                         for key3 in spec[key1][key2]:
