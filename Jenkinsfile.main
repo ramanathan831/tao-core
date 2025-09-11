@@ -65,8 +65,7 @@ spec:
     """
 )
 {
-  try {
-    // Stage 1: Parallel execution of x86 and ARM tests
+  // Stage 1: Parallel execution of x86 and ARM tests
     parallel (
       "x86_tests": {
         node(POD_LABEL) {
@@ -106,11 +105,10 @@ spec:
               }
             }
           }
-        }
-        
-        // Run SonarQube analysis in sonar container within the same node
-        container('sonar') {
-          stage ('sonarqube_analysis_x86') {
+          
+          // Run SonarQube analysis in sonar container within the same node
+          container('sonar') {
+            stage ('sonarqube_analysis_x86') {
             catchError(buildResult: 'SUCCESS', stageResult: 'FAILURE') {
               gitlabCommitStatus(name: "sonarqube_analysis_x86", connection: gitLabConnection('git-lab-master')) {
                 def branchName = params.GITLAB_BRANCH ?: params.BRANCH_NAME ?: env.BRANCH_NAME ?: env.GIT_BRANCH?.replaceFirst(/^origin\//, '') ?: 'main'
@@ -127,6 +125,7 @@ spec:
                 echo "SonarQube analysis completed successfully"
               }
             }
+          }
           }
         }
       },
@@ -185,8 +184,7 @@ spec:
                 }
               }
             }
-          }
-            finally {
+          } finally {
               stage('cleanup_arm') {
                 catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
                   echo "Cleaning up ARM node workspace and pipeline-specific Docker resources"
@@ -329,29 +327,4 @@ spec:
         
       }
     }
-  }
-  catch (Exception e) {
-    // Mark build as failed.
-    currentBuild.result = 'FAILURE'
-    node(POD_LABEL) {
-      container('pyt') {
-        stage("Jira Notification on Failure") {
-          withCredentials([string(credentialsId: 'TAO-jira-token', variable: 'jira_token')]) {
-            sh """
-               python3 -m pip install jira
-               python3 ci/create_jira_issue.py --jira_server "https://jirasw.nvidia.com/" \\
-               --username "hqtran@nvidia.com" \\
-               --api_token "${jira_token}" \\
-               --project_key "TLT" \\
-               --summary "Pipeline '${JOB_NAME}' Failure" \\
-               --description \$'The pipeline "${JOB_NAME}" has failed.\nLink to the build: https://prod.blsm.nvidia.com/metropolis-iva-tlt-jenkins/view/tao-pytorch/job/${JOB_NAME}' \\
-               --issue_type "Bug"
-            """
-          }
-        }
-      }
-    }
-    // Rethrow the error so the build is marked as failed.
-    throw e
-  }
 }
