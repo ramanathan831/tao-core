@@ -182,7 +182,8 @@ class ContainerJobHandler:
             return set()
 
     @staticmethod
-    def create_and_upload_tarball(results_dir, cloud_storage, job_id, action_name, exclude_snapshot=None):
+    def create_and_upload_tarball(results_dir, cloud_storage, job_id, action_name,
+                                  exclude_snapshot=None, exclude_patterns=None):
         """Create a tarball of the results directory and upload it.
 
         Args:
@@ -191,13 +192,14 @@ class ContainerJobHandler:
             job_id (str): Job ID for naming the tarball
             action_name (str): Action name for naming the tarball
             exclude_snapshot (set, optional): Set of relative paths to exclude from tarball
+            exclude_patterns (list, optional): List of regex patterns to exclude files from tarball
         """
         try:
             tarball_name = f"{action_name}_results.tar.gz"
             tarball_path = os.path.join(results_dir, tarball_name)
 
             # Create tarball using utility function
-            if create_tarball(results_dir, tarball_path, exclude_snapshot):
+            if create_tarball(results_dir, tarball_path, exclude_snapshot, exclude_patterns):
                 # Upload tarball using utility function
                 if cloud_storage and os.path.exists(tarball_path):
                     upload_tarball_to_cloud(cloud_storage, tarball_path, remove_after_upload=True)
@@ -240,11 +242,15 @@ class ContainerJobHandler:
                     # Capture snapshot of results directory after downloads but before job execution
                     results_dir_snapshot = ContainerJobHandler.capture_directory_snapshot(specs["results_dir"])
 
-                    # Get upload strategy by reading network config directly
-                    network = docker_env_vars.get("ORCHESTRATION_API_NETWORK", job.get("neural_network_name", ""))
+                    # Get upload strategy and exclude patterns by reading network config directly
+                    network = docker_env_vars.get("ORCHESTRATION_API_NETWORK",
+                                                  job.get("neural_network_name", ""))
                     action = docker_env_vars.get("ORCHESTRATION_API_ACTION", job.get("action_name", ""))
-                    upload_strategy = ContainerJobHandler.get_upload_strategy_from_config(network, action)
+                    upload_strategy, exclude_patterns = ContainerJobHandler.get_upload_strategy_from_config(
+                        network, action)
                     logger.info("Using upload strategy for %s %s: %s", network, action, upload_strategy)
+                    if exclude_patterns:
+                        logger.info("Excluding patterns for %s %s: %s", network, action, exclude_patterns)
 
                     # Determine if we should start continuous monitoring
                     should_start_continuous = True
@@ -268,7 +274,8 @@ class ContainerJobHandler:
                         exit_event = threading.Event()
                         upload_thread = threading.Thread(
                             target=monitor_and_upload,
-                            args=(specs["results_dir"], cloud_storage, exit_event, 0, selective_tarball_config),
+                            args=(specs["results_dir"], cloud_storage, exit_event, 0,
+                                  selective_tarball_config, exclude_patterns),
                             daemon=True
                         )
                         upload_thread.start()
@@ -345,7 +352,8 @@ class ContainerJobHandler:
                                 upload_strategy,
                                 specs["results_dir"],
                                 selective_tarball_config,
-                                results_dir_snapshot
+                                results_dir_snapshot,
+                                exclude_patterns
                             )
 
                     # Launch job asynchronously
@@ -411,7 +419,8 @@ class ContainerJobHandler:
         upload_strategy="continuous",
         results_dir=None,
         selective_tarball_config=None,
-        results_dir_snapshot=None
+        results_dir_snapshot=None,
+        exclude_patterns=None
     ):
         """Clean up resources and log final status."""
         if exit_event:
@@ -428,7 +437,8 @@ class ContainerJobHandler:
                 cloud_storage,
                 job["job_id"],
                 job["action_name"],
-                results_dir_snapshot
+                results_dir_snapshot,
+                exclude_patterns
             )
 
         # Handle selective tarball creation if needed
@@ -638,21 +648,24 @@ class ContainerJobHandler:
 
     @staticmethod
     def get_upload_strategy_from_config(network, action):
-        """Get upload strategy by reading network config directly.
+        """Get upload strategy and exclude patterns by reading network config directly.
 
         Args:
             network (str): Network name
             action (str): Action name
 
         Returns:
-            dict or str: Upload strategy configuration
+            tuple: (upload_strategy, exclude_patterns) where upload_strategy is dict or str,
+                   and exclude_patterns is list or None
         """
         try:
             network_config = read_network_config(network)
-            if network_config and "upload_strategy" in network_config:
-                strategy = network_config["upload_strategy"].get(action, "continuous")
-                return strategy
-            return "continuous"  # Default to continuous if not specified
+            if network_config and "cloud_upload" in network_config:
+                cloud_upload_config = network_config["cloud_upload"]
+                strategy = cloud_upload_config.get("upload_strategy", {}).get(action, "continuous")
+                exclude_patterns = cloud_upload_config.get("exclude_patterns", {}).get(action)
+                return strategy, exclude_patterns
+            return "continuous", None  # Default to continuous if not specified
         except Exception as e:
             logger.error("Error reading upload strategy from network config: %s", str(e))
-            return "continuous"
+            return "continuous", None

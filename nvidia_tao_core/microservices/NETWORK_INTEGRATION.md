@@ -13,7 +13,7 @@ This guide provides comprehensive documentation for integrating new networks int
    - [Dataset Validation](#3-dataset-validation-dataset_validation)
    - [Dynamic Configuration](#4-dynamic-configuration-dynamic_config)
    - [Additional Downloads](#5-additional-downloads-additional_download)
-   - [Upload Strategy](#6-upload-strategy-upload_strategy)
+   - [Cloud Upload Configuration](#6-cloud-upload-configuration-cloud_upload)
    - [Actions Mapping](#7-actions-mapping-actions_mapping)
    - [Spec Parameters](#8-spec-parameters-spec_params)
    - [AutoML Spec Parameters](#9-automl-spec-parameters-automl_spec_params)
@@ -74,7 +74,7 @@ The network configuration file follows a standardized JSON structure with well-d
     "dataset_validation": { ... },
     "dynamic_config": { ... },
     "additional_download": { ... },
-    "upload_strategy": { ... },
+    "cloud_upload": { ... },
     "actions_mapping": { ... },
     "spec_params": { ... },
     "automl_spec_params": { ... },
@@ -881,23 +881,22 @@ Some file types or dataset configurations should only be used with specific inte
 - **Path from convert job spec**: Similar to data sources, can use conversion job specifications  
 - **Placeholders**: Support for `{dataset_convert_job_id}` and `{dataset_path}` replacement
 
-### 6. Upload Strategy (`upload_strategy`)
+### 6. Cloud Upload Configuration (`cloud_upload`)
 
-  The `upload_strategy` section controls how results are uploaded during job execution. Different strategies can be applied per action to optimize upload behavior.
+  The `cloud_upload` section controls how results are uploaded during job execution and which file extensions to exclude. This section contains both upload strategies and exclusion rules organized per action.
 
-  **Example from sparse4d.config.json:** The Sparse4D network uses selective tarball upload for dataset conversion.
+  **Example from sparse4d.config.json:** The Sparse4D network uses tarball upload with extension exclusions.
 
 ```json
 {
-    "upload_strategy": {
-        "dataset_convert": {
-            "default": "continuous",
-            "selective_tarball": {
-                "patterns": [
-                    "**/Camera*/**"
-                ],
-                "base_path": "data"
-            }
+    "cloud_upload": {
+        "upload_strategy": {
+            "dataset_convert": "tarball_after_completion",
+            "inference": "tarball_after_completion"
+        },
+        "exclude_patterns": {
+            "dataset_convert": ["\\.tmp$", "\\.log$", "\\.cache$", "temp/", "tmp/"],
+            "inference": ["\\.tmp$", "\\.log$", "\\.debug$", "\\.cache$", "temp/", "debug/"]
         }
     }
 }
@@ -910,6 +909,19 @@ Some file types or dataset configurations should only be used with specific inte
 - **`selective_tarball`**: Create selective tarballs based on patterns
   - **`patterns`**: Array of glob patterns to include
   - **`base_path`**: Base path for pattern matching
+
+  ### Pattern Exclusion Options:
+
+- **`exclude_patterns`**: Per-action configuration to exclude files using regex patterns from uploads
+  - Uses Python regex syntax for flexible pattern matching
+  - Patterns are matched against both relative file paths and filenames
+  - Examples:
+    - `\\.tmp$` - Files ending with .tmp extension
+    - `temp/` - Files in directories containing "temp"
+    - `debug.*\\.log$` - Debug log files
+    - `checkpoint_\\d+` - Checkpoint files with numbers
+  - Applied during tarball creation to reduce upload size and avoid unwanted files
+  - Invalid regex patterns are logged as warnings and skipped
 
 ### 7. Actions Mapping (`actions_mapping`)
 
@@ -1291,7 +1303,7 @@ This example shows a basic network configuration with essential components:
     "dataset_validation": { ... },
     "dynamic_config": { ... },
     "additional_download": { ... },
-    "upload_strategy": { ... },
+    "cloud_upload": { ... },
     "actions_mapping": { ... },
     "spec_params": { ... },
     "automl_spec_params": { ... },
