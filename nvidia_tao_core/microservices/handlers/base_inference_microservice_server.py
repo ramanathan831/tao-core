@@ -175,6 +175,8 @@ class BaseInferenceMicroserviceServer(ABC):
         except Exception as e:
             error_msg = f"Failed to initialize server: {e}"
             logger.error(error_msg)
+            import traceback
+            logger.error(traceback.format_exc())
             self.server_initializing = False
             self.initialization_error = str(e)
             self.save_model_state(loaded=False, loading=False, error=str(e))
