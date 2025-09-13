@@ -79,7 +79,7 @@ spec:
               }
 
               stage ("functional_tests_x86") {
-                withCredentials([string(credentialsId: 'NGC_CLI_API_KEY_SVC_TLT_CI', variable: 'NGC_CLI_API_KEY')]) {
+                withCredentials([string(credentialsId: 'NGC_FTMS_API_KEY', variable: 'NGC_CLI_API_KEY')]) {
                   script{
                     env.NGC_KEY=NGC_CLI_API_KEY
                     env.NGC_PATH='ea-tlt/tao_ea/pretrained_dino_imagenet:fan_hybrid_tiny'
@@ -141,7 +141,7 @@ spec:
 
             stage('functional_tests_arm') {
               gitlabCommitStatus(name: "functional_tests_arm", connection: gitLabConnection('git-lab-master')) {
-                withCredentials([string(credentialsId: 'NGC_CLI_API_KEY_SVC_TLT_CI', variable: 'NGC_CLI_API_KEY')]) {
+                withCredentials([string(credentialsId: 'NGC_FTMS_API_KEY', variable: 'NGC_CLI_API_KEY')]) {
                   script {
                     // Use the same Docker image as x86, but run on ARM node
                     def dockerImage = "nvcr.io/nvidia/pytorch:24.03-py3"
