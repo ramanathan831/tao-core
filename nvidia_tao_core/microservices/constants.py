@@ -72,7 +72,7 @@ TENSORBOARD_EXPERIMENT_LIMIT = 10  # Maximum number of Tensorboard enabled exper
 # only at end of training they run evaluation
 NO_VAL_METRICS_DURING_TRAINING_NETWORKS = set([])
 MISSING_EPOCH_FORMAT_NETWORKS = set([
-    "pointpillars", "bevfusion"
+    "pointpillars", "bevfusion", "cosmos-rl"
 ])  # These networks have the epoch/iter number not following a format; ex: 1.pth instead of 001.pth
 STATUS_CALLBACK_MISMATCH_WITH_CHECKPOINT_EPOCH = set([
     "pointpillars"
