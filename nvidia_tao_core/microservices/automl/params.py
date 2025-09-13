@@ -21,6 +21,9 @@ from nvidia_tao_core.microservices.handlers.stateless_handlers import get_job_sp
 from nvidia_tao_core.scripts.generate_schema import generate_schema
 from nvidia_tao_core.microservices.utils import get_microservices_network_and_action
 
+import logging
+logger = logging.getLogger(__name__)
+
 _VALID_TYPES = ["int", "integer",
                 "float",
                 "ordered_int", "bool",
@@ -72,10 +75,14 @@ def generate_hyperparams_to_search(
     Returns: a list of dict for AutoML supported networks
     """
     network_arch, _ = get_microservices_network_and_action(job_context.network, job_context.action)
+    logger.info(f"Network arch: {network_arch}")
     if network_arch not in AUTOML_DISABLED_NETWORKS:
         try:
-            json_schema = generate_schema(network_arch)
+            json_schema = generate_schema(network_arch, "train")
         except Exception as e:
+            logger.info(f"Error generating schema for network: {network_arch}")
+            logger.info(f"Job Context Network: {job_context.network}")
+            logger.info(f"Job Context Action: {job_context.action}")
             raise Exception(e) from e
 
         original_train_spec = json_schema.get("default", {})
@@ -119,5 +126,6 @@ def generate_hyperparams_to_search(
             "parent_param",
             "depends_on"
         ]]
+        logger.info(f"Automl params enabled: {automl_params['parameter'].values}")
         return automl_params.to_dict('records'), automl_params["parameter"].values
     return [{}], []
