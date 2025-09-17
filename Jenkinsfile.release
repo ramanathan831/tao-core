@@ -1,5 +1,5 @@
 // Global variables
-def TAO_VERSION = "6.25.7"
+def TAO_VERSION = params.TAO_VERSION ?: "6.25.7"
 def BUILD_TYPE = "rc"
 
 podTemplate (cloud:'sc-ipp-blossom-prod', yaml : """

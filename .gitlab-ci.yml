@@ -60,26 +60,37 @@ check_jenkins_status:
     - |
       # Define Jenkins parameters
       FORKED_REPO_URL=$CI_MERGE_REQUEST_SOURCE_PROJECT_URL
-      FORKED_REPO_BRANCH=$CI_MERGE_REQUEST_SOURCE_BRANCH_NAME
+      SOURCE_BRANCH=$CI_MERGE_REQUEST_SOURCE_BRANCH_NAME
+      TARGET_BRANCH=$CI_MERGE_REQUEST_TARGET_BRANCH_NAME
 
       JENKINS_URL="https://prod.blsm.nvidia.com/metropolis-iva-tlt-jenkins"
       
-      # Determine which Jenkins pipeline to trigger based on branch name
-      if [[ "$FORKED_REPO_BRANCH" =~ ^dev/.* ]]; then
-        echo "Dev branch detected: $FORKED_REPO_BRANCH"
-        echo "Triggering tao-core-dev pipeline"
-        JENKINS_JOB="tao-core-dev"
-        JENKINS_PARAMS="token=$JENKINS_JOB_TOKEN&GITLAB_BRANCH=$FORKED_REPO_BRANCH&GITLAB_REPO_URL=$FORKED_REPO_URL"
-      elif [[ "$FORKED_REPO_BRANCH" =~ ^release/.* ]]; then
-        echo "Release branch detected: $FORKED_REPO_BRANCH"
+      # Determine which Jenkins pipeline to trigger based on source/target branch names
+      # Priority: release/* -> dev/* -> default (develop)
+      if [[ "$SOURCE_BRANCH" =~ ^release/.* || "$TARGET_BRANCH" =~ ^release/.* ]]; then
+        echo "Release branch detected (source='$SOURCE_BRANCH', target='$TARGET_BRANCH')"
         echo "Triggering tao-core-release pipeline with RC=true"
         JENKINS_JOB="tao-core-release"
-        JENKINS_PARAMS="token=$JENKINS_JOB_TOKEN&GITLAB_REPO_URL=$FORKED_REPO_URL&BRANCH_NAME=$FORKED_REPO_BRANCH&RC=true"
+        # Derive TAO_VERSION from the release/* branch name
+        if [[ "$SOURCE_BRANCH" =~ ^release/.* ]]; then
+          REL_BRANCH="$SOURCE_BRANCH"
+        else
+          REL_BRANCH="$TARGET_BRANCH"
+        fi
+        TAO_VERSION_FROM_BRANCH="${REL_BRANCH#release/}"
+        BRANCH_TO_BUILD="$SOURCE_BRANCH"
+        JENKINS_PARAMS="token=$JENKINS_JOB_TOKEN&GITLAB_REPO_URL=$FORKED_REPO_URL&GITLAB_BRANCH=$BRANCH_TO_BUILD&BRANCH_NAME=$BRANCH_TO_BUILD&RC=true&TAO_VERSION=$TAO_VERSION_FROM_BRANCH"
+      elif [[ "$SOURCE_BRANCH" =~ ^dev/.* || "$TARGET_BRANCH" =~ ^dev/.* ]]; then
+        echo "Dev branch detected (source='$SOURCE_BRANCH', target='$TARGET_BRANCH')"
+        echo "Triggering tao-core-dev pipeline"
+        JENKINS_JOB="tao-core-dev"
+        BRANCH_TO_BUILD="$SOURCE_BRANCH"
+        JENKINS_PARAMS="token=$JENKINS_JOB_TOKEN&GITLAB_REPO_URL=$FORKED_REPO_URL&GITLAB_BRANCH=$BRANCH_TO_BUILD&BRANCH_NAME=$BRANCH_TO_BUILD"
       else
-        echo "Non-release branch detected: $FORKED_REPO_BRANCH"
-        echo "Triggering tao-core-develop pipeline"
+        echo "Defaulting to develop pipeline (source='$SOURCE_BRANCH', target='$TARGET_BRANCH')"
         JENKINS_JOB="tao-core-develop"
-        JENKINS_PARAMS="token=$JENKINS_JOB_TOKEN&GITLAB_BRANCH=$FORKED_REPO_BRANCH&GITLAB_REPO_URL=$FORKED_REPO_URL"
+        BRANCH_TO_BUILD="$SOURCE_BRANCH"
+        JENKINS_PARAMS="token=$JENKINS_JOB_TOKEN&GITLAB_REPO_URL=$FORKED_REPO_URL&GITLAB_BRANCH=$BRANCH_TO_BUILD&BRANCH_NAME=$BRANCH_TO_BUILD"
       fi
       
       echo "Jenkins Job: $JENKINS_JOB"
