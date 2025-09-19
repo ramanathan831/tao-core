@@ -30,6 +30,11 @@ def generate_schema(neural_network_name, action=""):
             f"nvidia_tao_core.config.{neural_network_name}.dataset"
         )
         expConfig = imported_module.DataConvertExpConfig()
+    elif neural_network_name == "cosmos-rl":
+        imported_module = dataclass2json_converter.import_module_from_path(
+            f"nvidia_tao_core.config.{neural_network_name}.{action}"
+        )
+        expConfig = imported_module.ExperimentConfig()
     else:
         expConfig = imported_module.ExperimentConfig()
     json_with_meta_config = dataclass2json_converter.dataclass_to_json(expConfig)
