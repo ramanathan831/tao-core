@@ -1,9 +1,5 @@
 // Global variables
-<<<<<<< HEAD
 def TAO_VERSION = params.TAO_VERSION ?: "6.25.7"
-=======
-def TAO_VERSION = "6.25.7"
->>>>>>> 95f32a7 (Update pipeline + versioning)
 def BUILD_TYPE = "rc"
 
 podTemplate (cloud:'sc-ipp-blossom-prod', yaml : """
@@ -16,14 +12,11 @@ spec:
     imagePullSecrets:
       - name: tltimagepullsecret
     containers:
-<<<<<<< HEAD
     - name: sonar
       image: sonarsource/sonar-scanner-cli:11
       command:
       - cat
       tty: true
-=======
->>>>>>> 95f32a7 (Update pipeline + versioning)
     - name: pyt
       image: nvcr.io/nvidia/pytorch:24.03-py3
       securityContext:
@@ -40,7 +33,6 @@ spec:
       tty: true
     restartPolicy: Never
     backoffLimit: 4
-<<<<<<< HEAD
     affinity:
       nodeAffinity:
         requiredDuringSchedulingIgnoredDuringExecution:
@@ -70,18 +62,11 @@ spec:
               operator: In
               values:
               - linux
-=======
-    nodeSelector:
-      kubernetes.io/os: linux
-      nvidia.com/driver_version: "510.41"
-      nvidia.com/gpu_type: TITAN_V
->>>>>>> 95f32a7 (Update pipeline + versioning)
     """
 )
 {
   try {
     node(POD_LABEL) {
-<<<<<<< HEAD
       // Extract major.minor from TAO_VERSION and construct VER to be PEP 440 compliant
       def VERSION_PARTS = TAO_VERSION.split('\\.')
       def MAJOR_MINOR = "${VERSION_PARTS[0]}.${VERSION_PARTS[1]}"
@@ -112,32 +97,6 @@ spec:
         SRC="dist/nvidia_tao_core-${VER}-py3-none-any.whl"
         TARGET="sw-tao-pypi-local/nvidia-tao-core/${VER}/${PYTHON_VERSION}/"
         PROP="component_name=nvidia-tao-core;arch=x86_64;os=linux;build_source=None;version=${VER};branch=release;release_approver=vpraveen"
-=======
-      container('pyt') {
-        // Extract major.minor from TAO_VERSION and construct VER to be PEP 440 compliant
-        def VERSION_PARTS = TAO_VERSION.split('\\.')
-        def MAJOR_MINOR = "${VERSION_PARTS[0]}.${VERSION_PARTS[1]}"
-        def PATCH_NUMBER = VERSION_PARTS[-1]
-        
-        def VER
-        if (params.RC) {
-          // RC builds: major.minor.patchbuildtypebuildnumber (no dot before rc per PEP 440)
-          VER = "${MAJOR_MINOR}.${PATCH_NUMBER}${BUILD_TYPE}${BUILD_NUMBER}"
-        } else {
-          // Non-RC builds: major.minor.patch (e.g., "6.25.7")
-          VER = "${MAJOR_MINOR}.${PATCH_NUMBER}"
-        }
-        def PYTHON_VERSION=sh(script: 'python -c "import platform; print(platform.python_version())"', returnStdout: true).trim()
-        def SRC="dist/nvidia_tao_core-${VER}-py3-none-any.whl"
-        def TARGET="sw-tao-pypi-local/nvidia-tao-core/${VER}/${PYTHON_VERSION}/"
-        def PROP="component_name=nvidia-tao-core;arch=x86_64;os=linux;build_source=None;version=${VER};branch=release;release_approver=vpraveen"
-        
-        // GitLab Related
-        def GITLAB_PROJECT_ID = "140075" 
-        def TAG_NAME = "v${VER}"
-        def RELEASE_NAME = "Release ${VER}"
-        def RELEASE_DESCRIPTION = "Release ${VER} with third-party packages"
->>>>>>> 95f32a7 (Update pipeline + versioning)
         
         stage ('checkout') {
           gitlabCommitStatus(name: "checkout", connection: gitLabConnection('git-lab-master')) {
@@ -152,11 +111,10 @@ spec:
           }
         }
 
-<<<<<<< HEAD
         // Functional tests only for RC builds
         if (params.RC) {
           stage ("functional_tests") {
-            withCredentials([string(credentialsId: 'NGC_CLI_API_KEY_SVC_TLT_CI', variable: 'NGC_CLI_API_KEY')]) {
+            withCredentials([string(credentialsId: 'NGC_FTMS_API_KEY', variable: 'NGC_CLI_API_KEY')]) {
               script{
                 env.NGC_KEY=NGC_CLI_API_KEY
                 env.NGC_PATH='ea-tlt/tao_ea/pretrained_dino_imagenet:fan_hybrid_tiny'
@@ -198,27 +156,6 @@ spec:
       
       // Continue with remaining stages in pyt container
       container('pyt') {
-=======
-        stage ('static_tests') {
-          gitlabCommitStatus(name: "static_tests", connection: gitLabConnection('git-lab-master')) {
-            sh "pip install pylint==3.0.3 pydocstyle flake8"
-            sh "python3 ci/run_static_tests.py"
-          }
-        }
-
-        stage ("functional_tests") {
-          withCredentials([string(credentialsId: 'NGC_CLI_API_KEY_SVC_TLT_CI', variable: 'NGC_CLI_API_KEY')]) {
-            script{
-              env.NGC_KEY=NGC_CLI_API_KEY
-              env.NGC_PATH='ea-tlt/tao_ea/pretrained_dino_imagenet:fan_hybrid_tiny'
-            }
-          }
-          gitlabCommitStatus(name: "functional_tests", connection: gitLabConnection('git-lab-master')) {
-            sh "pip install . && pytest"
-          }
-        }
-
->>>>>>> 95f32a7 (Update pipeline + versioning)
         stage ('build_wheel') {
           gitlabCommitStatus(name: "build_wheel", connection: gitLabConnection('git-lab-master')) {
             if (params.RC) {
@@ -285,13 +222,8 @@ spec:
             """
           }
         }
-<<<<<<< HEAD
       }  // End of pyt container
     }  // End of node
-=======
-      }
-    }
->>>>>>> 95f32a7 (Update pipeline + versioning)
   }
   catch (Exception e) {
     // Mark build as failed.

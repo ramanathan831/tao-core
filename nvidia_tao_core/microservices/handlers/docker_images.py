@@ -36,6 +36,8 @@ DOCKER_IMAGE_MAPPER = {
 
 DOCKER_IMAGE_VERSION = {  # (Release tao version for DNN framework, Overriden version for this model)
     "action_recognition": ("6.25.7", "6.0.0"),
+    "depth_net_mono": ("6.25.10", "6.25.10"),
+    "depth_net_stereo": ("6.25.10", "6.25.10"),
     "bevfusion": ("6.25.7", "6.0.0"),
     "centerpose": ("6.25.7", "6.0.0"),
     "classification_pyt": ("6.25.7", "6.0.0"),
@@ -44,10 +46,8 @@ DOCKER_IMAGE_VERSION = {  # (Release tao version for DNN framework, Overriden ve
     "image": ("6.25.7", "6.0.0"),
     "mae": ("6.25.7", "6.0.0"),
     "mal": ("6.25.7", "6.0.0"),
-    "mask2former": ("6.25.7", "6.0.0"),
-    "mask_grounding_dino": ("6.25.7", "6.0.0"),
-    "ml_recog": ("6.25.7", "6.0.0"),
     "nvdinov2": ("6.25.7", "6.0.0"),
+    "ml_recog": ("6.25.7", "6.0.0"),
     "object_detection": ("6.25.7", "6.0.0"),
     "ocdnet": ("6.25.7", "6.0.0"),
     "ocrnet": ("6.25.7", "6.0.0"),
