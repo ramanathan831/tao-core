@@ -25,12 +25,6 @@
         }
     },
 
-    "actions_mapping": {
-        "*": {
-            "network": "depth_net"
-        }
-    },
-
     "dataset_validation": {
         "required_files": {
             "*": [
@@ -167,7 +161,7 @@
     },
 
     "metrics": {
-        "available_metrics": ["val_acc"],
-        "monitoring_metric": "val_acc"
+        "available_metrics": ["train_loss","val/loss", "val/d1", "val/d2", "val/d3", "val/abs_rel"],
+        "monitoring_metric": "val/loss"
     }
 }
