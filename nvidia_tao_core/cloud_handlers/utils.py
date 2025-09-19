@@ -307,7 +307,7 @@ def get_file_modification_time(local_path):
         return 0
 
 
-def upload_files(local_path, cloud_storage, file_last_modified, selective_tarball_config=None):
+def upload_files(local_path, cloud_storage, file_last_modified, selective_tarball_config=None, exclude_patterns=None):
     """Uploads any detected changes to the specified cloud storage.
 
     Args:
@@ -315,6 +315,7 @@ def upload_files(local_path, cloud_storage, file_last_modified, selective_tarbal
         cloud_storage: An instance of the CloudStorage class for uploading files.
         file_last_modified: Dictionary to find modified files
         selective_tarball_config (dict): Configuration for selective tarball patterns to skip.
+        exclude_patterns (list, optional): List of regex patterns to exclude files from upload.
     """
     for root, _, files in os.walk(local_path):
         for filename in files:
@@ -327,6 +328,25 @@ def upload_files(local_path, cloud_storage, file_last_modified, selective_tarbal
                     file_path not in file_last_modified or
                     current_last_modified > file_last_modified[file_path]
                 ) and ("checkpoint-" not in file_path and "tmp" not in file_path):
+
+                    # Check exclude_patterns
+                    should_exclude = False
+                    if exclude_patterns:
+                        rel_path = os.path.relpath(file_path, local_path)
+                        for pattern in exclude_patterns:
+                            try:
+                                if re.search(pattern, rel_path) or re.search(pattern, filename):
+                                    should_exclude = True
+                                    logger.debug("Excluding file from upload due to pattern '%s': %s",
+                                                 pattern, rel_path)
+                                    break
+                            except re.error:
+                                logger.warning("Invalid regex pattern '%s', skipping", pattern)
+
+                    if should_exclude:
+                        # Update modification time but don't upload
+                        file_last_modified[file_path] = current_last_modified
+                        continue
 
                     # Skip files that will be included in selective tarball
                     if should_skip_file_for_tarball(file_path, local_path, selective_tarball_config):
@@ -532,7 +552,8 @@ def should_skip_file_for_tarball(file_path, local_path, selective_tarball_config
     return False
 
 
-def monitor_and_upload(local_path, cloud_storage, exit_event, seek_position=0, selective_tarball_config=None):
+def monitor_and_upload(local_path, cloud_storage, exit_event, seek_position=0,
+                       selective_tarball_config=None, exclude_patterns=None):
     """Monitors the specified local path and its subdirectories for new or modified files.
 
     Args:
@@ -541,6 +562,7 @@ def monitor_and_upload(local_path, cloud_storage, exit_event, seek_position=0, s
         exit_event (threading.Event): An event to signal the thread to exit.
         seek_position (int): Initial seek position for log reading.
         selective_tarball_config (dict): Configuration for selective tarball patterns to skip.
+        exclude_patterns (list, optional): List of regex patterns to exclude files from upload.
 
     Returns:
         None
@@ -550,6 +572,8 @@ def monitor_and_upload(local_path, cloud_storage, exit_event, seek_position=0, s
         patterns = selective_tarball_config.get("patterns", [])
         base_path = selective_tarball_config.get("base_path", "")
         logger.info("Selective tarball enabled - skipping patterns: %s in base_path: %s", patterns, base_path)
+    if exclude_patterns:
+        logger.info("Exclude patterns enabled for continuous upload: %s", exclude_patterns)
     file_last_modified = {}
 
     # Initialize file_last_modified with files that are already part of results dir
@@ -560,10 +584,10 @@ def monitor_and_upload(local_path, cloud_storage, exit_event, seek_position=0, s
 
     try:
         while True:
-            upload_files(local_path, cloud_storage, file_last_modified, selective_tarball_config)
+            upload_files(local_path, cloud_storage, file_last_modified, selective_tarball_config, exclude_patterns)
             seek_position = send_logs_to_server(seek_position)
             if exit_event.is_set():
-                upload_files(local_path, cloud_storage, file_last_modified, selective_tarball_config)
+                upload_files(local_path, cloud_storage, file_last_modified, selective_tarball_config, exclude_patterns)
                 seek_position = send_logs_to_server(seek_position)
                 break
             time.sleep(30)  # Adjust the sleep interval as needed
@@ -844,26 +868,32 @@ def get_results_cloud_data(cloud_data, spec_data, dest_dir=None):
     return None, spec_data
 
 
-def create_tarball(source_dir, tarball_path, exclude_paths=None):
+def create_tarball(source_dir, tarball_path, exclude_paths=None, exclude_patterns=None):
     """Create a tarball from the source directory.
 
     Args:
         source_dir (str): Directory to tarball
         tarball_path (str): Path where the tarball will be created
         exclude_paths (set, optional): Set of relative paths to exclude from tarball
+        exclude_patterns (list, optional): List of regex patterns to exclude files from tarball
 
     Returns:
         bool: True if successful, False otherwise
     """
     try:
+        exclusion_info = []
         if exclude_paths:
-            logger.info("Creating tarball excluding %d pre-existing items: %s from source: %s",
-                        len(exclude_paths), tarball_path, source_dir)
+            exclusion_info.append(f"{len(exclude_paths)} pre-existing items")
+        if exclude_patterns:
+            exclusion_info.append(f"files matching patterns: {exclude_patterns}")
+        if exclusion_info:
+            logger.info("Creating tarball excluding %s: %s from source: %s",
+                        ", ".join(exclusion_info), tarball_path, source_dir)
         else:
             logger.info("Creating tarball: %s from source: %s", tarball_path, source_dir)
 
         with tarfile.open(tarball_path, 'w:gz') as tar:
-            if exclude_paths:
+            if exclude_paths or exclude_patterns:
                 # Walk through directory and selectively add files
                 files_added = 0
                 files_excluded = 0
@@ -873,8 +903,22 @@ def create_tarball(source_dir, tarball_path, exclude_paths=None):
                     for file in files:
                         file_path = os.path.join(root, file)
                         rel_path = os.path.relpath(file_path, source_dir)
+                        # Check if file should be excluded
+                        should_exclude = False
+                        # Check exclude_paths
+                        if exclude_paths and rel_path in exclude_paths:
+                            should_exclude = True
+                        # Check exclude_patterns
+                        if exclude_patterns and not should_exclude:
+                            for pattern in exclude_patterns:
+                                try:
+                                    if re.search(pattern, rel_path) or re.search(pattern, file):
+                                        should_exclude = True
+                                        break
+                                except re.error:
+                                    logger.warning("Invalid regex pattern '%s', skipping", pattern)
 
-                        if rel_path not in exclude_paths:
+                        if not should_exclude:
                             tar.add(file_path, arcname=rel_path)
                             files_added += 1
                         else:
@@ -886,7 +930,8 @@ def create_tarball(source_dir, tarball_path, exclude_paths=None):
                         rel_path = os.path.relpath(dir_path, source_dir)
 
                         # Check if directory is empty and wasn't in exclusion set
-                        if (rel_path not in exclude_paths and not os.listdir(dir_path)):  # Empty directory
+                        # Empty directory not in exclusion set
+                        if (not exclude_paths or rel_path not in exclude_paths) and not os.listdir(dir_path):
                             tar.add(dir_path, arcname=rel_path)
 
                 logger.info("Tarball created successfully: %s (%d files added, %d files excluded)",
