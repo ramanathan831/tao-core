@@ -252,6 +252,46 @@ When your network expects complex nested structures in its configuration, you ca
 }
 ```
 
+#### String Mappings for Dataset Metadata
+
+When your network configuration needs to reference dataset metadata fields directly (rather than file paths), you can use string mappings. These mappings automatically resolve to the actual metadata values from the dataset, allowing you to dynamically set configuration parameters based on dataset properties.
+
+String mappings are particularly useful for setting dataset-specific parameters like format names, type identifiers, or other metadata-derived values that your network needs to know about the dataset it's processing.
+
+**Example from depth_net_mono.config.json:** The depth estimation network uses string mappings to set the dataset name based on the actual format of the dataset, ensuring that the network knows which format it's processing.
+
+```json
+{
+    "dataset.train_dataset.data_sources": {
+        "source": "train_datasets",
+        "multiple_sources": true,
+        "mapping": {
+            "data_file": {
+                "path": "annotations_train.txt"
+            },
+            "dataset_name": "dataset_format"
+        }
+    }
+}
+```
+
+#### Supported Metadata Field References:
+
+- **`"dataset_format"`**: Resolves to the dataset's format field (e.g., "COCO", "KITTI", "ThreeDVLM")
+- **`"dataset_type"`**: Resolves to the dataset's type field 
+- **`"dataset_intent"`**: Resolves to the first value from the dataset's use_for array
+- **Any other string**: Attempts to resolve directly from the dataset metadata
+
+#### How String Mappings Work:
+
+1. When the system encounters a string value in a mapping (instead of an object with a "path" key)
+2. It retrieves the dataset metadata for the source dataset
+3. It looks up the specified field in the metadata
+4. It returns the actual value from the dataset's metadata
+5. The resolved value is used in the final configuration
+
+This feature eliminates the need for hardcoded format names or complex conditional logic when you simply need to pass dataset metadata to your network configuration.
+
   ### Conditional Logic
 
   #### Format-based paths:
