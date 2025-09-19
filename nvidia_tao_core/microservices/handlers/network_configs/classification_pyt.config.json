@@ -80,6 +80,11 @@
                 "source": "eval_dataset",
                 "multiple_sources": false,
                 "path": "images_val.tar.gz"
+            },
+            "dataset.quant_calibration_dataset.images_dir": {
+                "source": "calibration_dataset",
+                "multiple_sources": false,
+                "path": "images_train.tar.gz"
             }
         },
         "evaluate": {

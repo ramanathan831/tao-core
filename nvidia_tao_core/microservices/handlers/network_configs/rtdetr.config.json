@@ -115,6 +115,19 @@
                         "path": "annotations.json"
                     }
                 }
+            },
+            "dataset.quant_calibration_data_sources": {
+                "source": "train_datasets",
+                "multiple_sources": false,
+                "mapping": {
+                    "image_dir": {
+                        "path": "images.tar.gz",
+                        "transform": "data_services_as_parent_possible"
+                    },
+                    "json_file": {
+                        "path": "annotations.json"
+                    }
+                }
             }
         },
         "evaluate": {
