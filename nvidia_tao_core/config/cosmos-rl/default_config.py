@@ -47,7 +47,7 @@ class DatasetConfig:
 
 
 @dataclass
-class logging:
+class LoggingConfig:
     """Validation config."""
 
     logger: List[str] = LIST_FIELD(
@@ -349,6 +349,7 @@ class ExperimentConfig:
 
     train: TrainConfig = DATACLASS_FIELD(TrainConfig(), description="Train config.")
     policy: PolicyConfig = DATACLASS_FIELD(PolicyConfig(), description="Policy config.")
+    logging: LoggingConfig = DATACLASS_FIELD(LoggingConfig(), description="Logging config.")
     redis: str = STR_FIELD(
         value="12800",
         default_value="12800",
