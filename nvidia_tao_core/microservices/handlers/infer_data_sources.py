@@ -791,6 +791,12 @@ def apply_data_source_config(config, job_context, handler_metadata):
                     workspace_identifier, dataset_convert_downloaded_locally)
                 set_nested_config_value(config, config_path, value)
 
+    # Add preserve_source_path_params from network config if specified
+    preserve_source_path_params = network_config.get("preserve_source_path_params")
+    if preserve_source_path_params:
+        config["preserve_source_path_params"] = preserve_source_path_params
+        logger.info("Added preserve_source_path_params to config: %s", preserve_source_path_params)
+
     # Process additional downloads
     endpoint_action = (
         network_config.get("actions_mapping", {})

@@ -91,14 +91,19 @@ def prepare_data_before_job_run(job, docker_env_vars):
             ngc_key,
         )
 
-    logger.info("Downloading files from normal spec")
+    # Extract preserve_source_path_params if specified
+    preserve_source_path_params = specs.pop("preserve_source_path_params", set())
+    if isinstance(preserve_source_path_params, list):
+        preserve_source_path_params = set(preserve_source_path_params)
+    logger.info("Downloading files from normal spec (preserve_source_path_params=%s)", preserve_source_path_params)
     download_files_from_spec(
         cloud_data=job.get("cloud_metadata"),
         data=specs,
         job_id=job["job_id"],
         network_arch=job["neural_network_name"],
         ngc_key=ngc_key,
-        reprocess_files=reprocess_files
+        reprocess_files=reprocess_files,
+        preserve_source_path_params=preserve_source_path_params
     )
 
     # Save spec file with dynamic backend
