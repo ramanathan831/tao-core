@@ -145,13 +145,11 @@ class DepthNetTrainExpConfig(TrainConfig):
         value=False,
         display_name="dataloader visualize",
         description="Whether to visualize the dataloader.",
-        automl_enabled="TRUE"
     )
     vis_step_interval: int = INT_FIELD(
         value=10,
         display_name="visualization interval",
         description="The visualization interval in step.",
-        automl_enabled="TRUE"
     )
     is_dry_run: bool = BOOL_FIELD(
         value=False,

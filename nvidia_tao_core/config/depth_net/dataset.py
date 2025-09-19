@@ -277,23 +277,11 @@ class BaseDepthNetDatasetConfig:
                     * data_file : The path of the data file""",
         display_name="train data sources",
     )
-    image_path: Optional[str] = STR_FIELD(
+    data_root: Optional[str] = STR_FIELD(
         value=None,
         default_value=None,
-        description="The path to the image directory for tao-deploy",
-        display_name="image path"
-    )
-    right_image_path: Optional[str] = STR_FIELD(
-        value=None,
-        default_value=None,
-        description="The path to the right image directory for tao-deploy",
-        display_name="right image path"
-    )
-    depth_image_path: Optional[str] = STR_FIELD(
-        value=None,
-        default_value=None,
-        description="The path to the depth image directory for tao-deploy",
-        display_name="depth image path"
+        description="The path to the data directory for tao-deploy",
+        display_name="data root"
     )
     batch_size: int = INT_FIELD(
         value=1,
@@ -301,7 +289,6 @@ class BaseDepthNetDatasetConfig:
         valid_min=1,
         valid_max="inf",
         description="The batch size for training and validation",
-        automl_enabled="TRUE",
         display_name="batch size"
     )
     workers: int = INT_FIELD(
@@ -310,7 +297,6 @@ class BaseDepthNetDatasetConfig:
         valid_min=1,
         valid_max="inf",
         description="The number of parallel workers processing data",
-        automl_enabled="TRUE",
         display_name="batch size"
     )
     pin_memory: bool = BOOL_FIELD(
