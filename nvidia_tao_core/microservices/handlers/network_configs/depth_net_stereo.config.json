@@ -84,10 +84,6 @@
                     },
                     "dataset_name": "dataset_format"
                 }
-            },
-            "dataset.infer_dataset.data_root": {
-                "source": "inference_dataset",
-                "path": ""
             }
         }
     },
@@ -106,6 +102,12 @@
         "evaluate": [
             {
                 "source": "eval_dataset",
+                "path": "{dataset_path}/images.tar.gz"
+            }
+        ],
+        "inference": [
+            {
+                "source": "inference_dataset",
                 "path": "{dataset_path}/images.tar.gz"
             }
         ]

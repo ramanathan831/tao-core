@@ -277,12 +277,6 @@ class BaseDepthNetDatasetConfig:
                     * data_file : The path of the data file""",
         display_name="train data sources",
     )
-    data_root: Optional[str] = STR_FIELD(
-        value="",
-        default_value="",
-        description="The path to the data directory for tao-deploy",
-        display_name="data root"
-    )
     batch_size: int = INT_FIELD(
         value=1,
         default_value=1,
