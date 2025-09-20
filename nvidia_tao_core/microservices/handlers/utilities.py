@@ -1243,8 +1243,16 @@ def sanitize_metadata(metadata):
     metadata.pop('_id', None)
 
 
-def latest_model(files, delimiters="_", epoch_number="000", extensions=[".tlt", ".hdf5", ".pth"]):
+def latest_model(files, delimiters="_", epoch_number="000", extensions=[".tlt", ".hdf5", ".pth"], network_name=""):
     """Returns the latest generated model file based on epoch number"""
+    # Update extensions based on network config if available
+    if network_name:
+        network_config = get_network_config(network_name)
+        checkpoint_config = network_config.get("checkpoint", {})
+        if checkpoint_config:
+            checkpoint_format = checkpoint_config.get("format", "")
+            if checkpoint_format:
+                extensions = [f".{checkpoint_format}"]
     cur_best = 0
     best_model = None
     for file in files:
@@ -1276,18 +1284,83 @@ def latest_model(files, delimiters="_", epoch_number="000", extensions=[".tlt", 
     return checkpoint_name
 
 
-def filter_files(files, regex_pattern=""):
-    """Filter file list based on regex provided"""
+def filter_files(files, regex_pattern="", network_name=""):
+    """Filter file list based on regex provided
+
+    Args:
+        files: List of file paths to filter
+        regex_pattern: Custom regex pattern to use for filtering
+        network_name: Network name to read checkpoint config from network_configs
+        return_folder: If True, return folder path instead of file path when using network config
+
+    Returns:
+        List of filtered file paths or folder path if return_folder=True and network config specifies folder lookup
+    """
+    # Try to get checkpoint config from network configuration
     if not regex_pattern:
         regex_pattern = r'^(?!.*lightning_logs).*\.(pth|tlt|hdf5)$'
+
+    if network_name:
+        network_config = get_network_config(network_name)
+        checkpoint_config = network_config.get("checkpoint", {})
+
+        if checkpoint_config:
+            checkpoint_format = checkpoint_config.get("format", "")
+            # Build regex pattern based on format
+            if checkpoint_format:
+                regex_pattern = rf'.*\.{re.escape(checkpoint_format)}$'
+
     checkpoints = [path for path in files if re.match(regex_pattern, path)]
     return checkpoints
 
 
-def filter_file_objects(file_objects, regex_pattern=""):
-    """Based on regex provided filter file_objects list"""
+def get_network_config(network_name):
+    """Read network configuration from network_configs directory"""
+    if not network_name:
+        return {}
+
+    # Get the directory where this utilities.py file is located
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    config_file = os.path.join(current_dir, "network_configs", f"{network_name}.config.json")
+
+    if not os.path.exists(config_file):
+        return {}
+
+    try:
+        with open(config_file, 'r', encoding='utf-8') as f:
+            config = json.load(f)
+        return config
+    except Exception as e:
+        logger.error("Error reading network config for %s: %s", network_name, str(e))
+        return {}
+
+
+def filter_file_objects(file_objects, regex_pattern="", network_name=""):
+    """Based on regex provided filter file_objects list
+
+    Args:
+        file_objects: List of file objects to filter
+        regex_pattern: Custom regex pattern to use for filtering
+        network_name: Network name to read checkpoint config from network_configs
+        return_folder: If True, return folder path instead of file path when using network config
+
+    Returns:
+        List of filtered file objects or folder path if return_folder=True and network config specifies folder lookup
+    """
+    # Try to get checkpoint config from network configuration
     if not regex_pattern:
         regex_pattern = r'.*\.(pth|tlt|hdf5)$'
+
+    if network_name:
+        network_config = get_network_config(network_name)
+        checkpoint_config = network_config.get("checkpoint", {})
+
+        if checkpoint_config:
+            checkpoint_format = checkpoint_config.get("format", "")
+            # Build regex pattern based on format
+            if checkpoint_format:
+                regex_pattern = rf'.*\.{re.escape(checkpoint_format)}$'
+
     filtered_objects = [file_object for file_object in file_objects if re.match(regex_pattern, file_object.name)]
     return filtered_objects
 
@@ -1300,7 +1373,7 @@ def format_checkpoints_path(checkpoints):
     return checkpoint_name
 
 
-def from_epoch_number(files, delimiters="", epoch_number="000"):
+def from_epoch_number(files, delimiters="", epoch_number="000", network_name=""):
     """Based on the epoch number string passed, returns the path of the checkpoint.
 
     If a checkpoint with the epoch info is not present, raises an exception.
@@ -1322,13 +1395,14 @@ def from_epoch_number(files, delimiters="", epoch_number="000"):
     (?:_({epoch_number}))               # Match '_<epoch_number>' for MISSING_EPOCH_FORMAT_NETWORKS
     \.(pth|tlt|hdf5)$                   # Match file extensions
     '''
-    checkpoints = filter_files(files, regex_pattern)
+    checkpoints = filter_files(files, regex_pattern, network_name=network_name)
     checkpoint_name = format_checkpoints_path(checkpoints)
     return checkpoint_name
 
 
-def _get_result_file_path(checkpoint_function, files, format_epoch_number):
-    result_file = checkpoint_function(files, delimiters="_", epoch_number=format_epoch_number)
+def _get_result_file_path(checkpoint_function, files, format_epoch_number, network_name=""):
+    result_file = checkpoint_function(files, delimiters="_", epoch_number=format_epoch_number,
+                                      network_name=network_name)
     return result_file
 
 
@@ -1418,7 +1492,8 @@ def search_for_checkpoint(handler_metadata, job_id, res_root, files, checkpoint_
         result_file = _get_result_file_path(
             checkpoint_function=checkpoint_function,
             files=files,
-            format_epoch_number=format_epoch_number
+            format_epoch_number=format_epoch_number,
+            network_name=network
         )
         if (not result_file) and (checkpoint_choose_method in ("best_model", "from_epoch_number")):
             logger.warning(
@@ -1429,7 +1504,8 @@ def search_for_checkpoint(handler_metadata, job_id, res_root, files, checkpoint_
             result_file = _get_result_file_path(
                 checkpoint_function=checkpoint_function,
                 files=files,
-                format_epoch_number=format_epoch_number
+                format_epoch_number=format_epoch_number,
+                network_name=network
             )
 
     return result_file
@@ -1454,6 +1530,7 @@ def resolve_checkpoint_root_and_search(handler_metadata, job_id, folder=False, r
         return None
 
     files, action, res_root, workspace_id = get_files_from_cloud(handler_metadata, job_id)
+    network = handler_metadata.get("network_arch", "")
 
     if action == "retrain":
         action = "train"
@@ -1469,17 +1546,17 @@ def resolve_checkpoint_root_and_search(handler_metadata, job_id, folder=False, r
         )
 
     elif action == "prune":
-        result_file = filter_files(files)
+        result_file = filter_files(files, network_name=network)
         result_file = format_checkpoints_path(result_file)
 
     elif action == "export":
         regex_pattern = regex if regex else r'.*\.(onnx|uff)$'
-        result_file = filter_files(files, regex_pattern=regex_pattern)
+        result_file = filter_files(files, regex_pattern=regex_pattern, network_name=network)
         result_file = format_checkpoints_path(result_file)
 
     elif action in ("trtexec", "gen_trt_engine"):
         regex_pattern = regex if regex else r'.*\.(engine)$'
-        result_file = filter_files(files, regex_pattern=regex_pattern)
+        result_file = filter_files(files, regex_pattern=regex_pattern, network_name=network)
         result_file = format_checkpoints_path(result_file)
     else:
         result_file = None

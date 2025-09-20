@@ -114,7 +114,7 @@ from nvidia_tao_core.microservices.utils import (
     DataMonitorLogTypeEnum,
 )
 
-from nvidia_tao_core.scripts.generate_schema import generate_schema
+from nvidia_tao_core.scripts.generate_schema import generate_schema, validate_and_clean_merged_spec
 
 # Configure logging
 logging.basicConfig(
@@ -1303,7 +1303,11 @@ class AppHandler:
             json_schema = csv_to_json_schema.convert(CSV_PATH)
 
         if "default" in json_schema and base_experiment_spec:
-            json_schema["default"] = merge_nested_dicts(json_schema["default"], base_experiment_spec)
+            # Merge the base experiment spec with the default schema
+            merged_default = merge_nested_dicts(json_schema["default"], base_experiment_spec)
+            # Validate and clean the merged spec to remove any invalid keys from corrupt base_experiment_spec
+            logger.info("Validating merged base_experiment_spec")
+            json_schema["default"] = validate_and_clean_merged_spec(json_schema, merged_default)
         return Code(200, json_schema, "Schema retrieved")
 
     @staticmethod
@@ -1453,12 +1457,22 @@ class AppHandler:
                 Code(404, {}, "Default specs do not exist for action")
             json_schema = csv_to_json_schema.convert(CSV_PATH)
         if "default" in json_schema and base_experiment_spec:
-            json_schema["default"] = merge_nested_dicts(json_schema["default"], base_experiment_spec)
+            # Merge the base experiment spec with the default schema
+            merged_default = merge_nested_dicts(json_schema["default"], base_experiment_spec)
+            # Validate and clean the merged spec to remove any invalid keys from corrupt base_experiment_spec
+            logger.info("Validating merged base_experiment_spec for base_experiment_id: %s, action: %s",
+                        experiment_id, action)
+            json_schema["default"] = validate_and_clean_merged_spec(json_schema, merged_default)
             if (base_experiment_network == "visual_changenet_segment" and
                     "train" in json_schema["default"]):
                 json_schema["default"]["train"].pop("tensorboard", None)
         if "popular" in json_schema and base_experiment_spec:
-            json_schema["popular"] = override_dicts(json_schema["popular"], base_experiment_spec)
+            # Merge the base experiment spec with the popular schema
+            merged_popular = override_dicts(json_schema["popular"], base_experiment_spec)
+            # Validate and clean the merged spec to remove any invalid keys from corrupt base_experiment_spec
+            logger.info("Validating merged base_experiment_spec (popular) for base_experiment_id: %s, action: %s",
+                        experiment_id, action)
+            json_schema["popular"] = validate_and_clean_merged_spec(json_schema, merged_popular)
             if (base_experiment_network == "visual_changenet_segment" and
                     "train" in json_schema["popular"]):
                 json_schema["popular"]["train"].pop("tensorboard", None)

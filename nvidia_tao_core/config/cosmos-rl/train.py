@@ -47,7 +47,7 @@ class DatasetConfig:
 
 
 @dataclass
-class logging:
+class LoggingConfig:
     """Validation config."""
 
     logger: List[str] = LIST_FIELD(
@@ -79,20 +79,20 @@ class TrainCheckpointConfig:
         display_name="Enable checkpoint",
         description="Enable checkpoint."
     )
-    save_freq: int = INT_FIELD(
-        value=50,
-        default_value=50,
+    save_freq_in_epoch: int = INT_FIELD(
+        value=10,
+        default_value=10,
         valid_min=1,
         valid_max="inf",
         display_name="Save frequency",
-        description="Save every N training steps."
+        description="Save every N epochs."
     )
     save_mode: str = STR_FIELD(
         value="sync",
         default_value="sync",
         valid_options="async,sync",
         display_name="Save mode",
-        description="Checkpoint save mode for training steps."
+        description="Checkpoint save mode for training."
     )
     max_keep: int = INT_FIELD(
         value=8,
@@ -172,8 +172,8 @@ class TrainConfig:
     )
 
     epoch: int = INT_FIELD(
-        value=1,
-        default_value=1,
+        value=10,
+        default_value=10,
         valid_min=1,
         valid_max="inf",
         display_name="Number of Epochs",
@@ -250,25 +250,29 @@ class TrainConfig:
         description="Gradient norm clip."
     )
 
-    enable_validation: bool = BOOL_FIELD(
-        value=False,
-        default_value=False,
+    ckpt: TrainCheckpointConfig = DATACLASS_FIELD(TrainCheckpointConfig(), description="Train checkpoint config.")
+    train_policy: TrainPolicyConfig = DATACLASS_FIELD(TrainPolicyConfig(), description="Train policy config.")
+    fp8: TrainFP8Config = DATACLASS_FIELD(TrainFP8Config(), description="Train FP8 config.")
+
+
+@dataclass
+class ValidationConfig:
+    """Validation config."""
+
+    enable: bool = BOOL_FIELD(
+        value=True,
+        default_value=True,
         display_name="Enable validation",
         description="Whether to enable validation."
     )
-
-    validation_step: int = INT_FIELD(
-        value=50,
-        default_value=50,
+    freq_in_epoch: int = INT_FIELD(
+        value=10,
+        default_value=10,
         valid_min=1,
         valid_max="inf",
         display_name="Validation frequency",
         description="Validation frequency."
     )
-
-    ckpt: TrainCheckpointConfig = DATACLASS_FIELD(TrainCheckpointConfig(), description="Train checkpoint config.")
-    train_policy: TrainPolicyConfig = DATACLASS_FIELD(TrainPolicyConfig(), description="Train policy config.")
-    fp8: TrainFP8Config = DATACLASS_FIELD(TrainFP8Config(), description="Train FP8 config.")
 
 
 @dataclass
@@ -348,7 +352,9 @@ class ExperimentConfig:
     """Experiment config."""
 
     train: TrainConfig = DATACLASS_FIELD(TrainConfig(), description="Train config.")
+    validation: ValidationConfig = DATACLASS_FIELD(ValidationConfig(), description="Validation config.")
     policy: PolicyConfig = DATACLASS_FIELD(PolicyConfig(), description="Policy config.")
+    logging: LoggingConfig = DATACLASS_FIELD(LoggingConfig(), description="Logging config.")
     redis: str = STR_FIELD(
         value="12800",
         default_value="12800",

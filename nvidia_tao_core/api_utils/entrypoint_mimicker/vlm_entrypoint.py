@@ -103,7 +103,7 @@ def vlm_launch(neural_network_name, action, specs, job_id=""):
         lepton_args = " ".join(lepton_args)
     else:
         lepton_args = ""
-    if neural_network_name == "cosmos-rl":
+    if neural_network_name == "cosmos-rl" and action == "train":
         launch_cmd = f"""cosmos-rl --config /results/{job_id}/spec.toml {lepton_args} scripts/custom_sft.py"""
         command = ["/bin/bash", "-c", launch_cmd]
     else:

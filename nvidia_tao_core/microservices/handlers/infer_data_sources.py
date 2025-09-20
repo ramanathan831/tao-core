@@ -150,8 +150,9 @@ def get_job_id_of_action(dataset_id, kind, action):
 def get_dataset_convert_downloaded_locally(network_config):
     """Get if dataset convert is downloaded locally"""
     dataset_convert_downloaded_locally = False
-    if network_config and "upload_strategy" in network_config:
-        upload_strategy = network_config["upload_strategy"]
+    if network_config and "cloud_upload" in network_config:
+        cloud_upload = network_config["cloud_upload"]
+        upload_strategy = cloud_upload.get("upload_strategy", {})
         dataset_convert_strategy = upload_strategy.get("dataset_convert")
         # If dataset_convert has tarball strategy, it will be downloaded locally
         if (dataset_convert_strategy == "tarball_after_completion" or
@@ -314,7 +315,8 @@ def process_additional_downloads(
 
     # Auto-generate additional downloads based on upload strategy for dataset_convert
     if job_context.action in ["train", "evaluate", "inference", "retrain", "prune", "export"]:
-        upload_strategy = network_config.get("upload_strategy", {})
+        cloud_upload = network_config.get("cloud_upload", {})
+        upload_strategy = cloud_upload.get("upload_strategy", {})
         dataset_convert_strategy = upload_strategy.get("dataset_convert")
 
         if dataset_convert_strategy:

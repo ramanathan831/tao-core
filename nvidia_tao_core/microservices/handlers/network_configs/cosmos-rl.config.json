@@ -1,13 +1,24 @@
 {
     "api_params": {
         "dataset_type": "vlm",
-        "actions": ["train"],
+        "actions": ["train", "inference"],
         "formats": ["llava"],
         "accepted_ds_intents": ["training", "evaluation", "testing"],
         "image": "COSMOS_RL",
         "spec_backend": "toml",
         "actions_pipe": {
-            "train": "train"
+            "train": "train",
+            "inference":"inference"
+        }
+    },
+
+    "checkpoint": {
+        "format": "safetensors"
+    },
+
+    "cloud_upload": {
+        "exclude_patterns": {
+            "train": ["\\.pth$"]
         }
     },
 
@@ -29,6 +40,10 @@
         "train": {
             "results_dir":"output_dir",
             "train.output_dir":"output_dir"
+        },
+        "inference": {
+            "results_dir":"output_dir",
+            "model_path":"parent_model_folder"
         }
     },
 
@@ -39,91 +54,31 @@
 
     "metrics": {
         "available_metrics": [
-            "grad_norm",
-            "train_runtime",
-            "train_samples_per_second",
-            "train_steps_per_second",
-            "val_acc",
-            "reward_mean",
-            "reward_std",
-            "reward_max",
-            "reward_min",
-            "completion_length_mean",
-            "completion_length_max",
-            "train_loss_avg",
-            "train_loss_max",
-            "loss_avg",
-            "loss_max",
-            "learning_rate",
-            "iteration_time",
-            "policy_loss",
-            "value_loss",
-            "kl_divergence",
-            "kl_loss_avg",
-            "training_progress",
-            "remaining_steps",
-            "eta_seconds",
-            "val_reward_avg",
-            "val_reward_std",
-            "val_reward_max",
-            "val_reward_min",
-            "val_rollout_count",
-            "val_step",
-            "val_completion_length_avg",
-            "val_completion_length_std",
-            "val_completion_length_max",
-            "val_completion_length_min",
-            "total_steps",
-            "final_step",
-            "completion_percentage",
-            "model_parallelism",
-            "data_parallelism",
-            "batch_size_per_replica",
-            "warmup_steps",
-            "steps_per_epoch",
-            "active_replicas",
-            "remaining_replicas",
-            "replica_count",
-            "n_atoms",
-            "old_total_steps",
-            "new_total_steps",
-            "rollout_reward",
-            "rollout_prompt_length",
-            "rollout_completion_length",
-            "profile_finished",
-            "progress_pct",
-            "total_validation_rollouts",
-            "remain_samples",
-            "n_replicas",
-            "max_epochs",
-            "current_step",
-            "epoch",
-            "training_phase",
-            "validation_phase",
-            "validation_step",
-            "active_rollout_replicas",
-            "was_in_mesh",
-            "policy_init_done",
-            "total_replicas",
-            "mesh_type",
-            "replica_names",
-            "remaining_samples",
-            "training_completed",
-            "old_status",
-            "new_status",
-            "replica_type",
-            "training_finished",
+            "train/iteration_time",
+            "train/loss_avg",
+            "train/loss_max",
+            "train/learning_rate",
+            "train/grad_norm",
+            "train/model_flops",
+            "train/mfu",
+            "val/loss",
+            "val/step",
+            "cloud_upload",
             "operation",
             "component",
             "status",
-            "cloud_upload",
-            "step_name",
-            "event",
             "error_type",
             "error_message",
             "interrupted",
-            "failed"
+            "step_name",
+            "replica_type",
+            "event",
+            "total_steps",
+            "max_epochs",
+            "current_step",
+            "training_phase",
+            "training_completed"
         ],
-        "monitoring_metric": "val_acc"
+        "monitoring_metric": "val/loss"
     }
 }
