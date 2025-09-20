@@ -278,8 +278,8 @@ class BaseDepthNetDatasetConfig:
         display_name="train data sources",
     )
     data_root: Optional[str] = STR_FIELD(
-        value=None,
-        default_value=None,
+        value="",
+        default_value="",
         description="The path to the data directory for tao-deploy",
         display_name="data root"
     )
