@@ -765,11 +765,17 @@ def download_files_from_spec(
     network_arch=None,
     ngc_key=None,
     reprocess_files=None,
-    preserve_source_path=False
+    preserve_source_path=False,
+    preserve_source_path_params=None,
+    current_path=""
 ):
     """Recursively download files from a nested dictionary."""
+    if preserve_source_path_params is None:
+        preserve_source_path_params = set()
     if isinstance(data, dict):
         for key, value in data.items():
+            # Build the current parameter path
+            new_path = f"{current_path}.{key}" if current_path else key
             if isinstance(value, dict):
                 download_files_from_spec(
                     cloud_data,
@@ -778,12 +784,16 @@ def download_files_from_spec(
                     network_arch=network_arch,
                     ngc_key=ngc_key,
                     reprocess_files=reprocess_files,
-                    preserve_source_path=preserve_source_path
+                    preserve_source_path=preserve_source_path,
+                    preserve_source_path_params=preserve_source_path_params,
+                    current_path=new_path
                 )
             elif isinstance(value, list):
                 override_list = []
                 for list_element in value:
                     if isinstance(list_element, str):
+                        # Check if this parameter should preserve source path
+                        param_preserve_source_path = preserve_source_path or new_path in preserve_source_path_params
                         override_value = download_files_from_cloud(
                             cloud_data,
                             data,
@@ -792,7 +802,7 @@ def download_files_from_spec(
                             job_id,
                             network_arch,
                             ngc_key,
-                            preserve_source_path=preserve_source_path
+                            preserve_source_path=param_preserve_source_path
                         )
                         if not override_value:
                             override_value = list_element
@@ -804,6 +814,10 @@ def download_files_from_spec(
                         override_dict = {}
                         for list_dict_key, list_dict_value in list_element.items():
                             if isinstance(list_dict_value, str):
+                                # Check if this parameter should preserve source path
+                                param_preserve_source_path = (
+                                    preserve_source_path or new_path in preserve_source_path_params
+                                )
                                 override_value = download_files_from_cloud(
                                     cloud_data,
                                     data,
@@ -812,7 +826,7 @@ def download_files_from_spec(
                                     job_id,
                                     network_arch,
                                     ngc_key,
-                                    preserve_source_path=preserve_source_path
+                                    preserve_source_path=param_preserve_source_path
                                 )
                                 if (reprocess_files is not None and override_value and
                                         (list_dict_value.endswith(".yaml") or list_dict_value.endswith(".json"))):
@@ -828,6 +842,8 @@ def download_files_from_spec(
                 data[key] = override_list
             else:
                 if isinstance(value, str):
+                    # Check if this parameter should preserve source path
+                    param_preserve_source_path = preserve_source_path or new_path in preserve_source_path_params
                     override_value = download_files_from_cloud(
                         cloud_data,
                         data,
@@ -837,7 +853,7 @@ def download_files_from_spec(
                         network_arch,
                         ngc_key,
                         reset_value=True,
-                        preserve_source_path=preserve_source_path
+                        preserve_source_path=param_preserve_source_path
                     )
                     if (reprocess_files is not None and override_value and
                             (value.endswith(".yaml") or value.endswith(".json"))):

@@ -1,0 +1,83 @@
+{
+    "api_params": {
+        "dataset_type":"depth_net",
+        "actions": ["train","evaluate","export","inference","gen_trt_engine"],
+        "formats":["default"],
+        "accepted_ds_intents": ["training"],
+        "image":"TAO_PYTORCH",
+        "spec_backend":"yaml",
+        "actions_pipe":{
+            "train":"train",
+            "evaluate":"evaluate",
+            "export":"export_with_spec",
+            "inference":"inference",
+            "gen_trt_engine":"gen_trt_engine"
+        }
+    },
+
+    "actions_mapping": {
+        "*": {
+            "network": "depth_net"
+        }
+    },
+
+    "dataset_validation": {
+        "required_files": {
+            "default": [
+                {
+                    "all_of": [
+                        {"path": "images.tar.gz", "type": "file"},
+                        {"path": "annotations_train.txt", "type": "file"},
+                        {"path": "annotations_test.txt", "type": "file"}
+                    ]
+                }
+            ]
+        }
+    },
+
+    "data_sources": {
+        "train": {
+            "dataset.train_dataset.data_sources": {
+                "source": "train_datasets",
+                "multiple_sources": true,
+                "mapping": {
+                    "data_file": {
+                        "path": "annotations_train.txt"
+                    }
+                }
+            },
+            "dataset.val_dataset.data_sources": {
+                    "source": "eval_datasets",
+                    "multiple_sources": true,
+                    "mapping": {
+                        "data_file": {
+                            "path": "annotations_test.txt"
+                        }
+                    }
+            }
+        }
+    },
+
+    "spec_params":{
+        "train": {
+            "results_dir":"output_dir",
+            "train.pretrained_model_path": "ptm_if_no_resume_model",
+            "model.stereo_backbone.depth_anything_v2_pretrained_path": "{'link': 'https://huggingface.co/depth-anything/Depth-Anything-V2-Small/resolve/main/depth_anything_v2_vits.pth?download=true', 'destination_path': '/ptm/depth_net/stereo_backbone/depth_anything_v2_vits.pth'}",
+            "model.stereo_backbone.edgenext_pretrained_path": "{'link': 'https://dl.fbaipublicfiles.com/dinov2/dinov2_vitl14/dinov2_vitl14_pretrain.pth', 'destination_path': '/ptm/depth_net/stereo_backbone/edgenext_large_patch14_224.pth'}",
+            "train.resume_training_checkpoint_path": "resume_model"
+        }
+    },
+    "automl_spec_params":{
+        "results_dir":"automl_output_dir",
+        "train.pretrained_model_path":"automl_assign_ptm",
+        "model.backbone.pretrained_backbone_path": "automl_assign_ptm",
+        "train.resume_training_checkpoint_path":"automl_resume_model",
+        "train.checkpoint_interval":"assign_const_value,train.num_epochs",
+        "train.validation_interval":"assign_const_value,train.num_epochs,train.checkpoint_interval"
+    },
+
+    "metrics": {
+        "available_metrics": ["val_acc"],
+        "monitoring_metric": "val_acc"
+    }
+}

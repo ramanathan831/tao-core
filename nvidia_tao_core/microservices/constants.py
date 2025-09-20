@@ -19,7 +19,7 @@ TAO_NETWORKS = set([
     "mask_grounding_dino", "ml_recog", "ocdnet", "ocrnet", "optical_inspection", "pointpillars",
     "pose_classification", "re_identification", "centerpose", "visual_changenet_classify",
     "visual_changenet_segment", "deformable_detr",
-    "dino", "rtdetr", "segformer",  # PYT CV MODELS
+    "depth_net_mono", "depth_net_stereo", "dino", "rtdetr", "segformer",  # PYT CV MODELS
     "annotations", "analytics", "augmentation", "auto_label", "image"  # Data_Service tasks.
 ])
 MAXINE_NETWORKS = set(["maxine_eye_contact"])  # Maxine networks
@@ -27,15 +27,15 @@ VLM_NETWORKS = set(["vlm"])  # VLM networks
 
 _OD_NETWORKS = set(["deformable_detr", "dino", "grounding_dino", "rtdetr"])
 _PURPOSE_BUILT_MODELS = set([
-    "action_recognition", "bevfusion", "ml_recog", "ocdnet", "ocrnet", "optical_inspection",
-    "pose_classification", "re_identification", "centerpose", "visual_changenet_classify",
+    "action_recognition", "depth_net_mono", "depth_net_stereo", "bevfusion", "ml_recog", "ocdnet", "ocrnet",
+    "optical_inspection", "pose_classification", "re_identification", "centerpose", "visual_changenet_classify",
     "visual_changenet_segment"
 ])
 
 _PYT_TAO_NETWORKS = set([
-    "action_recognition", "bevfusion", "deformable_detr", "dino", "grounding_dino", "mask_grounding_dino",
-    "mal", "mask2former", "ml_recog", "ocdnet", "ocrnet", "optical_inspection", "pointpillars",
-    "pose_classification", "re_identification", "rtdetr", "centerpose", "segformer",
+    "action_recognition", "bevfusion", "depth_net_mono", "depth_net_stereo", "deformable_detr", "dino",
+    "grounding_dino", "mask_grounding_dino", "mal", "mask2former", "ml_recog", "ocdnet", "ocrnet", "optical_inspection",
+    "pointpillars", "pose_classification", "re_identification", "rtdetr", "centerpose", "segformer",
     "visual_changenet_classify", "visual_changenet_segment"
 ])
 _DATA_SERVICES_ACTIONS = set([
@@ -100,6 +100,8 @@ LAST_ACCESS_TIME_OUT = 60  # last access timeout period in second
 CONTINUOUS_STATUS_KEYS = ["cur_iter", "epoch", "max_epoch", "eta", "time_per_epoch", "time_per_iter", "key_metric"]
 
 NETWORK_CONTAINER_MAPPING = {"action_recognition": "TAO_PYTORCH",
+                             "depth_net_mono": "TAO_PYTORCH",
+                             "depth_net_stereo": "TAO_PYTORCH",
                              "annotations": "TAO_DS",
                              "auto_label": "TAO_DS",
                              "analytics": "TAO_DS",
