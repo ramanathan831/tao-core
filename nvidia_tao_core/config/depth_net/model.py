@@ -83,8 +83,8 @@ class DepthNetModelConfig:
     """DepthNet model config."""
 
     model_type: str = STR_FIELD(
-        value="MetricDepthAnythingV2",
-        default_value="MetricDepthAnythingV2",
+        value="MetricDepthAnything",
+        default_value="MetricDepthAnything",
         description="Network name",
         valid_options=",".join([
             "FoundationStereo", "MetricDepthAnything", "RelativeDepthAnything"
@@ -131,7 +131,6 @@ class DepthNetModelConfig:
         description="Train Iteration",
         display_name="train iteration",
         valid_min=1,
-        automl_enabled="TRUE"
     )
     valid_iters: int = INT_FIELD(
         value=22,

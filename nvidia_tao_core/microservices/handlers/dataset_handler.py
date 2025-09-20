@@ -152,6 +152,52 @@ def write_dir_contents(directory, file):
             f.write(dir_files + "\n")
 
 
+def _get_format_requirements(validation_config, dataset_format):
+    """Get format-specific requirements with support for multiple formats and wildcards
+
+    Args:
+        validation_config (dict): The dataset validation configuration
+        dataset_format (str): The dataset format (can be single format, comma-separated, or wildcard)
+    Returns:
+        list: List of validation requirements
+    """
+    required_files_config = validation_config.get("required_files", {})
+    # Handle wildcard case - return requirements from "*" key or collect from all formats
+    if dataset_format == "*":
+        # First try to get requirements from the "*" key directly
+        wildcard_reqs = required_files_config.get("*", [])
+        if wildcard_reqs:
+            return wildcard_reqs
+        # If no "*" key, collect requirements from all other format keys
+        all_requirements = []
+        for format_key, requirements in required_files_config.items():
+            if format_key not in ["default", "*"]:
+                all_requirements.extend(requirements)
+        # If no specific format requirements found, use default
+        if not all_requirements:
+            all_requirements = required_files_config.get("default", [])
+        return all_requirements
+    # Handle comma-separated formats
+    if "," in dataset_format:
+        formats = [fmt.strip() for fmt in dataset_format.split(",")]
+        combined_requirements = []
+        for fmt in formats:
+            # Try to get requirements for this specific format
+            fmt_reqs = required_files_config.get(fmt, [])
+            if fmt_reqs:
+                combined_requirements.extend(fmt_reqs)
+            else:
+                # If no specific requirements for this format, use default or wildcard
+                fallback_reqs = required_files_config.get("default", required_files_config.get("*", []))
+                combined_requirements.extend(fallback_reqs)
+        return combined_requirements
+    # Handle single format (original behavior)
+    return required_files_config.get(
+        dataset_format,
+        required_files_config.get("default", required_files_config.get("*", []))
+    )
+
+
 def validate_dataset(org_name, handler_metadata, temp_dir="", workspace_metadata=None):
     """Generic dataset validator using config
 
@@ -196,11 +242,8 @@ def validate_dataset(org_name, handler_metadata, temp_dir="", workspace_metadata
         logger.debug("network_config: %s", network_config)
         validation_config = network_config.get("dataset_validation", {})
 
-        # Get format-specific requirements, fallback to default
-        format_reqs = validation_config.get("required_files", {}).get(
-            handler.format,
-            validation_config.get("required_files", {}).get("default", [])
-        )
+        # Get format-specific requirements with support for multiple formats and wildcards
+        format_reqs = _get_format_requirements(validation_config, handler.format)
 
         # Store expected structure
         validation_result["expected_structure"] = {
