@@ -235,10 +235,24 @@ def process_mapping_entry(mapping, source_root, source_ds, dataset_convert_actio
                           workspace_identifier, dataset_convert_downloaded_locally=False):
     """Process a single mapping entry.
 
-    Handles two types of mappings:
+    Handles three types of mappings:
     1. Simple mappings with direct path and transform (like ann_file)
     2. Nested mappings with sub-mappings (like data_prefix with pts and img)
+    3. String mappings that reference dataset metadata fields (like dataset_format)
     """
+    # Handle string mappings that reference dataset metadata fields
+    if isinstance(mapping, str):
+        # Get dataset metadata to resolve the field reference
+        source_ds_metadata = get_handler_metadata(source_ds, kind="datasets")
+        if mapping == "dataset_format":
+            return source_ds_metadata.get("format")
+        if mapping == "dataset_type":
+            return source_ds_metadata.get("type")
+        if mapping == "dataset_intent":
+            use_for = source_ds_metadata.get("use_for", [])
+            return use_for[0] if use_for else None
+        # For any other string, try to get it directly from metadata
+        return source_ds_metadata.get(mapping)
     # Check if this is a nested mapping (like data_prefix with pts and img)
     if any(isinstance(v, dict) and "path" in v for k, v in mapping.items()):
         # This is a nested mapping (e.g., data_prefix with pts and img)
@@ -416,6 +430,7 @@ def process_additional_downloads(
                         # Use dataset ID or a default path component
                         dataset_path = source_ds_metadata.get("cloud_file_path", source_ds)
                         path = path.replace("{dataset_path}", dataset_path)
+                        path = workspace_identifier + path
 
                     # Prepend workspace identifier if this is a results path
                     if path.startswith("/results/"):
@@ -777,6 +792,12 @@ def apply_data_source_config(config, job_context, handler_metadata):
                     source_root, source_ds, dataset_convert_action,
                     workspace_identifier, dataset_convert_downloaded_locally)
                 set_nested_config_value(config, config_path, value)
+
+    # Add preserve_source_path_params from network config if specified
+    preserve_source_path_params = network_config.get("preserve_source_path_params")
+    if preserve_source_path_params:
+        config["preserve_source_path_params"] = preserve_source_path_params
+        logger.info("Added preserve_source_path_params to config: %s", preserve_source_path_params)
 
     # Process additional downloads
     endpoint_action = (
