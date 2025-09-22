@@ -20,7 +20,9 @@ from typing import Dict, Any
 import os
 
 from nvidia_tao_core.microservices.handlers.docker_images import DOCKER_IMAGE_MAPPER
-from nvidia_tao_core.microservices.handlers.utilities import Code, add_workspace_to_cloud_metadata
+from nvidia_tao_core.microservices.handlers.utilities import (
+    Code, add_workspace_to_cloud_metadata, get_model_results_path
+)
 from nvidia_tao_core.microservices.job_utils import executor as jobDriver
 from nvidia_tao_core.microservices.handlers.stateless_handlers import get_handler_metadata
 from nvidia_tao_core.microservices.utils import read_network_config
@@ -53,12 +55,16 @@ class InferenceMicroserviceHandler:
         The network architecture is automatically determined from the experiment metadata.
         """
         logger.info("Starting Inference Microservice %s for experiment %s", job_id, experiment_id)
+        # StatefulSet name
+        statefulset_name = f"ims-{job_id}"
+        logger.info("Using StatefulSet name: %s", statefulset_name)
 
         # Get experiment metadata to determine network architecture
         experiment_metadata = get_handler_metadata(experiment_id, kind="experiments")
         network_arch = experiment_metadata.get("network_arch", "vila")  # Default to vila if not found
         logger.info("Network architecture from experiment metadata: %s", network_arch)
 
+        folder_path_function = "parent_model"
         # Read network config to get docker image name
         try:
             network_config = read_network_config(network_arch.lower())
@@ -67,6 +73,7 @@ class InferenceMicroserviceHandler:
                 image_key = network_config.get('api_params', {}).get('image', network_arch.upper())
                 image = DOCKER_IMAGE_MAPPER.get(image_key, "nvcr.io/nvidia/tao/tao-toolkit:6.0.0-pyt")
                 logger.info("Using Docker image: %s (from network_arch: %s)", image, network_arch)
+                folder_path_function = network_config.get('spec_params', {}).get('inference', {}).get('model_path', "")
             else:
                 # Fallback if network config is empty
                 image = DOCKER_IMAGE_MAPPER.get(network_arch.upper(), "nvcr.io/nvidia/tao/tao-toolkit:6.0.0-pyt")
@@ -76,12 +83,13 @@ class InferenceMicroserviceHandler:
             image = DOCKER_IMAGE_MAPPER.get(network_arch.upper(), "nvcr.io/nvidia/tao/tao-toolkit:6.0.0-pyt")
             logger.info("Using fallback Docker image: %s", image)
 
-        # StatefulSet name
-        statefulset_name = f"ims-{job_id}"
-        logger.info("Using StatefulSet name: %s", statefulset_name)
+        logger.info("image: %s", image)
+        logger.info("Using folder path function: %s", folder_path_function)
 
         # Build command for Inference Microservice integrated into TAO container
-        model_path = job_config.get("model_path", "")
+        parent_id = job_config.get("parent_id", "")
+        folder_path = "folder" in folder_path_function
+        model_path = job_config.get("model_path", get_model_results_path(experiment_metadata, parent_id, folder_path))
         logger.info("Using model path: %s", model_path)
         if not model_path:
             return Code(400, {}, "Model path is required for Inference Microservice")
@@ -92,18 +100,23 @@ class InferenceMicroserviceHandler:
 
         docker_env_vars = experiment_metadata.get("docker_env_vars", {})
         docker_env_vars["BACKEND"] = os.getenv("BACKEND", "local-k8s")
+
         workspace_id = experiment_metadata.get("workspace", "")
         workspace_metadata = get_handler_metadata(workspace_id, kind="workspaces")
         cloud_metadata = {}
         add_workspace_to_cloud_metadata(workspace_metadata, cloud_metadata)
+
         cloud_type = workspace_metadata.get('cloud_type', '')
         cloud_details = workspace_metadata.get('cloud_specific_details', {})
         bucket_name = cloud_details.get('cloud_bucket_name', '')
-        job_config["results_dir"] = f"{cloud_type}://{bucket_name}/results/inference_microservice_results"
 
+        specs = {
+            "model_path": model_path,
+            "results_dir": f"{cloud_type}://{bucket_name}/results/{job_id}",
+        }
         job_metadata = {
             "job_id": job_id,
-            "specs": job_config,
+            "specs": specs,
             "cloud_metadata": cloud_metadata,
             "neural_network_name": network_arch,
         }
@@ -111,7 +124,7 @@ class InferenceMicroserviceHandler:
         # Clean TAO-compliant StatefulSet setup: Pure container_handler.py approach
         run_command = f"""
 umask 0 &&
-exec python3 -m llava.cli.tao_model_server --job "{str(job_metadata)}" --docker_env_vars "{str(docker_env_vars)}"
+{network_arch}-inference-microservice --job "{str(job_metadata)}" --docker_env_vars "{str(docker_env_vars)}"
         """
         logger.info("Using run command: %s", run_command)
 

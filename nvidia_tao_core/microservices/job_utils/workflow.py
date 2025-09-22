@@ -145,6 +145,9 @@ def execute_job(job_context):
                 name=f'tao-job-thread-{job_context.id}'
             )
             job_run_thread.start()
+        else:
+            logger.error("Action pipeline couldn't be found: %s %s %s", network_config, network, job_context)
+            return False
     else:
         # AUTOML Job
         # TODO: At test time, sequentially run it and not as a thread to catch errors
@@ -248,6 +251,8 @@ def scan_for_jobs():
                 if execute_job(job):
                     # dequeue job
                     jobs_to_dequeue.append(job)
+                else:
+                    report_healthy(f"{job.id} with action {job.action}: Job execution failed")
         for job in jobs_to_dequeue:
             Workflow.dequeue(job)
         report_healthy("Workflow going to sleep")
