@@ -108,14 +108,14 @@ class DINOInferenceExpConfig(InferenceConfig):
     )
     input_width: Optional[int] = INT_FIELD(
         value=None,
-        default_value=960,
+        default_value=640,
         description="Width of the input image tensor.",
         display_name="input width",
         valid_min=32,
     )
     input_height: Optional[int] = INT_FIELD(
         value=None,
-        default_value=544,
+        default_value=640,
         description="Height of the input image tensor.",
         display_name="input height",
         valid_min=32,
@@ -192,7 +192,7 @@ class ExperimentConfig(CommonExperimentConfig):
         description="Configurable parameters to construct the inferencer for a DINO experiment.",
     )
     export: DINOExportExpConfig = DATACLASS_FIELD(
-        DINOExportExpConfig(),
+        DINOExportExpConfig(input_width=640, input_height=640),
         description="Configurable parameters to construct the exporter for a DINO experiment.",
     )
     gen_trt_engine: DINOGenTrtEngineExpConfig = DATACLASS_FIELD(
