@@ -212,7 +212,8 @@ class TrainConfig:
         valid_min=0,
         valid_max="inf",
         display_name="Learning rate",
-        description="Learning rate."
+        description="Learning rate.",
+        automl_enabled="TRUE"
     )
 
     optm_impl: str = STR_FIELD(

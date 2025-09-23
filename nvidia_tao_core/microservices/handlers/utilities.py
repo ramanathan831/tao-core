@@ -571,7 +571,8 @@ class StatusParser:
                     else:
                         criterion = metric
                     reverse_sort = True
-                    if metric == "loss" or criterion in ("loss", "evaluation_cost "):
+                    logger.info("Metric: %s, Criterion: %s in read_metric", metric, criterion)
+                    if metric == "loss" or criterion in ("loss", "evaluation_cost") or "loss" in criterion:
                         reverse_sort = False
 
                     if log["metric"] == criterion:
@@ -1291,10 +1292,9 @@ def filter_files(files, regex_pattern="", network_name=""):
         files: List of file paths to filter
         regex_pattern: Custom regex pattern to use for filtering
         network_name: Network name to read checkpoint config from network_configs
-        return_folder: If True, return folder path instead of file path when using network config
 
     Returns:
-        List of filtered file paths or folder path if return_folder=True and network config specifies folder lookup
+        List of filtered file paths
     """
     # Try to get checkpoint config from network configuration
     if not regex_pattern:
@@ -1342,10 +1342,9 @@ def filter_file_objects(file_objects, regex_pattern="", network_name=""):
         file_objects: List of file objects to filter
         regex_pattern: Custom regex pattern to use for filtering
         network_name: Network name to read checkpoint config from network_configs
-        return_folder: If True, return folder path instead of file path when using network config
 
     Returns:
-        List of filtered file objects or folder path if return_folder=True and network config specifies folder lookup
+        List of filtered file objects
     """
     # Try to get checkpoint config from network configuration
     if not regex_pattern:

@@ -13,7 +13,8 @@
     },
 
     "checkpoint": {
-        "format": "safetensors"
+        "format": "safetensors",
+        "folder": "true"
     },
 
     "cloud_upload": {
@@ -49,8 +50,10 @@
 
     "automl_spec_params":{
         "results_dir":"automl_output_dir",
-        "train.output_dir":"automl_output_dir"
-    },
+        "train.output_dir":"automl_output_dir",
+        "train.ckpt.save_freq_in_epoch": "assign_const_value,train.epoch",
+        "validation.freq_in_epoch": "assign_const_value,train.epoch,train.ckpt.save_freq_in_epoch"
+     },
 
     "metrics": {
         "available_metrics": [
@@ -63,7 +66,7 @@
             "train/mfu",
             "val/loss",
             "val/step",
-            "cloud_upload",
+            "steps_per_epoch",
             "operation",
             "component",
             "status",
@@ -73,9 +76,8 @@
             "step_name",
             "replica_type",
             "event",
-            "total_steps",
             "max_epochs",
-            "current_step",
+            "current_epoch",
             "training_phase",
             "training_completed"
         ],
