@@ -112,5 +112,9 @@ ptm_mapper = {
         "visual_changenet_segment": "train.pretrained_model_path",
         "segformer": "train.pretrained_model_path",
         "dino": "train.pretrained_model_path",
+    },
+    "default": {
+        "mask2former": "model.backbone.pretrained_weights",
     }
+
 }

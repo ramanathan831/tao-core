@@ -687,7 +687,7 @@ def download_files_from_cloud(
         try:
             https_dictionary = ast.literal_eval(value)
             link = https_dictionary.get("link", "")
-            destination_path = https_dictionary.get("destination_path", "ptm/download")
+            destination_path = https_dictionary.get("destination_path", f"/ptm/{network_arch}/download")
             destination_folder = os.path.dirname(destination_path)
             download_from_https_link(link, destination_folder)
             dictionary[key] = destination_path

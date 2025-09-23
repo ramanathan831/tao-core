@@ -357,6 +357,7 @@
         "train": {
             "results_dir": "output_dir",
             "encryption_key": "key",
+            "model.backbone.pretrained_weights": "{'link': 'https://github.com/SwinTransformer/storage/releases/download/v1.0.8/swin_tiny_patch4_window7_224_22k.pth', 'destination_path': '/ptm/mask2former/swin_tiny_patch4_window7_224_22k/swin_tiny_patch4_window7_224_22k.pth'}",
             "train.resume_training_checkpoint_path": "resume_model"
         },
         "evaluate": {
@@ -386,6 +387,7 @@
     },
     "automl_spec_params": {
         "results_dir": "automl_output_dir",
+        "model.backbone.pretrained_weights": "{'link': 'https://github.com/SwinTransformer/storage/releases/download/v1.0.8/swin_tiny_patch4_window7_224_22k.pth', 'destination_path': '/ptm/mask2former/swin_tiny_patch4_window7_224_22k/swin_tiny_patch4_window7_224_22k.pth'}",
         "train.resume_training_checkpoint_path": "automl_resume_model",
         "train.checkpoint_interval": "assign_const_value,train.num_epochs",
         "train.validation_interval": "assign_const_value,train.num_epochs,train.checkpoint_interval",
