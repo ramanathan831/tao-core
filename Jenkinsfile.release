@@ -1,6 +1,20 @@
 // Global variables
-def TAO_VERSION = params.TAO_VERSION ?: "6.25.7"
+def TAO_VERSION = params.TAO_VERSION ?: "6.25.9"
 def BUILD_TYPE = "rc"
+
+// Normalize patch segment if TAO_VERSION is provided via params (e.g., 6.25.09 -> 6.25.9)
+if (params.TAO_VERSION) {
+  def _parts = TAO_VERSION.split('\\.')
+  if (_parts.length >= 3) {
+    def _patchNorm = _parts[-1]
+    try {
+      _patchNorm = Integer.parseInt(_patchNorm).toString()
+    } catch (Exception ignore) {
+      // leave as-is if not numeric
+    }
+    TAO_VERSION = "${_parts[0]}.${_parts[1]}.${_patchNorm}"
+  }
+}
 
 podTemplate (cloud:'sc-ipp-blossom-prod', yaml : """
 apiVersion: v1

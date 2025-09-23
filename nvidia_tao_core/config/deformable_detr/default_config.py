@@ -62,14 +62,14 @@ class DDInferenceExpConfig(InferenceConfig):
     )
     input_width: Optional[int] = INT_FIELD(
         value=None,
-        default_value=960,
+        default_value=640,
         description="Width of the input image tensor.",
         display_name="input width",
         valid_min=32,
     )
     input_height: Optional[int] = INT_FIELD(
         value=None,
-        default_value=544,
+        default_value=640,
         description="Height of the input image tensor.",
         display_name="input height",
         valid_min=32,
@@ -146,7 +146,7 @@ class ExperimentConfig(CommonExperimentConfig):
         description="Configurable parameters to construct the inferencer for a Deformable DETR experiment.",
     )
     export: DDExportExpConfig = DATACLASS_FIELD(
-        DDExportExpConfig(),
+        DDExportExpConfig(input_width=640, input_height=640),
         description="Configurable parameters to construct the exporter for a Deformable DETR experiment.",
     )
     gen_trt_engine: DDGenTrtEngineExpConfig = DATACLASS_FIELD(
