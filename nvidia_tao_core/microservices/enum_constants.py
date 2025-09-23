@@ -143,7 +143,7 @@ def _get_valid_config_json_param_for_network(network_name: str, param: str):
     return actions
 
 
-def _get_network_architectures() -> list[str]:
+def _get_network_architectures() -> set[str]:
     """Scan config directory for .config.json files to determine valid network architectures.
 
     Returns:
@@ -164,14 +164,16 @@ def _get_network_architectures() -> list[str]:
                     if arch_name not in ["image_classification",
                                          "object_detection",
                                          "segmentation",
-                                         "character_recognition"]:
+                                         "character_recognition",
+                                         "vlm",
+                                         "maxine_dataset"]:
                         architectures.add(arch_name)
-
-                    # Add networks from action mappings
-                    actions_mapping = config.get("actions_mapping", {})
-                    for _, mapping in actions_mapping.items():
-                        if "network" in mapping:
-                            architectures.add(mapping["network"])
+                    else:
+                        # Add networks from action mappings
+                        actions_mapping = config.get("actions_mapping", {})
+                        for _, mapping in actions_mapping.items():
+                            if "network" in mapping:
+                                architectures.add(mapping["network"])
 
             except (json.JSONDecodeError, IOError):
                 continue
