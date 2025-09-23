@@ -44,25 +44,25 @@ class Dataset:
         description="Dataset name",
     )
     panoptic_json: str = STR_FIELD(
-        value="/datasets/coco/annotations/panoptic_train2017.json",
-        default_value="/datasets/coco/annotations/panoptic_train2017.json",
+        value="",
+        default_value="",
         display_name="COCO Panoptic JSON",
         description="JSON file in COCO panoptic format",
     )
     instance_json: str = STR_FIELD(
-        value="/datasets/coco/annotations/instances_train2017.json",
-        default_value="/datasets/coco/annotations/instances_train2017.json",
+        value="",
+        default_value="",
         display_name="COCO Instance JSON",
         description="JSON file in COCO format",
     )
     img_dir: str = STR_FIELD(
-        value="/datasets/coco/train2017",
-        default_value="/datasets/coco/train2017",
+        value="",
+        default_value="",
         display_name="Raw image directory",
         description="Image directory (can be relative path to root_dir)",
     )
     panoptic_dir: str = STR_FIELD(
-        value="/datasets/coco/train2017",
+        value="",
         default_value="",
         display_name="Panoptic image directory",
         description="Directory of panoptic segmentation annotation images",

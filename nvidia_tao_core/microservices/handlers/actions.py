@@ -399,7 +399,7 @@ class ActionPipeline:
         if self.network in MONAI_NETWORKS or BACKEND in ("local-k8s", "local-docker"):
             get_cloud_metadata(self.workspace_ids, self.cloud_metadata)
 
-    def handle_multiple_ptm_fields(self):
+    def handle_ptm_anomalies(self):
         """Remove one of end-end or backbone related PTM field based on the Handler metadata info"""
         for base_experiment_id in self.handler_metadata.get("base_experiment", []):
             base_experiment_metadata = get_base_experiment_metadata(base_experiment_id)
@@ -412,6 +412,17 @@ class ActionPipeline:
             if parameter_to_remove:
                 remove_key_by_flattened_string(self.spec, parameter_to_remove)
                 remove_key_by_flattened_string(self.config, parameter_to_remove)
+
+        if not self.handler_metadata.get("base_experiment", []):
+            parameters_to_remove = [
+                ptm_mapper.get("end_to_end", {}).get(self.network),
+                ptm_mapper.get("backbone", {}).get(self.network),
+                ptm_mapper.get("default", {}).get(self.network),
+            ]
+            for parameter_to_remove in parameters_to_remove:
+                if parameter_to_remove:
+                    remove_key_by_flattened_string(self.spec, parameter_to_remove)
+                    remove_key_by_flattened_string(self.config, parameter_to_remove)
 
     def detailed_print(self, *args, **kwargs):
         """Print with job context"""
@@ -607,7 +618,7 @@ class ActionPipeline:
             # Generate config
             self.spec, self.config = self.generate_config()
             self.cs_instance, _ = create_cs_instance(self.workspace_metadata)
-            self.handle_multiple_ptm_fields()
+            self.handle_ptm_anomalies()
             # Populate the cloud metadata for the job
             self.get_handler_cloud_details()
             # Generate run command
@@ -1034,7 +1045,7 @@ class AutoMLPipeline(ActionPipeline):
         if not self.spec:
             recommended_values = self.recs_dict[self.rec_number].get("specs", {})
             self.spec = self.generate_config(recommended_values)
-            self.handle_multiple_ptm_fields()
+            self.handle_ptm_anomalies()
             self.get_handler_cloud_details()
             self.save_recommendation_specs()
 
@@ -1123,7 +1134,7 @@ class AutoMLPipeline(ActionPipeline):
             self.add_ptm_dependency(recommended_values)
 
             self.spec = self.generate_config(recommended_values)
-            self.handle_multiple_ptm_fields()
+            self.handle_ptm_anomalies()
             self.get_handler_cloud_details()
             self.save_recommendation_specs()
             run_command = self.generate_run_command()
