@@ -52,6 +52,7 @@ from nvidia_tao_core.microservices.enum_constants import (
     DatasetFormat,
     DatasetType,
     ExperimentNetworkArch,
+    ContainerNetworkArch,
     Metrics,
     BaseExperimentTask,
     BaseExperimentDomain,
@@ -1228,7 +1229,7 @@ class ContainerJobSchema(Schema):
         """Class enabling sorting field values by the order in which they are declared"""
 
         ordered = True
-    neural_network_name = EnumField(ExperimentNetworkArch)
+    neural_network_name = EnumField(ContainerNetworkArch)
     action_name = EnumField(ActionEnum)
     specs = fields.Raw()
     cloud_metadata = fields.Raw()
