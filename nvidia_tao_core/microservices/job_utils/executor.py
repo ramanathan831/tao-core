@@ -2170,7 +2170,7 @@ def get_cluster_ip(namespace='default'):
         else:
             config.load_incluster_config()
         api_instance = client.CoreV1Api()
-        service = api_instance.read_namespaced_service("tao-api-service", namespace)
+        service = api_instance.read_namespaced_service(f"{release_name}-service", namespace)
         cluster_ip = service.spec.cluster_ip
         cluster_port = 8000
         for port in service.spec.ports:

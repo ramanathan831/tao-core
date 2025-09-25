@@ -22,6 +22,9 @@
         "dataset_convert": {
             "network": "annotations",
             "action": "convert"
+        },
+        "*": {
+            "network": "sparse4d"
         }
     },
 
