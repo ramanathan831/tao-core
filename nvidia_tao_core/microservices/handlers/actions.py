@@ -230,7 +230,7 @@ class ActionPipeline:
             self.job_context.specs.get("num_gpu", self.job_context.num_gpu)
             if self.job_context.specs else self.job_context.num_gpu
         )
-        self.num_nodes = get_num_nodes_from_spec(self.job_context.specs, self.action)
+        self.num_nodes = get_num_nodes_from_spec(self.job_context.specs, self.action, network=self.network)
         self.recursive_dataset_file_download = self.api_params.get("recursive_dataset_file_download", False)
         # add an entry on the docker image mapper for trt engine generation MAXINE DEPLOY
         # if action is trt engine generation and network is a maxine network, override image from docker image mapper
@@ -627,7 +627,11 @@ class ActionPipeline:
                 self.num_gpu = get_num_gpus_from_spec(
                     self.spec, self.job_context.action, network=self.network, default=self.num_gpu
                 )
-                self.num_nodes = get_num_nodes_from_spec(self.spec, self.job_context.action, default=self.num_nodes)
+                self.num_nodes = get_num_nodes_from_spec(
+                    self.spec,
+                    self.job_context.action,
+                    network=self.network,
+                    default=self.num_nodes)
                 self.detailed_print(f"Job {self.job_name} running with {self.num_gpu} GPUs and {self.num_nodes} nodes")
             if not outdir:
                 outdir = f"/results/{self.job_name}"
@@ -1014,7 +1018,7 @@ class AutoMLPipeline(ActionPipeline):
         for param_name, param_value in recommended_values.items():
             write_nested_dict(spec, param_name, param_value)
         self.num_gpu = get_num_gpus_from_spec(spec, "train", network=self.network, default=self.num_gpu)
-        self.num_nodes = get_num_nodes_from_spec(spec, "train", default=self.num_nodes)
+        self.num_nodes = get_num_nodes_from_spec(spec, "train", network=self.network, default=self.num_nodes)
 
         return spec
 

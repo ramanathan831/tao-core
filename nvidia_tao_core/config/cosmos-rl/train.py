@@ -275,6 +275,10 @@ class ValidationConfig:
         description="Validation frequency."
     )
 
+    ckpt: TrainCheckpointConfig = DATACLASS_FIELD(TrainCheckpointConfig(), description="Train checkpoint config.")
+    train_policy: TrainPolicyConfig = DATACLASS_FIELD(TrainPolicyConfig(), description="Train policy config.")
+    fp8: TrainFP8Config = DATACLASS_FIELD(TrainFP8Config(), description="Train FP8 config.")
+
 
 @dataclass
 class PolicyParallelismConfig:
@@ -305,6 +309,15 @@ class PolicyParallelismConfig:
         valid_max="inf",
         display_name="DP shard size",
         description="DP shard size."
+    )
+
+    dp_replicate_size: int = INT_FIELD(
+        value=1,
+        default_value=1,
+        valid_min=1,
+        valid_max="inf",
+        display_name="DP replicate size",
+        description="DP replicate size."
     )
 
     pp_size: int = INT_FIELD(
