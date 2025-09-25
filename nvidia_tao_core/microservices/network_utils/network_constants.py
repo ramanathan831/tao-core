@@ -74,6 +74,10 @@ image_size_mapper = {
     "segformer": "dataset.segment.img_size",
 }
 
+node_mapper = {
+    "cosmos-rl": "policy.parallelism.dp_replicate_size"
+}
+
 gpu_mapper = {
     "cosmos-rl": "policy.parallelism.dp_shard_size",
     "action_recognition": "",

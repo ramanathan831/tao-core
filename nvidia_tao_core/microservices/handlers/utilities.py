@@ -52,7 +52,7 @@ from nvidia_tao_core.microservices.constants import (
     MISSING_EPOCH_FORMAT_NETWORKS,
     MONAI_NETWORKS
 )
-from nvidia_tao_core.microservices.network_utils.network_constants import gpu_mapper
+from nvidia_tao_core.microservices.network_utils.network_constants import gpu_mapper, node_mapper
 from nvidia_tao_core.microservices.handlers.cloud_storage import create_cs_instance
 from nvidia_tao_core.microservices.handlers.encrypt import NVVaultEncryption
 from nvidia_tao_core.microservices.handlers.stateless_handlers import (
@@ -963,7 +963,7 @@ def get_num_gpus_from_spec(spec, action, network=None, default=0):
     return 1
 
 
-def get_num_nodes_from_spec(spec, action, default=1):
+def get_num_nodes_from_spec(spec, action, network=None, default=1):
     """Validate the nodes requested
 
     Args:
@@ -977,6 +977,16 @@ def get_num_nodes_from_spec(spec, action, default=1):
     if not isinstance(spec, dict):
         return default
     node_set_values = []
+
+    # First check for network-specific node parameter using node_mapper
+    if network and network in node_mapper:
+        node_param_path = node_mapper[network]
+        if node_param_path:  # Only check if there's a non-empty path defined
+            network_node_value = get_nested_dict_value(spec, node_param_path)
+            if network_node_value is not None and network_node_value != 0:
+                if isinstance(network_node_value, (int, float)):
+                    node_set_values.append(int(network_node_value))
+
     # Accessing num_nodes under train['system']
     node_param_name = "num_nodes"
 

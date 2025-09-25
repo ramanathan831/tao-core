@@ -104,7 +104,10 @@ def vlm_launch(neural_network_name, action, specs, job_id=""):
     else:
         lepton_args = ""
     if neural_network_name == "cosmos-rl" and action == "train":
-        launch_cmd = f"""cosmos-rl --config /results/{job_id}/spec.toml {lepton_args} scripts/custom_sft.py"""
+        launch_cmd = (
+            f"cosmos-rl --config /results/{job_id}/spec.toml {lepton_args}"
+            " --port 8080 --rdzv-port 29345 scripts/custom_sft.py"
+        )
         command = ["/bin/bash", "-c", launch_cmd]
     else:
         cli_args = convert_dict_to_cli_args(specs)

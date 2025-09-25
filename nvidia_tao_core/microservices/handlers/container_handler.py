@@ -62,6 +62,8 @@ SPEC_BACKEND_TO_FUNCTIONS = {
     "toml": json_to_toml.toml_format
 }
 
+IS_MASTER = int(os.environ.get("NODE_RANK", 0)) == 0
+
 
 def prepare_data_before_job_run(job, docker_env_vars):
     """Prepare data before job run"""
@@ -310,7 +312,7 @@ class ContainerJobHandler:
                             if not status_logger:
                                 status_logger = status_logging.StatusLogger(
                                     filename=status_file,
-                                    is_master=True,
+                                    is_master=IS_MASTER,
                                     verbosity=1,
                                     append=True
                                 )
@@ -400,7 +402,7 @@ class ContainerJobHandler:
             try:
                 status_logger = status_logging.StatusLogger(
                     filename=status_file,
-                    is_master=True,
+                    is_master=IS_MASTER,
                     verbosity=1,
                     append=True
                 )
@@ -468,7 +470,7 @@ class ContainerJobHandler:
                 try:
                     status_logger = status_logging.StatusLogger(
                         filename=status_file,
-                        is_master=True,
+                        is_master=IS_MASTER,
                         verbosity=1,
                         append=True
                     )

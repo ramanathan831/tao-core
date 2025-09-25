@@ -31,6 +31,7 @@ from nvidia_tao_core.microservices.handlers.cloud_storage import CloudStorage
 from nvidia_tao_core.microservices.handlers.ngc_handler import download_ngc_model, split_ngc_path
 from nvidia_tao_core.microservices.handlers.nvcf_handler import invoke_function
 from nvidia_tao_core.microservices.handlers.stateless_handlers import get_internal_job_status_update_data
+from nvidia_tao_core.distributed.decorators import master_node_only
 
 
 logger = logging.getLogger(__name__)
@@ -307,6 +308,7 @@ def get_file_modification_time(local_path):
         return 0
 
 
+@master_node_only
 def upload_files(local_path, cloud_storage, file_last_modified, selective_tarball_config=None, exclude_patterns=None):
     """Uploads any detected changes to the specified cloud storage.
 
@@ -495,6 +497,7 @@ def status_callback(data_string, retry=0):
                     try:
                         response = requests.post(status_url, json=data, headers=headers, timeout=REQUESTS_TIMEOUT)
                         if response.ok:
+                            logger.info(f"Status update with data {data} sent successfully")
                             return
                         logger.error(
                             "Failed to send status update. Status code: {}".format(  # noqa pylint: disable=C0209
@@ -552,6 +555,7 @@ def should_skip_file_for_tarball(file_path, local_path, selective_tarball_config
     return False
 
 
+@master_node_only
 def monitor_and_upload(local_path, cloud_storage, exit_event, seek_position=0,
                        selective_tarball_config=None, exclude_patterns=None):
     """Monitors the specified local path and its subdirectories for new or modified files.
@@ -964,6 +968,7 @@ def create_tarball(source_dir, tarball_path, exclude_paths=None, exclude_pattern
         return False
 
 
+@master_node_only
 def upload_tarball_to_cloud(cloud_storage, tarball_path, remove_after_upload=True):
     """Upload a tarball to cloud storage.
 
