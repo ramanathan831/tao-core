@@ -149,7 +149,7 @@ def _get_mapped_network_architectures(config: dict, architectures: set[str], arc
     for _, mapping in actions_mapping.items():
         if "network" in mapping:
             architectures.add(mapping["network"])
-            if arch_name and arch_name in architectures:
+            if arch_name and arch_name in architectures and arch_name != mapping["network"]:
                 architectures.remove(arch_name)
 
 
