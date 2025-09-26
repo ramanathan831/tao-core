@@ -137,3 +137,8 @@ class ExperimentConfig(CommonExperimentConfig):
         DepthNetGenTrtEngineExpConfig(),
         description="Configurable parameters to construct the TensorRT engine builder for a DepthNet experiment.",
     )
+
+    def __post_init__(self):
+        """Set default model name for DepthNet."""
+        if self.model_name is None:
+            self.model_name = "depth_net"

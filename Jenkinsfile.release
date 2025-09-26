@@ -136,7 +136,7 @@ spec:
             }
             gitlabCommitStatus(name: "functional_tests", connection: gitLabConnection('git-lab-master')) {
               sh "pip install pytest-cov"
-              sh "pip install . && pytest --cov=nvidia_tao_core --cov-report=xml:coverage.xml --cov-report=term"
+              sh "CPUCOUNT=1 pip install . && pytest --cov=nvidia_tao_core --cov-report=xml:coverage.xml --cov-report=term"
               // Archive the coverage report
               archiveArtifacts artifacts: 'coverage.xml', fingerprint: true, allowEmptyArchive: true
             }
