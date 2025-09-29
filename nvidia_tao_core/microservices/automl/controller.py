@@ -620,6 +620,7 @@ class Controller:
             if not status:
                 status = JobStates.pending
             if status in [JobStates.success, JobStates.failure]:
+                logger.info("Post processing of job %s under automl algorithm %s", rec.job_id, self.automl_algorithm)
                 if not validation_map_processed:
                     brain_epoch_number = self.brain_epoch_number
                     if self.automl_algorithm in ("bayesian", "b"):
