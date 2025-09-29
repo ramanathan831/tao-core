@@ -327,6 +327,10 @@ def validate_dataset(org_name, handler_metadata, temp_dir="", workspace_metadata
                         # Check if all sub-requirements are met
                         all_valid = True
                         subreq_paths = []
+                        # First collect all paths for error message
+                        for subsubreq in subreq["all_of"]:
+                            subreq_paths.append(subsubreq["path"])
+                        # Then check if all files exist
                         for subsubreq in subreq["all_of"]:
                             # For cloud validation, use the relative path directly instead of joining with temp_dir
                             if handler.cloud_instance:
@@ -335,20 +339,20 @@ def validate_dataset(org_name, handler_metadata, temp_dir="", workspace_metadata
                                 path = os.path.join(handler.root, subsubreq["path"])
                             file_type = subsubreq.get("type", "file")
                             file_extension = subsubreq.get("regex", "") if file_type == "regex" else ""
-                            subreq_paths.append(subsubreq["path"])
                             if not handler.check_for_file_existence(
                                 path, file_type=file_type, file_extension=file_extension
                             ):
                                 all_valid = False
                                 break
-                        any_of_options.append(f"all of: {', '.join(subreq_paths)}")
+                        any_of_options.append(f"({', '.join(subreq_paths)})")
                         if all_valid:
                             any_valid = True
                             break
 
                 if not any_valid:
+                    # For any_of validation, show the complete requirement options, not just missing files
                     options_str = " OR ".join(any_of_options)
-                    validation_errors.append(f"Must have at least one of: {options_str}")
+                    validation_errors.append(f"Dataset must contain one of the following combinations: {options_str}")
             elif "intent_based_path" in req:
                 # Check if intent exists
                 if not handler.intent:
