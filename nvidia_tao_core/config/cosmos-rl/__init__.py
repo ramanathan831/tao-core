@@ -13,3 +13,13 @@
 # limitations under the License.
 
 """Cosmos RL config module."""
+
+from .train import ExperimentConfig as TrainExperimentConfig
+from .inference import ExperimentConfig as InferenceExperimentConfig
+from .evaluate import ExperimentConfig as EvaluateExperimentConfig
+
+__all__ = [
+    "TrainExperimentConfig",
+    "InferenceExperimentConfig",
+    "EvaluateExperimentConfig"
+]
