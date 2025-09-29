@@ -24,8 +24,6 @@ from nvidia_tao_core.config.utils.types import (
     INT_FIELD,
     DATACLASS_FIELD,
     LIST_FIELD,
-    OPTIONAL_LIST_FIELD,
-    SUBSET_LIST_FIELD,
     UNION_FIELD
 )
 
