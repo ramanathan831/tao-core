@@ -736,7 +736,7 @@ def download_files_from_cloud(
     if value.startswith("hf_model://"):
         try:
             huggingface_model = value.split("hf_model://")[-1]
-            download_huggingface_model(huggingface_model, "/ptm/download", os.getenv("HF_TOKEN", ""))
+            download_huggingface_model(huggingface_model, "/ptm/huggingface_models", os.getenv("HF_TOKEN", ""))
             dictionary[key] = "/ptm/huggingface_models"
             return "/ptm/huggingface_models"
         except Exception as e:
