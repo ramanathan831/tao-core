@@ -196,6 +196,97 @@ class TrainPolicyConfig:
 
 
 @dataclass
+class LoraConfig:
+    """LoRA config."""
+
+    r: int = INT_FIELD(
+        value=8,
+        default_value=8,
+        valid_min=1,
+        valid_max=256,
+        math_cond="^ 2",
+        display_name="LoRA rank",
+        description="LoRA rank (must be power of 2)",
+        automl_enabled="TRUE"
+    )
+
+    lora_alpha: int = INT_FIELD(
+        value=8,
+        default_value=8,
+        valid_min=1,
+        valid_max=1024,
+        math_cond="^ 2",
+        display_name="LoRA alpha",
+        description="LoRA alpha (must be power of 2)",
+        automl_enabled="TRUE"
+    )
+
+    lora_dropout: float = FLOAT_FIELD(
+        value=0.0,
+        default_value=0.0,
+        valid_min=0.0,
+        valid_max=0.1,
+        display_name="LoRA dropout",
+        description="LoRA dropout",
+        automl_enabled="TRUE"
+    )
+
+    target_modules: Optional[List[str]] = SUBSET_LIST_FIELD(
+        arrList=["q_proj", "v_proj"],
+        valid_options=["q_proj", "k_proj", "v_proj", "o_proj", "up_proj", "gate_proj",
+                       "down_proj", "attn.qkv", "attn.proj", "all-linear"],
+        default_value=["q_proj", "v_proj"],
+        display_name="LoRA target modules",
+        description="LoRA target modules, subset of valid options. Cannot include "
+                    "attn.qkv or attn.proj if modules_to_save contains 'visual'",
+        automl_enabled="TRUE",
+        depends_on="policy.lora.modules_to_save"
+    )
+
+    use_rslora: bool = BOOL_FIELD(
+        value=False,
+        default_value=False,
+        display_name="Use RSLoRA",
+        description="When set to True, uses Rank-Stabilized LoRA which sets the adapter "
+                    "scaling factor to lora_alpha/math.sqrt(r), since it was proven to work "
+                    "better. Otherwise, it will use the original default value of lora_alpha/r."
+    )
+
+    modules_to_save: Optional[List[str]] = OPTIONAL_LIST_FIELD(
+        arrList=None,
+        valid_options="visual",
+        display_name="Modules to save",
+        description="List of modules apart from LoRA layers to be set as trainable "
+                    "and saved in the final checkpoint. Can be None or ['visual']",
+        automl_enabled="TRUE",
+        parent_param="TRUE",
+        default_value=[]
+    )
+
+    init_lora_weights: Union[bool, str] = UNION_FIELD(
+        value=True,
+        union_types=["bool", "string"],
+        literal_values=["gaussian", "eva", "olora", "pissa", "pissa_niter_[number of iters]"],
+        default_value=True,
+        display_name="Initialize LoRA weights",
+        description="How to initialize the weights of the adapter layers. Passing True "
+                    "(default) results in the default initialization from the reference "
+                    "implementation from Microsoft, with the LoRA B weight being set to 0. "
+                    "This means that without further training, the LoRA adapter will be a no-op. "
+                    "Setting the initialization to False leads to random initialization of LoRA A "
+                    "and B, meaning that LoRA is not a no-op before training; this setting is "
+                    "intended for debugging purposes. Passing 'gaussian' results in Gaussian "
+                    "initialization scaled by the LoRA rank for linear and layers. Pass 'loftq' "
+                    "to use LoftQ initialization. Passing 'eva' results in a data-driven "
+                    "initialization of Explained Variance Adaptation. EVA initializes LoRA based "
+                    "on the SVD of layer input activations and achieves SOTA performance due to "
+                    "its ability to adapt to the finetuning data. Pass 'olora' to use OLoRA "
+                    "initialization. Passing 'pissa' results in the initialization of "
+                    "https://huggingface.co/papers/2404.02948"
+    )
+
+
+@dataclass
 class TrainFP8Config:
     """Train FP8 config."""
 
@@ -532,6 +623,7 @@ class PolicyConfig:
     parallelism: PolicyParallelismConfig = DATACLASS_FIELD(
         PolicyParallelismConfig(), description="Policy parallelism config."
     )
+    lora: LoraConfig = DATACLASS_FIELD(LoraConfig(), description="LoRA config.")
 
 
 @dataclass
