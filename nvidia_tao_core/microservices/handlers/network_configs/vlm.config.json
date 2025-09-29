@@ -28,9 +28,19 @@
             ],
             "llava": [
                 {
-                    "all_of": [
-                        {"path": "images.tar.gz", "type": "file"},
-                        {"path": "annotations.json", "type": "file"}
+                    "any_of": [
+                        {
+                            "all_of": [
+                                {"path": "images.tar.gz", "type": "file"},
+                                {"path": "annotations.json", "type": "file"}
+                            ]
+                        },
+                        {
+                            "all_of": [
+                                {"path": "videos.tar.gz", "type": "file"},
+                                {"path": "annotations.json", "type": "file"}
+                            ]
+                        }
                     ]
                 }
             ]
