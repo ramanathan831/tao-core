@@ -14,7 +14,7 @@
 
 """Default config file"""
 
-from typing import List, Optional
+from typing import List, Optional, Union
 from dataclasses import dataclass
 
 from nvidia_tao_core.config.utils.types import (
@@ -23,7 +23,10 @@ from nvidia_tao_core.config.utils.types import (
     STR_FIELD,
     INT_FIELD,
     DATACLASS_FIELD,
-    LIST_FIELD
+    LIST_FIELD,
+    OPTIONAL_LIST_FIELD,
+    SUBSET_LIST_FIELD,
+    UNION_FIELD
 )
 
 
@@ -44,6 +47,12 @@ class DatasetConfig:
         display_name="Media directory path",
         description="Path to the media directory"
     )
+    system_prompt: Optional[str] = STR_FIELD(
+        default_value="",
+        value="",
+        display_name="System prompt",
+        description="System prompt."
+    )
 
 
 @dataclass
@@ -52,6 +61,7 @@ class LoggingConfig:
 
     logger: List[str] = LIST_FIELD(
         arrList=["console", "tao"],
+        valid_options=["console", "tao"],
         display_name="Logger",
         description="Logger to use."
     )
@@ -111,6 +121,27 @@ class TrainCheckpointConfig:
 
 
 @dataclass
+class TrainPolicyDatasetConfig:
+    """Train policy dataset config."""
+
+    name: str = STR_FIELD(
+        value="its",
+        default_value="its",
+        display_name="Dataset name",
+        description="Name of the dataset."
+    )
+
+    test_size: int = INT_FIELD(
+        value=1,
+        default_value=1,
+        valid_min=1,
+        valid_max="inf",
+        display_name="Test size",
+        description="Size of the test dataset."
+    )
+
+
+@dataclass
 class TrainPolicyConfig:
     """Train policy config."""
 
@@ -130,6 +161,40 @@ class TrainPolicyConfig:
         display_name="Mini batch",
         description="Mini batch."
     )
+
+    enable_dataset_cache: bool = BOOL_FIELD(
+        value=True,
+        default_value=True,
+        display_name="Enable dataset cache",
+        description="Enable dataset caching for faster loading."
+    )
+
+    dataloader_num_workers: int = INT_FIELD(
+        value=8,
+        default_value=8,
+        valid_min=0,
+        valid_max="inf",
+        display_name="Dataloader num workers",
+        description="Number of worker processes for data loading."
+    )
+
+    dataloader_prefetch_factor: int = INT_FIELD(
+        value=8,
+        default_value=8,
+        valid_min=1,
+        valid_max="inf",
+        display_name="Dataloader prefetch factor",
+        description="Number of batches to prefetch per worker."
+    )
+
+    conversation_column_name: str = STR_FIELD(
+        value="conversations",
+        default_value="conversations",
+        display_name="Conversation column name",
+        description="Name of the column containing conversations in the dataset."
+    )
+
+    dataset: TrainPolicyDatasetConfig = DATACLASS_FIELD(TrainPolicyDatasetConfig(), description="Dataset config.")
 
 
 @dataclass
@@ -174,11 +239,13 @@ class TrainConfig:
     epoch: int = INT_FIELD(
         value=10,
         default_value=10,
-        valid_min=1,
-        valid_max="inf",
+        valid_min=10,
+        valid_max=20,
         display_name="Number of Epochs",
         description="The number of epochs.",
-        popular="yes"
+        popular="yes",
+        parent_param="TRUE",
+        automl_enabled="TRUE",
     )
 
     compile: bool = BOOL_FIELD(
@@ -217,8 +284,8 @@ class TrainConfig:
     )
 
     optm_impl: str = STR_FIELD(
-        value="fused",
-        default_value="fused",
+        value="foreach",
+        default_value="foreach",
         valid_options="fused,foreach,for-loop",
         display_name="Implementation type",
         description="Implementation type for optimizer. More info: https://pytorch.org/docs/stable/optim.html",
@@ -251,6 +318,100 @@ class TrainConfig:
         description="Gradient norm clip."
     )
 
+    epsilon: float = FLOAT_FIELD(
+        value=1e-8,
+        default_value=1e-8,
+        valid_min=0,
+        valid_max="inf",
+        display_name="Epsilon",
+        description="Epsilon value for optimizer."
+    )
+
+    optm_name: str = STR_FIELD(
+        value="AdamW",
+        default_value="AdamW",
+        valid_options="AdamW,Adam",
+        display_name="Optimizer name",
+        description="Name of the optimizer to use.",
+        automl_enabled="TRUE"
+    )
+
+    optm_betas: List[float] = LIST_FIELD(
+        arrList=[0.9, 0.999],
+        display_name="Optimizer betas",
+        description="Beta parameters for Adam/AdamW optimizer.",
+        automl_enabled="TRUE",
+        value_type="list_2"
+    )
+
+    optm_warmup_epochs: Optional[Union[int, float]] = UNION_FIELD(
+        value=0,
+        union_types=["int", "float", "NoneType"],
+        default_value=0,
+        valid_min=0,
+        valid_max="inf",
+        math_cond="/ 2",
+        display_name="Warmup epochs",
+        description="Number of warmup epochs for learning rate scheduler (epochs / 2).",
+        automl_enabled="TRUE",
+        depends_on="train.epoch"
+    )
+
+    async_tp_enabled: bool = BOOL_FIELD(
+        value=False,
+        default_value=False,
+        display_name="Async TP enabled",
+        description="Enable asynchronous tensor parallelism."
+    )
+
+    master_dtype: str = STR_FIELD(
+        value="float32",
+        default_value="float32",
+        valid_options="float32,float16,bfloat16",
+        display_name="Master dtype",
+        description="Master data type for training."
+    )
+
+    param_dtype: str = STR_FIELD(
+        value="bfloat16",
+        default_value="bfloat16",
+        valid_options="float32,float16,bfloat16",
+        display_name="Parameter dtype",
+        description="Parameter data type for training."
+    )
+
+    fsdp_reduce_dtype: str = STR_FIELD(
+        value="float32",
+        default_value="float32",
+        valid_options="float32,float16,bfloat16",
+        display_name="FSDP reduce dtype",
+        description="Data type for FSDP reduction operations."
+    )
+
+    fsdp_offload: bool = BOOL_FIELD(
+        value=False,
+        default_value=False,
+        display_name="FSDP offload",
+        description="Enable FSDP parameter offloading."
+    )
+
+    fsdp_reshard_after_forward: str = STR_FIELD(
+        value="default",
+        default_value="default",
+        valid_options="default,true,false",
+        display_name="FSDP reshard after forward",
+        description="FSDP reshard after forward pass."
+    )
+
+    sync_weight_interval: int = INT_FIELD(
+        value=1,
+        default_value=1,
+        valid_min=1,
+        valid_max="inf",
+        display_name="Sync weight interval",
+        description="Interval for weight synchronization."
+    )
+
     ckpt: TrainCheckpointConfig = DATACLASS_FIELD(TrainCheckpointConfig(), description="Train checkpoint config.")
     train_policy: TrainPolicyConfig = DATACLASS_FIELD(TrainPolicyConfig(), description="Train policy config.")
     fp8: TrainFP8Config = DATACLASS_FIELD(TrainFP8Config(), description="Train FP8 config.")
@@ -275,14 +436,19 @@ class ValidationConfig:
         description="Validation frequency."
     )
 
-    ckpt: TrainCheckpointConfig = DATACLASS_FIELD(TrainCheckpointConfig(), description="Train checkpoint config.")
-    train_policy: TrainPolicyConfig = DATACLASS_FIELD(TrainPolicyConfig(), description="Train policy config.")
-    fp8: TrainFP8Config = DATACLASS_FIELD(TrainFP8Config(), description="Train FP8 config.")
-
 
 @dataclass
 class PolicyParallelismConfig:
     """Policy parallelism config."""
+
+    n_init_replicas: int = INT_FIELD(
+        value=1,
+        default_value=1,
+        valid_min=1,
+        valid_max="inf",
+        display_name="N init replicas",
+        description="Number of initial replicas."
+    )
 
     tp_size: int = INT_FIELD(
         value=1,
@@ -329,6 +495,14 @@ class PolicyParallelismConfig:
         description="PP size."
     )
 
+    cp_rotate_method: str = STR_FIELD(
+        value="allgather",
+        default_value="allgather",
+        valid_options="allgather,p2p",
+        display_name="CP rotate method",
+        description="Context parallelism rotation method."
+    )
+
 
 @dataclass
 class PolicyConfig:
@@ -349,8 +523,40 @@ class PolicyConfig:
         display_name="Model max length",
         description="Model max length."
     )
+
+    model_gradient_checkpointing: bool = BOOL_FIELD(
+        value=True,
+        default_value=True,
+        display_name="Model gradient checkpointing",
+        description="Enable gradient checkpointing to save memory during training."
+    )
+
     parallelism: PolicyParallelismConfig = DATACLASS_FIELD(
         PolicyParallelismConfig(), description="Policy parallelism config."
+    )
+
+
+@dataclass
+class VisionConfig:
+    """Vision config."""
+
+    fps: int = INT_FIELD(
+        value=1,
+        default_value=1,
+        valid_min=1,
+        valid_max=3,
+        display_name="FPS",
+        description="Frames per second for vision processing.",
+        automl_enabled="TRUE"
+    )
+
+    total_pixels: int = INT_FIELD(
+        value=313600,
+        default_value=313600,
+        valid_min=1,
+        valid_max="inf",
+        display_name="Total pixels",
+        description="Total number of pixels for vision processing."
     )
 
 
@@ -359,6 +565,7 @@ class CustomConfig:
     """Custom config."""
 
     dataset: DatasetConfig = DATACLASS_FIELD(DatasetConfig(), description="Dataset config.")
+    vision: VisionConfig = DATACLASS_FIELD(VisionConfig(), description="Vision config.")
 
 
 @dataclass
