@@ -411,3 +411,8 @@ class ModelQuantizationConfig:
         description="Path to where all the assets generated from a task are stored.",
         required="yes",
     )
+    backend_kwargs: Optional[Dict[str, Any]] = DICT_FIELD(
+        {},
+        description="Additional keyword arguments to pass to the backend constructor",
+        display_name="Backend kwargs",
+    )
