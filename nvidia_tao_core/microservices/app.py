@@ -5411,6 +5411,7 @@ class AutoMLSchema(Schema):
         allow_none=True
     )
     automl_delete_intermediate_ckpt = fields.Bool(allow_none=True)
+    automl_skip_checkpoint_deletion = fields.Bool(allow_none=True)
     override_automl_disabled_params = fields.Bool(allow_none=True)
     automl_R = fields.Int(format="int64", validate=validate.Range(min=0, max=sys.maxsize), allow_none=True)
     automl_nu = fields.Int(format="int64", validate=validate.Range(min=0, max=sys.maxsize), allow_none=True)

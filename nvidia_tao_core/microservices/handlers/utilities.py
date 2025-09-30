@@ -1223,6 +1223,7 @@ def send_microservice_request(
     # Send request
     if os.getenv("DEBUG_MODE", "false").lower() == "true":
         logger.info("Sending request to %s with request_metadata %s", endpoint, request_metadata)
+    logger.info("request_metadata = %s", request_metadata)
     try:
         if api_endpoint == "get_job_status":
             response = requests.get(endpoint, params=request_metadata, timeout=120)

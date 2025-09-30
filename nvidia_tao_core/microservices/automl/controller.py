@@ -97,7 +97,8 @@ class Controller:
         delete_intermediate_ckpt,
         metric,
         automl_algorithm,
-        decrypted_workspace_metadata
+        decrypted_workspace_metadata,
+        skip_checkpoint_deletion=False
     ):
         """Initialize the Automl Controller class
 
@@ -111,6 +112,7 @@ class Controller:
             best model
             metric: metric name which will be used to choose best models
             automl_algorithm: automl algorithm name
+            skip_checkpoint_deletion: boolean value to skip checkpoint deletion for Bayesian algorithm (default: False)
         """
         self.brain = brain
 
@@ -125,7 +127,14 @@ class Controller:
         self.completed_recommendations = 0
         self.max_recommendations = int(max_recommendations)
         self.delete_intermediate_ckpt = bool(delete_intermediate_ckpt)
+        self.skip_checkpoint_deletion = bool(skip_checkpoint_deletion)
         self.automl_algorithm = automl_algorithm
+
+        # Pre-compute skip deletion condition for Bayesian algorithm
+        self.should_skip_deletion = (
+            self.automl_algorithm in ("bayesian", "b") and
+            self.skip_checkpoint_deletion
+        )
         self.decrypted_workspace_metadata = decrypted_workspace_metadata
         self.metric = metric
         if self.automl_algorithm in ("hyperband", "h") and self.network in NO_VAL_METRICS_DURING_TRAINING_NETWORKS:
@@ -291,7 +300,8 @@ class Controller:
         delete_intermediate_ckpt,
         metric,
         automl_algorithm,
-        decrypted_workspace_metadata
+        decrypted_workspace_metadata,
+        skip_checkpoint_deletion=False
     ):
         """Loads a Controller object from pre-existing root"""
         ctrl = Controller(
@@ -303,7 +313,8 @@ class Controller:
             delete_intermediate_ckpt,
             metric,
             automl_algorithm,
-            decrypted_workspace_metadata
+            decrypted_workspace_metadata,
+            skip_checkpoint_deletion
         )
         ctrl.recommendations = []
         # Restore the recommendations
@@ -365,10 +376,12 @@ class Controller:
 
                     if self.best_model_copied:
                         # Delete final extra checkpoints after finish training
-                        for rec in self.recommendations:
-                            expt_root = os.path.join("/results", rec.job_id)
-                            self.get_best_checkpoint_path(expt_root, rec)
-                            self.delete_not_best_model_checkpoints(expt_root, rec, True)
+                        # Skip deletion for Bayesian algorithm if skip_checkpoint_deletion is True
+                        if not self.should_skip_deletion:
+                            for rec in self.recommendations:
+                                expt_root = os.path.join("/results", rec.job_id)
+                                self.get_best_checkpoint_path(expt_root, rec)
+                                self.delete_not_best_model_checkpoints(expt_root, rec, True)
                         handler_metadata = get_handler_metadata(self.automl_context.handler_id, "experiments")
                         handler_metadata["checkpoint_epoch_number"][f"best_model_{self.automl_context.id}"] = (
                             self.best_epoch_number[self.best_rec_id]
@@ -476,15 +489,17 @@ class Controller:
             # If rec already changed to Success, no need to check
             if rec.status in [JobStates.success, JobStates.failure]:
                 if self.delete_intermediate_ckpt:
-                    self.delete_checkpoint_files(cloud_expt_root, rec)
-                    # Remove the checkpoints from not best model
-                    brain_dict = get_automl_brain_info(self.automl_context.id)
-                    if brain_dict:
-                        if (
-                            self.automl_algorithm in ("bayesian", "b") or
-                            self.old_bracket != brain_dict.get("bracket", "0")
-                        ):
-                            flag = self.delete_not_best_model_checkpoints(cloud_expt_root, rec, flag)
+                    # Skip checkpoint deletion for Bayesian algorithm if skip_checkpoint_deletion is True
+                    if not self.should_skip_deletion:
+                        self.delete_checkpoint_files(cloud_expt_root, rec)
+                        # Remove the checkpoints from not best model
+                        brain_dict = get_automl_brain_info(self.automl_context.id)
+                        if brain_dict:
+                            if (
+                                self.automl_algorithm in ("bayesian", "b") or
+                                self.old_bracket != brain_dict.get("bracket", "0")
+                            ):
+                                flag = self.delete_not_best_model_checkpoints(cloud_expt_root, rec, flag)
                 continue
 
             status_parser = StatusParser(self.network, local_expt_root, self.first_epoch_number)
@@ -659,8 +674,10 @@ class Controller:
                             f.write("\nEOF\n")
 
             if rec.status in [JobStates.success, JobStates.failure] and self.delete_intermediate_ckpt:
-                # Retain the latest checkpoint and remove others in experiment folder
-                self.delete_checkpoint_files(cloud_expt_root, rec)
+                # Skip checkpoint deletion for Bayesian algorithm if skip_checkpoint_deletion is True
+                if not self.should_skip_deletion:
+                    # Retain the latest checkpoint and remove others in experiment folder
+                    self.delete_checkpoint_files(cloud_expt_root, rec)
 
         if self.automl_algorithm in ("hyperband", "h"):
             if brain_dict:

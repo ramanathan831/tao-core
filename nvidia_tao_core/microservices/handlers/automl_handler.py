@@ -92,6 +92,7 @@ class AutoMLHandler:
         automl_algorithm = automl_settings.get("automl_algorithm", "Bayesian")
         automl_max_recommendations = automl_settings.get("automl_max_recommendations", 20)
         automl_delete_intermediate_ckpt = automl_settings.get("automl_delete_intermediate_ckpt", True)
+        automl_skip_checkpoint_deletion = automl_settings.get("automl_skip_checkpoint_deletion", False)
         automl_R = automl_settings.get("automl_R", 27)
         automl_nu = automl_settings.get("automl_nu", 3)
         epoch_multiplier = automl_settings.get("epoch_multiplier", 1)
@@ -122,6 +123,7 @@ class AutoMLHandler:
             f'--automl_algorithm={automl_algorithm} '
             f'--automl_max_recommendations={automl_max_recommendations} '
             f'--automl_delete_intermediate_ckpt={automl_delete_intermediate_ckpt} '
+            f'--automl_skip_checkpoint_deletion={automl_skip_checkpoint_deletion} '
             f'--automl_R={automl_R} '
             f'--automl_nu={automl_nu} '
             f'--metric={metric} '
@@ -242,6 +244,7 @@ class AutoMLHandler:
         automl_algorithm = automl_settings.get("automl_algorithm", "Bayesian")
         automl_max_recommendations = automl_settings.get("automl_max_recommendations", 20)
         automl_delete_intermediate_ckpt = automl_settings.get("automl_delete_intermediate_ckpt", True)
+        automl_skip_checkpoint_deletion = automl_settings.get("automl_skip_checkpoint_deletion", False)
         automl_R = automl_settings.get("automl_R", 27)
         automl_nu = automl_settings.get("automl_nu", 3)
         epoch_multiplier = automl_settings.get("epoch_multiplier", 1)
@@ -270,6 +273,7 @@ class AutoMLHandler:
             f'--automl_algorithm={automl_algorithm} '
             f'--automl_max_recommendations={automl_max_recommendations} '
             f'--automl_delete_intermediate_ckpt={automl_delete_intermediate_ckpt} '
+            f'--automl_skip_checkpoint_deletion={automl_skip_checkpoint_deletion} '
             f'--automl_R={automl_R} '
             f'--automl_nu={automl_nu} '
             f'--metric={metric} '

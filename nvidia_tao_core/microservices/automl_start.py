@@ -46,6 +46,7 @@ def automl_start(
     automl_algorithm,
     automl_max_recommendations,
     automl_delete_intermediate_ckpt,
+    automl_skip_checkpoint_deletion,
     automl_R,
     automl_nu,
     metric,
@@ -97,7 +98,8 @@ def automl_start(
             automl_delete_intermediate_ckpt,
             metric,
             automl_algorithm.lower(),
-            decrypted_workspace_metadata
+            decrypted_workspace_metadata,
+            automl_skip_checkpoint_deletion == "True"
         )
         controller.start()
 
@@ -125,7 +127,8 @@ def automl_start(
             automl_delete_intermediate_ckpt,
             metric,
             automl_algorithm.lower(),
-            decrypted_workspace_metadata
+            decrypted_workspace_metadata,
+            automl_skip_checkpoint_deletion == "True"
         )
         controller.start()
 
@@ -174,6 +177,10 @@ if __name__ == "__main__":
     )
     parser.add_argument(
         '--automl_delete_intermediate_ckpt',
+        type=str,
+    )
+    parser.add_argument(
+        '--automl_skip_checkpoint_deletion',
         type=str,
     )
     parser.add_argument(
@@ -238,6 +245,7 @@ if __name__ == "__main__":
         automl_algorithm = args.automl_algorithm
         automl_max_recommendations = args.automl_max_recommendations
         automl_delete_intermediate_ckpt = args.automl_delete_intermediate_ckpt
+        automl_skip_checkpoint_deletion = args.automl_skip_checkpoint_deletion
         automl_R = args.automl_R
         automl_nu = args.automl_nu
         metric = args.metric
@@ -253,6 +261,7 @@ if __name__ == "__main__":
             automl_algorithm=automl_algorithm,
             automl_max_recommendations=automl_max_recommendations,
             automl_delete_intermediate_ckpt=automl_delete_intermediate_ckpt,
+            automl_skip_checkpoint_deletion=automl_skip_checkpoint_deletion,
             automl_R=automl_R,
             automl_nu=automl_nu,
             metric=metric,
