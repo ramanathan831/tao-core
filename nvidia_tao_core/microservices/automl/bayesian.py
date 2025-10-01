@@ -87,12 +87,9 @@ class Bayesian(AutoMLAlgorithmBase):
             # Apply math condition if specified
             if math_cond and type(math_cond) is str:
                 parts = math_cond.split(" ")
-                logger.info(f"Parts: {parts}")
                 if len(parts) >= 2:
                     operator = parts[0]
-                    logger.info(f"Operator: {operator}")
-                    factor = int(parts[1])
-                    logger.info(f"Factor: {factor}")
+                    factor = int(float(parts[1]))
                     if operator == "^":
                         # Use helper function for power constraints with equal priority
                         normalized = suggestion * (v_max - v_min) + v_min
