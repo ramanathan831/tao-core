@@ -120,7 +120,7 @@ class HyperBand(AutoMLAlgorithmBase):
                 parts = math_cond.split(" ")
                 if len(parts) >= 2:
                     operator = parts[0]
-                    factor = int(parts[1])
+                    factor = int(float(parts[1]))
                     if operator == "^":
                         # Use helper function for power constraints with equal priority
                         fallback = np.random.uniform(low=v_min, high=v_max)
