@@ -15,6 +15,7 @@
 """Utilties to send data to the TAO Toolkit Telemetry Remote Service."""
 
 import os
+from typing import Any, Dict, List, Optional
 
 import logging as _logging
 _logging.basicConfig(
@@ -22,8 +23,6 @@ _logging.basicConfig(
     level='INFO'
 )
 logging = _logging
-
-from typing import Any, Dict, List, Optional
 
 try:
     from nvidia_tao_core.telemetry import metrics
