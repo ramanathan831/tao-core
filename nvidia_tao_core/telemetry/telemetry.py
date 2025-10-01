@@ -23,15 +23,14 @@ _logging.basicConfig(
 )
 logging = _logging
 
+from typing import Any, Dict, List, Optional
+
 try:
     from nvidia_tao_core.telemetry import metrics
     METRICS_MODULE_EXISTS = True
 except Exception as e:
     logging.warning(f"Telemetry reporting script cannot import with [Error]: {e}")
     METRICS_MODULE_EXISTS = False
-
-from typing import Any, Dict, List, Optional
-
 
 TAO_SERVER_URL = "https://api.tao.ngc.nvidia.com"
 TELEMETRY_TIMEOUT = int(os.getenv("TELEMETRY_TIMEOUT", "30"))
