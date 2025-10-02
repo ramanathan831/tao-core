@@ -1544,6 +1544,7 @@ def resolve_checkpoint_root_and_search(handler_metadata, job_id, folder=False, r
     if action == "retrain":
         action = "train"
 
+    result_file = None
     if action in ("train", "distill", "quantize"):
         checkpoint_choose_method = handler_metadata.get("checkpoint_choose_method", "best_model")
         result_file = search_for_checkpoint(
@@ -1554,21 +1555,19 @@ def resolve_checkpoint_root_and_search(handler_metadata, job_id, folder=False, r
             checkpoint_choose_method=checkpoint_choose_method
         )
 
-    elif action == "prune":
-        result_file = filter_files(files, network_name=network)
-        result_file = format_checkpoints_path(result_file)
-
-    elif action == "export":
+    if action == "export" or (action == "quantize" and not result_file):
         regex_pattern = regex if regex else r'.*\.(onnx|uff)$'
         result_file = filter_files(files, regex_pattern=regex_pattern, network_name=network)
+        result_file = format_checkpoints_path(result_file)
+
+    elif action == "prune":
+        result_file = filter_files(files, network_name=network)
         result_file = format_checkpoints_path(result_file)
 
     elif action in ("trtexec", "gen_trt_engine"):
         regex_pattern = regex if regex else r'.*\.(engine)$'
         result_file = filter_files(files, regex_pattern=regex_pattern, network_name=network)
         result_file = format_checkpoints_path(result_file)
-    else:
-        result_file = None
 
     if result_file:
         workspace_identifier = get_workspace_string_identifier(workspace_id, workspace_cache={})
