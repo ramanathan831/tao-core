@@ -18,12 +18,9 @@ kubernetes==32.0.1
 marshmallow==3.18.0  # Do not update this version, due to potential bug
 marshmallow-enum==1.5.1
 ngcsdk==3.151.0
-numpy
+numpy==1.26.4
 nvidia-modelopt[all]
 omegaconf==2.3.0
-onnxmltools
-onnxruntime-gpu; platform_machine == "x86_64"
-onnxruntime; platform_machine != "x86_64"
 orjson
 packaging<=24.2 # Requirement from nvidia-dali-cuda120, remove once we upgrade to cuda13
 pandas>=2.0,<2.2.4dev0 # cudf 25.2.0 requires pandas<2.2.4dev0,>=2.0
@@ -32,6 +29,7 @@ pycryptodome==3.23.0
 pydicom==3.0.1
 pydocstyle
 pymongo==4.13.0
+pytest
 pylint==3.3.7
 pynvml==12.0.0
 PyJWT
@@ -46,7 +44,7 @@ setuptools==78.1.1
 six==1.16.0
 timeloop==1.0.2
 toml
-torchao
+torchao==0.11.0
 transformers
 tritonclient[all]
 uWSGI
