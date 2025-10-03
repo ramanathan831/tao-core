@@ -39,7 +39,7 @@ from nvidia_tao_core.microservices.handlers.stateless_handlers import (
     get_job_specs,
     get_automl_controller_info
 )
-from nvidia_tao_core.microservices.job_utils import executor
+from nvidia_tao_core.microservices.job_utils.executor.utils import dependency_check
 
 # Configure logging
 logging.basicConfig(
@@ -217,7 +217,7 @@ def dependency_check_gpu(job_context, dependency):
     num_gpu = get_num_gpus_from_spec(
         job_context.specs, job_context.action, network=job_context.network, default=dependency.num
     )
-    gpu_available = executor.dependency_check(num_gpu=num_gpu, accelerator=dependency.name)
+    gpu_available = dependency_check(num_gpu=num_gpu, accelerator=dependency.name)
     message = ""
     if not gpu_available:
         message = "GPU's needed to run this job is not available yet, please wait for other jobs to complete"

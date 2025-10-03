@@ -93,7 +93,12 @@ from nvidia_tao_core.microservices.utils import (
     get_monitoring_metric,
     get_microservices_network_and_action
 )
-from nvidia_tao_core.microservices.job_utils import executor as jobDriver
+from nvidia_tao_core.microservices.job_utils.executor import (
+    JobExecutor,
+    StatefulSetExecutor,
+    MicroserviceExecutor
+)
+from nvidia_tao_core.microservices.job_utils.executor.utils import get_cluster_ip
 from nvidia_tao_core.microservices.network_utils.network_constants import ptm_mapper
 from nvidia_tao_core.microservices.specs_utils import json_to_kitti, json_to_yaml, json_to_toml
 
@@ -281,7 +286,7 @@ class ActionPipeline:
 
         org_name = self.job_context.org_name
         if BACKEND == "local-k8s":
-            cluster_ip, cluster_port = jobDriver.get_cluster_ip()
+            cluster_ip, cluster_port = get_cluster_ip()
             if cluster_ip and cluster_port:
                 host_base_url = f"http://{cluster_ip}:{cluster_port}"
 
@@ -439,21 +444,23 @@ class ActionPipeline:
     def create_microservice_action_job(self, job_id):
         """Call executor function to create microservice pod and then invoke it"""
         logger.info("Creating microservices job_action ms pod")
-        response = jobDriver.create_microservice_and_send_request(api_endpoint="post_action",
-                                                                  network=self.network,
-                                                                  action=self.action,
-                                                                  cloud_metadata=self.cloud_metadata,
-                                                                  specs=self.spec,
-                                                                  microservice_pod_id=self.job_name,
-                                                                  num_gpu=self.num_gpu,
-                                                                  microservice_container=self.image,
-                                                                  org_name=self.job_context.org_name,
-                                                                  handler_id=self.handler_id,
-                                                                  handler_kind=self.handler_kind,
-                                                                  accelerator=self.platform_id,
-                                                                  docker_env_vars=self.job_env_variables,
-                                                                  num_nodes=self.num_nodes
-                                                                  )
+        microservice_executor = MicroserviceExecutor()
+        response = microservice_executor.create_microservice_and_send_request(
+            api_endpoint="post_action",
+            network=self.network,
+            action=self.action,
+            cloud_metadata=self.cloud_metadata,
+            specs=self.spec,
+            microservice_pod_id=self.job_name,
+            num_gpu=self.num_gpu,
+            microservice_container=self.image,
+            org_name=self.job_context.org_name,
+            handler_id=self.handler_id,
+            handler_kind=self.handler_kind,
+            accelerator=self.platform_id,
+            docker_env_vars=self.job_env_variables,
+            num_nodes=self.num_nodes
+        )
         if response and not response.ok:
             update_job_details_with_microservices_response(response.json().get("error", ""), job_id, self.job_name)
 
@@ -477,7 +484,7 @@ class ActionPipeline:
         if not metric:
             metric = get_monitoring_metric(self.network)
 
-        k8s_status = jobDriver.status(
+        k8s_status = JobExecutor().get_job_status(
             self.job_context.org_name,
             self.handler_id,
             self.job_name,
@@ -493,7 +500,7 @@ class ActionPipeline:
         metadata_status = get_handler_job_metadata(self.job_name).get("status", "Error")
         if metadata_status in ("Canceling", "Canceled", "Pausing", "Paused"):
             self.detailed_print(f"Terminating job {self.job_name}")
-            jobDriver.delete(self.job_name, use_ngc=self.ngc_runner)
+            StatefulSetExecutor().delete_statefulset(self.job_name, use_ngc=self.ngc_runner)
 
         # Monitor job status
         while k8s_status in ["Done", "Error", "Running", "Pending"]:
@@ -504,7 +511,7 @@ class ActionPipeline:
             metadata_status = get_handler_job_metadata(self.job_name).get("status", "Error")
             if metadata_status in ("Canceled", "Paused") and k8s_status == "Running":
                 self.detailed_print(f"Terminating job {self.job_name}")
-                jobDriver.delete(self.job_name, use_ngc=self.ngc_runner)
+                StatefulSetExecutor().delete_statefulset(self.job_name, use_ngc=self.ngc_runner)
             if k8s_status == "Done":
                 update_job_status(self.handler_id, self.job_name, status="Running", kind=self.handler_kind)
                 # Retrieve status one last time!
@@ -558,7 +565,7 @@ class ActionPipeline:
 
             # Pending is if we have queueing systems down the road
             elif k8s_status == "Pending":
-                k8s_status = jobDriver.status(
+                k8s_status = JobExecutor().get_job_status(
                     self.job_context.org_name,
                     self.handler_id,
                     self.job_name,
@@ -583,7 +590,7 @@ class ActionPipeline:
                 )
                 update_job_status(self.handler_id, self.job_name, status="Error", kind=self.handler_kind)
                 break
-            k8s_status = jobDriver.status(
+            k8s_status = JobExecutor().get_job_status(
                 self.job_context.org_name,
                 self.handler_id,
                 self.job_name,
@@ -608,7 +615,7 @@ class ActionPipeline:
         self.detailed_print(f"Job Done: {self.job_name} Final status: {metadata_status}")
         if self.ngc_runner or (self.network not in MONAI_NETWORKS and BACKEND in ("local-k8s", "local-docker")):
             if metadata_status not in ("Canceled", "Canceling", "Paused", "Pausing"):
-                jobDriver.delete(self.job_name)
+                StatefulSetExecutor().delete_statefulset(self.job_name)
 
     def run(self):
         """Calls necessary setup functions and calls job creation"""
@@ -661,7 +668,7 @@ class ActionPipeline:
 
             # Submit to K8s
             # Platform is None, but might be updated in self.generate_config() or self.generate_run_command()
-            # If platform is indeed None, jobDriver.create would take care of it.
+            # If platform is indeed None, JobExecutor.create_job would take care of it.
             docker_env_vars = self.handler_metadata.get("docker_env_vars", {})
             self.decrypt_docker_env_vars(docker_env_vars)
             self.job_env_variables.update(copy.deepcopy(docker_env_vars))
@@ -679,7 +686,7 @@ class ActionPipeline:
             if self.network not in MONAI_NETWORKS and BACKEND in ("local-k8s", "local-docker"):
                 self.create_microservice_action_job(self.job_name)
             else:
-                jobDriver.create(
+                JobExecutor().create_job(
                     self.job_context.org_name,
                     self.job_name,
                     self.image,
@@ -1068,7 +1075,7 @@ class AutoMLPipeline(ActionPipeline):
             if self.ngc_runner:
                 self.generate_nv_job_metadata(nv_job_metadata)
 
-        k8s_status = jobDriver.status(
+        k8s_status = JobExecutor().get_job_status(
             self.job_context.org_name,
             self.handler_id,
             self.job_name,
@@ -1103,7 +1110,7 @@ class AutoMLPipeline(ActionPipeline):
                 if self.network not in MONAI_NETWORKS and BACKEND in ("local-k8s", "local-docker"):
                     self.create_microservice_action_job(self.automl_brain_job_id)
                 else:
-                    jobDriver.create(
+                    JobExecutor().create_job(
                         self.job_context.org_name,
                         self.job_name,
                         self.image,
@@ -1114,7 +1121,7 @@ class AutoMLPipeline(ActionPipeline):
                         nv_job_metadata=nv_job_metadata,
                         automl_exp_job=True
                     )
-            k8s_status = jobDriver.status(
+            k8s_status = JobExecutor().get_job_status(
                 self.job_context.org_name,
                 self.handler_id,
                 self.job_name,
@@ -1165,7 +1172,7 @@ class AutoMLPipeline(ActionPipeline):
             if self.network not in MONAI_NETWORKS and BACKEND in ("local-k8s", "local-docker"):
                 self.create_microservice_action_job(self.automl_brain_job_id)
             else:
-                jobDriver.create(
+                JobExecutor().create_job(
                     self.job_context.org_name,
                     self.job_name,
                     self.image,
@@ -1212,7 +1219,7 @@ class AutoMLPipeline(ActionPipeline):
             save_automl_controller_info(self.automl_brain_job_id, self.recs_dict)
 
             update_job_status(self.handler_id, self.job_context.id, status="Error", kind=self.handler_kind)
-            jobDriver.delete(self.job_context.id, use_ngc=False)
+            StatefulSetExecutor().delete_statefulset(self.job_context.id, use_ngc=False)
             return False
 
 
@@ -1246,7 +1253,7 @@ class ContinualLearning(ActionPipeline):
 
     def monitor_job(self):
         """Monitors the job status and updates job metadata"""
-        k8s_status = jobDriver.status(
+        k8s_status = JobExecutor().get_job_status(
             self.job_context.org_name,
             self.handler_id,
             self.job_name,
@@ -1258,7 +1265,7 @@ class ContinualLearning(ActionPipeline):
         while k8s_status in ["Running", "Pending"]:
             # Poll every 30 seconds
             time.sleep(30)
-            k8s_status = jobDriver.status(
+            k8s_status = JobExecutor().get_job_status(
                 self.job_context.org_name,
                 self.handler_id,
                 self.job_name,
@@ -1296,7 +1303,7 @@ class ContinualLearning(ActionPipeline):
             self.run_command += f"; find {outdir} -type f | xargs chmod 666"
             # Optionally, pipe self.run_command into a log file
             self.detailed_print(self.run_command)
-            jobDriver.create(
+            JobExecutor().create_job(
                 self.job_context.org_name,
                 self.job_name,
                 self.image,
