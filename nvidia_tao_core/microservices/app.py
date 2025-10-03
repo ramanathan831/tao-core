@@ -1212,7 +1212,7 @@ def auth():
         response = make_response(jsonify(schema.dump(schema.load(metadata))), 401)
         return response
     # access control
-    err = access_control.validate(user_id, org_name, url)
+    err = access_control.validate(user_id, org_name, url, token)
     if err:
         logger.warning("Forbidden: %s", err)
         metadata = {"error_desc": str(err), "error_code": 2}
