@@ -18,7 +18,6 @@ import traceback
 from kubernetes import client, config
 from kubernetes.client.rest import ApiException
 
-from nvidia_tao_core.microservices.constants import MONAI_NETWORKS
 from nvidia_tao_core.microservices.handlers.docker_handler import DockerHandler
 from nvidia_tao_core.microservices.handlers.stateless_handlers import (
     BACKEND,
@@ -55,7 +54,7 @@ class JobExecutor(BaseExecutor):
 
     def create_job(self, org_name, job_name, image, command, num_gpu=-1, num_nodes=1, accelerator=None,
                    docker_env_vars=None, port=False, nv_job_metadata=None, automl_brain=False,
-                   automl_exp_job=False, cl_medical=False, local_cluster=False):
+                   automl_exp_job=False, local_cluster=False):
         """Creates a kubernetes job"""
         name_space = self.get_namespace()
         host_base_url = os.getenv("HOSTBASEURL", "no_url")
@@ -193,7 +192,7 @@ class JobExecutor(BaseExecutor):
         # CL job needs to set the environment variable to pass GPU checks (validate_num_gpu) for training jobs
         num_gpu_env = client.V1EnvVar(
             name="NUM_GPU_PER_NODE",
-            value=str(num_gpu) if not cl_medical else os.getenv('NUM_GPU_PER_NODE', default='1'))
+            value=str(num_gpu))
         mongo_secret_env = client.V1EnvVar(
             name="MONGOSECRET",
             value=mongo_secret  # pylint: disable=E0606
@@ -433,34 +432,15 @@ class JobExecutor(BaseExecutor):
                 return "Error"
 
         # For local cluster jobs
-        if network not in MONAI_NETWORKS:
-            specs = get_job_specs(job_name, automl=automl_exp_job, automl_experiment_id=automl_experiment_id)
-            if not specs:
-                self.logger.error(f"Unable to retrieve specs for job {job_name}")
-                return "Error"
+        specs = get_job_specs(job_name, automl=automl_exp_job, automl_experiment_id=automl_experiment_id)
+        if not specs:
+            self.logger.error(f"Unable to retrieve specs for job {job_name}")
+            return "Error"
 
-            if BACKEND == "local-docker":
-                docker_handler = DockerHandler.get_handler_for_container(job_name)
-                if docker_handler:
-                    response = docker_handler.make_container_request(
-                        api_endpoint="get_job_status",
-                        network=network,
-                        action=action,
-                        job_id=job_name,
-                        specs=specs,
-                    )
-                    if response and response.ok:
-                        job_status = response.json()
-                        status = job_status.get("status")
-                        return status
-                    self.logger.error(f"Error when sending microservice request {response.text}")
-                return "Error"
-
-            from nvidia_tao_core.microservices.job_utils.executor.service_executor import ServiceExecutor
-            service_executor = ServiceExecutor()
-            service_status = service_executor.wait_for_service(job_name)
-            if service_status == "Running":
-                response = send_microservice_request(
+        if BACKEND == "local-docker":
+            docker_handler = DockerHandler.get_handler_for_container(job_name)
+            if docker_handler:
+                response = docker_handler.make_container_request(
                     api_endpoint="get_job_status",
                     network=network,
                     action=action,
@@ -471,9 +451,27 @@ class JobExecutor(BaseExecutor):
                     job_status = response.json()
                     status = job_status.get("status")
                     return status
-            elif service_status in ("Canceled", "Canceling", "Paused", "Pausing"):
-                return service_status
+                self.logger.error(f"Error when sending microservice request {response.text}")
             return "Error"
+
+        from nvidia_tao_core.microservices.job_utils.executor.service_executor import ServiceExecutor
+        service_executor = ServiceExecutor()
+        service_status = service_executor.wait_for_service(job_name)
+        if service_status == "Running":
+            response = send_microservice_request(
+                api_endpoint="get_job_status",
+                network=network,
+                action=action,
+                job_id=job_name,
+                specs=specs,
+            )
+            if response and response.ok:
+                job_status = response.json()
+                status = job_status.get("status")
+                return status
+        elif service_status in ("Canceled", "Canceling", "Paused", "Pausing"):
+            return service_status
+        return "Error"
 
         api_instance = client.BatchV1Api()
         try:

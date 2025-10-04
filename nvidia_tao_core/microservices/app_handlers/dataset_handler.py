@@ -36,15 +36,12 @@ from nvidia_tao_core.microservices.handlers.stateless_handlers import (
 )
 from nvidia_tao_core.microservices.handlers.dataset_handler import validate_dataset
 from nvidia_tao_core.microservices.handlers.encrypt import NVVaultEncryption
-from nvidia_tao_core.microservices.handlers.monai_dataset_handler import MONAI_DATASET_ACTIONS, MonaiDatasetHandler
 from nvidia_tao_core.microservices.handlers.utilities import (
     Code,
     download_dataset
 )
 from nvidia_tao_core.microservices.utils import (
     read_network_config,
-    log_monitor,
-    DataMonitorLogTypeEnum,
 )
 
 if os.getenv("BACKEND"):
@@ -160,8 +157,7 @@ class DatasetHandler:
             msg = "Invalid dataset type"
             return Code(400, {}, msg)
 
-        # For monai dataset, don't check the dataset type.
-        if ds_format not in read_network_config(ds_type)["api_params"]["formats"] and ds_format != "monai":
+        if ds_format not in read_network_config(ds_type)["api_params"]["formats"]:
             msg = "Incompatible dataset format and type"
             return Code(400, {}, msg)
 
@@ -180,7 +176,7 @@ class DatasetHandler:
         if request_dict.get("public", False):
             add_public_dataset(dataset_id)
 
-        dataset_actions = get_dataset_actions(ds_type, ds_format) if ds_format != "monai" else MONAI_DATASET_ACTIONS
+        dataset_actions = get_dataset_actions(ds_type, ds_format)
 
         # Create metadata dict and create some initial folders
         metadata = {"id": dataset_id,
@@ -217,7 +213,7 @@ class DatasetHandler:
         if skip_validation:
             metadata["status"] = "pull_complete"
         else:
-            metadata["status"] = request_dict.get("status", "starting") if ds_format != "monai" else "pull_complete"
+            metadata["status"] = request_dict.get("status", "starting")
 
         if metadata.get("url", ""):
             if not metadata.get("url").startswith("https"):
@@ -232,33 +228,6 @@ class DatasetHandler:
                     metadata["docker_env_vars"][key] = encryption.encrypt(value)
                 elif not os.getenv("DEV_MODE", "False").lower() in ("true", "1"):
                     return Code(400, {}, "Vault service does not work, can't enable MLOPs services")
-
-        # Encrypt the client secret if the dataset is a monai dataset and the vault agent has been set.
-        if config_path and metadata["client_secret"] and ds_format == "monai":
-            encryption = NVVaultEncryption(config_path)
-            if encryption.check_config()[0]:
-                metadata["client_secret"] = encryption.encrypt(metadata["client_secret"])
-            elif not os.getenv("DEV_MODE", "False").lower() in ("true", "1"):
-                return Code(400, {}, "Cannot create dataset because vault service does not work.")
-
-        # For MONAI dataset only
-        if ds_format == "monai":
-            client_url = request_dict.get("client_url", None)
-            log_content = (
-                f"user_id:{user_id}, "
-                f"org_name:{org_name}, "
-                f"from_ui:{from_ui}, "
-                f"dataset_url:{client_url}, "
-                f"action:creation"
-            )
-            log_monitor(log_type=DataMonitorLogTypeEnum.medical_dataset, log_content=log_content)
-            if client_url is None:
-                msg = "Must provide a url to create a MONAI dataset."
-                return Code(400, {}, msg)
-
-            status, m = MonaiDatasetHandler.status_check(metadata)
-            if not status or m:
-                return Code(400, {}, m)
 
         write_handler_metadata(dataset_id, metadata, "dataset")
         mongo_users = MongoHandler("tao", "users")
@@ -512,9 +481,6 @@ class DatasetHandler:
 
         if not check_write_access(user_id, org_name, dataset_id, kind="datasets"):
             return Code(404, {}, "Dataset not available")
-
-        if metadata.get("format") == "monai":
-            return Code(404, metadata, "Uploading external data is not supported for MONAI Dataset")
 
         try:
             metadata["status"] = "in_progress"

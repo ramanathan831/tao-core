@@ -24,7 +24,6 @@ import logging
 from datetime import datetime, timezone
 
 from nvidia_tao_core.microservices.constants import (
-    VALID_MODEL_DOWNLOAD_TYPE,
     MISSING_EPOCH_FORMAT_NETWORKS
 )
 from nvidia_tao_core.microservices.handlers import stateless_handlers
@@ -48,8 +47,6 @@ from nvidia_tao_core.microservices.handlers.utilities import (
     Code,
     download_log_from_cloud,
     get_files_from_cloud,
-    get_monai_bundle_path,
-    validate_num_gpu,
     get_num_gpus_from_spec
 )
 from nvidia_tao_core.microservices.job_utils.executor import (
@@ -59,8 +56,6 @@ from nvidia_tao_core.microservices.job_utils.executor import (
 from nvidia_tao_core.microservices.job_utils.workflow_driver import create_job_context, on_delete_job, on_new_job
 from nvidia_tao_core.microservices.job_utils.automl_job_utils import on_delete_automl_job
 from nvidia_tao_core.microservices.utils import (
-    run_system_command,
-    read_network_config,
     check_and_convert
 )
 
@@ -70,7 +65,6 @@ if os.getenv("BACKEND"):
 from nvidia_tao_core.microservices.app_handlers.utils import (
     get_job,
     resolve_metadata_with_jobs,
-    nested_update,
     get_job_logs as get_job_logs_util
 )
 
@@ -226,50 +220,6 @@ class JobHandler:
                         f"Requested NVCF resource {platform_id} maxed out. Choose other platform_id options, "
                         f"valid options are: {str(available_nvcf_instances.keys())}"
                     )
-
-        # Handle medical experiments
-        if kind == "experiment" and handler_metadata.get("type").lower() == "medical":
-            if action not in handler_metadata.get("actions", []):
-                return Code(404, {}, "Action not found")
-
-            if not isinstance(specs, dict):
-                return Code(404, [], f"{specs} must be a dictionary. Received {type(specs)}")
-
-            default_spec = read_network_config(handler_metadata["network_arch"])["spec_params"].get(action, {})
-            nested_update(specs, default_spec, allow_overwrite=False)
-            if "num_gpus" in specs:
-                return Code(400, [], "num_gpus is not a valid key in the specs. Use num_gpu instead.")
-            num_gpu, err_msg = validate_num_gpu(specs.get("num_gpu", None), action)
-            if num_gpu <= 0 and err_msg:
-                return Code(400, [], err_msg)
-            from nvidia_tao_core.microservices.utils import log_monitor, DataMonitorLogTypeEnum
-            log_content = (
-                f"user_id:{user_id}, org_name:{org_name}, from_ui:{from_ui}, "
-                f"job_type:experiment, network_arch:{network_arch}, action:{action}, "
-                f"num_gpu:{num_gpu}"
-            )
-            log_monitor(log_type=DataMonitorLogTypeEnum.medical_job, log_content=log_content)
-            if action == "inference":
-                from nvidia_tao_core.microservices.handlers.monai_model_handler import MonaiModelHandler
-                return MonaiModelHandler.run_inference(org_name, handler_id, handler_metadata, specs)
-
-            # regular async jobs
-            if action == "annotation":
-                all_metadata = get_jobs_for_handler(handler_id, kind)
-                if [m for m in all_metadata if m["action"] == "annotation" and m["status"] in ("Running", "Pending")]:
-                    return Code(400, [], "There is one running/pending annotation job. Please stop it first.")
-                if handler_metadata.get("eval_dataset", None) is None:
-                    return Code(404, {}, "Annotation job requires eval dataset in the model metadata.")
-
-        if kind == "dataset" and handler_metadata.get("format") == "monai":
-            from nvidia_tao_core.microservices.utils import log_monitor, DataMonitorLogTypeEnum
-            from nvidia_tao_core.microservices.handlers.monai_dataset_handler import MonaiDatasetHandler
-            log_content = (
-                f"user_id:{user_id}, org_name:{org_name}, from_ui:{from_ui}, "
-                f"job_type:dataset, action:{action}"
-            )
-            log_monitor(log_type=DataMonitorLogTypeEnum.medical_job, log_content=log_content)
-            return MonaiDatasetHandler.run_job(org_name, handler_id, handler_metadata, action, specs)
 
         try:
             job_id = str(uuid.uuid4())
@@ -913,21 +863,7 @@ class JobHandler:
             return Code(404, None, "job trying to download not found")
 
         try:
-            if export_type not in VALID_MODEL_DOWNLOAD_TYPE:
-                return Code(404, None, f"Export format {export_type} not found.")
             root = get_jobs_root(user_id, org_name)
-            if export_type == "monai_bundle":
-                job_root = os.path.join(root, job_id)
-                path_status_code = get_monai_bundle_path(job_root)
-                if path_status_code.code != 200:
-                    return path_status_code
-                bundle_path = path_status_code.data
-                command = f"cd {root} ; tar -zcvf {job_id}.tar.gz {job_id}/{bundle_path}; cd -"
-                run_system_command(command)
-                out_tar = os.path.join(root, job_id + ".tar.gz")
-                if os.path.exists(out_tar):
-                    return Code(200, out_tar, "job deleted")
-                return Code(404, None, "job output not found")
 
             # Following is for `if export_type == "tao":`
             # Copy job logs from root/logs/<job_id>.txt to root/<job_id>/logs_from_toolkit.txt

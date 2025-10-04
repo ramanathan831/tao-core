@@ -44,12 +44,6 @@ _DATA_SERVICES_ACTIONS = set([
 ])
 _DATA_GENERATE_ACTIONS = set(["dataset_convert_gaze", "augment", "validate_images"])
 
-MEDICAL_CUSTOM_ARCHITECT = ["monai_custom", "monai_classification", "monai_detection", "monai_segmentation"]
-MEDICAL_NETWORK_ARCHITECT = [
-    "monai_vista3d", "monai_vista2d", "monai_annotation", "monai_genai", "monai_maisi"
-] + MEDICAL_CUSTOM_ARCHITECT
-MEDICAL_AUTOML_ARCHITECT = ["monai_automl", "monai_automl_generated"]
-MONAI_NETWORKS = set(MEDICAL_NETWORK_ARCHITECT + MEDICAL_AUTOML_ARCHITECT)  # Data_Service tasks.
 NO_SPEC_ACTIONS_MODEL = (
     "dataset_convert_gaze", "evaluate", "retrain", "export", "gen_trt_engine", "inference"
 )  # Actions with **optional** specs
@@ -84,16 +78,6 @@ COPY_MODEL_PARAMS_FROM_TRAIN_NETWORKS = [
     "mask_grounding_dino", "mask2former", "visual_changenet_classify", "visual_changenet_segment"
 ]
 
-MONAI_DATASET_DEFAULT_SPECS = {
-    "next_image_strategy": "sequential",
-    "cache_image_url": "",
-    "cache_force": False,
-    "notify_study_urls": [],
-    "notify_image_urls": [],
-    "notify_label_urls": [],
-}
-
-VALID_MODEL_DOWNLOAD_TYPE = ("monai_bundle", "tao")
 CACHE_TIME_OUT = 60 * 60  # cache timeout period in second
 LAST_ACCESS_TIME_OUT = 60  # last access timeout period in second
 

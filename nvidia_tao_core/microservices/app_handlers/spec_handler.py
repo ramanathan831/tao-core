@@ -24,8 +24,6 @@ from nvidia_tao_core.microservices.handlers.stateless_handlers import (
     get_job_specs,
     is_request_automl
 )
-from nvidia_tao_core.microservices.handlers.monai_dataset_handler import MonaiDatasetHandler
-from nvidia_tao_core.microservices.handlers.monai_model_handler import MonaiModelHandler
 from nvidia_tao_core.microservices.handlers.utilities import Code
 from nvidia_tao_core.microservices.job_utils.executor.utils import get_available_local_k8s_gpus
 from nvidia_tao_core.microservices.handlers.nvcf_handler import get_available_nvcf_instances
@@ -91,14 +89,6 @@ class SpecHandler:
         # Read csv from spec_utils/specs/<network_name>/action.csv
         # Convert to json schema
         json_schema = {}
-
-        if kind == "dataset" and metadata.get("format") == "monai":
-            json_schema = MonaiDatasetHandler.get_schema(action)
-            return Code(200, json_schema, "Schema retrieved")
-
-        if kind == "experiment" and metadata.get("type").lower() == "medical":
-            json_schema = MonaiModelHandler.get_schema(action)
-            return Code(200, json_schema, "Schema retrieved")
 
         network = metadata.get("network_arch", None)
         if not network:
@@ -170,14 +160,6 @@ class SpecHandler:
         job_specs = get_job_specs(job_id)
 
         json_schema = {}
-
-        if kind == "dataset" and metadata.get("format") == "monai":
-            json_schema = MonaiDatasetHandler.get_schema(action)
-            return Code(200, json_schema, "Schema retrieved")
-
-        if kind == "experiment" and metadata.get("type").lower() == "medical":
-            json_schema = MonaiModelHandler.get_schema(action)
-            return Code(200, json_schema, "Schema retrieved")
 
         network = metadata.get("network_arch", None)
         if not network:

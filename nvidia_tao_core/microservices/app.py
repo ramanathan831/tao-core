@@ -1939,7 +1939,7 @@ def workspace_list(org_name):
         required: false
         schema:
           type: string
-          enum: ["monai", "unet", "custom" ]
+          enum: ["unet", "custom" ]
       - name: type
         in: query
         description: Optional type filter
@@ -3365,10 +3365,7 @@ def dataset_create(org_name):
     # Load metadata in schema and return
     schema_dict = schema.dump(schema.load(response.data))
     if response.code != 200:
-        ds_format = request_dict.get("format", "")
-        log_type = (DataMonitorLogTypeEnum.medical_dataset
-                    if ds_format == "monai"
-                    else DataMonitorLogTypeEnum.tao_dataset)
+        log_type = DataMonitorLogTypeEnum.tao_dataset
         log_api_error(user_id, org_name, schema_dict, log_type, action="creation")
 
     return make_response(jsonify(schema_dict), response.code)
@@ -3727,13 +3724,8 @@ def dataset_job_run(org_name, dataset_id):
         specs=specs, name=name, description=description, num_gpu=num_gpu,
         platform_id=platform_id
     )
-    handler_metadata = resolve_metadata("dataset", dataset_id)
-    dataset_format = handler_metadata.get("format")
     # Get schema
     if response.code == 200:
-        # MONAI dataset jobs are sync jobs and the response should be returned directly.
-        if dataset_format == "monai":
-            return make_response(jsonify(response.data), response.code)
         if isinstance(response.data, str) and not validate_uuid(response.data):
             return make_response(jsonify(response.data), response.code)
         metadata = {"error_desc": "internal error: invalid job IDs", "error_code": 2}
@@ -3831,13 +3823,8 @@ def dataset_job_retry(org_name, dataset_id, job_id):
         return response
     # Get response
     response = JobHandler.job_retry(org_name, dataset_id, "dataset", job_id)
-    handler_metadata = resolve_metadata("dataset", dataset_id)
-    dataset_format = handler_metadata.get("format")
     # Get schema
     if response.code == 200:
-        # MONAI dataset jobs are sync jobs and the response should be returned directly.
-        if dataset_format == "monai":
-            return make_response(jsonify(response.data), response.code)
         if isinstance(response.data, str) and not validate_uuid(response.data):
             return make_response(jsonify(response.data), response.code)
         metadata = {"error_desc": "internal error: invalid job IDs", "error_code": 2}
@@ -5383,7 +5370,6 @@ class ExperimentTypeEnum(Enum):
     """Class defining type of experiment"""
 
     vision = 'vision'
-    medical = 'medical'
     maxine = 'maxine'
 
 
@@ -5391,7 +5377,6 @@ class ExperimentExportTypeEnum(Enum):
     """Class defining model export type"""
 
     tao = 'tao'
-    monai_bundle = 'monai_bundle'
 
 
 class AutoMLAlgorithm(Enum):
@@ -5547,14 +5532,7 @@ class ExperimentReqSchema(Schema):
     automl_settings = fields.Nested(AutoMLSchema, allow_none=True)
     metric = fields.Str(format="regex", regex=r'.*', validate=fields.validate.Length(max=100), allow_none=True)
     type = EnumField(ExperimentTypeEnum, default=ExperimentTypeEnum.vision)
-    realtime_infer = fields.Bool(default=False)
     model_params = fields.Dict(allow_none=True)
-    bundle_url = fields.Str(format="regex", regex=r'.*', validate=fields.validate.Length(max=1000), allow_none=True)
-    realtime_infer_request_timeout = fields.Int(
-        format="int64",
-        validate=validate.Range(min=0, max=sys.maxsize),
-        allow_none=True
-    )
     experiment_actions = fields.List(
         fields.Nested(ExperimentActions, allow_none=True),
         validate=validate.Length(max=sys.maxsize)
@@ -5622,7 +5600,7 @@ class ExperimentRspSchema(Schema):
         """Class enabling sorting field values by the order in which they are declared"""
 
         ordered = True
-        load_only = ("user_id", "docker_env_vars", "realtime_infer_endpoint", "realtime_infer_model_name")
+        load_only = ("user_id", "docker_env_vars")
         unknown = EXCLUDE
 
     id = fields.Str(format="uuid", validate=fields.validate.Length(max=36))
@@ -5723,27 +5701,7 @@ class ExperimentRspSchema(Schema):
     automl_settings = fields.Nested(AutoMLSchema)
     metric = fields.Str(format="regex", regex=r'.*', validate=fields.validate.Length(max=100), allow_none=True)
     type = EnumField(ExperimentTypeEnum, default=ExperimentTypeEnum.vision, allow_none=True)
-    realtime_infer = fields.Bool(allow_none=True)
-    realtime_infer_support = fields.Bool()
-    realtime_infer_endpoint = fields.Str(
-        format="regex",
-        regex=r'.*',
-        validate=fields.validate.Length(max=1000),
-        allow_none=True
-    )
-    realtime_infer_model_name = fields.Str(
-        format="regex",
-        regex=r'.*',
-        validate=fields.validate.Length(max=1000),
-        allow_none=True
-    )
     model_params = fields.Dict(allow_none=True)
-    realtime_infer_request_timeout = fields.Int(
-        format="int64",
-        validate=validate.Range(min=0, max=86400),
-        allow_none=True
-    )
-    bundle_url = fields.Str(format="regex", regex=r'.*', validate=fields.validate.Length(max=1000), allow_none=True)
     base_experiment_metadata = fields.Nested(BaseExperimentMetadataSchema, allow_none=True)
     source_type = EnumField(SourceType, allow_none=True)
     experiment_actions = fields.List(
@@ -5922,7 +5880,7 @@ def experiment_list(org_name):
         required: false
         schema:
           type: string
-          enum: ["vision", "medical"]
+          enum: ["vision"]
       - name: network_arch
         in: query
         description: Optional network architecture filter
@@ -6102,7 +6060,7 @@ def base_experiment_list(org_name):
         required: false
         schema:
           type: string
-          enum: ["vision", "medical"]
+          enum: ["vision"]
       - name: network_arch
         in: query
         description: Optional network architecture filter
@@ -6547,9 +6505,7 @@ def experiment_create(org_name):
     # Load metadata in schema and return
     schema_dict = schema.dump(schema.load(response.data))
     if response.code != 200:
-        mdl_nw = request_dict.get("network_arch", None)
-        is_medical = isinstance(mdl_nw, str) and mdl_nw.startswith("monai_")
-        log_type = DataMonitorLogTypeEnum.medical_experiment if is_medical else DataMonitorLogTypeEnum.tao_experiment
+        log_type = DataMonitorLogTypeEnum.tao_experiment
         log_api_error(user_id, org_name, schema_dict, log_type, action="creation")
 
     return make_response(jsonify(schema_dict), response.code)
@@ -7137,10 +7093,9 @@ def experiment_job_run(org_name, experiment_id):
     if response.code != 200:
         try:
             handler_metadata = resolve_metadata("experiment", experiment_id)
-            is_medical = handler_metadata.get("type").lower() == "medical"
             user_id = handler_metadata.get("user_id", None)
             if user_id:
-                log_type = DataMonitorLogTypeEnum.medical_job if is_medical else DataMonitorLogTypeEnum.tao_job
+                log_type = DataMonitorLogTypeEnum.tao_job
                 log_api_error(user_id, org_name, schema_dict, log_type, action="creation")
         except Exception as e:
             logger.error(f"Exception thrown in experiment_job_run is {str(e)}")
@@ -7250,10 +7205,9 @@ def experiment_job_retry(org_name, experiment_id, job_id):
     if response.code != 200:
         try:
             handler_metadata = resolve_metadata("experiment", experiment_id)
-            is_medical = handler_metadata.get("type").lower() == "medical"
             user_id = handler_metadata.get("user_id", None)
             if user_id:
-                log_type = DataMonitorLogTypeEnum.medical_job if is_medical else DataMonitorLogTypeEnum.tao_job
+                log_type = DataMonitorLogTypeEnum.tao_job
                 log_api_error(user_id, org_name, schema_dict, log_type, action="creation")
         except Exception as e:
             logger.error(f"Exception thrown in experiment_job_retry is {str(e)}")
