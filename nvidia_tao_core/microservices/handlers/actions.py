@@ -827,8 +827,9 @@ class TrainVal(CLIPipeline):
                 if not parent_action:
                     break
                 if parent_action in ("train", "distill", "quantize"):
-                    from nvidia_tao_core.microservices.handlers.app_handler import AppHandler  # pylint: disable=C0415
-                    default_spec_schema_response = AppHandler.get_spec_schema(
+                    # pylint: disable=C0415
+                    from nvidia_tao_core.microservices.app_handlers.spec_handler import SpecHandler
+                    default_spec_schema_response = SpecHandler.get_spec_schema(
                         self.job_context.user_id,
                         self.job_context.org_name,
                         self.job_context.handler_id,
@@ -909,16 +910,17 @@ class TrainVal(CLIPipeline):
         # Create dataset for data service actions that generate new dataset
         # These actions create a new dataset as part of their actions
         if action in _DATA_GENERATE_ACTIONS:
-            from nvidia_tao_core.microservices.handlers.app_handler import AppHandler  # pylint: disable=C0415
+            # pylint: disable=C0415
+            from nvidia_tao_core.microservices.app_handlers.dataset_handler import DatasetHandler
             handler_metadata = get_handler_metadata(self.handler_id, self.handler_kind)
-            request_dict = AppHandler.create_dataset_dict_from_experiment_metadata(
+            request_dict = DatasetHandler.create_dataset_dict_from_experiment_metadata(
                 self.job_context.id,
                 self.action,
                 handler_metadata
             )
             if action == "dataset_convert_gaze":
                 request_dict["format"] = "maxine_gaze"
-            response = AppHandler.create_dataset(
+            response = DatasetHandler.create_dataset(
                 self.job_context.user_id,
                 self.job_context.org_name,
                 request_dict,
@@ -1634,7 +1636,8 @@ class Auto3DSegTrain(BundleTrain):
         best_model_dir = os.path.join(self.bundle_dir, "best_model")
         cloud_folder = best_model_dir.lstrip(os.path.sep)
         # create a new experiment
-        from nvidia_tao_core.microservices.handlers.app_handler import AppHandler  # pylint: disable=C0415
+        # pylint: disable=C0415
+        from nvidia_tao_core.microservices.app_handlers.experiment_handler import ExperimentHandler
         request_dict = {
             "name": self.spec.get("output_experiment_name", "auto3dseg_automl_experiment"),
             "description": self.spec.get(
@@ -1648,7 +1651,9 @@ class Auto3DSegTrain(BundleTrain):
             "bundle_url": cloud_folder,
             "workspace": self.handler_metadata.get("workspace")
         }
-        ret_code = AppHandler.create_experiment(self.job_context.user_id, self.job_context.org_name, request_dict)
+        ret_code = ExperimentHandler.create_experiment(
+            self.job_context.user_id, self.job_context.org_name, request_dict
+        )
         new_model_id = ret_code.data["id"]
         self.detailed_print(f"New model is generated with id: {new_model_id}")
 

@@ -18,7 +18,7 @@ import sys
 import numpy as np
 import logging
 
-from nvidia_tao_core.microservices.handlers.app_handler import AppHandler
+from nvidia_tao_core.microservices.app_handlers.job_handler import JobHandler
 from nvidia_tao_core.microservices.handlers.monai.helpers import ImageLabelRecord
 from nvidia_tao_core.microservices.handlers.stateless_handlers import (get_handler_metadata,
                                                                        get_jobs_for_handler,
@@ -86,7 +86,7 @@ def trigger_train(train_spec, job_context_dict, current_record, latest_record):
     train_spec_copy["cluster"] = "local"  # For the CL train job to use local cluster resource
     # Start training for all the labeled images
     description = f"Train Job for CL {job_id} with experiment {model_id}"
-    response = AppHandler.job_run(
+    response = JobHandler.job_run(
         org_name,
         model_id,
         job_id,
@@ -138,7 +138,7 @@ def cancel_trigger_jobs(org_name, experiment_id, jobs_trigger, jobs_done):
     job_metadatas = get_jobs_for_handler(experiment_id, "experiment")
     for job_metadata in job_metadatas:
         if job_metadata.get("id", "") in jobs_trigger and job_metadata["id"] not in jobs_done:
-            response = AppHandler.job_cancel(org_name, experiment_id, job_metadata.get("id"), "experiment")
+            response = JobHandler.job_cancel(org_name, experiment_id, job_metadata.get("id"), "experiment")
             if response.code != 200:
                 raise RuntimeError(f"Cancel job failed with status code {response.code} with {response.data}")
 
