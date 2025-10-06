@@ -25,7 +25,6 @@ from nvidia_tao_core.microservices.constants import (
     TENSORBOARD_DISABLED_NETWORKS,
     TENSORBOARD_EXPERIMENT_LIMIT,
     TAO_NETWORKS,
-    MEDICAL_CUSTOM_ARCHITECT,
     MAXINE_NETWORKS
 )
 from nvidia_tao_core.microservices.airgapped_utils import AirgappedExperimentLoader
@@ -38,7 +37,6 @@ from nvidia_tao_core.microservices.handlers.stateless_handlers import (
     get_handler_status,
     get_public_experiments,
     infer_action_from_job,
-    is_valid_uuid4,
     sanitize_handler_metadata,
     validate_chained_actions,
     write_handler_metadata,
@@ -53,25 +51,13 @@ from nvidia_tao_core.microservices.handlers.stateless_handlers import (
     is_request_automl
 )
 from nvidia_tao_core.microservices.handlers.encrypt import NVVaultEncryption
-from nvidia_tao_core.microservices.handlers.monai.helpers import (
-    CapGpuUsage,
-    download_from_url,
-    validate_monai_bundle,
-    CUSTOMIZED_BUNDLE_URL_FILE,
-    CUSTOMIZED_BUNDLE_URL_KEY
-)
-from nvidia_tao_core.microservices.handlers.tis_handler import TISHandler
 from nvidia_tao_core.microservices.handlers.tensorboard_handler import TensorboardHandler
 from nvidia_tao_core.microservices.handlers.utilities import (
     Code,
-    prep_tis_model_repository,
     validate_and_update_experiment_metadata
 )
 from nvidia_tao_core.microservices.utils import (
     read_network_config,
-    safe_dump_file,
-    log_monitor,
-    DataMonitorLogTypeEnum
 )
 
 if os.getenv("BACKEND"):
@@ -83,7 +69,6 @@ from nvidia_tao_core.microservices.app_handlers.utils import (
     get_experiment,
     handler_level_access_control
 )
-from nvidia_tao_core.microservices.handlers.stateless_handlers import resolve_root
 
 # Configure logging
 logger = logging.getLogger(__name__)
@@ -258,8 +243,6 @@ class ExperimentHandler:
             add_public_experiment(experiment_id)
 
         mdl_type = request_dict.get("type", "vision")
-        if str(mdl_nw).startswith("monai_"):
-            mdl_type = "medical"
 
         # Create metadata dict and create some initial folders
         # Initially make datasets, base_experiment None
@@ -303,11 +286,6 @@ class ExperimentHandler:
                     "base_experiment": [],
                     "automl_settings": request_dict.get("automl_settings", {}),
                     "metric": request_dict.get("metric", "kpi"),
-                    "realtime_infer": False,
-                    "realtime_infer_support": False,
-                    "realtime_infer_endpoint": None,
-                    "realtime_infer_model_name": None,
-                    "realtime_infer_request_timeout": request_dict.get("realtime_infer_request_timeout", 60),
                     "model_params": request_dict.get("model_params", {}),
                     "tensorboard_enabled": request_dict.get("tensorboard_enabled", False),
                     "workspace": request_dict.get("workspace", None),
@@ -345,7 +323,6 @@ class ExperimentHandler:
                     return Code(400, {}, "Vault service does not work, can't enable MLOPs services")
 
         # Update datasets and base_experiments if given.
-        # "realtime_infer" will be checked later, since in some cases (in MEDICAL_CUSTOM_ARCHITECT),
         # need to prepare base_experiment first
         metadata, error_code = validate_and_update_experiment_metadata(
             user_id,
@@ -366,143 +343,6 @@ class ExperimentHandler:
         def clean_on_error(experiment_id=experiment_id):
             mongo_experiments = MongoHandler("tao", "experiments")
             mongo_experiments.delete_one({'id': experiment_id})
-
-        if mdl_type == "medical":
-            is_custom_bundle = metadata["network_arch"] in MEDICAL_CUSTOM_ARCHITECT
-            is_auto3seg_inference = metadata["network_arch"] == "monai_automl_generated"
-            no_ptm = (metadata["base_experiment"] is None) or (len(metadata["base_experiment"]) == 0)
-            if no_ptm and is_custom_bundle:
-                # If base_experiment is not provided, then we will need to create a model
-                # to host the files downloaded from NGC.
-                bundle_url = request_dict.get("bundle_url", None)
-                if bundle_url is None:
-                    return Code(
-                        400,
-                        {},
-                        "Either `bundle_url` or `ngc_path` needs to be defined for MONAI Custom Model."
-                    )
-                base_experiment_id = str(uuid.uuid4())
-                ptm_metadata = metadata.copy()
-                ptm_metadata["id"] = base_experiment_id
-                ptm_metadata["name"] = "base_experiment_" + metadata["name"]
-                ptm_metadata["description"] = " PTM auto-generated. " + metadata["description"]
-                ptm_metadata["train_datasets"] = []
-                ptm_metadata["eval_dataset"] = None
-                ptm_metadata["inference_dataset"] = None
-                # since "realtime_infer" is not updated by update_metadata,
-                # specify it from request_dict here first for download.
-                ptm_metadata["realtime_infer"] = request_dict.get("realtime_infer", False)
-                ptm_metadata["realtime_infer_support"] = ptm_metadata["realtime_infer"]
-                write_handler_metadata(base_experiment_id, ptm_metadata, "experiment")
-                # Download it from the provided url
-                download_from_url(bundle_url, base_experiment_id)
-
-                # The base_experiment is downloaded, now we need to make sure it is correct.
-                bundle_checks = []
-                if ptm_metadata["realtime_infer"]:
-                    bundle_checks.append("infer")
-                ptm_file = validate_monai_bundle(base_experiment_id, checks=bundle_checks)
-                if (ptm_file is None) or (not os.path.isdir(ptm_file)):
-                    clean_on_error(experiment_id=base_experiment_id)
-                    return Code(
-                        400,
-                        {},
-                        "Failed to download base experiment, or the provided bundle does not follow "
-                        "MONAI bundle format."
-                    )
-
-                ptm_metadata["base_experiment_pull_complete"] = "pull_complete"
-                write_handler_metadata(base_experiment_id, ptm_metadata, "experiment")
-                bundle_url_path = os.path.join(
-                    resolve_root(org_name, "experiment", base_experiment_id),
-                    CUSTOMIZED_BUNDLE_URL_FILE
-                )
-                safe_dump_file(bundle_url_path, {CUSTOMIZED_BUNDLE_URL_KEY: bundle_url})
-                metadata["base_experiment"] = [base_experiment_id]
-            elif no_ptm and is_auto3seg_inference:
-                bundle_url = request_dict.get("bundle_url", None)
-                if bundle_url is None:
-                    return Code(
-                        400,
-                        {},
-                        "Either `bundle_url` or `ngc_path` needs to be defined for MONAI Custom Model."
-                    )
-                bundle_url_path = os.path.join(
-                    resolve_root(org_name, "experiment", experiment_id),
-                    CUSTOMIZED_BUNDLE_URL_FILE
-                )
-                os.makedirs(resolve_root(org_name, "experiment", experiment_id), exist_ok=True)
-                safe_dump_file(bundle_url_path, {CUSTOMIZED_BUNDLE_URL_KEY: bundle_url})
-
-            network_arch = metadata.get("network_arch", None)
-            log_content = (
-                f"user_id:{user_id}, org_name:{org_name}, from_ui:{from_ui}, "
-                f"network_arch:{network_arch}, action:creation, no_ptm:{no_ptm}"
-            )
-            log_monitor(log_type=DataMonitorLogTypeEnum.medical_experiment, log_content=log_content)
-
-        # check "realtime_infer"
-        metadata, error_code = validate_and_update_experiment_metadata(
-            user_id,
-            org_name,
-            request_dict,
-            metadata,
-            ["realtime_infer"]
-        )
-        if error_code:
-            return error_code
-
-        if mdl_type == "medical" and metadata["realtime_infer"]:
-            base_experiment_id = metadata["base_experiment"][0]
-            model_params = metadata["model_params"]
-            job_id = None
-            if metadata["network_arch"] not in MEDICAL_CUSTOM_ARCHITECT:
-                # Need to download the base_experiment to set up the TIS for realtime infer
-                # Customizd model already has the base_experiment downloaded in the previous step thus skip here
-                additional_id_info = request_dict.get("additional_id_info", None)
-                job_id = additional_id_info if additional_id_info and is_valid_uuid4(additional_id_info) else None
-                if not job_id:
-                    return Code(
-                        400,
-                        {},
-                        f"Non-NGC base_experiment {base_experiment_id} needs job_id in the request for path location"
-                    )
-            success, model_name, msg, bundle_metadata = prep_tis_model_repository(
-                model_params,
-                base_experiment_id,
-                org_name,
-                user_id,
-                experiment_id,
-                job_id=job_id
-            )
-            if not success:
-                clean_on_error(experiment_id=experiment_id)
-                return Code(400, {}, msg)
-
-            # If Labels not supplied then pick from Model Bundle
-            if model_params.get("labels", None) is None:
-                _, pred = next(iter(bundle_metadata["network_data_format"]["outputs"].items()))
-                labels = {k: v.lower() for k, v in pred.get("channel_def", {}).items() if v.lower() != "background"}
-                model_params["labels"] = labels
-            else:
-                labels = model_params.get("labels")
-                if len(labels) == 0:
-                    return Code(400, {}, "Labels cannot be empty")
-
-            # get replicas data to determine if create multiple replicas
-            replicas = model_params.get("replicas", 1)
-            success, msg = CapGpuUsage.schedule(org_name, replicas)
-            if not success:
-                return Code(400, {}, msg)
-            response = TISHandler.start(org_name, experiment_id, metadata, model_name, replicas)
-            if response.code != 200:
-                TISHandler.stop(experiment_id, metadata)
-                CapGpuUsage.release_used(org_name, replicas)
-                clean_on_error(experiment_id=experiment_id)
-                return response
-            metadata["realtime_infer_endpoint"] = response.data["pod_ip"]
-            metadata["realtime_infer_model_name"] = model_name
-            metadata["realtime_infer_support"] = True
 
         # Create Tensorboard deployment if enabled
         if metadata.get("tensorboard_enabled", False):
@@ -530,9 +370,6 @@ class ExperimentHandler:
         mongo_users = MongoHandler("tao", "users")
         experiments = get_user_experiments(user_id, mongo_users)
         experiments.append(experiment_id)
-        if mdl_type == 'medical':
-            for base_exp in metadata.get("base_experiment", []):
-                experiments.append(base_exp)
         mongo_users.upsert({'id': user_id}, {'id': user_id, 'experiments': experiments})
 
         experiment_actions = request_dict.get('experiment_actions', [])
@@ -558,7 +395,6 @@ class ExperimentHandler:
         return_metadata = sanitize_handler_metadata(metadata)
         ret_Code = Code(200, return_metadata, "Experiment created")
 
-        # TODO: may need to call "monai_triton_client" with dummy request to accelerate
         return ret_Code
 
     @staticmethod
@@ -748,17 +584,6 @@ class ExperimentHandler:
                     msg = f"Cannot change experiment {key}"
                     return Code(400, {}, msg)
 
-            if (key == "realtime_infer") and (request_dict[key] != metadata.get(key)):
-                if request_dict[key] is False:
-                    response = TISHandler.stop(experiment_id, metadata)
-                    replicas = metadata.get("model_params", {}).get("replicas", 1)
-                    CapGpuUsage.release_used(org_name, replicas)
-                    if response.code != 200:
-                        return response
-                    metadata[key] = False
-                else:
-                    return Code(400, {}, f"Can only change {key} from True to False.")
-
             if key in ["name", "description", "version", "logo",
                        "ngc_path", "encryption_key", "read_only",
                        "metric", "public", "shared", "tags", "authorized_party_nca_id"]:
@@ -928,14 +753,6 @@ class ExperimentHandler:
         # Check if experiment is read only, if yes, cannot delete
         if handler_metadata.get("read_only", False):
             return Code(400, {}, f"Experiment {experiment_id} is read only. Cannot delete")
-
-        # Check if the experiment is being used by a realtime infer job
-        if handler_metadata.get("realtime_infer", False):
-            response = TISHandler.stop(experiment_id, handler_metadata)
-            replicas = metadata.get("model_params", {}).get("replicas", 1)
-            CapGpuUsage.release_used(org_name, replicas)
-            if response is not None and response.code != 200:
-                return response
 
         if handler_metadata.get("tensorboard_enabled", False):
             response = TensorboardHandler.stop(experiment_id, user_id)

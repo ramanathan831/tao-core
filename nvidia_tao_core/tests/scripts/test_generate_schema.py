@@ -24,7 +24,7 @@ from nvidia_tao_core.microservices.utils import get_microservices_network_and_ac
 from nvidia_tao_core.scripts.generate_schema import generate_schema
 
 EXCLUDED_KEYWORDS = [
-    'maxine', 'monai', 'vlm', 'segmentation',
+    'maxine', 'vlm', 'segmentation',
     'image_classification', 'character_recognition', 'object_detection'
 ]
 config_networks = [
