@@ -908,22 +908,6 @@ def resolve_metadata(kind, handler_id):
     return metadata
 
 
-def get_latest_ver_folder(tis_model_path):
-    """Returns the latest version folder in the model directory"""
-    try:
-        entries = os.listdir(tis_model_path)
-
-        # Find the maximum numeric value among the folder names
-        numeric_folders = [int(folder) for folder in entries if folder.isnumeric()]
-        latest_ver = max(numeric_folders)
-
-    except ValueError:
-        # If there are no numeric folders, return 0
-        return 0
-
-    return latest_ver
-
-
 def is_valid_uuid4(uuid_string):
     """Check if the string is a valid UUID4"""
     try:

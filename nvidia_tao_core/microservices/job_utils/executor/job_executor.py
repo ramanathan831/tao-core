@@ -16,7 +16,6 @@
 import os
 import traceback
 from kubernetes import client, config
-from kubernetes.client.rest import ApiException
 
 from nvidia_tao_core.microservices.handlers.docker_handler import DockerHandler
 from nvidia_tao_core.microservices.handlers.stateless_handlers import (
@@ -216,11 +215,6 @@ class JobExecutor(BaseExecutor):
                     value=docker_env_var_value)
                 dynamic_docker_envs.append(kubernetes_env)
 
-        tis_ports = [
-            client.V1ContainerPort(container_port=8000, name="http-triton"),
-            client.V1ContainerPort(container_port=8001, name="grpc-triton"),
-            client.V1ContainerPort(container_port=8002, name="metrics-triton")
-        ]
         container = client.V1Container(
             name="container",
             image=image,
@@ -231,7 +225,6 @@ class JobExecutor(BaseExecutor):
             args=[command],
             resources=resources,
             volume_mounts=volume_mounts,
-            ports=[] if port is False else tis_ports,
             security_context=security_context)
         dshm_volume = client.V1Volume(
             name="dshm",
@@ -338,9 +331,7 @@ class JobExecutor(BaseExecutor):
                        action="", automl_exp_job=False, docker_env_vars={},
                        authorized_party_nca_id="", automl_experiment_id="0"):
         """Returns status of kubernetes job"""
-        name_space = None
         if BACKEND == "local-k8s":
-            name_space = self.get_namespace()
             if os.getenv("DEV_MODE", "False").lower() in ("true", "1"):
                 config.load_kube_config()
             else:
@@ -472,23 +463,3 @@ class JobExecutor(BaseExecutor):
         elif service_status in ("Canceled", "Canceling", "Paused", "Pausing"):
             return service_status
         return "Error"
-
-        api_instance = client.BatchV1Api()
-        try:
-            api_response = api_instance.read_namespaced_job_status(
-                name=job_name,
-                namespace=name_space)
-            if api_response.status.succeeded is not None:
-                return "Done"
-            if api_response.status.failed is not None:
-                return "Error"
-            return "Running"
-        except ApiException as e:
-            self.logger.error(traceback.format_exc())
-            if e.status == 404:
-                self.logger.info("Job not found.")
-                return "NotFound"
-            return "Error"
-        except Exception:
-            self.logger.error(traceback.format_exc())
-            return "Error"
