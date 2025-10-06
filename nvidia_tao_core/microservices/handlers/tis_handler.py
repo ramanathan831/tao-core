@@ -20,7 +20,7 @@ import logging
 
 from nvidia_tao_core.microservices.handlers.docker_images import DOCKER_IMAGE_MAPPER
 from nvidia_tao_core.microservices.handlers.utilities import Code, get_model_bundle_root
-from nvidia_tao_core.microservices.job_utils import executor as jobDriver
+from nvidia_tao_core.microservices.job_utils.executor import DeploymentExecutor
 
 image = DOCKER_IMAGE_MAPPER.get("MONAI_TIS")
 
@@ -58,14 +58,16 @@ class TISHandler:
         )
         # ports for http, grpc and metrics
         ports = (8000, 8001, 8002)
-        jobDriver.create_triton_deployment(model_id, image, run_command, replicas=replicas, num_gpu=1, ports=ports)
+        DeploymentExecutor().create_triton_deployment(
+            model_id, image, run_command, replicas=replicas, num_gpu=1, ports=ports
+        )
         # TODO: the actual timeout is 2 * realtime_infer_request_timeout because in inner loop for tis service
         # we also use this number. We can enhance it in the future.
         timeout = handler_metadata.get("realtime_infer_request_timeout", 60)
         not_ready_log = False
         logger.info("Check deployment status")
         while (timeout > 0):
-            stat_dict = jobDriver.status_triton_deployment(model_id, replicas=replicas)
+            stat_dict = DeploymentExecutor().status_triton_deployment(model_id, replicas=replicas)
             status = stat_dict.get("status", "Unknown")
             if status == "Running":
                 logger.info("Deployed triton inference server %s", model_id)
@@ -90,7 +92,7 @@ class TISHandler:
     def update(model_id, model_name):
         """Updates a Triton Inference Service deployment by reloading the model"""
         logger.info("Updating %s", model_id)
-        pods_ip = jobDriver.get_triton_deployment_pods(model_id)
+        pods_ip = DeploymentExecutor().get_triton_deployment_pods(model_id)
         if len(pods_ip) == 0:
             return Code(400, [], f"Cannot find pods for {model_id}.")
         try:
@@ -115,12 +117,12 @@ class TISHandler:
             ports: the ports for the tis service
             handler_metadata: the metadata of the model handler
         """
-        jobDriver.create_tis_service(tis_service_id, deploy_label, ports=ports)
+        DeploymentExecutor().create_tis_service(tis_service_id, deploy_label, ports=ports)
         tis_timeout = handler_metadata.get("realtime_infer_request_timeout", 60)
         not_ready_log = False
         logger.info("Check TIS Service status")
         while (tis_timeout > 0):
-            service_stat_dict = jobDriver.status_tis_service(tis_service_id, ports=ports)
+            service_stat_dict = DeploymentExecutor().status_tis_service(tis_service_id, ports=ports)
             service_status = service_stat_dict.get("status", "Unknown")
             if service_status == "Running":
                 logger.info("Created TIS service %s", tis_service_id)
@@ -139,9 +141,9 @@ class TISHandler:
         """Stops a Triton Inference Service job"""
         logger.info("Stopping triton inference server")
         timeout = handler_metadata.get("realtime_infer_request_timeout", 60)
-        jobDriver.delete_triton_deployment(model_id)
+        DeploymentExecutor().delete_triton_deployment(model_id)
         while (timeout > 0):
-            stat_dict = jobDriver.status_triton_deployment(model_id)
+            stat_dict = DeploymentExecutor().status_triton_deployment(model_id)
             status = stat_dict.get("status", "Unknown")
             if status == "NotFound":
                 logger.info("Stopped triton deployment %s", model_id)
@@ -163,10 +165,10 @@ class TISHandler:
         Returns:
             Code: the code of the result, 201 if success, 400 if failed
         """
-        jobDriver.delete_tis_service(tis_service_id)
+        DeploymentExecutor().delete_tis_service(tis_service_id)
         tis_timeout = handler_metadata.get("realtime_infer_request_timeout", 60)
         while (tis_timeout > 0):
-            service_stat_dict = jobDriver.status_tis_service(tis_service_id)
+            service_stat_dict = DeploymentExecutor().status_tis_service(tis_service_id)
             service_status = service_stat_dict.get("status", "Unknown")
             if service_status == "NotFound":
                 logger.info("Stopped TIS service %s", tis_service_id)

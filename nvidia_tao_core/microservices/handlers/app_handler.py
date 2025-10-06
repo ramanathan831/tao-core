@@ -98,7 +98,11 @@ if os.getenv("BACKEND"):  # To see if the container is going to be used for Serv
         MongoHandler,
         mongo_connection_string,
     )
-from nvidia_tao_core.microservices.job_utils import executor as jobDriver
+from nvidia_tao_core.microservices.job_utils.executor import (
+    JobExecutor,
+    StatefulSetExecutor
+)
+from nvidia_tao_core.microservices.job_utils.executor.utils import get_available_local_k8s_gpus
 from nvidia_tao_core.microservices.job_utils.workflow_driver import create_job_context, on_delete_job, on_new_job
 from nvidia_tao_core.microservices.job_utils.automl_job_utils import on_delete_automl_job
 from nvidia_tao_core.microservices.specs_utils import csv_to_json_schema
@@ -1557,7 +1561,7 @@ class AppHandler:
                 return Code(200, available_nvcf_instances, "Retrieved available GPU info")
             return Code(404, [], f"NVCF GPU's are not available for {org_name}")
         if BACKEND == "local-k8s":
-            available_gpu_types = jobDriver.get_available_local_k8s_gpus()
+            available_gpu_types = get_available_local_k8s_gpus()
             if available_gpu_types:
                 return Code(200, available_gpu_types, "Retrieved available GPU info")
             return Code(
@@ -2038,7 +2042,7 @@ class AppHandler:
         if job_status == "Pending":
             stateless_handlers.update_job_status(handler_id, job_id, status="Canceling", kind=kind + "s")
             on_delete_job(job_id)
-            jobDriver.delete(job_id, use_ngc=use_ngc)
+            StatefulSetExecutor().delete_statefulset(job_id, use_ngc=use_ngc)
             stateless_handlers.update_job_status(handler_id, job_id, status="Canceled", kind=kind + "s")
             return Code(200, {"message": f"Pending job {job_id} cancelled"})
 
@@ -2046,8 +2050,8 @@ class AppHandler:
             try:
                 # Delete K8s job
                 stateless_handlers.update_job_status(handler_id, job_id, status="Canceling", kind=kind + "s")
-                jobDriver.delete(job_id, use_ngc=use_ngc)
-                k8s_status = jobDriver.status(
+                StatefulSetExecutor().delete_statefulset(job_id, use_ngc=use_ngc)
+                k8s_status = JobExecutor().get_job_status(
                     org_name,
                     handler_id,
                     job_id,
@@ -2058,7 +2062,7 @@ class AppHandler:
                 while k8s_status in ("Done", "Error", "Running", "Pending"):
                     if k8s_status in ("Done", "Error"):
                         break
-                    k8s_status = jobDriver.status(
+                    k8s_status = JobExecutor().get_job_status(
                         org_name,
                         handler_id,
                         job_id,
@@ -2139,7 +2143,7 @@ class AppHandler:
         if job_status == "Pending":
             stateless_handlers.update_job_status(handler_id, job_id, status="Pausing", kind=kind + "s")
             on_delete_job(job_id)
-            jobDriver.delete(job_id, use_ngc=use_ngc)
+            StatefulSetExecutor().delete_statefulset(job_id, use_ngc=use_ngc)
             stateless_handlers.update_job_status(handler_id, job_id, status="Paused", kind=kind + "s")
             return Code(200, {"message": f"Pending job {job_id} paused"})
 
@@ -2147,8 +2151,8 @@ class AppHandler:
             try:
                 # Delete K8s job
                 stateless_handlers.update_job_status(handler_id, job_id, status="Pausing", kind=kind + "s")
-                jobDriver.delete(job_id, use_ngc=use_ngc)
-                k8s_status = jobDriver.status(
+                StatefulSetExecutor().delete_statefulset(job_id, use_ngc=use_ngc)
+                k8s_status = JobExecutor().get_job_status(
                     org_name,
                     handler_id,
                     job_id,
@@ -2159,7 +2163,7 @@ class AppHandler:
                 while k8s_status in ("Done", "Error", "Running", "Pending"):
                     if k8s_status in ("Done", "Error"):
                         break
-                    k8s_status = jobDriver.status(
+                    k8s_status = JobExecutor().get_job_status(
                         org_name,
                         handler_id,
                         job_id,

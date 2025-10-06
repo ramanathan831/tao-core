@@ -26,7 +26,7 @@ from tritonclient.utils import InferenceServerException, np_to_triton_dtype
 from nvidia_tao_core.microservices.handlers.monai.dataset.cache import CacheInfo
 from nvidia_tao_core.microservices.handlers.monai_dataset_handler import MonaiDatasetHandler
 from nvidia_tao_core.microservices.handlers.utilities import Code
-from nvidia_tao_core.microservices.job_utils import executor as jobDriver
+from nvidia_tao_core.microservices.job_utils.executor import DeploymentExecutor
 import logging
 
 # Configure logging
@@ -72,7 +72,8 @@ class MonaiModelHandler:
         tis_service_id = f"service-{handler_id}"
 
         # TODO: for model repository update, we can probably remove the next 6 lines.
-        while jobDriver.status_tis_service(tis_service_id).get("status", "Unknown") != "Running":
+        deployment_executor = DeploymentExecutor()
+        while deployment_executor.get_tis_service_status(tis_service_id).get("status", "Unknown") != "Running":
             if max_attempts == 0:
                 return Code(400, [], "Triton Inference Server is not running")
             # Triton Inference Server is not running yet. It might be that the model is being swapped by CL.
