@@ -24,7 +24,6 @@ from queue import PriorityQueue
 from dataclasses import dataclass, field, asdict, fields
 from datetime import datetime, timezone
 
-from nvidia_tao_core.microservices.constants import MEDICAL_AUTOML_ARCHITECT, MEDICAL_NETWORK_ARCHITECT
 from nvidia_tao_core.microservices.handlers.utilities import JobContext
 from nvidia_tao_core.microservices.handlers.actions import ACTIONS_TO_FUNCTIONS, AutoMLPipeline
 from nvidia_tao_core.microservices.handlers.stateless_handlers import (
@@ -131,10 +130,6 @@ def execute_job(job_context):
         action_pipeline_name = network_config["api_params"]["actions_pipe"].get(action, "")
         if action == "validate_images":
             action_pipeline_name = "data_services"
-        if network in MEDICAL_NETWORK_ARCHITECT:
-            action_pipeline_name = "monai_" + action_pipeline_name
-        elif network in MEDICAL_AUTOML_ARCHITECT:
-            action_pipeline_name = "medical_automl_" + action_pipeline_name
         if action_pipeline_name:
             action_pipeline = ACTIONS_TO_FUNCTIONS[action_pipeline_name]
             _Actionpipeline = action_pipeline(job_context)
@@ -348,10 +343,6 @@ class Workflow:
                 # Get the correct ActionPipeline and monitor status
                 network_config = read_network_config(network)
                 action_pipeline_name = network_config["api_params"]["actions_pipe"].get(action, "")
-                if network in MEDICAL_NETWORK_ARCHITECT:
-                    action_pipeline_name = "monai_" + action_pipeline_name
-                elif network in MEDICAL_AUTOML_ARCHITECT:
-                    action_pipeline_name = "medical_automl_" + action_pipeline_name
                 if action_pipeline_name:
                     action_pipeline = ACTIONS_TO_FUNCTIONS[action_pipeline_name]
 

@@ -23,8 +23,6 @@ DOCKER_IMAGE_MAPPER = {
     ),
     "TAO_PYTORCH": os.getenv('IMAGE_TAO_PYTORCH', default='nvcr.io/nvidia/tao/tao-toolkit:6.0.0-pyt'),
     "TAO_DEPLOY": os.getenv('IMAGE_TAO_DEPLOY', default='nvcr.io/nvidia/tao/tao-toolkit:6.0.0-deploy'),
-    "MONAI": os.getenv('IMAGE_MONAI', default='nvcr.io/iasixjqzw1hj/monai-service:script-1.1.0.dev.d5d27af'),
-    "MONAI_TIS": os.getenv('IMAGE_MONAI_TIS', default='nvcr.io/iasixjqzw1hj/monai-service:infer-1.0.3'),
     "": os.getenv('IMAGE_DEFAULT', default='nvcr.io/nvidia/tao/tao-toolkit:6.0.0-pyt'),  # Default
     "API": os.getenv('IMAGE_API', default='nvcr.io/nvidia/tao/tao-toolkit:6.0.0-api'),
     "TAO_DS": os.getenv('IMAGE_TAO_DS', default='nvcr.io/nvidia/tao/tao-toolkit:6.0.0-data-services'),

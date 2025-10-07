@@ -21,6 +21,7 @@ from nvidia_tao_core.config.utils.types import (
     STR_FIELD,
     INT_FIELD,
     DATACLASS_FIELD,
+    BOOL_FIELD,
 )
 
 
@@ -57,6 +58,18 @@ class InferenceConfig:
         value=4096,
         display_name="Max new tokens",
         description="Max new tokens for inference"
+    )
+    enable_lora: bool = BOOL_FIELD(
+        default_value=False,
+        value=False,
+        display_name="Enable LoRA merging",
+        description="Enable LoRA model merging (merge LoRA weights with base model before evaluation)"
+    )
+    base_model_path: Optional[str] = STR_FIELD(
+        default_value="",
+        value="",
+        display_name="Base model path",
+        description="Path to base model for LoRA merging (used when enable_lora is True)"
     )
 
 

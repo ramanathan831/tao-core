@@ -115,7 +115,7 @@ The `api_params` section serves as the foundation of your network configuration,
 - **`actions`**: List of supported actions for this network  
 - **`formats`**: Supported dataset formats  
 - **`accepted_ds_intents`**: Valid dataset usage intents  
-- **`image`**: Docker image to use (TAO_PYTORCH, TAO_TF2, MONAI, VILA, etc.)  
+- **`image`**: Docker image to use (TAO_PYTORCH, TAO_TF2, VILA, etc.)  
 - **`spec_backend`**: Configuration format (yaml, json)  
 - **`actions_pipe`**: Maps API actions to internal command names
 

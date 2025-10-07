@@ -1,4 +1,4 @@
-# Copyright (c) 2024, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2025, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -11,10 +11,9 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-
 """Configuration hyperparameter schema for the dataset."""
 
-from typing import Optional, List
+from typing import List
 from dataclasses import dataclass
 
 from nvidia_tao_core.config.utils.types import (
@@ -22,7 +21,9 @@ from nvidia_tao_core.config.utils.types import (
     INT_FIELD,
     STR_FIELD,
     LIST_FIELD,
-    DATACLASS_FIELD
+    DATACLASS_FIELD,
+    DICT_FIELD,
+    FLOAT_FIELD
 )
 
 
@@ -30,55 +31,6 @@ from nvidia_tao_core.config.utils.types import (
 class Dataset:
     """Dataset config."""
 
-    type: str = STR_FIELD(
-        value="ade",
-        default_value="ade",
-        display_name="",
-        description="Dataset type",
-        valid_options=",".join(["coco", "ade", "coco_panoptic"])
-    )
-    name: str = STR_FIELD(
-        value="",
-        default_value="",
-        display_name="Dataset name",
-        description="Dataset name",
-    )
-    panoptic_json: str = STR_FIELD(
-        value="",
-        default_value="",
-        display_name="COCO Panoptic JSON",
-        description="JSON file in COCO panoptic format",
-    )
-    instance_json: str = STR_FIELD(
-        value="",
-        default_value="",
-        display_name="COCO Instance JSON",
-        description="JSON file in COCO format",
-    )
-    img_dir: str = STR_FIELD(
-        value="",
-        default_value="",
-        display_name="Raw image directory",
-        description="Image directory (can be relative path to root_dir)",
-    )
-    panoptic_dir: str = STR_FIELD(
-        value="",
-        default_value="",
-        display_name="Panoptic image directory",
-        description="Directory of panoptic segmentation annotation images",
-    )
-    root_dir: str = STR_FIELD(
-        value="",
-        default_value="",
-        display_name="Root image directory",
-        description="Root image directory",
-    )
-    annot_file: str = STR_FIELD(
-        value="",
-        default_value="",
-        display_name="Annotatioin file for semantic data",
-        description="JSON file in JSONL format for image/mask pair",
-    )
     batch_size: int = INT_FIELD(
         value=1,
         default_value=1,
@@ -96,11 +48,23 @@ class Dataset:
         valid_max="inf",
         display_name="Number of workers"
     )
-    target_size: Optional[List[int]] = LIST_FIELD(
-        arrList=[],
-        default_value=[],
-        description="""Target size for resizing.""",
-        display_name="Target size",
+    images: str = STR_FIELD(
+        value="",
+        default_value="",
+        display_name="image root",
+        description="A path to image root"
+    )
+    annotations: str = STR_FIELD(
+        value="",
+        default_value="",
+        display_name="annotation root",
+        description="A path to annotation root"
+    )
+    panoptic: str = STR_FIELD(
+        value="",
+        default_value="",
+        display_name="panoptic root",
+        description="A path to panoptic root"
     )
 
 
@@ -109,12 +73,12 @@ class AugmentationConfig:
     """Augmentation config."""
 
     train_min_size: List[int] = LIST_FIELD(
-        arrList=[640],
+        arrList=[800],
         description="A list of sizes to perform random resize.",
         display_name="Train min size"
     )
     train_max_size: int = INT_FIELD(
-        value=2560,
+        value=1333,
         valid_min=32,
         valid_max="inf",
         description="The maximum random crop size for training data",
@@ -122,12 +86,12 @@ class AugmentationConfig:
         display_name="Train max size"
     )
     train_crop_size: List[int] = LIST_FIELD(
-        arrList=[640, 640],
+        arrList=[1024, 1024],
         description="The random crop size for training data in [H, W]",
         display_name="Train crop size"
     )
     test_min_size: int = INT_FIELD(
-        value=640,
+        value=800,
         valid_min=32,
         valid_max="inf",
         description="The minimum resize size for test data",
@@ -135,7 +99,7 @@ class AugmentationConfig:
         display_name="Test min size"
     )
     test_max_size: int = INT_FIELD(
-        value=640,
+        value=1333,
         valid_min=32,
         valid_max="inf",
         description="The maximum resize size for test",
@@ -145,7 +109,7 @@ class AugmentationConfig:
 
 
 @dataclass
-class Mask2FormerDatasetConfig:
+class OneFormerDatasetConfig:
     """Data config."""
 
     train: Dataset = DATACLASS_FIELD(
@@ -160,6 +124,14 @@ class Mask2FormerDatasetConfig:
         Dataset(),
         description="Configurable parameters to construct the test dataset.",
     )
+    workers: int = INT_FIELD(
+        value=8,
+        default_value=8,
+        valid_min=1,
+        valid_max="inf",
+        description="The number of parallel workers processing data",
+        display_name="workers"
+    )
     pin_memory: bool = BOOL_FIELD(
         value=True,
         default_value=True,
@@ -168,12 +140,12 @@ class Mask2FormerDatasetConfig:
                     of data between the CPU and GPU."""
     )
     pixel_mean: List[float] = LIST_FIELD(
-        arrList=[0.485, 0.456, 0.406],
+        arrList=[123.675, 116.28, 103.53],
         description="The input mean for RGB frames",
         display_name="input mean per pixel"
     )
     pixel_std: List[float] = LIST_FIELD(
-        arrList=[0.229, 0.224, 0.225],
+        arrList=[58.395, 57.12, 57.375],
         description="The input standard deviation per pixel for RGB frames",
         display_name="input std per pixel"
     )
@@ -182,14 +154,62 @@ class Mask2FormerDatasetConfig:
         description="Configuration parameters for data augmentation",
     )
     contiguous_id: bool = BOOL_FIELD(
-        value=False,
-        default_value=False,
+        value=True,
+        default_value=True,
         display_name="contiguous id",
         description="""Flag to enable contiguous ids for labels."""
     )
-    label_map: str = STR_FIELD(
-        value="",
-        default_value="",
+    label_map: str | None = STR_FIELD(
+        value=None,
         display_name="label map",
         description="A path to label map file"
+    )
+    task_prob_train: dict = DICT_FIELD(
+        hashMap={
+            "semantic": 0.33,
+            "instance": 0.66,
+            "panoptic": 0.01
+        },
+        description="Task probabilities",
+        display_name="task probabilities"
+    )
+    task_prob_val: dict = DICT_FIELD(
+        hashMap={
+            "semantic": 0.33,
+            "instance": 0.66,
+            "panoptic": 0.01
+        },
+        description="Task probabilities",
+        display_name="task probabilities"
+    )
+    task_seq_len: int = INT_FIELD(
+        value=77,
+        description="Task sequence length",
+        display_name="task sequence length"
+    )
+    max_seq_len: int = INT_FIELD(
+        value=77,
+        description="Maximum sequence length",
+        display_name="maximum sequence length"
+    )
+    image_size: int = INT_FIELD(
+        value=1024,
+        default_value=1024,
+        description="Image size",
+        display_name="image size"
+    )
+    min_scale: float = FLOAT_FIELD(
+        value=0.1,
+        description="Minimum scale",
+        display_name="minimum scale"
+    )
+    max_scale: float = FLOAT_FIELD(
+        value=2.0,
+        description="Maximum scale",
+        display_name="maximum scale"
+    )
+    cutmix_prob: float = FLOAT_FIELD(
+        value=0.0,
+        description="Cutmix probability",
+        display_name="cutmix probability"
     )

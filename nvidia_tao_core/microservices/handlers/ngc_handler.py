@@ -434,7 +434,7 @@ def get_org_products(user_id, org_name):
         org_metadata = response.json().get("organizations", {})
         product_enablements = org_metadata.get("productEnablements", [])
         for product_enablement in product_enablements:
-            if product_enablement.get("productName", "") in ("TAO", "MONAI", "MAXINE"):
+            if product_enablement.get("productName", "") in ("TAO", "MAXINE"):
                 products.append(product_enablement.get("productName"))
     return products
 

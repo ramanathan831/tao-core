@@ -871,32 +871,6 @@ def check_checkpoint_epoch_number_match(epoch_number_dictionary):
     return True
 
 
-def check_base_experiment_support_realtime_infer(user_id, org_name, experiment_meta, realtime_infer):
-    """Check if the PTM suppport realtime infer"""
-    if realtime_infer is None or realtime_infer is False:  # no need to check
-        return True
-
-    base_experiment_ids = experiment_meta.get("base_experiment")
-    if len(base_experiment_ids) != 1:
-        return False
-    base_experiment_id = base_experiment_ids[0]
-
-    if not check_existence(base_experiment_id, "experiment"):
-        return False
-
-    if not check_read_access(user_id, org_name, base_experiment_id, True, kind="experiments"):
-        return False
-
-    base_experiment_meta = get_base_experiment_metadata(base_experiment_id)
-    if not base_experiment_meta:
-        # Search in the base_exp_uuid fails, search in the user_id
-        base_experiment_meta = get_handler_metadata(base_experiment_id, "experiments")
-    if not base_experiment_meta.get("realtime_infer_support", False):
-        return False
-
-    return True
-
-
 def experiment_update_handler_attributes(user_id, org_name, experiment_meta, key, value):
     """Checks if the artifact provided is of the correct type"""
     # Returns value or False
@@ -920,9 +894,6 @@ def experiment_update_handler_attributes(user_id, org_name, experiment_meta, key
             return False
     elif key in ["checkpoint_epoch_number"]:
         if not check_checkpoint_epoch_number_match(value):
-            return False
-    elif key in ["realtime_infer"]:
-        if not check_base_experiment_support_realtime_infer(user_id, org_name, experiment_meta, value):
             return False
     else:
         return False
@@ -952,22 +923,6 @@ def resolve_metadata(kind, handler_id):
     handler_query = {'id': handler_id}
     metadata = mongo.find_one(handler_query)
     return metadata
-
-
-def get_latest_ver_folder(tis_model_path):
-    """Returns the latest version folder in the model directory"""
-    try:
-        entries = os.listdir(tis_model_path)
-
-        # Find the maximum numeric value among the folder names
-        numeric_folders = [int(folder) for folder in entries if folder.isnumeric()]
-        latest_ver = max(numeric_folders)
-
-    except ValueError:
-        # If there are no numeric folders, return 0
-        return 0
-
-    return latest_ver
 
 
 def is_valid_uuid4(uuid_string):

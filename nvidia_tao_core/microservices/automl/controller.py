@@ -218,6 +218,7 @@ class Controller:
             if not job_name:
                 continue
             if not os.getenv("CI_PROJECT_DIR", None):
+                logger.info("Cancelling automl job at end of controller %s", job_name)
                 on_cancel_automl_job(rec.job_id)
         on_delete_automl_job(self.automl_context.id)
 
@@ -609,6 +610,7 @@ class Controller:
                                                 rec.update_status(JobStates.success)
                                                 validation_map_processed = True
                                                 self.hyperband_cancel_condition_seen = False
+                                                logger.info("Cancelling hyperband automl job %s", rec.job_id)
                                                 on_cancel_automl_job(rec.job_id)
                                                 self.delete_checkpoint_files(cloud_expt_root, rec)
                                                 break
@@ -648,6 +650,7 @@ class Controller:
                 if validation_map != 0.0:
                     rec.update_result(validation_map)
                 self.save_state()
+                logger.info("Cancelling automl job with status %s and job id %s", status, rec.job_id)
                 on_cancel_automl_job(rec.job_id)
             if old_status != status:
                 rec.update_status(status)

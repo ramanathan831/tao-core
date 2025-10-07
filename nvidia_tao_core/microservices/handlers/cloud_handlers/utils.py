@@ -439,7 +439,7 @@ def status_callback(data_string, retry=0):
             cleanup_cuda_contexts()
             raise ValueError("Status Callback was unsuccessful after multiple retries")
 
-        ngc_key = os.getenv("TAO_USER_KEY")
+        ngc_key = os.getenv("TAO_ADMIN_KEY")
         headers = {"Authorization": f"Bearer {ngc_key}"}
         if data_string and headers:
             status_url = os.getenv("TAO_LOGGING_SERVER_URL", "") + ":status_update"

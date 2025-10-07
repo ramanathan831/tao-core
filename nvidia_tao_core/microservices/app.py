@@ -61,7 +61,13 @@ from nvidia_tao_core.microservices.enum_constants import (
     BaseExperimentLicense,
     _get_dynamic_metric_patterns
 )
-from nvidia_tao_core.microservices.handlers.app_handler import AppHandler as app_handler
+from nvidia_tao_core.microservices.app_handlers.workspace_handler import WorkspaceHandler
+from nvidia_tao_core.microservices.app_handlers.dataset_handler import DatasetHandler
+from nvidia_tao_core.microservices.app_handlers.experiment_handler import ExperimentHandler
+from nvidia_tao_core.microservices.app_handlers.job_handler import JobHandler
+from nvidia_tao_core.microservices.app_handlers.spec_handler import SpecHandler
+from nvidia_tao_core.microservices.app_handlers.mongo_handler import MongoBackupHandler
+from nvidia_tao_core.microservices.app_handlers.model_handler import ModelHandler
 from nvidia_tao_core.microservices.handlers.container_handler import ContainerJobHandler as container_handler
 from nvidia_tao_core.microservices.handlers.stateless_handlers import (
     resolve_metadata,
@@ -1212,7 +1218,7 @@ def auth():
         response = make_response(jsonify(schema.dump(schema.load(metadata))), 401)
         return response
     # access control
-    err = access_control.validate(user_id, org_name, url)
+    err = access_control.validate(user_id, org_name, url, token)
     if err:
         logger.warning("Forbidden: %s", err)
         metadata = {"error_desc": str(err), "error_code": 2}
@@ -1543,7 +1549,7 @@ def org_gpu_types(org_name):
     """
     # Get response
     user_id = authentication.get_user_id(request.headers.get('Authorization', ''), org_name)
-    response = app_handler.get_gpu_types(user_id, org_name)
+    response = SpecHandler.get_gpu_types(user_id, org_name)
     # Get schema
     schema = GpuDetailsSchema()
     if response.code == 200:
@@ -1933,7 +1939,7 @@ def workspace_list(org_name):
         required: false
         schema:
           type: string
-          enum: ["monai", "unet", "custom" ]
+          enum: ["unet", "custom" ]
       - name: type
         in: query
         description: Optional type filter
@@ -1957,7 +1963,7 @@ def workspace_list(org_name):
               $ref: '#/components/headers/X-RateLimit-Limit'
     """
     user_id = authentication.get_user_id(request.headers.get('Authorization', ''), org_name)
-    workspaces = app_handler.list_workspaces(user_id, org_name)
+    workspaces = WorkspaceHandler.list_workspaces(user_id, org_name)
     filtered_workspaces = filtering.apply(request.args, workspaces)
     paginated_workspaces = pagination.apply(request.args, filtered_workspaces)
     metadata = {"workspaces": paginated_workspaces}
@@ -2036,7 +2042,7 @@ def workspace_retrieve(org_name, workspace_id):
         return response
     # Get response
     user_id = authentication.get_user_id(request.headers.get('Authorization', ''), org_name)
-    response = app_handler.retrieve_workspace(user_id, org_name, workspace_id)
+    response = WorkspaceHandler.retrieve_workspace(user_id, org_name, workspace_id)
     # Get schema
     schema = None
     if response.code == 200:
@@ -2109,7 +2115,7 @@ def workspace_retrieve_datasets(org_name, workspace_id):
     dataset_intention = request.args.getlist("dataset_intention")
     # Get response
     user_id = authentication.get_user_id(request.headers.get('Authorization', ''), org_name)
-    response = app_handler.retrieve_cloud_datasets(
+    response = WorkspaceHandler.retrieve_cloud_datasets(
         user_id,
         org_name,
         workspace_id,
@@ -2195,7 +2201,7 @@ def workspace_delete(org_name, workspace_id):
         response = make_response(jsonify(schema.dump(schema.load(metadata))), 400)
         return response
     # Get response
-    response = app_handler.delete_workspace(org_name, workspace_id)
+    response = WorkspaceHandler.delete_workspace(org_name, workspace_id)
     # Get schema
     schema = None
     if response.code == 200:
@@ -2290,7 +2296,7 @@ def bulk_workspace_delete(org_name):
             continue
 
         # Attempt to delete the workspace
-        response = app_handler.delete_workspace(org_name, workspace_id)
+        response = WorkspaceHandler.delete_workspace(org_name, workspace_id)
         if response.code == 200:
             results.append({"id": workspace_id, "status": "success"})
         else:
@@ -2382,7 +2388,7 @@ def workspace_create(org_name):
 
     user_id = authentication.get_user_id(request.headers.get('Authorization', ''), org_name)
     # Get response
-    response = app_handler.create_workspace(user_id, org_name, request_dict)
+    response = WorkspaceHandler.create_workspace(user_id, org_name, request_dict)
     # Get schema
     schema = None
     if response.code == 200:
@@ -2470,7 +2476,7 @@ def workspace_update(org_name, workspace_id):
     request_dict = schema.dump(schema.load(request.get_json(force=True)))
     # Get response
     user_id = authentication.get_user_id(request.headers.get('Authorization', ''), org_name)
-    response = app_handler.update_workspace(user_id, org_name, workspace_id, request_dict)
+    response = WorkspaceHandler.update_workspace(user_id, org_name, workspace_id, request_dict)
     # Get schema
     schema = None
     if response.code == 200:
@@ -2558,7 +2564,7 @@ def workspace_partial_update(org_name, workspace_id):
     request_dict = schema.dump(schema.load(request.get_json(force=True)))
     # Get response
     user_id = authentication.get_user_id(request.headers.get('Authorization', ''), org_name)
-    response = app_handler.update_workspace(user_id, org_name, workspace_id, request_dict)
+    response = WorkspaceHandler.update_workspace(user_id, org_name, workspace_id, request_dict)
     # Get schema
     schema = None
     if response.code == 200:
@@ -2644,7 +2650,7 @@ def workspace_backup(org_name, workspace_id):
     schema = WorkspaceBackupReqSchema()
     request_dict = schema.dump(schema.load(request.get_json(force=True)))
     # Get response
-    response = app_handler.mongo_backup(workspace_id, request_dict.get("backup_file_name"))
+    response = MongoBackupHandler.mongo_backup(workspace_id, request_dict.get("backup_file_name"))
     # Get schema
     schema = None
     if response.code == 200:
@@ -2730,7 +2736,7 @@ def workspace_restore(org_name, workspace_id):
     schema = WorkspaceBackupReqSchema()
     request_dict = schema.dump(schema.load(request.get_json(force=True)))
     # Get response
-    response = app_handler.mongo_restore(workspace_id, request_dict.get("backup_file_name"))
+    response = MongoBackupHandler.mongo_restore(workspace_id, request_dict.get("backup_file_name"))
     # Get schema
     schema = None
     if response.code == 200:
@@ -2997,7 +3003,7 @@ def get_dataset_formats(org_name):
     """
     dataset_type = str(request.args.get('dataset_type', ''))
     # Get response
-    response = app_handler.get_dataset_formats(dataset_type)
+    response = DatasetHandler.get_dataset_formats(dataset_type)
     # Get schema
     schema = None
     if response.code == 200:
@@ -3103,7 +3109,7 @@ def dataset_list(org_name):
               $ref: '#/components/headers/X-RateLimit-Limit'
     """
     user_id = authentication.get_user_id(request.headers.get('Authorization', ''), org_name)
-    datasets = app_handler.list_datasets(user_id, org_name)
+    datasets = DatasetHandler.list_datasets(user_id, org_name)
     filtered_datasets = filtering.apply(request.args, datasets)
     paginated_datasets = pagination.apply(request.args, filtered_datasets)
     metadata = {"datasets": paginated_datasets}
@@ -3187,7 +3193,7 @@ def dataset_retrieve(org_name, dataset_id):
         response = make_response(jsonify(schema.dump(schema.load(metadata))), 400)
         return response
     # Get response
-    response = app_handler.retrieve_dataset(org_name, dataset_id)
+    response = DatasetHandler.retrieve_dataset(org_name, dataset_id)
     # Get schema
     schema = None
     if response.code == 200:
@@ -3284,7 +3290,7 @@ def dataset_delete(org_name, dataset_id):
         response = make_response(jsonify(schema.dump(schema.load(metadata))), 400)
         return response
     # Get response
-    response = app_handler.delete_dataset(org_name, dataset_id)
+    response = DatasetHandler.delete_dataset(org_name, dataset_id)
     # Get schema
     schema = None
     if response.code == 200:
@@ -3349,7 +3355,7 @@ def dataset_create(org_name):
 
     user_id = authentication.get_user_id(request.headers.get('Authorization', ''), org_name)
     # Get response
-    response = app_handler.create_dataset(user_id, org_name, request_dict)
+    response = DatasetHandler.create_dataset(user_id, org_name, request_dict)
     # Get schema
     schema = None
     if response.code == 200:
@@ -3359,10 +3365,7 @@ def dataset_create(org_name):
     # Load metadata in schema and return
     schema_dict = schema.dump(schema.load(response.data))
     if response.code != 200:
-        ds_format = request_dict.get("format", "")
-        log_type = (DataMonitorLogTypeEnum.medical_dataset
-                    if ds_format == "monai"
-                    else DataMonitorLogTypeEnum.tao_dataset)
+        log_type = DataMonitorLogTypeEnum.tao_dataset
         log_api_error(user_id, org_name, schema_dict, log_type, action="creation")
 
     return make_response(jsonify(schema_dict), response.code)
@@ -3443,7 +3446,7 @@ def dataset_update(org_name, dataset_id):
     schema = DatasetReqSchema()
     request_dict = schema.dump(schema.load(request.get_json(force=True)))
     # Get response
-    response = app_handler.update_dataset(org_name, dataset_id, request_dict)
+    response = DatasetHandler.update_dataset(org_name, dataset_id, request_dict)
     # Get schema
     schema = None
     if response.code == 200:
@@ -3530,7 +3533,7 @@ def dataset_partial_update(org_name, dataset_id):
     schema = DatasetReqSchema()
     request_dict = schema.dump(schema.load(request.get_json(force=True)))
     # Get response
-    response = app_handler.update_dataset(org_name, dataset_id, request_dict)
+    response = DatasetHandler.update_dataset(org_name, dataset_id, request_dict)
     # Get schema
     schema = None
     if response.code == 200:
@@ -3612,7 +3615,7 @@ def dataset_specs_schema(org_name, dataset_id, action):
         return response
     # Get response
     user_id = authentication.get_user_id(request.headers.get('Authorization', ''), org_name)
-    response = app_handler.get_spec_schema(user_id, org_name, dataset_id, action, "dataset")
+    response = SpecHandler.get_spec_schema(user_id, org_name, dataset_id, action, "dataset")
     # Get schema
     schema = None
     if response.code == 200:
@@ -3716,18 +3719,13 @@ def dataset_job_run(org_name, dataset_id):
     num_gpu = request_schema_data.get('num_gpu', -1)
     platform_id = request_schema_data.get('platform_id', None)
     # Get response
-    response = app_handler.job_run(
+    response = JobHandler.job_run(
         org_name, dataset_id, requested_job, requested_action, "dataset",
         specs=specs, name=name, description=description, num_gpu=num_gpu,
         platform_id=platform_id
     )
-    handler_metadata = resolve_metadata("dataset", dataset_id)
-    dataset_format = handler_metadata.get("format")
     # Get schema
     if response.code == 200:
-        # MONAI dataset jobs are sync jobs and the response should be returned directly.
-        if dataset_format == "monai":
-            return make_response(jsonify(response.data), response.code)
         if isinstance(response.data, str) and not validate_uuid(response.data):
             return make_response(jsonify(response.data), response.code)
         metadata = {"error_desc": "internal error: invalid job IDs", "error_code": 2}
@@ -3824,14 +3822,9 @@ def dataset_job_retry(org_name, dataset_id, job_id):
         response = make_response(jsonify(schema.dump(schema.load(metadata))), 400)
         return response
     # Get response
-    response = app_handler.job_retry(org_name, dataset_id, "dataset", job_id)
-    handler_metadata = resolve_metadata("dataset", dataset_id)
-    dataset_format = handler_metadata.get("format")
+    response = JobHandler.job_retry(org_name, dataset_id, "dataset", job_id)
     # Get schema
     if response.code == 200:
-        # MONAI dataset jobs are sync jobs and the response should be returned directly.
-        if dataset_format == "monai":
-            return make_response(jsonify(response.data), response.code)
         if isinstance(response.data, str) and not validate_uuid(response.data):
             return make_response(jsonify(response.data), response.code)
         metadata = {"error_desc": "internal error: invalid job IDs", "error_code": 2}
@@ -3943,7 +3936,7 @@ def dataset_job_list(org_name, dataset_id):
 
     user_id = authentication.get_user_id(request.headers.get('Authorization', ''), org_name)
     # Get response
-    response = app_handler.job_list(user_id, org_name, dataset_id, "dataset")
+    response = JobHandler.job_list(user_id, org_name, dataset_id, "dataset")
     # Get schema
     if response.code == 200:
         filtered_jobs = filtering.apply(request.args, response.data)
@@ -4052,7 +4045,7 @@ def dataset_job_schema(org_name, dataset_id, job_id):
         return response
     # Get response
     user_id = authentication.get_user_id(request.headers.get('Authorization', ''), org_name)
-    response = app_handler.get_spec_schema_for_job(user_id, org_name, dataset_id, job_id, "dataset")
+    response = SpecHandler.get_spec_schema_for_job(user_id, org_name, dataset_id, job_id, "dataset")
     # Get schema
     schema = None
     if response.code == 200:
@@ -4144,7 +4137,7 @@ def dataset_job_retrieve(org_name, dataset_id, job_id):
         return response
     # Get response
     return_specs = ast.literal_eval(request.args.get('return_specs', "False"))
-    response = app_handler.job_retrieve(org_name, dataset_id, job_id, "dataset", return_specs=return_specs)
+    response = JobHandler.job_retrieve(org_name, dataset_id, job_id, "dataset", return_specs=return_specs)
     # Get schema
     schema = None
     if response.code == 200:
@@ -4245,7 +4238,7 @@ def dataset_job_status_update(org_name, dataset_id, job_id):
         return response
     callback_data = request.json
     # Get response
-    response = app_handler.job_status_update(org_name, dataset_id, job_id, "dataset", callback_data=callback_data)
+    response = JobHandler.job_status_update(org_name, dataset_id, job_id, "dataset", callback_data=callback_data)
     # Get schema
     schema = None
     if response.code == 200:
@@ -4343,7 +4336,7 @@ def dataset_job_log_update(org_name, dataset_id, job_id):
         return response
     callback_data = request.json
     # Get response
-    response = app_handler.job_log_update(org_name, dataset_id, job_id, "dataset", callback_data=callback_data)
+    response = JobHandler.job_log_update(org_name, dataset_id, job_id, "dataset", callback_data=callback_data)
     # Get schema
     schema = None
     if response.code == 200:
@@ -4432,7 +4425,7 @@ def dataset_job_logs(org_name, dataset_id, job_id):
         response = make_response(jsonify(schema.dump(schema.load(metadata))), 400)
         return response
     # Get response
-    response = app_handler.get_job_logs(org_name, dataset_id, job_id, "dataset")
+    response = JobHandler.get_job_logs(org_name, dataset_id, job_id, "dataset")
     if response.code == 200:
         response = make_response(response.data, 200)
         response.mimetype = 'text/plain'
@@ -4521,7 +4514,7 @@ def dataset_job_cancel(org_name, dataset_id, job_id):
         response = make_response(jsonify(schema.dump(schema.load(metadata))), 400)
         return response
     # Get response
-    response = app_handler.job_cancel(org_name, dataset_id, job_id, "dataset")
+    response = JobHandler.job_cancel(org_name, dataset_id, job_id, "dataset")
     # Get schema
     schema = None
     if response.code == 200:
@@ -4624,7 +4617,7 @@ def bulk_dataset_delete(org_name):
             continue
 
         # Attempt to delete the dataset
-        response = app_handler.delete_dataset(org_name, dataset_id)
+        response = DatasetHandler.delete_dataset(org_name, dataset_id)
         if response.code == 200:
             results.append({"id": dataset_id, "status": "success"})
         else:
@@ -4730,7 +4723,7 @@ def bulk_dataset_job_delete(org_name, dataset_id):
             continue
 
         # Attempt to delete the job
-        response = app_handler.job_delete(org_name, dataset_id, job_id, "dataset")
+        response = JobHandler.job_delete(org_name, dataset_id, job_id, "dataset")
         if response.code == 200:
             results.append({"id": job_id, "status": "success"})
         else:
@@ -4820,7 +4813,7 @@ def dataset_job_delete(org_name, dataset_id, job_id):
         response = make_response(jsonify(schema.dump(schema.load(metadata))), 400)
         return response
     # Get response
-    response = app_handler.job_delete(org_name, dataset_id, job_id, "dataset")
+    response = JobHandler.job_delete(org_name, dataset_id, job_id, "dataset")
     # Get schema
     schema = None
     if response.code == 200:
@@ -4916,7 +4909,7 @@ def dataset_job_files_list(org_name, dataset_id, job_id):
         response = make_response(jsonify(schema.dump(schema.load(metadata))), 400)
         return response
     # Get response
-    response = app_handler.job_list_files(org_name, dataset_id, job_id, "dataset")
+    response = JobHandler.job_list_files(org_name, dataset_id, job_id, "dataset")
     # Get schema
     if response.code == 200:
         if isinstance(response.data, list) and (all(isinstance(f, str) for f in response.data) or response.data == []):
@@ -5020,7 +5013,7 @@ def dataset_job_download_selective_files(org_name, dataset_id, job_id):
     if not file_lists:
         return make_response(jsonify("No files passed in list format to download or"), 400)
     # Get response
-    response = app_handler.job_download(
+    response = JobHandler.job_download(
         org_name,
         dataset_id,
         job_id,
@@ -5124,7 +5117,7 @@ def dataset_job_download(org_name, dataset_id, job_id):
         response = make_response(jsonify(schema.dump(schema.load(metadata))), 400)
         return response
     # Get response
-    response = app_handler.job_download(org_name, dataset_id, job_id, "dataset")
+    response = JobHandler.job_download(org_name, dataset_id, job_id, "dataset")
     # Get schema
     schema = None
     if response.code == 200:
@@ -5226,7 +5219,7 @@ def bulk_dataset_jobs_cancel(org_name):
             continue
 
         # Cancel all jobs for each dataset
-        response = app_handler.all_job_cancel(user_id, org_name, dataset_id, "dataset")
+        response = JobHandler.all_job_cancel(user_id, org_name, dataset_id, "dataset")
         if response.code == 200:
             results.append({"id": dataset_id, "status": "success"})
         else:
@@ -5310,7 +5303,7 @@ def dataset_jobs_cancel(org_name, dataset_id):
         return response
     # Get response
     user_id = authentication.get_user_id(request.headers.get('Authorization', ''), org_name)
-    response = app_handler.all_job_cancel(user_id, org_name, dataset_id, "dataset")
+    response = JobHandler.all_job_cancel(user_id, org_name, dataset_id, "dataset")
     # Get schema
     if response.code == 200:
         schema = MessageOnlySchema()
@@ -5377,7 +5370,6 @@ class ExperimentTypeEnum(Enum):
     """Class defining type of experiment"""
 
     vision = 'vision'
-    medical = 'medical'
     maxine = 'maxine'
 
 
@@ -5385,7 +5377,6 @@ class ExperimentExportTypeEnum(Enum):
     """Class defining model export type"""
 
     tao = 'tao'
-    monai_bundle = 'monai_bundle'
 
 
 class AutoMLAlgorithm(Enum):
@@ -5541,14 +5532,7 @@ class ExperimentReqSchema(Schema):
     automl_settings = fields.Nested(AutoMLSchema, allow_none=True)
     metric = fields.Str(format="regex", regex=r'.*', validate=fields.validate.Length(max=100), allow_none=True)
     type = EnumField(ExperimentTypeEnum, default=ExperimentTypeEnum.vision)
-    realtime_infer = fields.Bool(default=False)
     model_params = fields.Dict(allow_none=True)
-    bundle_url = fields.Str(format="regex", regex=r'.*', validate=fields.validate.Length(max=1000), allow_none=True)
-    realtime_infer_request_timeout = fields.Int(
-        format="int64",
-        validate=validate.Range(min=0, max=sys.maxsize),
-        allow_none=True
-    )
     experiment_actions = fields.List(
         fields.Nested(ExperimentActions, allow_none=True),
         validate=validate.Length(max=sys.maxsize)
@@ -5616,7 +5600,7 @@ class ExperimentRspSchema(Schema):
         """Class enabling sorting field values by the order in which they are declared"""
 
         ordered = True
-        load_only = ("user_id", "docker_env_vars", "realtime_infer_endpoint", "realtime_infer_model_name")
+        load_only = ("user_id", "docker_env_vars")
         unknown = EXCLUDE
 
     id = fields.Str(format="uuid", validate=fields.validate.Length(max=36))
@@ -5717,27 +5701,7 @@ class ExperimentRspSchema(Schema):
     automl_settings = fields.Nested(AutoMLSchema)
     metric = fields.Str(format="regex", regex=r'.*', validate=fields.validate.Length(max=100), allow_none=True)
     type = EnumField(ExperimentTypeEnum, default=ExperimentTypeEnum.vision, allow_none=True)
-    realtime_infer = fields.Bool(allow_none=True)
-    realtime_infer_support = fields.Bool()
-    realtime_infer_endpoint = fields.Str(
-        format="regex",
-        regex=r'.*',
-        validate=fields.validate.Length(max=1000),
-        allow_none=True
-    )
-    realtime_infer_model_name = fields.Str(
-        format="regex",
-        regex=r'.*',
-        validate=fields.validate.Length(max=1000),
-        allow_none=True
-    )
     model_params = fields.Dict(allow_none=True)
-    realtime_infer_request_timeout = fields.Int(
-        format="int64",
-        validate=validate.Range(min=0, max=86400),
-        allow_none=True
-    )
-    bundle_url = fields.Str(format="regex", regex=r'.*', validate=fields.validate.Length(max=1000), allow_none=True)
     base_experiment_metadata = fields.Nested(BaseExperimentMetadataSchema, allow_none=True)
     source_type = EnumField(SourceType, allow_none=True)
     experiment_actions = fields.List(
@@ -5916,7 +5880,7 @@ def experiment_list(org_name):
         required: false
         schema:
           type: string
-          enum: ["vision", "medical"]
+          enum: ["vision"]
       - name: network_arch
         in: query
         description: Optional network architecture filter
@@ -5976,7 +5940,7 @@ def experiment_list(org_name):
     """
     user_only = str(request.args.get('user_only', None)) in {'True', 'yes', 'y', 'true', 't', '1', 'on'}
     user_id = authentication.get_user_id(request.headers.get('Authorization', ''), org_name)
-    experiments = app_handler.list_experiments(user_id, org_name, user_only)
+    experiments = ExperimentHandler.list_experiments(user_id, org_name, user_only)
     filtered_experiments = filtering.apply(request.args, experiments)
     paginated_experiments = pagination.apply(request.args, filtered_experiments)
     metadata = {"experiments": paginated_experiments}
@@ -6028,7 +5992,7 @@ def experiment_tags_list(org_name):
                $ref: '#/components/headers/X-RateLimit-Limit'
     """
     user_id = authentication.get_user_id(request.headers.get('Authorization', ''), org_name)
-    experiments = app_handler.list_experiments(user_id, org_name, user_only=True)
+    experiments = ExperimentHandler.list_experiments(user_id, org_name, user_only=True)
     tags = [tag for exp in experiments for tag in exp.get('tags', [])]
     unique_tags = list({t.lower(): t for t in tags}.values())
     metadata = {"tags": unique_tags}
@@ -6096,7 +6060,7 @@ def base_experiment_list(org_name):
         required: false
         schema:
           type: string
-          enum: ["vision", "medical"]
+          enum: ["vision"]
       - name: network_arch
         in: query
         description: Optional network architecture filter
@@ -6141,7 +6105,7 @@ def base_experiment_list(org_name):
               $ref: '#/components/headers/X-RateLimit-Limit'
     """
     user_id = authentication.get_user_id(request.headers.get('Authorization', ''), org_name)
-    experiments = app_handler.list_base_experiments(user_id, org_name)
+    experiments = ExperimentHandler.list_base_experiments(user_id, org_name)
     filtered_experiments = filtering.apply(request.args, experiments)
     paginated_experiments = pagination.apply(request.args, filtered_experiments)
     metadata = {"experiments": paginated_experiments}
@@ -6228,7 +6192,7 @@ def load_airgapped_experiments(org_name):
     user_id = authentication.get_user_id(request.headers.get('Authorization', ''), org_name)
 
     # Get response from handler
-    response = app_handler.load_airgapped_experiments(
+    response = ExperimentHandler.load_airgapped_experiments(
         user_id,
         org_name,
         request_dict['workspace_id']
@@ -6303,7 +6267,7 @@ def experiment_retrieve(org_name, experiment_id):
         response = make_response(jsonify(schema.dump(schema.load(metadata))), 400)
         return response
     # Get response
-    response = app_handler.retrieve_experiment(org_name, experiment_id)
+    response = ExperimentHandler.retrieve_experiment(org_name, experiment_id)
     # Get schema
     schema = None
     if response.code == 200:
@@ -6398,7 +6362,7 @@ def bulk_experiment_delete(org_name):
             continue
 
         # Attempt to delete the experiment
-        response = app_handler.delete_experiment(org_name, experiment_id)
+        response = ExperimentHandler.delete_experiment(org_name, experiment_id)
         if response.code == 200:
             results.append({"id": experiment_id, "status": "success"})
         else:
@@ -6467,7 +6431,7 @@ def experiment_delete(org_name, experiment_id):
         response = make_response(jsonify(schema.dump(schema.load(metadata))), 400)
         return response
     # Get response
-    response = app_handler.delete_experiment(org_name, experiment_id)
+    response = ExperimentHandler.delete_experiment(org_name, experiment_id)
     # Get schema
     schema = None
     if response.code == 200:
@@ -6531,7 +6495,7 @@ def experiment_create(org_name):
     request_dict = schema.dump(schema.load(request.get_json(force=True)))
     user_id = authentication.get_user_id(request.headers.get('Authorization', ''), org_name)
     # Get response
-    response = app_handler.create_experiment(user_id, org_name, request_dict)
+    response = ExperimentHandler.create_experiment(user_id, org_name, request_dict)
     # Get schema
     schema = None
     if response.code == 200:
@@ -6541,9 +6505,7 @@ def experiment_create(org_name):
     # Load metadata in schema and return
     schema_dict = schema.dump(schema.load(response.data))
     if response.code != 200:
-        mdl_nw = request_dict.get("network_arch", None)
-        is_medical = isinstance(mdl_nw, str) and mdl_nw.startswith("monai_")
-        log_type = DataMonitorLogTypeEnum.medical_experiment if is_medical else DataMonitorLogTypeEnum.tao_experiment
+        log_type = DataMonitorLogTypeEnum.tao_experiment
         log_api_error(user_id, org_name, schema_dict, log_type, action="creation")
 
     return make_response(jsonify(schema_dict), response.code)
@@ -6629,7 +6591,7 @@ def experiment_update(org_name, experiment_id):
     schema = ExperimentReqSchema()
     request_dict = schema.dump(schema.load(request.get_json(force=True)))
     # Get response
-    response = app_handler.update_experiment(org_name, experiment_id, request_dict)
+    response = ExperimentHandler.update_experiment(org_name, experiment_id, request_dict)
     # Get schema
     schema = None
     if response.code == 200:
@@ -6721,7 +6683,7 @@ def experiment_partial_update(org_name, experiment_id):
     schema = ExperimentReqSchema()
     request_dict = schema.dump(schema.load(request.get_json(force=True)))
     # Get response
-    response = app_handler.update_experiment(org_name, experiment_id, request_dict)
+    response = ExperimentHandler.update_experiment(org_name, experiment_id, request_dict)
     # Get schema
     schema = None
     if response.code == 200:
@@ -6794,7 +6756,7 @@ def specs_schema_without_handler_id(org_name, action):
     dataset_format = request.args.get('format')
     train_datasets = request.args.getlist('train_datasets')
 
-    response = app_handler.get_spec_schema_without_handler_id(org_name, network, dataset_format, action, train_datasets)
+    response = SpecHandler.get_spec_schema_without_handler_id(org_name, network, dataset_format, action, train_datasets)
     # Get schema
     schema = None
     if response.code == 200:
@@ -6880,7 +6842,7 @@ def experiment_specs_schema(org_name, experiment_id, action):
         return response
     # Get response
     user_id = authentication.get_user_id(request.headers.get('Authorization', ''), org_name)
-    response = app_handler.get_spec_schema(user_id, org_name, experiment_id, action, "experiment")
+    response = SpecHandler.get_spec_schema(user_id, org_name, experiment_id, action, "experiment")
     # Get schema
     schema = None
     if response.code == 200:
@@ -6964,7 +6926,7 @@ def base_experiment_specs_schema(org_name, experiment_id, action):
         response = make_response(jsonify(schema.dump(schema.load(metadata))), 400)
         return response
     # Get response
-    response = app_handler.get_base_experiment_spec_schema(experiment_id, action)
+    response = SpecHandler.get_base_experiment_spec_schema(experiment_id, action)
     # Get schema
     schema = None
     if response.code == 200:
@@ -7078,7 +7040,7 @@ def experiment_job_run(org_name, experiment_id):
         response = make_response(jsonify(schema.dump(schema.load(metadata))), 400)
         return response
     # Get response
-    response = app_handler.job_run(
+    response = JobHandler.job_run(
         org_name, experiment_id, requested_job, requested_action, "experiment",
         specs=specs, name=name, description=description, num_gpu=num_gpu,
         platform_id=platform_id
@@ -7131,10 +7093,9 @@ def experiment_job_run(org_name, experiment_id):
     if response.code != 200:
         try:
             handler_metadata = resolve_metadata("experiment", experiment_id)
-            is_medical = handler_metadata.get("type").lower() == "medical"
             user_id = handler_metadata.get("user_id", None)
             if user_id:
-                log_type = DataMonitorLogTypeEnum.medical_job if is_medical else DataMonitorLogTypeEnum.tao_job
+                log_type = DataMonitorLogTypeEnum.tao_job
                 log_api_error(user_id, org_name, schema_dict, log_type, action="creation")
         except Exception as e:
             logger.error(f"Exception thrown in experiment_job_run is {str(e)}")
@@ -7228,7 +7189,7 @@ def experiment_job_retry(org_name, experiment_id, job_id):
         return response
 
     # Get response
-    response = app_handler.job_retry(org_name, experiment_id, "experiment", job_id)
+    response = JobHandler.job_retry(org_name, experiment_id, "experiment", job_id)
     # Get schema
     schema = None
     if response.code == 200:
@@ -7244,10 +7205,9 @@ def experiment_job_retry(org_name, experiment_id, job_id):
     if response.code != 200:
         try:
             handler_metadata = resolve_metadata("experiment", experiment_id)
-            is_medical = handler_metadata.get("type").lower() == "medical"
             user_id = handler_metadata.get("user_id", None)
             if user_id:
-                log_type = DataMonitorLogTypeEnum.medical_job if is_medical else DataMonitorLogTypeEnum.tao_job
+                log_type = DataMonitorLogTypeEnum.tao_job
                 log_api_error(user_id, org_name, schema_dict, log_type, action="creation")
         except Exception as e:
             logger.error(f"Exception thrown in experiment_job_retry is {str(e)}")
@@ -7356,7 +7316,7 @@ def experiment_model_publish(org_name, experiment_id, job_id):
     description = request_schema_data.get('description', '')
     team_name = request_schema_data.get('team_name', '')
     # Get response
-    response = app_handler.publish_model(
+    response = ModelHandler.publish_model(
         org_name,
         team_name,
         experiment_id,
@@ -7459,7 +7419,7 @@ def experiment_job_get_epoch_numbers(org_name, experiment_id, job_id):
         return response
     # Get response
     user_id = authentication.get_user_id(request.headers.get('Authorization', ''), org_name)
-    response = app_handler.job_get_epoch_numbers(user_id, org_name, experiment_id, job_id, "experiment")
+    response = JobHandler.job_get_epoch_numbers(user_id, org_name, experiment_id, job_id, "experiment")
     # Get schema
     schema_dict = None
     if response.code == 200:
@@ -7572,7 +7532,7 @@ def experiment_remove_published_model(org_name, experiment_id, job_id):
     request_schema_data = schema.dump(schema.load(request_data))
     team_name = request_schema_data.get('team_name', '')
     # Get response
-    response = app_handler.remove_published_model(org_name, team_name, experiment_id, job_id)
+    response = ModelHandler.remove_published_model(org_name, team_name, experiment_id, job_id)
     # Get schema
     schema_dict = None
 
@@ -7669,7 +7629,7 @@ def experiment_job_schema(org_name, experiment_id, job_id):
         return response
     # Get response
     user_id = authentication.get_user_id(request.headers.get('Authorization', ''), org_name)
-    response = app_handler.get_spec_schema_for_job(user_id, org_name, experiment_id, job_id, "experiment")
+    response = SpecHandler.get_spec_schema_for_job(user_id, org_name, experiment_id, job_id, "experiment")
     # Get schema
     schema = None
     if response.code == 200:
@@ -7779,7 +7739,7 @@ def experiment_job_list(org_name, experiment_id):
     user_id = authentication.get_user_id(request.headers.get('Authorization', ''), org_name)
 
     # Get response
-    response = app_handler.job_list(user_id, org_name, experiment_id, "experiment")
+    response = JobHandler.job_list(user_id, org_name, experiment_id, "experiment")
     # Get schema
     schema = None
     if response.code == 200:
@@ -7888,7 +7848,7 @@ def experiment_job_retrieve(org_name, experiment_id, job_id):
         return response
     # Get response
     return_specs = ast.literal_eval(request.args.get('return_specs', "False"))
-    response = app_handler.job_retrieve(org_name, experiment_id, job_id, "experiment", return_specs=return_specs)
+    response = JobHandler.job_retrieve(org_name, experiment_id, job_id, "experiment", return_specs=return_specs)
     # Get schema
     schema = None
     if response.code == 200:
@@ -7988,7 +7948,7 @@ def experiment_job_logs(org_name, experiment_id, job_id):
         response = make_response(jsonify(schema.dump(schema.load(metadata))), 400)
         return response
     # Get response
-    response = app_handler.get_job_logs(
+    response = JobHandler.get_job_logs(
         org_name,
         experiment_id,
         job_id,
@@ -8088,7 +8048,7 @@ def experiment_job_automl_details(org_name, experiment_id, job_id):
         schema = ErrorRspSchema()
         response = make_response(jsonify(schema.dump(schema.load(metadata))), 400)
         return response
-    response = app_handler.automl_details(org_name, experiment_id, job_id)
+    response = ExperimentHandler.automl_details(org_name, experiment_id, job_id)
     # Get schema
     schema = AutoMLResultsDetailedSchema()
     if response.code == 200:
@@ -8194,7 +8154,7 @@ def experiment_job_status_update(org_name, experiment_id, job_id):
         return response
     callback_data = request.json
     # Get response
-    response = app_handler.job_status_update(org_name, experiment_id, job_id, "experiment", callback_data=callback_data)
+    response = JobHandler.job_status_update(org_name, experiment_id, job_id, "experiment", callback_data=callback_data)
     # Get schema
     schema = None
     if response.code == 200:
@@ -8291,7 +8251,7 @@ def experiment_job_log_update(org_name, experiment_id, job_id):
         return response
     callback_data = request.json
     # Get response
-    response = app_handler.job_log_update(org_name, experiment_id, job_id, "experiment", callback_data=callback_data)
+    response = JobHandler.job_log_update(org_name, experiment_id, job_id, "experiment", callback_data=callback_data)
     # Get schema
     schema = None
     if response.code == 200:
@@ -8389,7 +8349,7 @@ def bulk_experiment_jobs_cancel(org_name):
             continue
 
         # Cancel all jobs for each experiment
-        response = app_handler.all_job_cancel(user_id, org_name, experiment_id, "experiment")
+        response = JobHandler.all_job_cancel(user_id, org_name, experiment_id, "experiment")
         if response.code == 200:
             results.append({"id": experiment_id, "status": "success"})
         else:
@@ -8473,7 +8433,7 @@ def experiment_jobs_cancel(org_name, experiment_id):
         return response
     # Get response
     user_id = authentication.get_user_id(request.headers.get('Authorization', ''), org_name)
-    response = app_handler.all_job_cancel(user_id, org_name, experiment_id, "experiment")
+    response = JobHandler.all_job_cancel(user_id, org_name, experiment_id, "experiment")
     # Get schema
     if response.code == 200:
         schema = MessageOnlySchema()
@@ -8563,7 +8523,7 @@ def experiment_job_pause(org_name, experiment_id, job_id):
         response = make_response(jsonify(schema.dump(schema.load(metadata))), 400)
         return response
     # Get response
-    response = app_handler.job_pause(org_name, experiment_id, job_id, "experiment")
+    response = JobHandler.job_pause(org_name, experiment_id, job_id, "experiment")
     # Get schema
     if response.code == 200:
         schema = MessageOnlySchema()
@@ -8653,7 +8613,7 @@ def experiment_job_cancel(org_name, experiment_id, job_id):
         response = make_response(jsonify(schema.dump(schema.load(metadata))), 400)
         return response
     # Get response
-    response = app_handler.job_cancel(org_name, experiment_id, job_id, "experiment")
+    response = JobHandler.job_cancel(org_name, experiment_id, job_id, "experiment")
     # Get schema
     if response.code == 200:
         schema = MessageOnlySchema()
@@ -8758,7 +8718,7 @@ def bulk_experiment_job_delete(org_name, experiment_id):
             continue
 
         # Attempt to delete the job
-        response = app_handler.job_delete(org_name, experiment_id, job_id, "experiment")
+        response = JobHandler.job_delete(org_name, experiment_id, job_id, "experiment")
         if response.code == 200:
             results.append({"id": job_id, "status": "success"})
         else:
@@ -8848,7 +8808,7 @@ def experiment_job_delete(org_name, experiment_id, job_id):
         response = make_response(jsonify(schema.dump(schema.load(metadata))), 400)
         return response
     # Get response
-    response = app_handler.job_delete(org_name, experiment_id, job_id, "experiment")
+    response = JobHandler.job_delete(org_name, experiment_id, job_id, "experiment")
     # Get schema
     schema = None
     if response.code == 200:
@@ -8955,7 +8915,7 @@ def experiment_job_resume(org_name, experiment_id, job_id):
         parent_job_id = str(parent_job_id)
     specs = request_schema_data.get('specs', {})
     # Get response
-    response = app_handler.resume_experiment_job(
+    response = ExperimentHandler.resume_experiment_job(
         org_name,
         experiment_id,
         job_id,
@@ -9072,7 +9032,7 @@ def experiment_job_download(org_name, experiment_id, job_id):
         return response
     export_type = request_schema_data.get("export_type", ExperimentExportTypeEnum.tao)
     # Get response
-    response = app_handler.job_download(org_name, experiment_id, job_id, "experiment", export_type=export_type.name)
+    response = JobHandler.job_download(org_name, experiment_id, job_id, "experiment", export_type=export_type.name)
     # Get schema
     schema = None
     if response.code == 200:
@@ -9171,7 +9131,7 @@ def experiment_job_files_list(org_name, experiment_id, job_id):
         response = make_response(jsonify(schema.dump(schema.load(metadata))), 400)
         return response
     # Get response
-    response = app_handler.job_list_files(org_name, experiment_id, job_id, "experiment")
+    response = JobHandler.job_list_files(org_name, experiment_id, job_id, "experiment")
     # Get schema
     if response.code == 200:
         if isinstance(response.data, list) and (all(isinstance(f, str) for f in response.data) or response.data == []):
@@ -9282,7 +9242,7 @@ def experiment_job_download_selective_files(org_name, experiment_id, job_id):
             400
         )
     # Get response
-    response = app_handler.job_download(
+    response = JobHandler.job_download(
         org_name,
         experiment_id,
         job_id,
