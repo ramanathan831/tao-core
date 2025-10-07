@@ -34,7 +34,7 @@ from nvidia_tao_core.microservices.constants import (
     NETWORK_CONTAINER_MAPPING,
     COPY_MODEL_PARAMS_FROM_TRAIN_NETWORKS
 )
-from nvidia_tao_core.microservices.handlers.cloud_storage import create_cs_instance
+from nvidia_tao_core.microservices.handlers.cloud_handlers.cloud_storage import create_cs_instance
 from nvidia_tao_core.microservices.handlers.ngc_handler import get_user_key
 from nvidia_tao_core.microservices.handlers.nvcf_handler import get_available_nvcf_instances
 from nvidia_tao_core.microservices.handlers.docker_images import DOCKER_IMAGE_MAPPER, DOCKER_IMAGE_VERSION

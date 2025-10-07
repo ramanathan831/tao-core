@@ -53,7 +53,7 @@ from nvidia_tao_core.microservices.constants import (
     MONAI_NETWORKS
 )
 from nvidia_tao_core.microservices.network_utils.network_constants import gpu_mapper, node_mapper
-from nvidia_tao_core.microservices.handlers.cloud_storage import create_cs_instance
+from nvidia_tao_core.microservices.handlers.cloud_handlers.cloud_storage import create_cs_instance
 from nvidia_tao_core.microservices.handlers.encrypt import NVVaultEncryption
 from nvidia_tao_core.microservices.handlers.stateless_handlers import (
     get_handler_metadata,

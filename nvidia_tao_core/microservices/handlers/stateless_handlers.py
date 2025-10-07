@@ -483,8 +483,14 @@ def status_lookup_job_id(job_id, automl=False, callback_data={}, experiment_numb
     return lookup_job_id
 
 
-def get_internal_job_status_update_data(automl_experiment_number="0", message=""):
-    """Get internal job status update data"""
+def get_internal_job_status_update_data(automl_experiment_number="0", message="", status="FAILURE"):
+    """Get internal job status update data
+
+    Args:
+        automl_experiment_number (str): Experiment number for automl jobs
+        message (str): Status message
+        status (str): Status level (FAILURE, RUNNING, SUCCESS, etc.)
+    """
     date_time = datetime.now()
     date_object = date_time.date()
     time_object = date_time.time()
@@ -501,7 +507,7 @@ def get_internal_job_status_update_data(automl_experiment_number="0", message=""
     data = {
         "date": date,
         "time": time,
-        "status": "FAILURE",
+        "status": status,
         "verbosity": "INFO",
     }
     if message:
@@ -510,11 +516,22 @@ def get_internal_job_status_update_data(automl_experiment_number="0", message=""
     return data_string
 
 
-def internal_job_status_update(job_id, automl=False, automl_experiment_number="0", message="", logfile=""):
-    """Post an status update to the job"""
+def internal_job_status_update(job_id, automl=False, automl_experiment_number="0", message="",
+                               logfile="", status="FAILURE"):
+    """Post an status update to the job
+
+    Args:
+        job_id (str): Job identifier
+        automl (bool): Whether this is an automl job
+        automl_experiment_number (str): Experiment number for automl
+        message (str): Status message
+        logfile (str): Optional log file path
+        status (str): Status level (FAILURE, RUNNING, SUCCESS, etc.)
+    """
     data_string = get_internal_job_status_update_data(
         automl_experiment_number=automl_experiment_number,
-        message=message
+        message=message,
+        status=status
     )
     callback_data = {
         "experiment_number": automl_experiment_number,

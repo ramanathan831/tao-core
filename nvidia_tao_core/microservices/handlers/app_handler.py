@@ -41,7 +41,7 @@ from nvidia_tao_core.microservices.enum_constants import DatasetType, Experiment
 from nvidia_tao_core.microservices.handlers import ngc_handler, stateless_handlers
 from nvidia_tao_core.microservices.handlers.nvcf_handler import get_available_nvcf_instances
 from nvidia_tao_core.microservices.handlers.automl_handler import AutoMLHandler
-from nvidia_tao_core.microservices.handlers.cloud_storage import create_cs_instance
+from nvidia_tao_core.microservices.handlers.cloud_handlers.cloud_storage import create_cs_instance
 from nvidia_tao_core.microservices.handlers.dataset_handler import validate_dataset
 from nvidia_tao_core.microservices.handlers.encrypt import NVVaultEncryption
 # from nvidia_tao_core.microservices.handlers import nvcf_handler

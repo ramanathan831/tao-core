@@ -34,7 +34,9 @@ if os.getenv("AIRGAPPED_MODE", "False").lower() == "false":
     from nvidia_tao_core.microservices.handlers.mongo_handler import MongoHandler
 from nvidia_tao_core.microservices.handlers.ngc_handler import get_ngc_token_from_api_key
 from nvidia_tao_core.microservices.utils import read_network_config, get_admin_key, safe_load_file
-from nvidia_tao_core.cloud_handlers.utils import download_huggingface_model as download_hf_model
+from nvidia_tao_core.microservices.handlers.cloud_handlers.huggingface import (
+    download_huggingface_model as download_hf_model
+)
 from nvidia_tao_core.microservices.constants import TAO_NETWORKS
 from nvidia_tao_core.microservices.enum_constants import (
     BaseExperimentTask,

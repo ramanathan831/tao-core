@@ -17,7 +17,7 @@ import argparse
 import logging
 
 from nvidia_tao_core.microservices.utils import run_system_command
-from nvidia_tao_core.microservices.handlers.cloud_storage import CloudStorage
+from nvidia_tao_core.microservices.handlers.cloud_handlers.cloud_storage import CloudStorage
 from nvidia_tao_core.microservices.handlers.mongo_handler import mongo_connection_string
 
 # Configure logging
