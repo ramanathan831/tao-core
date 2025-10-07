@@ -23,6 +23,10 @@ from datetime import datetime
 
 from nvidia_tao_core.microservices.handlers.encrypt import NVVaultEncryption
 from nvidia_tao_core.distributed.decorators import master_node_only
+from nvidia_tao_core.microservices.handlers.cloud_handlers.progress_tracker import ProgressTracker
+from nvidia_tao_core.microservices.handlers.cloud_handlers.progress_tracker_utils import (
+    get_file_size_mb, get_folder_stats, send_progress_status_callback
+)
 
 NUM_RETRY = 5
 
@@ -432,56 +436,293 @@ class CloudStorage:
             return [], []
 
     @retry_method
-    def download_file(self, cloud_file_path, local_destination):
-        """Download a file from cloud storage to local destination."""
+    def download_file(self, cloud_file_path, local_destination, progress_tracker=None):
+        """Download a file from cloud storage to local destination.
+
+        Args:
+            cloud_file_path (str): Path to file in cloud storage
+            local_destination (str): Local destination path
+            progress_tracker (ProgressTracker, optional): Progress tracker instance
+        """
         full_path = self.root + cloud_file_path.strip('/')
         try:
             if os.path.exists(local_destination):
                 logger.info(f"File {local_destination} already exists, skipping download")
                 return
-            self.fs.download(full_path, local_destination)
+
+            # Get file size for progress tracking
+            try:
+                file_info = self.fs.info(full_path)
+                file_size_mb = file_info.get('size', 0) / (1024 * 1024) if 'size' in file_info else 0.0
+            except Exception:
+                file_size_mb = 0.0
+
+            # Only create new progress tracker if none provided AND this is a standalone download
+            create_own_tracker = progress_tracker is None
+            if create_own_tracker:
+                progress_tracker = ProgressTracker("download", total_files=1, total_size_mb=file_size_mb)
+            else:
+                # Mark that we're starting to download this file
+                # Include parent folder for better identification
+                path_parts = cloud_file_path.strip('/').split('/')
+                if len(path_parts) >= 2:
+                    file_name = f"{path_parts[-2]}/{os.path.basename(cloud_file_path)}"
+                else:
+                    file_name = os.path.basename(cloud_file_path)
+                progress_tracker.start_file_download(file_name=file_name, file_size_mb=file_size_mb)
+
+            logger.info(
+                f"Starting download: {cloud_file_path} -> {local_destination} ({file_size_mb:.1f} MB)"
+            )
+
+            # Use streaming download for files >10MB to provide size-based progress
+            if file_size_mb > 10:
+                self._download_file_with_streaming_progress(
+                    full_path, local_destination, file_size_mb, cloud_file_path, progress_tracker
+                )
+            else:
+                self.fs.download(full_path, local_destination)
+                if not create_own_tracker:
+                    progress_tracker.update_progress(size_processed_mb=file_size_mb)
+                    progress_tracker.complete_file_download()
+
+            if create_own_tracker:
+                progress_tracker.complete()
+
             logger.info(f"Downloaded {cloud_file_path} to {local_destination}")
         except Exception as e:
+            error_msg = f"Error downloading file {cloud_file_path} to {local_destination}: {str(e)}"
             logger.error(f"download_file error: {e}")
+
+            # Send error callback
+            send_progress_status_callback(error_msg)
             raise
 
     @retry_method
-    def download_folder(self, cloud_folder, local_destination, maintain_src_folder_structure=False):
-        """Download a folder from cloud storage to local destination."""
+    def download_folder(self, cloud_folder, local_destination,
+                        maintain_src_folder_structure=False, progress_tracker=None):
+        """Download a folder from cloud storage to local destination with progress tracking."""
         # Normalize path to avoid double slashes
         cloud_folder_normalized = cloud_folder.strip('/')
         full_path = self.root + cloud_folder_normalized + '/' if cloud_folder_normalized else self.root
 
         try:
+            # Get folder statistics for progress tracking
+            files = self.fs.find(full_path)
+            file_paths = [f for f in files if self.fs.isfile(f)]
+            file_count = len(file_paths)
+
+            # Calculate total size
+            total_size_mb = 0.0
+            for file_path in file_paths:
+                try:
+                    file_info = self.fs.info(file_path)
+                    total_size_mb += file_info.get('size', 0) / (1024 * 1024) if 'size' in file_info else 0.0
+                except Exception:
+                    continue
+
+            logger.info(f"Starting folder download: {cloud_folder} -> {local_destination}")
+            logger.info(f"Folder contains {file_count} files ({total_size_mb:.1f} MB total)")
+
+            # Create progress tracker only if not provided
+            create_own_tracker = progress_tracker is None
+            if create_own_tracker:
+                progress_tracker = ProgressTracker("download", total_files=file_count, total_size_mb=total_size_mb)
+
             # Use fsspec for all cloud providers (unified approach)
             if maintain_src_folder_structure:
                 if os.path.exists(local_destination):
                     logger.info(f"Folder {local_destination} already exists, skipping download")
                     return
-                # Download maintaining the source folder structure
-                self.fs.download(full_path, local_destination, recursive=True)
+
+                # For large folders, download with progress tracking
+                if file_count > 10 or total_size_mb > 100:
+                    self._download_folder_with_progress(
+                        file_paths, full_path, local_destination, progress_tracker,
+                        maintain_src_folder_structure=True, cloud_folder_normalized=cloud_folder_normalized
+                    )
+                else:
+                    # Download maintaining the source folder structure
+                    self.fs.download(full_path, local_destination, recursive=True)
+                    progress_tracker.update_progress(files_processed=file_count, size_processed_mb=total_size_mb)
             else:
                 # Download contents without the source folder structure
-                files = self.fs.find(full_path)
                 os.makedirs(local_destination, exist_ok=True)
-                for file_path in files:
-                    if self.fs.isfile(file_path):
+                self._download_folder_with_progress(
+                    file_paths, full_path, local_destination, progress_tracker,
+                    maintain_src_folder_structure=False
+                )
+
+            if create_own_tracker:
+                progress_tracker.complete()
+            logger.info(f"Downloaded folder {cloud_folder} to {local_destination}")
+        except Exception as e:
+            error_msg = f"Error downloading folder {cloud_folder} to {local_destination}: {str(e)}"
+            logger.error(f"download_folder error: {e}")
+
+            # Send error callback
+            send_progress_status_callback(error_msg)
+            raise
+
+    def _download_folder_with_progress(self, file_paths, full_path, local_destination, progress_tracker,
+                                       maintain_src_folder_structure=False, cloud_folder_normalized=""):
+        """Download folder contents with detailed progress tracking."""
+        try:
+            for file_path in file_paths:
+                try:
+                    if maintain_src_folder_structure:
+                        # Maintain original folder structure
+                        relative_path = file_path[len(self.root + cloud_folder_normalized + '/'):]
+                        local_file_path = os.path.join(local_destination, cloud_folder_normalized, relative_path)
+                    else:
+                        # Flatten structure
                         relative_path = file_path[len(full_path):]
                         local_file_path = os.path.join(local_destination, relative_path)
-                        if os.path.exists(local_file_path):
-                            logger.info(
-                                f"File {local_file_path} in folder {local_destination} "
-                                f"already exists, skipping download"
-                            )
-                            continue
-                        # Create directory if needed
-                        os.makedirs(os.path.dirname(local_file_path), exist_ok=True)
-                        self.fs.download(file_path, local_file_path)
-                        logger.debug(f"Downloaded {file_path} to {local_file_path}")
 
-            logger.info(f"Downloaded folder {cloud_folder} to {local_destination} using fsspec")
+                    # Skip if file already exists
+                    if os.path.exists(local_file_path):
+                        logger.debug(f"File {local_file_path} already exists, skipping download")
+                        # Still count it as processed for progress tracking
+                        try:
+                            file_info = self.fs.info(file_path)
+                            file_size_mb = file_info.get('size', 0) / (1024 * 1024) if 'size' in file_info else 0.0
+                        except Exception:
+                            file_size_mb = 0.0
+                        progress_tracker.update_progress(files_processed=1, size_processed_mb=file_size_mb)
+                        continue
+
+                    # Create directory if needed
+                    os.makedirs(os.path.dirname(local_file_path), exist_ok=True)
+
+                    # Get file size
+                    try:
+                        file_info = self.fs.info(file_path)
+                        file_size_mb = file_info.get('size', 0) / (1024 * 1024) if 'size' in file_info else 0.0
+                    except Exception:
+                        file_size_mb = 0.0
+
+                    # Use streaming download for large files
+                    if file_size_mb > 50:
+                        self._download_file_with_streaming_progress(
+                            file_path, local_file_path, file_size_mb,
+                            os.path.basename(file_path)
+                        )
+                    else:
+                        # Download individual file
+                        self.fs.download(file_path, local_file_path)
+
+                    # Update progress
+                    progress_tracker.update_progress(files_processed=1, size_processed_mb=file_size_mb)
+
+                except Exception as file_err:
+                    logger.warning(f"Failed to download {file_path}: {file_err}")
+                    continue
+
         except Exception as e:
-            logger.error(f"download_folder error: {e}")
+            logger.error(f"Error in _download_folder_with_progress: {e}")
+            raise
+
+    def _download_file_with_streaming_progress(self, cloud_full_path, local_destination,
+                                               file_size_mb, display_name, external_progress_tracker=None):
+        """Download a file with real-time streaming progress updates.
+
+        Args:
+            cloud_full_path (str): Full path in cloud storage
+            local_destination (str): Local destination path
+            file_size_mb (float): File size in MB
+            display_name (str): Display name for progress messages
+            external_progress_tracker (ProgressTracker, optional): External progress tracker to use
+        """
+        # Use external progress tracker if provided, otherwise create streaming tracker
+        if external_progress_tracker:
+            streaming_tracker = external_progress_tracker
+            manage_tracker = False  # Don't call complete() on external tracker
+        else:
+            streaming_tracker = ProgressTracker(
+                "download", total_files=1, total_size_mb=file_size_mb, file_name=display_name
+            )
+            manage_tracker = True
+
+        try:
+            # Create destination directory if needed
+            os.makedirs(os.path.dirname(local_destination), exist_ok=True)
+
+            # Use fsspec to open the file and read in chunks
+            chunk_size = 8 * 1024 * 1024  # 8MB chunks for good progress granularity
+
+            with self.fs.open(cloud_full_path, 'rb') as src_file:
+                with open(local_destination, 'wb') as dst_file:
+                    while True:
+                        chunk = src_file.read(chunk_size)
+                        if not chunk:
+                            break
+
+                        dst_file.write(chunk)
+                        # Update progress with the chunk size
+                        chunk_size_mb = len(chunk) / (1024 * 1024)
+                        streaming_tracker.update_progress(size_processed_mb=chunk_size_mb)
+
+            # Mark file as complete when streaming download finishes (if using external tracker)
+            if not manage_tracker and external_progress_tracker:
+                external_progress_tracker.complete_file_download()
+
+            if manage_tracker:
+                streaming_tracker.complete()
+
+        except Exception as e:
+            error_msg = f"Error in streaming download of {display_name}: {str(e)}"
+            logger.error(error_msg)
+            send_progress_status_callback(error_msg)
+            raise
+
+    def _upload_file_with_streaming_progress(self, local_file_path, cloud_full_path,
+                                             file_size_mb, display_name,
+                                             external_progress_tracker=None):
+        """Upload a file with real-time streaming progress updates.
+
+        Args:
+            local_file_path (str): Local file path
+            cloud_full_path (str): Full path in cloud storage
+            file_size_mb (float): File size in MB
+            display_name (str): Display name for progress messages
+            external_progress_tracker (ProgressTracker, optional): External progress tracker to use
+        """
+        # Use external progress tracker if provided, otherwise create streaming tracker
+        if external_progress_tracker:
+            streaming_tracker = external_progress_tracker
+            manage_tracker = False  # Don't call complete() on external tracker
+        else:
+            streaming_tracker = ProgressTracker("upload", total_files=1, total_size_mb=file_size_mb,
+                                                file_name=display_name)
+            manage_tracker = True
+
+        try:
+            # Use fsspec to open the destination and write in chunks
+            chunk_size = 8 * 1024 * 1024  # 8MB chunks for good progress granularity
+
+            with open(local_file_path, 'rb') as src_file:
+                with self.fs.open(cloud_full_path, 'wb') as dst_file:
+                    while True:
+                        chunk = src_file.read(chunk_size)
+                        if not chunk:
+                            break
+
+                        dst_file.write(chunk)
+                        # Update progress with the chunk size
+                        chunk_size_mb = len(chunk) / (1024 * 1024)
+                        streaming_tracker.update_progress(size_processed_mb=chunk_size_mb)
+
+            # Mark file as complete when streaming upload finishes (if using external tracker)
+            if not manage_tracker and external_progress_tracker:
+                external_progress_tracker.complete_file_download()
+
+            if manage_tracker:
+                streaming_tracker.complete()
+
+        except Exception as e:
+            error_msg = f"Error in streaming upload of {display_name}: {str(e)}"
+            logger.error(error_msg)
+            send_progress_status_callback(error_msg)
             raise
 
     @retry_method
@@ -499,26 +740,151 @@ class CloudStorage:
 
     @retry_method
     @master_node_only
-    def upload_file(self, local_file_path, cloud_file_path):
-        """Upload a file from local storage to cloud."""
+    def upload_file(self, local_file_path, cloud_file_path, progress_tracker=None, send_status_callbacks=True):
+        """Upload a file from local storage to cloud.
+
+        Args:
+            local_file_path (str): Path to local file
+            cloud_file_path (str): Path in cloud storage
+            progress_tracker (ProgressTracker, optional): Progress tracker instance
+            send_status_callbacks (bool): Whether to send status callbacks (False for background uploads)
+        """
         full_path = self.root + cloud_file_path.strip('/')
         try:
-            self.fs.upload(local_file_path, full_path)
+            # Get file size for progress tracking
+            file_size_mb = get_file_size_mb(local_file_path)
+
+            # Only create new progress tracker if none provided AND this is a standalone upload
+            create_own_tracker = progress_tracker is None
+            if create_own_tracker:
+                progress_tracker = ProgressTracker("upload", total_files=1, total_size_mb=file_size_mb,
+                                                   send_callbacks=send_status_callbacks)
+            else:
+                # Mark that we're starting to upload this file
+                # Include parent folder for better identification
+                path_parts = local_file_path.strip('/').split('/')
+                if len(path_parts) >= 2:
+                    file_name = f"{path_parts[-2]}/{os.path.basename(local_file_path)}"
+                else:
+                    file_name = os.path.basename(local_file_path)
+                progress_tracker.start_file_download(file_name=file_name, file_size_mb=file_size_mb)
+
+            logger.info(f"Starting upload: {local_file_path} -> {cloud_file_path} ({file_size_mb:.1f} MB)")
+
+            # Use streaming upload for large files (>50MB)
+            if file_size_mb > 50:
+                self._upload_file_with_streaming_progress(
+                    local_file_path, full_path, file_size_mb, cloud_file_path, progress_tracker
+                )
+                # File completion will be marked inside the streaming function
+            else:
+                self.fs.upload(local_file_path, full_path)
+                # Update progress for small files
+                if create_own_tracker:
+                    # For standalone uploads, update progress before completing
+                    progress_tracker.update_progress(files_processed=1, size_processed_mb=file_size_mb)
+                else:
+                    # For batch uploads, update size and mark file complete
+                    progress_tracker.update_progress(size_processed_mb=file_size_mb)
+                    progress_tracker.complete_file_download()
+
+            # Complete our own tracker, but don't interfere with external ones
+            if create_own_tracker:
+                progress_tracker.complete()
+
             logger.info(f"Uploaded {local_file_path} to {cloud_file_path}")
         except Exception as e:
+            error_msg = f"Error uploading file {local_file_path} to {cloud_file_path}: {str(e)}"
             logger.error(f"upload_file error: {e}")
+
+            # Send error callback
+            send_progress_status_callback(error_msg)
             raise
 
     @retry_method
     @master_node_only
-    def upload_folder(self, local_folder, cloud_subfolder):
-        """Upload a folder from local storage to cloud."""
+    def upload_folder(self, local_folder, cloud_subfolder, send_status_callbacks=True):
+        """Upload a folder from local storage to cloud with progress tracking.
+
+        Args:
+            local_folder (str): Local folder path
+            cloud_subfolder (str): Cloud destination path
+            send_status_callbacks (bool): Whether to send status callbacks (False for background uploads)
+        """
         full_path = self.root + cloud_subfolder.strip('/').rstrip('/') + '/'
         try:
-            self.fs.upload(local_folder, full_path, recursive=True)
+            # Get folder statistics for progress tracking
+            file_count, total_size_mb = get_folder_stats(local_folder)
+
+            logger.info(f"Starting folder upload: {local_folder} -> {cloud_subfolder}")
+            logger.info(f"Folder contains {file_count} files ({total_size_mb:.1f} MB total)")
+
+            # Create progress tracker with callback control
+            progress_tracker = ProgressTracker("upload", total_files=file_count,
+                                               total_size_mb=total_size_mb,
+                                               send_callbacks=send_status_callbacks)
+
+            # For large folders, upload files individually to track progress
+            if file_count > 10 or total_size_mb > 100:
+                self._upload_folder_with_progress(local_folder, full_path, progress_tracker)
+            else:
+                # For small folders, use direct fsspec upload
+                self.fs.upload(local_folder, full_path, recursive=True)
+                progress_tracker.update_progress(files_processed=file_count, size_processed_mb=total_size_mb)
+
+            progress_tracker.complete()
             logger.info(f"Uploaded folder {local_folder} to {cloud_subfolder}")
         except Exception as e:
+            error_msg = f"Error uploading folder {local_folder} to {cloud_subfolder}: {str(e)}"
             logger.error(f"upload_folder error: {e}")
+
+            # Send error callback
+            send_progress_status_callback(error_msg)
+            raise
+
+    def _upload_folder_with_progress(self, local_folder, cloud_path, progress_tracker):
+        """Upload folder contents with detailed progress tracking."""
+        try:
+            for root, _, files in os.walk(local_folder):
+                for file in files:
+                    local_file_path = os.path.join(root, file)
+
+                    # Calculate relative path from local_folder
+                    relative_path = os.path.relpath(local_file_path, local_folder)
+                    cloud_file_path = cloud_path + relative_path.replace(os.sep, '/')
+
+                    # Get file size
+                    file_size_mb = get_file_size_mb(local_file_path)
+
+                    try:
+                        # Mark file as started with file name and size
+                        # Include parent folder for better identification
+                        path_parts = local_file_path.strip('/').split('/')
+                        if len(path_parts) >= 2:
+                            file_name = f"{path_parts[-2]}/{os.path.basename(local_file_path)}"
+                        else:
+                            file_name = os.path.basename(local_file_path)
+                        progress_tracker.start_file_download(file_name=file_name, file_size_mb=file_size_mb)
+                        # Use streaming upload for large files
+                        if file_size_mb > 50:
+                            self._upload_file_with_streaming_progress(
+                                local_file_path, cloud_file_path, file_size_mb,
+                                file_name, progress_tracker
+                            )
+                            # File completion marked inside streaming function
+                        else:
+                            # Upload individual file
+                            self.fs.upload(local_file_path, cloud_file_path)
+                            # Update progress with size and mark file complete
+                            progress_tracker.update_progress(size_processed_mb=file_size_mb)
+                            progress_tracker.complete_file_download()
+
+                    except Exception as file_err:
+                        logger.warning(f"Failed to upload {local_file_path}: {file_err}")
+                        continue
+
+        except Exception as e:
+            logger.error(f"Error in _upload_folder_with_progress: {e}")
             raise
 
     @retry_method
