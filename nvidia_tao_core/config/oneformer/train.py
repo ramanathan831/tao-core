@@ -90,7 +90,7 @@ class OptimConfig:
     )
     milestones: List[int] = LIST_FIELD(
         arrList=[88, 96],
-        description="""learning rate decay epochs.""",
+        description="learning rate decay epochs.",
         display_name="learning rate decay epochs."
     )
     gamma: float = FLOAT_FIELD(
@@ -116,7 +116,7 @@ class OptimConfig:
     )
     steps: List[int] = LIST_FIELD(
         arrList=[327778, 355092],
-        description="""learning rate decay epochs.""",
+        description="learning rate decay epochs.",
         display_name="learning rate decay epochs."
     )
 

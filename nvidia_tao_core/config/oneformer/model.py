@@ -257,6 +257,12 @@ class OneFormer:
         description="Name of the transformer input feature.",
         display_name="transformer in feature"
     )
+    num_feature_levels: int = INT_FIELD(
+        value=3,
+        default_value=3,
+        description="Number of feature levels.",
+        display_name="num feature levels",
+    )
 
 
 @dataclass
@@ -300,6 +306,12 @@ class TestConfig:
         default_value=False,
         description="Enable panoptic segmentation.",
         display_name="panoptic on"
+    )
+    detection_on: bool = BOOL_FIELD(
+        value=False,
+        default_value=False,
+        description="Enable detection.",
+        display_name="detect on"
     )
 
 
