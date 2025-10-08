@@ -15,7 +15,6 @@
 
 from typing import Optional
 from dataclasses import dataclass
-from omegaconf import MISSING
 
 from nvidia_tao_core.config.utils.types import (
     BOOL_FIELD,
@@ -43,7 +42,7 @@ class OneFormerExportExpConfig:
         display_name="GPU ID"
     )
     checkpoint: str = STR_FIELD(
-        value=MISSING,
+        value="",
         default_value="",
         description="Path to the checkpoint file to run export.",
         display_name="checkpoint"
@@ -56,18 +55,16 @@ class OneFormerExportExpConfig:
         valid_options="semantic,instance,panoptic"
     )
     onnx_file: str = STR_FIELD(
-        value=MISSING,
+        value="",
         default_value="",
         display_name="onnx file",
-        description="""
-        Path to the onnx model file.
-        """
+        description="Path to the onnx model file."
     )
     on_cpu: bool = BOOL_FIELD(
         value=False,
         default_value=False,
         display_name="verbose",
-        description="""Flag to export CPU compatible model."""
+        description="Flag to export CPU compatible model."
     )
     input_channel: int = INT_FIELD(
         value=3,
@@ -93,8 +90,7 @@ class OneFormerExportExpConfig:
     opset_version: int = INT_FIELD(
         value=17,
         default_value=17,
-        description="""Operator set version of the ONNX model used to generate
-                    the TensorRT engine.""",
+        description="Operator set version of the ONNX model used to generate the TensorRT engine.",
         display_name="opset version",
         valid_min=1,
     )
@@ -102,13 +98,12 @@ class OneFormerExportExpConfig:
         value=-1,
         default_value=-1,
         valid_min=-1,
-        description="""The batch size of the input Tensor for the engine.
-                    A value of :code:`-1` implies dynamic tensor shapes.""",
+        description="The batch size of the input Tensor for the engine",
         display_name="batch size"
     )
     verbose: bool = BOOL_FIELD(
         value=False,
         default_value=False,
         display_name="verbose",
-        description="""Flag to enable verbose TensorRT logging."""
+        description="Flag to enable verbose TensorRT logging."
     )
