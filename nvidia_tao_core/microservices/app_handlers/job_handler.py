@@ -246,7 +246,6 @@ class JobHandler:
                     handler_metadata,
                     name=name,
                     platform_id=platform_id,
-                    retain_checkpoints_for_resume=retain_checkpoints_for_resume,
                 )
                 msg = "AutoML "
             else:

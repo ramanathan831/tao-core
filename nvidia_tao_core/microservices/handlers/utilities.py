@@ -67,7 +67,6 @@ from nvidia_tao_core.microservices.handlers.stateless_handlers import (
     experiment_update_handler_attributes,
     update_handler_with_jobs_info,
     get_workspace_string_identifier,
-    get_automl_experiment_job_id,
     BACKEND
 )
 from nvidia_tao_core.microservices.handlers.ngc_handler import validate_ptm_download
