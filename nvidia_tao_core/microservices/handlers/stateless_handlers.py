@@ -445,6 +445,23 @@ def save_automl_best_rec_info(brain_job_id, best_rec_number, best_rec_job_id):
     mongo_jobs.upsert(job_query, {"best_rec_number": str(best_rec_number), "best_rec_id": str(best_rec_job_id)})
 
 
+def get_automl_custom_param_ranges(experiment_id):
+    """Get custom parameter ranges for AutoML from experiment"""
+    mongo_experiments = MongoHandler("tao", "experiments")
+    experiment_query = {'id': experiment_id}
+    experiment_info = mongo_experiments.find_one(experiment_query)
+    if experiment_info:
+        return experiment_info.get("custom_param_ranges", {})
+    return {}
+
+
+def save_automl_custom_param_ranges(experiment_id, custom_ranges):
+    """Save custom parameter ranges for AutoML to experiment"""
+    mongo_experiments = MongoHandler("tao", "experiments")
+    experiment_query = {'id': experiment_id}
+    mongo_experiments.upsert(experiment_query, {"custom_param_ranges": custom_ranges})
+
+
 def is_request_automl(handler_id, action, kind):
     """Returns if the job requested is automl based train or not"""
     handler_metadata = resolve_metadata(kind, handler_id)

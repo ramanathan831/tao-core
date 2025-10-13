@@ -84,6 +84,7 @@ from nvidia_tao_core.microservices.utils import (
     DataMonitorLogTypeEnum
 )
 from nvidia_tao_core.microservices.job_utils.workflow import Workflow
+from nvidia_tao_core.microservices.automl_flask import automl_params_bp
 
 from werkzeug.exceptions import HTTPException
 from werkzeug.middleware.profiler import ProfilerMiddleware
@@ -370,6 +371,9 @@ limiter = Limiter(
     headers_enabled=True,
     storage_uri="memory://",
 )
+
+# Register AutoML parameter management routes
+app.register_blueprint(automl_params_bp)
 
 
 @app.errorhandler(HTTPException)
