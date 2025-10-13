@@ -837,7 +837,8 @@ def get_flatten_specs(dict_spec, flat_specs, parent=""):
 
 def get_total_epochs(job_context, handler_root, automl=False, automl_experiment_id=None):
     """Get the epoch/iter number from specs of train action"""
-    spec = get_job_specs(job_context.id)
+    job_id = job_context if type(job_context) is str else job_context.id
+    spec = get_job_specs(job_id, automl=automl, automl_experiment_id=automl_experiment_id)
     max_epoch = 100.0
     for key1 in spec:
         if key1 in ("training_config", "train_config", "train"):
