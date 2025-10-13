@@ -31,7 +31,7 @@ from nvidia_tao_core.microservices.handlers.stateless_handlers import (
     update_job_message,
     get_handler_type,
     get_handler_metadata,
-    get_automl_controller_info
+    get_automl_controller_info,
 )
 from nvidia_tao_core.microservices.handlers.automl_handler import AutoMLHandler
 from nvidia_tao_core.microservices.handlers.mongo_handler import MongoHandler
@@ -99,6 +99,8 @@ class Job(PrioritizedItem, IdedItem):
     num_gpu: int = field(compare=False, default=0)
     platform_id: uuid.UUID = field(compare=False, default=uuid.uuid4())
     workflow_status: str = field(compare=False, default=None)
+    retain_checkpoints_for_resume: bool = field(compare=False, default=False)
+    early_stop_epoch: int = field(compare=False, default=None)
 
 
 def dependency_check(job_context, dependency):
@@ -276,6 +278,8 @@ class Workflow:
             org_name = job_dict.get("org_name")
             specs = job_dict.get("specs")
             platform_id = job_dict.get("platform_id")
+            retain_checkpoints_for_resume = job_dict.get("retain_checkpoints_for_resume", False)
+            early_stop_epoch = job_dict.get("early_stop_epoch", None)
             if 'experiment_id' in job_dict:
                 kind = 'experiment'
                 handler_id = job_dict['experiment_id']
@@ -329,7 +333,9 @@ class Workflow:
                 name=name,
                 num_gpu=num_gpu,
                 specs=specs,
-                platform_id=platform_id
+                platform_id=platform_id,
+                retain_checkpoints_for_resume=retain_checkpoints_for_resume,
+                early_stop_epoch=early_stop_epoch
             )
             # If job has yet to be executed, skip monitoring
             if still_exists(job_context):
@@ -370,6 +376,7 @@ class Workflow:
                                 recommendation.get("id", None)):
                             rec_id = recommendation["id"]
                             deps = [Dependency(type="automl", name=str(rec_id))]
+                            # Get retain_checkpoints_for_resume from job metadata (same as parent job)
                             automl_context = JobContext(
                                 job_id,
                                 parent_job_id,
@@ -381,7 +388,9 @@ class Workflow:
                                 kind,
                                 name=name,
                                 num_gpu=num_gpu,
-                                platform_id=platform_id
+                                platform_id=platform_id,
+                                retain_checkpoints_for_resume=retain_checkpoints_for_resume,
+                                early_stop_epoch=early_stop_epoch
                             )
                             automl_context.dependencies = deps
                             _AutoMLPipeline = AutoMLPipeline(automl_context)

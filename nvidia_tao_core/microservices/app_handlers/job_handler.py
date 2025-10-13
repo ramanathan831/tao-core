@@ -47,7 +47,8 @@ from nvidia_tao_core.microservices.handlers.utilities import (
     Code,
     download_log_from_cloud,
     get_files_from_cloud,
-    get_num_gpus_from_spec
+    get_num_gpus_from_spec,
+    send_microservice_request
 )
 from nvidia_tao_core.microservices.job_utils.executor import (
     JobExecutor,
@@ -90,7 +91,9 @@ class JobHandler:
         description=None,
         num_gpu=-1,
         platform_id=None,
-        from_ui=False
+        from_ui=False,
+        retain_checkpoints_for_resume=False,
+        early_stop_epoch=None
     ):
         """Runs a job based on the specified parameters.
 
@@ -111,6 +114,8 @@ class JobHandler:
             num_gpu (int, optional): The number of GPUs to allocate.
             platform_id (str, optional): The platform ID for job execution.
             from_ui (bool, optional): Indicates whether the job call is from the UI.
+            retain_checkpoints_for_resume (bool, optional): Whether to retain .pth checkpoints for training resume.
+            early_stop_epoch (int, optional): The epoch number to early stop training.
 
         Returns:
             Code: A response code object containing the status and job ID or error details:
@@ -240,7 +245,8 @@ class JobHandler:
                     job_id,
                     handler_metadata,
                     name=name,
-                    platform_id=platform_id
+                    platform_id=platform_id,
+                    retain_checkpoints_for_resume=retain_checkpoints_for_resume,
                 )
                 msg = "AutoML "
             else:
@@ -258,7 +264,9 @@ class JobHandler:
                     name=name,
                     description=description,
                     num_gpu=num_gpu,
-                    platform_id=platform_id
+                    platform_id=platform_id,
+                    retain_checkpoints_for_resume=retain_checkpoints_for_resume,
+                    early_stop_epoch=early_stop_epoch
                 )
                 on_new_job(job_context)
             if specs:
@@ -581,7 +589,7 @@ class JobHandler:
             return Code(404, [], "job status not found")
 
     @staticmethod
-    def job_pause(org_name, handler_id, job_id, kind):
+    def job_pause(org_name, handler_id, job_id, kind, graceful=False):
         """Pauses a job based on its current status.
 
         Args:
@@ -589,6 +597,8 @@ class JobHandler:
             handler_id (str): UUID of the experiment or dataset.
             job_id (str): UUID of the job to pause.
             kind (str): Type of resource, either 'experiment' or 'dataset'.
+            graceful (bool): If True, performs graceful pause by signaling job to terminate
+                           and upload checkpoints before shutting down. Default is False.
 
         Returns:
             Code: A response indicating the result:
@@ -633,8 +643,10 @@ class JobHandler:
             return Code(
                 200,
                 {
-                    f"Job {job_id} with current status {job_status} can't be attemped to pause. "
-                    "Current status should be one of Running, Pending, Resuming"
+                    "message": (
+                        f"Job {job_id} with current status {job_status} can't be attemped to pause. "
+                        f"Current status should be one of Running, Pending, Resuming"
+                    )
                 }
             )
         specs = job_metadata.get("specs", None)
@@ -649,8 +661,32 @@ class JobHandler:
 
         if job_status == "Running":
             try:
-                # Delete K8s job
                 update_job_status(handler_id, job_id, status="Pausing", kind=kind + "s")
+
+                # Try graceful pause if requested
+                if graceful:
+                    network = job_metadata.get("network", "")
+                    action = job_metadata.get("action", "")
+                    if network and action:
+                        try:
+                            response = send_microservice_request(
+                                api_endpoint="pause_job",
+                                network=network,
+                                action=action,
+                                specs={},
+                                job_id=job_id
+                            )
+                            if response.status_code == 200:
+                                return Code(200, {
+                                    "message": f"Job {job_id} is being paused gracefully. "
+                                               f"Checkpoints will be uploaded and pod will terminate automatically."
+                                })
+                        except Exception as e:
+                            logger.error("Graceful pause failed for job %s: %s", job_id, str(e))
+
+                    logger.warning("Graceful pause unavailable for job %s, using abrupt pause", job_id)
+
+                # Abrupt pause (or fallback if graceful pause failed)
                 StatefulSetExecutor().delete_statefulset(job_id, use_ngc=use_ngc)
                 k8s_status = JobExecutor().get_job_status(
                     org_name,

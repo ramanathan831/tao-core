@@ -16,6 +16,7 @@
 import ast
 import fnmatch
 import glob
+import json
 import logging
 import os
 import re
@@ -309,89 +310,106 @@ def get_file_modification_time(local_path):
 
 
 @master_node_only
-def upload_files(local_path, cloud_storage, file_last_modified, selective_tarball_config=None, exclude_patterns=None):
+def upload_files(local_path, cloud_storage, file_last_modified=None,
+                 selective_tarball_config=None, exclude_patterns=None, file_snapshot=None):
     """Uploads any detected changes to the specified cloud storage.
 
     Args:
         local_path (str): The local path to monitor.
         cloud_storage: An instance of the CloudStorage class for uploading files.
-        file_last_modified: Dictionary to find modified files
+        file_last_modified (dict, optional): Dictionary to find modified files. Not used when file_snapshot is provided.
         selective_tarball_config (dict): Configuration for selective tarball patterns to skip.
         exclude_patterns (list, optional): List of regex patterns to exclude files from upload.
+        file_snapshot (set, optional): Set of relative file paths to upload. If provided, only these files are uploaded.
     """
-    for root, _, files in os.walk(local_path):
-        for filename in files:
-            file_path = os.path.join(root, filename)
-            current_last_modified = get_file_modification_time(file_path)
-            if current_last_modified:
-
-                # Check if the file is new or modified
-                if (
-                    file_path not in file_last_modified or
-                    current_last_modified > file_last_modified[file_path]
-                ) and ("checkpoint-" not in file_path and "tmp" not in file_path):
-
-                    # Check exclude_patterns
-                    should_exclude = False
-                    if exclude_patterns:
+    # If no snapshot provided, create one from directory walk (for continuous monitoring)
+    if not file_snapshot:
+        file_snapshot = set()
+        for root, _, files in os.walk(local_path):
+            for filename in files:
+                file_path = os.path.join(root, filename)
+                current_last_modified = get_file_modification_time(file_path)
+                if current_last_modified:
+                    # Check if the file is new or modified
+                    if (
+                        file_path not in file_last_modified or
+                        current_last_modified > file_last_modified[file_path]
+                    ):
                         rel_path = os.path.relpath(file_path, local_path)
-                        for pattern in exclude_patterns:
-                            try:
-                                if re.search(pattern, rel_path) or re.search(pattern, filename):
-                                    should_exclude = True
-                                    logger.debug("Excluding file from upload due to pattern '%s': %s",
-                                                 pattern, rel_path)
-                                    break
-                            except re.error:
-                                logger.warning("Invalid regex pattern '%s', skipping", pattern)
-
-                    if should_exclude:
-                        # Update modification time but don't upload
+                        file_snapshot.add(rel_path)
+                        # Update modification time
                         file_last_modified[file_path] = current_last_modified
-                        continue
+                else:
+                    logger.error("File could not be uploaded: %s", file_path)
 
-                    # Skip files that will be included in selective tarball
-                    if should_skip_file_for_tarball(file_path, local_path, selective_tarball_config):
-                        # Update modification time but don't upload
-                        file_last_modified[file_path] = current_last_modified
-                        continue
+    # Filter files to upload (apply all skip conditions)
+    files_to_upload = []
+    for rel_path in file_snapshot:
+        file_path = os.path.join(local_path, rel_path)
+        filename = os.path.basename(file_path)
 
-                    logger.info("File event created/modified {}".format(file_path))  # noqa pylint: disable=C0209
-                    try:
-                        time.sleep(10)
-                        cloud_storage.upload_file(file_path, file_path)
-                    except Exception as e:  # pylint: disable=broad-except
-                        logger.error(
-                            "Failed to upload file: {} - Error: {}".format(  # noqa pylint: disable=C0209
-                                file_path, str(e)
-                            )
-                        )
-                    # Remove file after successful upload only if size > 50MB
-                    try:
-                        if cloud_storage.is_file(file_path):
-                            file_size_mb = os.path.getsize(file_path) / (1024 * 1024)  # Convert to MB
-                            if file_size_mb > 50:
-                                os.remove(file_path)
-                                logger.info(
-                                    "Large file (%.2f MB) successfully uploaded and removed: %s",
-                                    file_size_mb, file_path
-                                )
-                            else:
-                                logger.info(
-                                    "File (%.2f MB) successfully uploaded but retained (under 50MB): %s",
-                                    file_size_mb, file_path
-                                )
-                    except Exception as e:  # pylint: disable=broad-except
-                        logger.error(
-                            "Failed to remove file after upload: {} - Error: {}".format(  # noqa pylint: disable=C0209
-                                file_path, str(e)
-                            )
-                        )
+        # Skip if file doesn't exist or is not a regular file
+        if not (os.path.exists(file_path) and os.path.isfile(file_path)):
+            continue
 
-                    # Update the last modification time for the file
-                    file_last_modified[file_path] = current_last_modified
+        # Skip checkpoint and tmp files
+        if "checkpoint-" in file_path or "tmp" in file_path:
+            continue
+
+        # Check exclude_patterns
+        should_exclude = False
+        if exclude_patterns:
+            for pattern in exclude_patterns:
+                try:
+                    if re.search(pattern, rel_path) or re.search(pattern, filename):
+                        should_exclude = True
+                        logger.debug("Excluding file from upload due to pattern '%s': %s", pattern, rel_path)
+                        break
+                except re.error:
+                    logger.warning("Invalid regex pattern '%s', skipping", pattern)
+
+        if should_exclude:
+            continue
+
+        # Skip files that will be included in selective tarball
+        if should_skip_file_for_tarball(file_path, local_path, selective_tarball_config):
+            continue
+
+        files_to_upload.append((rel_path, file_path))
+
+    # Log summary of files to upload
+    if files_to_upload:
+        logger.info("Total files to upload: %d", len(files_to_upload))
+        logger.info("Files to upload: %s", [rel_path for rel_path, _ in files_to_upload])
+
+    # Process all files to upload
+    for idx, (rel_path, file_path) in enumerate(files_to_upload, 1):
+        remaining = len(files_to_upload) - idx
+        logger.info("Uploading file %d/%d: %s (remaining: %d)", idx, len(files_to_upload), file_path, remaining)
+        try:
+            if not file_last_modified:
+                # Snapshot mode: upload immediately
+                cloud_storage.upload_file(file_path, file_path)
             else:
-                logger.error("File could not be uploaded: %s", file_path)
+                # Continuous monitoring mode: wait before upload
+                time.sleep(10)
+                cloud_storage.upload_file(file_path, file_path)
+        except Exception as e:  # pylint: disable=broad-except
+            logger.error("Failed to upload file: {} - Error: {}".format(file_path, str(e)))  # noqa pylint: disable=C0209
+
+        # Remove file after successful upload only if size > 50MB
+        try:
+            if cloud_storage.is_file(file_path):
+                file_size_mb = os.path.getsize(file_path) / (1024 * 1024)
+                if file_size_mb > 50:
+                    os.remove(file_path)
+                    logger.info("Large file (%.2f MB) successfully uploaded and removed: %s",
+                                file_size_mb, file_path)
+                else:
+                    logger.info("File (%.2f MB) successfully uploaded but retained (under 50MB): %s",
+                                file_size_mb, file_path)
+        except Exception as e:  # pylint: disable=broad-except
+            logger.error("Failed to remove file after upload: {} - Error: {}".format(file_path, str(e)))  # noqa pylint: disable=C0209
 
 
 def get_log_file_name():
@@ -460,6 +478,33 @@ def status_callback(data_string, retry=0):
         data_string (str): The status data to be sent.
         retry (int, optional): The current retry attempt (default is 0).
     """
+    # Check for early stopping based on epoch threshold
+    early_stop_epoch = os.getenv("EARLY_STOP_EPOCH")
+    if early_stop_epoch:
+        try:
+            early_stop_epoch = int(early_stop_epoch)
+            # Parse status data to extract current epoch
+            status_data = json.loads(data_string)
+            current_epoch = status_data.get("epoch")
+
+            if current_epoch is not None and current_epoch > early_stop_epoch:
+                logger.info(f"Early stop triggered: epoch {current_epoch} >= {early_stop_epoch}")
+                # Write graceful termination signal
+                job_id = os.getenv("JOB_ID")
+                if job_id:
+                    results_dir = f"/results/{job_id}"
+                    signal_file = os.path.join(results_dir, ".graceful_termination_signal")
+                    try:
+                        os.makedirs(results_dir, exist_ok=True)
+                        if not os.path.exists(signal_file):
+                            with open(signal_file, 'w', encoding='utf-8') as f:
+                                f.write(f"early_stop_epoch_{early_stop_epoch}")
+                            logger.info(f"Early stop signal written for job {job_id} at epoch {current_epoch}")
+                    except Exception as e:
+                        logger.error(f"Failed to write early stop signal: {e}")
+        except (ValueError, json.JSONDecodeError) as e:
+            logger.debug(f"Could not parse early stop epoch or status data: {e}")
+
     if os.getenv("CLOUD_BASED") == "True":
         if retry >= NUM_RETRY:
             cleanup_cuda_contexts()
@@ -588,12 +633,21 @@ def monitor_and_upload(local_path, cloud_storage, exit_event, seek_position=0,
 
     try:
         while True:
+            if exit_event.is_set():
+                # Check if this is a graceful pause (signal file exists) or normal completion
+                signal_file = os.path.join(local_path, ".graceful_termination_signal")
+                if os.path.exists(signal_file):
+                    # Graceful pause: exit immediately, snapshot upload will handle remaining files
+                    logger.info("Continuous upload monitor stopped by graceful pause signal")
+                else:
+                    # Normal completion: do final upload to ensure all files are uploaded
+                    logger.info("Continuous upload monitor stopped, performing final upload")
+                    upload_files(local_path, cloud_storage, file_last_modified,
+                                 selective_tarball_config, exclude_patterns)
+                    seek_position = send_logs_to_server(seek_position)
+                break
             upload_files(local_path, cloud_storage, file_last_modified, selective_tarball_config, exclude_patterns)
             seek_position = send_logs_to_server(seek_position)
-            if exit_event.is_set():
-                upload_files(local_path, cloud_storage, file_last_modified, selective_tarball_config, exclude_patterns)
-                seek_position = send_logs_to_server(seek_position)
-                break
             time.sleep(30)  # Adjust the sleep interval as needed
 
     except (KeyboardInterrupt, SystemExit, Exception):

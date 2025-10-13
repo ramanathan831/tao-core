@@ -223,6 +223,8 @@ class ActionPipeline:
         )
         self.num_nodes = get_num_nodes_from_spec(self.job_context.specs, self.action, network=self.network)
         self.recursive_dataset_file_download = self.api_params.get("recursive_dataset_file_download", False)
+        self.retain_checkpoints_for_resume = self.job_context.retain_checkpoints_for_resume
+        self.early_stop_epoch = self.job_context.early_stop_epoch
         # add an entry on the docker image mapper for trt engine generation MAXINE DEPLOY
         # if action is trt engine generation and network is a maxine network, override image from docker image mapper
         # TODO: robbie add image mpping fix for trt engine gen
@@ -311,6 +313,9 @@ class ActionPipeline:
         self.job_env_variables["TAO_API_SERVER"] = host_base_url
         self.job_env_variables["TAO_API_JOB_ID"] = log_callback_job_id
         self.job_env_variables["TAO_LOGGING_SERVER_URL"] = status_url
+        self.job_env_variables["RETAIN_CHECKPOINTS_FOR_RESUME"] = str(self.retain_checkpoints_for_resume)
+        if self.early_stop_epoch is not None:
+            self.job_env_variables["EARLY_STOP_EPOCH"] = str(self.early_stop_epoch)
 
     def generate_nv_job_metadata(self, nv_job_metadata):
         """Convert run command generated into format that"""
@@ -485,7 +490,8 @@ class ActionPipeline:
             StatefulSetExecutor().delete_statefulset(self.job_name, use_ngc=self.ngc_runner)
 
         # Monitor job status
-        while k8s_status in ["Done", "Error", "Running", "Pending"]:
+        cur_status_line = 0
+        while k8s_status in ["Done", "Error", "Running", "Pending", "Pausing"]:
             # If Done, try running self.post_run()
             # Poll every 30 seconds
             time.sleep(30)
@@ -560,8 +566,24 @@ class ActionPipeline:
                 )
                 continue
 
+            elif k8s_status == "Pausing":
+                lines_to_process = get_dnn_status(self.job_name, automl=False, experiment_number=None)[cur_status_line:]
+                for status_dict in lines_to_process:
+                    cur_status_line += 1
+                    toolkit_job_completed = False
+                    if status_dict.get("status") in ("SUCCESS", "FAILURE"):
+                        k8s_status = "Error"
+                        if status_dict.get("status") == "SUCCESS":
+                            k8s_status = "Done"
+                        toolkit_job_completed = True
+                        logger.info("toolkit job completed with status %s", status_dict.get("status"))
+                        # update_job_status(self.handler_id, self.job_name, status=k8s_status, kind=self.handler_kind)
+                        break
+                if toolkit_job_completed:
+                    break
             # If the job never submitted or errored out!
-            else:
+            if k8s_status == "Error":
+                logger.info("K8s error status")
                 new_results = status_parser.update_results(total_epochs=total_epochs, job_id=self.job_name)
                 update_job_metadata(
                     self.handler_id,
@@ -596,8 +618,12 @@ class ActionPipeline:
 
         self.detailed_print(f"Job Done: {self.job_name} Final status: {metadata_status}")
         if self.ngc_runner or BACKEND in ("local-k8s", "local-docker"):
-            if metadata_status not in ("Canceled", "Canceling", "Paused", "Pausing"):
+            logger.info(f"Metadata status is {metadata_status}")
+            logger.info(f'Bool is {metadata_status not in ("Canceled", "Canceling", "Paused")}')
+            if metadata_status not in ("Canceled", "Canceling", "Paused"):
                 StatefulSetExecutor().delete_statefulset(self.job_name)
+            if metadata_status == "Pausing":
+                update_job_status(self.handler_id, self.job_name, status="Paused", kind=self.handler_kind)
 
     def run(self):
         """Calls necessary setup functions and calls job creation"""

@@ -37,6 +37,7 @@ from nvidia_tao_core.cloud_handlers.utils import (
     cleanup_cuda_contexts,
     create_tarball,
     upload_tarball_to_cloud,
+    upload_files
 )
 import nvidia_tao_core.loggers.logging as status_logging
 from nvidia_tao_core.api_utils.module_utils import entrypoint_paths, entry_points
@@ -63,6 +64,9 @@ SPEC_BACKEND_TO_FUNCTIONS = {
 }
 
 IS_MASTER = int(os.environ.get("NODE_RANK", 0)) == 0
+
+# Graceful termination signal file name
+GRACEFUL_TERMINATION_SIGNAL_FILE = ".graceful_termination_signal"
 
 
 def prepare_data_before_job_run(job, docker_env_vars):
@@ -150,6 +154,66 @@ def prepare_data_before_job_run(job, docker_env_vars):
 
 class ContainerJobHandler:
     """Handler for processing jobs in a containerized environment."""
+
+    @staticmethod
+    def check_graceful_termination_signal(results_dir):
+        """Check if a graceful termination signal file exists.
+
+        Args:
+            results_dir (str): Results directory to check for signal file
+
+        Returns:
+            bool: True if graceful termination signal exists, False otherwise
+        """
+        try:
+            signal_file = os.path.join(results_dir, GRACEFUL_TERMINATION_SIGNAL_FILE)
+            return os.path.exists(signal_file)
+        except Exception as e:
+            logger.error("Error checking graceful termination signal: %s", str(e))
+            return False
+
+    @staticmethod
+    def write_graceful_termination_signal(job_id):
+        """Write a graceful termination signal file.
+
+        Args:
+            job_id (str): Job ID being terminated (results_dir is inferred as /results/{job_id})
+
+        Returns:
+            bool: True if signal was written successfully, False otherwise
+        """
+        try:
+            # Infer results directory from job_id
+            results_dir = f"/results/{job_id}"
+            signal_file = os.path.join(results_dir, GRACEFUL_TERMINATION_SIGNAL_FILE)
+
+            # Ensure results directory exists
+            os.makedirs(results_dir, exist_ok=True)
+
+            # Create signal file (content doesn't matter, just existence)
+            with open(signal_file, 'w', encoding='utf-8') as f:
+                f.write(job_id)
+            logger.info("Graceful termination signal written for job %s at %s", job_id, signal_file)
+            return True
+        except Exception as e:
+            logger.error("Error writing graceful termination signal: %s", str(e))
+            logger.error("Traceback: %s", traceback.format_exc())
+            return False
+
+    @staticmethod
+    def remove_graceful_termination_signal(results_dir):
+        """Remove the graceful termination signal file.
+
+        Args:
+            results_dir (str): Results directory containing signal file
+        """
+        try:
+            signal_file = os.path.join(results_dir, GRACEFUL_TERMINATION_SIGNAL_FILE)
+            if os.path.exists(signal_file):
+                os.remove(signal_file)
+                logger.info("Graceful termination signal file removed")
+        except Exception as e:
+            logger.error("Error removing graceful termination signal: %s", str(e))
 
     @staticmethod
     def capture_directory_snapshot(directory):
@@ -253,8 +317,11 @@ class ContainerJobHandler:
                     network = docker_env_vars.get("ORCHESTRATION_API_NETWORK",
                                                   job.get("neural_network_name", ""))
                     action = docker_env_vars.get("ORCHESTRATION_API_ACTION", job.get("action_name", ""))
+                    retain_checkpoints_for_resume = (
+                        docker_env_vars.get("RETAIN_CHECKPOINTS_FOR_RESUME", "false").lower() == "true"
+                    )
                     upload_strategy, exclude_patterns = ContainerJobHandler.get_upload_strategy_from_config(
-                        network, action)
+                        network, action, retain_checkpoints_for_resume)
                     logger.info("Using upload strategy for %s %s: %s", network, action, upload_strategy)
                     if exclude_patterns:
                         logger.info("Excluding patterns for %s %s: %s", network, action, exclude_patterns)
@@ -305,6 +372,8 @@ class ContainerJobHandler:
                         nonlocal status_logger
                         is_completed = False
                         status_file = None
+                        entrypoint_running = threading.Event()
+                        cleanup_already_done = threading.Event()
 
                         def initialize_status_logger(status_file):
                             """Initialize or get existing status logger."""
@@ -318,6 +387,90 @@ class ContainerJobHandler:
                                 )
                                 status_logging.set_status_logger(status_logger)
                             return status_logger
+
+                        def monitor_graceful_termination():
+                            """Monitor for graceful termination signal and trigger shutdown if detected."""
+                            nonlocal is_completed, status_logger, status_file
+                            check_interval = 5  # Check every 5 seconds
+                            while entrypoint_running.is_set():
+                                if ContainerJobHandler.check_graceful_termination_signal(specs["results_dir"]):
+                                    logger.info("Graceful termination signal detected for job %s", job["job_id"])
+                                    entrypoint_running.clear()  # Stop monitoring
+                                    is_completed = False  # Mark as paused, not completed
+
+                                    cleanup_already_done.set()  # Prevent duplicate cleanup in finally block
+
+                                    # Snapshot files to upload (prevents uploading files generated during upload wait)
+                                    current_snapshot = ContainerJobHandler.capture_directory_snapshot(
+                                        specs["results_dir"]
+                                    )
+                                    files_to_upload = (
+                                        current_snapshot - results_dir_snapshot
+                                        if results_dir_snapshot else current_snapshot
+                                    )
+                                    logger.info("Snapshot: %d files to upload", len(files_to_upload))
+                                    logger.info("Files to upload: %s", files_to_upload)
+
+                                    # Stop continuous upload monitor and wait for current uploads
+                                    if exit_event:
+                                        logger.info("Stopping continuous upload monitor")
+                                        exit_event.set()
+                                    if upload_thread:
+                                        logger.info("Waiting for current upload to complete")
+                                        upload_thread.join()
+                                        logger.info("Upload thread joined successfully")
+
+                                    # Upload snapshot files using common upload function
+                                    if cloud_storage and files_to_upload:
+                                        logger.info("Starting snapshot upload of %d files", len(files_to_upload))
+                                        upload_files(
+                                            specs["results_dir"],
+                                            cloud_storage,
+                                            file_snapshot=files_to_upload,
+                                            selective_tarball_config=selective_tarball_config,
+                                            exclude_patterns=exclude_patterns
+                                        )
+                                        logger.info("Snapshot upload completed")
+                                    else:
+                                        logger.warning(
+                                            "Snapshot upload skipped - cloud_storage=%s, files_to_upload=%s",
+                                            bool(cloud_storage), len(files_to_upload) if files_to_upload else 0
+                                        )
+
+                                    # Initialize status logger and run cleanup
+                                    if not status_logger:
+                                        status_file = ContainerJobHandler.get_status_file(
+                                            specs["results_dir"], job["action_name"]
+                                        )
+                                        status_logger = initialize_status_logger(status_file)
+
+                                    ContainerJobHandler._cleanup(
+                                        exit_event=None,
+                                        upload_thread=None,
+                                        job=job,
+                                        is_completed=False,
+                                        status_logger=status_logger,
+                                        status_file=status_file,
+                                        cloud_storage=cloud_storage,
+                                        upload_strategy=upload_strategy,
+                                        results_dir=specs["results_dir"],
+                                        selective_tarball_config=selective_tarball_config,
+                                        results_dir_snapshot=results_dir_snapshot,
+                                        exclude_patterns=exclude_patterns,
+                                        is_graceful_pause=True
+                                    )
+
+                                    ContainerJobHandler.remove_graceful_termination_signal(specs["results_dir"])
+                                    logger.info("Graceful pause complete, exiting")
+
+                                    import sys
+                                    sys.exit(0)
+                                threading.Event().wait(check_interval)
+
+                        # Start graceful termination monitor (non-daemon to ensure cleanup completes)
+                        entrypoint_running.set()
+                        monitor_thread = threading.Thread(target=monitor_graceful_termination, daemon=False)
+                        monitor_thread.start()
 
                         try:
                             # Launch entrypoint
@@ -343,25 +496,32 @@ class ContainerJobHandler:
                             status_logger = initialize_status_logger(status_file)
                             ContainerJobHandler._handle_failure(job, status_logger, status_file)
                         finally:
-                            status_file = status_file or ContainerJobHandler.get_status_file(
-                                specs["results_dir"],
-                                job["action_name"]
-                            )
-                            status_logger = initialize_status_logger(status_file)
-                            ContainerJobHandler._cleanup(
-                                exit_event,
-                                upload_thread,
-                                job,
-                                is_completed,
-                                status_logger,
-                                status_file,
-                                cloud_storage,
-                                upload_strategy,
-                                specs["results_dir"],
-                                selective_tarball_config,
-                                results_dir_snapshot,
-                                exclude_patterns
-                            )
+                            # Stop monitor
+                            entrypoint_running.clear()
+
+                            # Only proceed with cleanup if graceful pause didn't already handle it
+                            if not cleanup_already_done.is_set():
+                                monitor_thread.join(timeout=2)
+
+                                status_file = status_file or ContainerJobHandler.get_status_file(
+                                    specs["results_dir"],
+                                    job["action_name"]
+                                )
+                                status_logger = initialize_status_logger(status_file)
+                                ContainerJobHandler._cleanup(
+                                    exit_event,
+                                    upload_thread,
+                                    job,
+                                    is_completed,
+                                    status_logger,
+                                    status_file,
+                                    cloud_storage,
+                                    upload_strategy,
+                                    specs["results_dir"],
+                                    selective_tarball_config,
+                                    results_dir_snapshot,
+                                    exclude_patterns
+                                )
 
                     # Launch job asynchronously
                     entrypoint_thread = threading.Thread(target=run_entrypoint, daemon=True)
@@ -427,7 +587,8 @@ class ContainerJobHandler:
         results_dir=None,
         selective_tarball_config=None,
         results_dir_snapshot=None,
-        exclude_patterns=None
+        exclude_patterns=None,
+        is_graceful_pause=False
     ):
         """Clean up resources and log final status."""
         if exit_event:
@@ -435,10 +596,17 @@ class ContainerJobHandler:
         if upload_thread:
             upload_thread.join()
 
-        # Handle tarball upload strategy after job completion
-        if (job and is_completed and cloud_storage and
-           upload_strategy == "tarball_after_completion" and results_dir):
-            logger.info("Job completed successfully, creating and uploading tarball...")
+        # Determine if tarball should be created
+        should_create_tarball = is_completed or is_graceful_pause
+
+        # Handle tarball upload strategy
+        should_upload_tarball = (
+            job and should_create_tarball and cloud_storage and
+            upload_strategy == "tarball_after_completion" and results_dir
+        )
+        if should_upload_tarball:
+            status = "completed" if is_completed else "paused"
+            logger.info("Job %s, creating and uploading tarball", status)
             ContainerJobHandler.create_and_upload_tarball(
                 results_dir,
                 cloud_storage,
@@ -448,9 +616,10 @@ class ContainerJobHandler:
                 exclude_patterns
             )
 
-        # Handle selective tarball creation if needed
-        if selective_tarball_config and job and is_completed and cloud_storage:
-            logger.info("Job completed successfully, creating and uploading selective tarball...")
+        # Handle selective tarball creation
+        if selective_tarball_config and job and should_create_tarball and cloud_storage:
+            status = "completed" if is_completed else "paused"
+            logger.info("Job %s, creating and uploading selective tarball", status)
             tarball_path = ContainerJobHandler.create_selective_tarball(
                 results_dir,
                 selective_tarball_config.get("patterns", []),
@@ -463,8 +632,16 @@ class ContainerJobHandler:
                 upload_tarball_to_cloud(cloud_storage, tarball_path, remove_after_upload=True)
 
         if job and is_completed is not None:
-            status = status_logging.Status.SUCCESS if is_completed else status_logging.Status.FAILURE
-            result = "completed successfully" if is_completed else "failed"
+            # Determine status and result message
+            if is_graceful_pause:
+                status = status_logging.Status.SUCCESS
+                result = "paused gracefully"
+            elif is_completed:
+                status = status_logging.Status.SUCCESS
+                result = "completed successfully"
+            else:
+                status = status_logging.Status.FAILURE
+                result = "failed"
 
             if not status_logger:
                 try:
@@ -654,12 +831,13 @@ class ContainerJobHandler:
             return None
 
     @staticmethod
-    def get_upload_strategy_from_config(network, action):
+    def get_upload_strategy_from_config(network, action, retain_checkpoints_for_resume=False):
         """Get upload strategy and exclude patterns by reading network config directly.
 
         Args:
             network (str): Network name
             action (str): Action name
+            retain_checkpoints_for_resume (bool): Whether to retain .pth checkpoints for training resume
 
         Returns:
             tuple: (upload_strategy, exclude_patterns) where upload_strategy is dict or str,
@@ -671,6 +849,21 @@ class ContainerJobHandler:
                 cloud_upload_config = network_config["cloud_upload"]
                 strategy = cloud_upload_config.get("upload_strategy", {}).get(action, "continuous")
                 exclude_patterns = cloud_upload_config.get("exclude_patterns", {}).get(action)
+
+                # If retaining for resume, remove .pth exclusion patterns
+                if retain_checkpoints_for_resume and exclude_patterns:
+                    # Filter out patterns that exclude .pth files
+                    exclude_patterns = [
+                        pattern for pattern in exclude_patterns
+                        if not ("pth" in pattern.lower() or r"\\.pth" in pattern)
+                    ]
+                    logger.info(
+                        "retain_checkpoints_for_resume is enabled, allowing .pth files to be uploaded for %s %s",
+                        network, action
+                    )
+                    # Return None if all patterns were removed
+                    exclude_patterns = exclude_patterns if exclude_patterns else None
+
                 return strategy, exclude_patterns
             return "continuous", None  # Default to continuous if not specified
         except Exception as e:

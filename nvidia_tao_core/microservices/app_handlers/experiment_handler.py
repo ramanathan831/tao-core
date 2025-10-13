@@ -863,6 +863,8 @@ class ExperimentHandler:
                     description = job_metadata.get("description", "")
                 if num_gpu == -1:
                     num_gpu = job_metadata.get("num_gpu", -1)
+                retain_checkpoints_for_resume = job_metadata.get("retain_checkpoints_for_resume", False)
+                early_stop_epoch = job_metadata.get("early_stop_epoch", None)
                 job_context = create_job_context(
                     parent_job_id,
                     "train",
@@ -876,7 +878,9 @@ class ExperimentHandler:
                     name=name,
                     description=description,
                     num_gpu=num_gpu,
-                    platform_id=platform_id
+                    platform_id=platform_id,
+                    retain_checkpoints_for_resume=retain_checkpoints_for_resume,
+                    early_stop_epoch=early_stop_epoch
                 )
                 on_new_job(job_context)
             return Code(200, {"message": f"{msg}Action for job {job_id} resumed"})

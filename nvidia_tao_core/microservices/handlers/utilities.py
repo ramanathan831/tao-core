@@ -67,6 +67,7 @@ from nvidia_tao_core.microservices.handlers.stateless_handlers import (
     experiment_update_handler_attributes,
     update_handler_with_jobs_info,
     get_workspace_string_identifier,
+    get_automl_experiment_job_id,
     BACKEND
 )
 from nvidia_tao_core.microservices.handlers.ngc_handler import validate_ptm_download
@@ -137,7 +138,9 @@ class JobContext:
         name=None,
         description=None,
         num_gpu=-1,
-        platform_id=None
+        platform_id=None,
+        retain_checkpoints_for_resume=False,
+        early_stop_epoch=None
     ):
         """Initialize JobContext class"""
         # Non-state variables
@@ -163,6 +166,8 @@ class JobContext:
         self.description = description
         self.num_gpu = num_gpu
         self.platform_id = platform_id
+        self.retain_checkpoints_for_resume = retain_checkpoints_for_resume
+        self.early_stop_epoch = early_stop_epoch
 
         self.write()
 
@@ -193,7 +198,9 @@ class JobContext:
             # Can modify
             "last_modified": self.last_modified,
             "status": self.status,
-            "job_details": self.job_details}
+            "job_details": self.job_details,
+            "retain_checkpoints_for_resume": self.retain_checkpoints_for_resume,
+            "early_stop_epoch": self.early_stop_epoch}
         return _schema
 
 
@@ -1204,6 +1211,9 @@ def send_microservice_request(
     if api_endpoint == "get_job_status":
         endpoint = f"{base_url}/api/v1/internal/container_job:status"
         request_metadata = {"results_dir": specs.get("results_dir", "")}
+    elif api_endpoint == "pause_job":
+        endpoint = f"{base_url}/api/v1/internal/container_job:pause"
+        request_metadata = {"job_id": job_id}
     elif api_endpoint == "post_action" and statefulset_replica_index == 0 and statefulset_replicas > 1:
         request_metadata["statefulset_replicas"] = statefulset_replicas
     # Send request
@@ -1212,6 +1222,9 @@ def send_microservice_request(
     try:
         if api_endpoint == "get_job_status":
             response = requests.get(endpoint, params=request_metadata, timeout=120)
+        elif api_endpoint == "pause_job":
+            data = json.dumps(request_metadata)
+            response = requests.post(endpoint, data=data, timeout=120, headers={'Content-Type': 'application/json'})
         else:
             data = json.dumps(request_metadata)
             response = requests.post(endpoint, data=data, timeout=120)

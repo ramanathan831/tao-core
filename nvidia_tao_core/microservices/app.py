@@ -698,6 +698,8 @@ class AllowedDockerEnvVariables(Enum):
     AUTOML_EXPERIMENT_NUMBER = "AUTOML_EXPERIMENT_NUMBER"
     JOB_ID = "JOB_ID"
     TAO_API_JOB_ID = "TAO_API_JOB_ID"  # Automl brain job id
+    RETAIN_CHECKPOINTS_FOR_RESUME = "RETAIN_CHECKPOINTS_FOR_RESUME"
+    EARLY_STOP_EPOCH = "EARLY_STOP_EPOCH"
 
 
 #
@@ -1361,6 +1363,98 @@ def container_job_run():
         metadata = {"error": str(err), "error_code": 1}
         schema = ErrorRspSchema()
         return make_response(jsonify(schema.dump(schema.load(metadata))), 400)
+
+
+@app.route('/api/v1/internal/container_job:pause', methods=['POST'])
+@disk_space_check
+def container_job_pause():
+    """Pause Job within container (graceful termination).
+
+    ---
+    post:
+      tags:
+        - INTERNAL
+      summary: Pause Container Job Gracefully
+      description:
+        Signals a running job within a container to gracefully terminate by writing
+        a termination signal file. The job will detect this signal and perform cleanup
+        operations including uploading checkpoints before shutting down.
+        The results directory is inferred as /results/{job_id}.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - job_id
+              properties:
+                job_id:
+                  type: string
+                  description: The ID of the job to pause (results_dir is inferred as /results/{job_id})
+      responses:
+        200:
+          description: The graceful termination signal was successfully written.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    description: Success message
+          headers:
+            Access-Control-Allow-Origin:
+              $ref: '#/components/headers/Access-Control-Allow-Origin'
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/X-RateLimit-Limit'
+        400:
+          description: Invalid request payload or failed to write signal.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorRspSchema'
+          headers:
+            Access-Control-Allow-Origin:
+              $ref: '#/components/headers/Access-Control-Allow-Origin'
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/X-RateLimit-Limit'
+        500:
+          description: Internal server error encountered while processing the request.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorRspSchema'
+          headers:
+            Access-Control-Allow-Origin:
+              $ref: '#/components/headers/Access-Control-Allow-Origin'
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/X-RateLimit-Limit'
+    """
+    try:
+        request_data = request.get_json(force=True)
+        job_id = request_data.get("job_id")
+
+        if not job_id:
+            metadata = {"error": "job_id is required", "error_code": 1}
+            schema = ErrorRspSchema()
+            return make_response(jsonify(schema.dump(schema.load(metadata))), 400)
+
+        # Write graceful termination signal (results_dir is inferred from job_id)
+        signal_written = container_handler.write_graceful_termination_signal(job_id)
+
+        if signal_written:
+            return make_response(jsonify({'message': f'Graceful termination signal written for job {job_id}'}), 200)
+
+        metadata = {"error": "Failed to write graceful termination signal", "error_code": 1}
+        schema = ErrorRspSchema()
+        return make_response(jsonify(schema.dump(schema.load(metadata))), 400)
+
+    except Exception as err:
+        logger.error("Error in container_job_pause: %s", str(traceback.format_exc()))
+        metadata = {"error": str(err), "error_code": 1}
+        schema = ErrorRspSchema()
+        return make_response(jsonify(schema.dump(schema.load(metadata))), 500)
 
 
 class ContainerJobStatusSchema(Schema):
@@ -2766,6 +2860,8 @@ class DatasetActions(Schema):
     specs = fields.Raw()
     num_gpu = fields.Int(format="int64", validate=validate.Range(min=0, max=sys.maxsize), allow_none=True)
     platform_id = fields.Str(format="uuid", validate=fields.validate.Length(max=36), allow_none=True)
+    retain_checkpoints_for_resume = fields.Bool(allow_none=True)
+    early_stop_epoch = fields.Int(format="int64", validate=validate.Range(min=0, max=sys.maxsize), allow_none=True)
 
 
 class DatasetIntentEnum(Enum):
@@ -5344,6 +5440,8 @@ class ExperimentActions(Schema):
     specs = fields.Raw()
     num_gpu = fields.Int(format="int64", validate=validate.Range(min=0, max=sys.maxsize), allow_none=True)
     platform_id = fields.Str(format="uuid", validate=fields.validate.Length(max=36), allow_none=True)
+    retain_checkpoints_for_resume = fields.Bool(allow_none=True)
+    early_stop_epoch = fields.Int(format="int64", validate=validate.Range(min=0, max=sys.maxsize), allow_none=True)
 
 
 class PublishModel(Schema):
@@ -7038,6 +7136,8 @@ def experiment_job_run(org_name, experiment_id):
     description = request_schema_data.get('description', '')
     num_gpu = request_schema_data.get('num_gpu', -1)
     platform_id = request_schema_data.get('platform_id', None)
+    retain_checkpoints_for_resume = request_schema_data.get('retain_checkpoints_for_resume', False)
+    early_stop_epoch = request_schema_data.get('early_stop_epoch', None)
     if isinstance(specs, dict) and "cluster" in specs:
         metadata = {"error_desc": "cluster is an invalid spec", "error_code": 3}
         schema = ErrorRspSchema()
@@ -7047,7 +7147,8 @@ def experiment_job_run(org_name, experiment_id):
     response = JobHandler.job_run(
         org_name, experiment_id, requested_job, requested_action, "experiment",
         specs=specs, name=name, description=description, num_gpu=num_gpu,
-        platform_id=platform_id
+        platform_id=platform_id, retain_checkpoints_for_resume=retain_checkpoints_for_resume,
+        early_stop_epoch=early_stop_epoch
     )
     # Get schema
     schema = None
@@ -8466,6 +8567,7 @@ def experiment_job_pause(org_name, experiment_id, job_id):
         - Persists status changes to storage
         - Triggers any necessary pause workflows
         - Returns the pause status
+        - Supports graceful pause which allows checkpoints to be uploaded before shutdown
       parameters:
       - name: org_name
         in: path
@@ -8491,6 +8593,20 @@ def experiment_job_pause(org_name, experiment_id, job_id):
           type: string
           format: uuid
           maxLength: 36
+      requestBody:
+        description: Optional parameters for job pause
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                graceful:
+                  type: boolean
+                  description: |
+                    If true, performs graceful pause by signaling the job to terminate
+                    and upload checkpoints before shutting down. Default is false (abrupt pause).
+                  default: false
       responses:
         200:
           description: Successfully requested training pause of specified Job ID (asynchronous)
@@ -8526,8 +8642,13 @@ def experiment_job_pause(org_name, experiment_id, job_id):
         schema = ErrorRspSchema()
         response = make_response(jsonify(schema.dump(schema.load(metadata))), 400)
         return response
+
+    # Parse request body for graceful parameter
+    request_data = request.get_json()
+    graceful = request_data.get("graceful", False)
+
     # Get response
-    response = JobHandler.job_pause(org_name, experiment_id, job_id, "experiment")
+    response = JobHandler.job_pause(org_name, experiment_id, job_id, "experiment", graceful=graceful)
     # Get schema
     if response.code == 200:
         schema = MessageOnlySchema()
