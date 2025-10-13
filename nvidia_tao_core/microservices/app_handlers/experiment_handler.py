@@ -13,7 +13,6 @@
 # limitations under the License.
 
 """Experiment handler module for managing experiment operations"""
-import glob
 import os
 import uuid
 import logging
@@ -46,7 +45,7 @@ from nvidia_tao_core.microservices.handlers.stateless_handlers import (
     resolve_metadata,
     get_automl_controller_info,
     get_automl_current_rec,
-    get_jobs_root,
+    get_automl_best_rec_info,
     get_handler_job_metadata,
     is_request_automl
 )
@@ -902,9 +901,12 @@ class ExperimentHandler:
         """
         try:
             handler_metadata = resolve_metadata("experiment", experiment_id)
+            if not handler_metadata:
+                return Code(404, [], "Experiment not found")
+
             user_id = handler_metadata.get("user_id")
-            root = get_jobs_root(user_id, org_name)
-            jobdir = os.path.join(root, job_id)
+            if not check_write_access(user_id, org_name, experiment_id, kind="experiments"):
+                return Code(404, [], "Experiment not found")
             automl_controller_data = get_automl_controller_info(job_id)
 
             automl_interpretable_result = {}
@@ -923,14 +925,12 @@ class ExperimentHandler:
                 automl_interpretable_result["experiments"][exp_id] = {}
                 automl_interpretable_result["experiments"][exp_id]["result"] = experiment_details.get("result")
                 automl_interpretable_result["experiments"][exp_id]["status"] = experiment_details.get("status")
+                automl_interpretable_result["experiments"][exp_id]["specs"] = experiment_details.get("specs", {})
 
-            # Get the best experiment id
-            if os.path.exists(os.path.join(jobdir, "best_model")):
-                rec_files = glob.glob(os.path.join(jobdir, "best_model", "recommendation*.yaml"))
-                if rec_files:
-                    experiment_name = os.path.splitext(os.path.basename(rec_files[0]))[0]
-                    experiment_id = experiment_name.split("_")[1]
-                    automl_interpretable_result["best_experiment_id"] = int(experiment_id)
+            # Get the best experiment id from the automl_jobs table
+            best_rec_number, _ = get_automl_best_rec_info(job_id)
+            if best_rec_number and best_rec_number != "-1":
+                automl_interpretable_result["best_experiment_id"] = int(best_rec_number)
             return Code(200, automl_interpretable_result, "AutoML results compiled")
         except Exception as e:
             logger.error("Exception thrown in automl_details fetch is %s", str(e))
