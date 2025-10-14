@@ -63,8 +63,18 @@ def clamp_value(value, v_min, v_max):
     return value
 
 
-def get_valid_range(parameter_config, parent_params):
-    """Compute the clamp range for the given parameter"""
+def get_valid_range(parameter_config, parent_params, custom_ranges=None):
+    """Compute the clamp range for the given parameter
+
+    Args:
+        parameter_config: Configuration dict for the parameter
+        parent_params: Dict of parent parameter values
+        custom_ranges: Optional dict of custom parameter ranges from user
+
+    Returns:
+        Tuple of (v_min, v_max)
+    """
+    parameter_name = parameter_config.get("parameter", "")
     v_min = float(parameter_config.get("valid_min"))
     v_max = float(parameter_config.get("valid_max"))
     default_value = float(parameter_config.get("default_value"))
@@ -73,7 +83,21 @@ def get_valid_range(parameter_config, parent_params):
     if math.isinf(v_max):
         v_max = default_value
 
+    # Apply custom ranges if provided
+    if custom_ranges and parameter_name in custom_ranges:
+        custom_min = custom_ranges[parameter_name].get("valid_min")
+        custom_max = custom_ranges[parameter_name].get("valid_max")
+        if custom_min is not None:
+            v_min = float(custom_min) if not isinstance(custom_min, list) else custom_min
+        if custom_max is not None:
+            v_max = float(custom_max) if not isinstance(custom_max, list) else custom_max
+
+    # Check for custom depends_on, otherwise use schema depends_on
     dependent_on_param = parameter_config.get("depends_on", None)
+    if custom_ranges and parameter_name in custom_ranges:
+        custom_depends_on = custom_ranges[parameter_name].get("depends_on")
+        if custom_depends_on is not None:
+            dependent_on_param = custom_depends_on
     if type(dependent_on_param) is str and dependent_on_param:
         dependent_on_param_op = dependent_on_param.split(" ")[0]
         dependent_on_param_name = dependent_on_param.split(" ")[1]
@@ -96,6 +120,28 @@ def get_valid_range(parameter_config, parent_params):
             v_max = limit_value
 
     return v_min, v_max
+
+
+def get_valid_options(parameter_config, custom_ranges=None):
+    """Get the valid options for a parameter, considering custom overrides
+
+    Args:
+        parameter_config: Configuration dict for the parameter
+        custom_ranges: Optional dict of custom parameter ranges from user
+
+    Returns:
+        List of valid options (or schema default if no custom options)
+    """
+    parameter_name = parameter_config.get("parameter", "")
+    valid_options = parameter_config.get("valid_options", [])
+
+    # Apply custom valid_options if provided
+    if custom_ranges and parameter_name in custom_ranges:
+        custom_options = custom_ranges[parameter_name].get("valid_options")
+        if custom_options is not None:
+            valid_options = custom_options
+
+    return valid_options
 
 
 def report_healthy(path, message, clear=False):
