@@ -496,7 +496,7 @@ class Controller:
                 job_id=self.automl_context.id,
                 rec_job_id=rec.job_id
             )
-            self.calculate_eta(new_results, rec.job_id)
+            self.calculate_eta(new_results, rec.job_id, rec.id)
             metadata = get_handler_job_metadata(self.automl_context.id)
             results = metadata.get("job_details", {})
             new_results = status_parser.update_results(
@@ -669,7 +669,7 @@ class Controller:
             if brain_dict:
                 self.old_bracket = brain_dict.get("bracket", "0")
 
-    def calculate_eta(self, new_results, rec_job_id):
+    def calculate_eta(self, new_results, rec_job_id, rec_id):
         """Calculate estimated time remaining for automl job"""
         global time_per_epoch  # pylint: disable=global-statement
         global time_per_epoch_counter  # pylint: disable=global-statement
@@ -708,7 +708,13 @@ class Controller:
                 self.average_time_per_epoch = time_per_epoch / time_per_epoch_counter
 
                 if self.automl_algorithm in ("bayesian", "b"):
-                    remaining_epochs = self.brain.num_epochs_per_experiment - current_epoch
+                    current_experiment_epoch = get_total_epochs(
+                        rec_job_id,
+                        os.path.dirname(self.root),
+                        automl=True,
+                        automl_experiment_id=str(rec_id)
+                    )
+                    remaining_epochs = current_experiment_epoch - current_epoch
                     self.remaining_epochs_in_experiment = (
                         remaining_epochs +
                         (self.max_recommendations - self.completed_recommendations) *
