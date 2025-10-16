@@ -81,6 +81,34 @@
                 "path": "label_map.txt"
             }
         },
+        "export": {
+            "dataset.train_data_sources": {
+                "source": "train_datasets",
+                "multiple_sources": true,
+                "mapping": {
+                    "image_dir": {
+                        "path": "images.tar.gz",
+                        "transform": "data_services_as_parent_possible"
+                    },
+                    "json_file": {
+                        "path": "annotations.json"
+                    }
+                }
+            },
+            "dataset.val_data_sources": {
+                "source": "train_datasets",
+                "multiple_sources": true,
+                "mapping": {
+                    "image_dir": {
+                        "path": "images.tar.gz",
+                        "transform": "data_services_as_parent_possible"
+                    },
+                    "json_file": {
+                        "path": "annotations.json"
+                    }
+                }
+            }
+        },
         "gen_trt_engine": {
             "gen_trt_engine.tensorrt.calibration.cal_image_dir": {
                 "source": "calibration_dataset",
