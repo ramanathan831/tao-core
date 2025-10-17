@@ -20,8 +20,6 @@ marshmallow-enum
 ngcsdk==3.151.0
 numpy
 omegaconf==2.3.0
-onnxruntime-gpu; platform_machine == "x86_64"
-onnxruntime; platform_machine != "x86_64"
 orjson
 packaging
 pandas
