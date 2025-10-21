@@ -968,6 +968,9 @@ class AutoMLPipeline(ActionPipeline):
                 ][0]
             )
 
+        for param_name, param_value in recommended_values.items():
+            write_nested_dict(spec, param_name, param_value)
+
         for field_name, inference_fn in self.network_config["automl_spec_params"].items():
             if "automl_" in inference_fn:
                 field_value = CLI_CONFIG_TO_FUNCTIONS[inference_fn](
@@ -985,11 +988,12 @@ class AutoMLPipeline(ActionPipeline):
                     if "assign_const_value," in inference_fn:
                         dependent_parameter_names = inference_fn.split(",")
                         dependent_field_value = int(read_nested_dict(spec, dependent_parameter_names[1]))
-                        if len(dependent_parameter_names) == 2:
+                        if dependent_parameter_names[1] in recommended_values:
+                            field_value = recommended_values[dependent_parameter_names[1]]
+                        elif len(dependent_parameter_names) == 2:
                             field_value = min(field_value, dependent_field_value)
                         elif len(dependent_parameter_names) == 3:
                             field_value = int(read_nested_dict(spec, dependent_parameter_names[2]))
-
             else:
                 field_value = (
                     CLI_CONFIG_TO_FUNCTIONS[inference_fn](self.job_context, self.handler_metadata)
@@ -1002,8 +1006,6 @@ class AutoMLPipeline(ActionPipeline):
         spec = apply_data_source_config(spec, self.job_context, self.handler_metadata)
         self.detailed_print("Loaded AutoML specs")
 
-        for param_name, param_value in recommended_values.items():
-            write_nested_dict(spec, param_name, param_value)
         self.num_gpu = get_num_gpus_from_spec(spec, "train", network=self.network, default=self.num_gpu)
         self.num_nodes = get_num_nodes_from_spec(spec, "train", network=self.network, default=self.num_nodes)
 

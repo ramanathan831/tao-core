@@ -136,8 +136,7 @@ class OneFormerDatasetConfig:
         value=True,
         default_value=True,
         display_name="pin_memory",
-        description="""Flag to enable the dataloader to allocate pagelocked memory for faster
-                    of data between the CPU and GPU."""
+        description="Flag to enable the dataloader to allocate pagelocked memory for faster"
     )
     pixel_mean: List[float] = LIST_FIELD(
         arrList=[123.675, 116.28, 103.53],
@@ -157,10 +156,10 @@ class OneFormerDatasetConfig:
         value=True,
         default_value=True,
         display_name="contiguous id",
-        description="""Flag to enable contiguous ids for labels."""
+        description="Flag to enable contiguous ids for labels."
     )
-    label_map: str | None = STR_FIELD(
-        value=None,
+    label_map: str = STR_FIELD(
+        value="",
         display_name="label map",
         description="A path to label map file"
     )
