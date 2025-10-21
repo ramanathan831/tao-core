@@ -27,6 +27,64 @@ from nvidia_tao_core.config.utils.types import (
 
 
 @dataclass
+class TaskConfig:
+    """Task configuration for evaluation."""
+
+    type: str = STR_FIELD(
+        default_value="its_directionality",
+        value="its_directionality",
+        display_name="Task type",
+        valid_options="its_directionality,general",
+        description="Type of evaluation task (general, its_directionality)"
+    )
+
+
+@dataclass
+class MetricsConfig:
+    """Metrics configuration for general evaluation."""
+
+    names: str = STR_FIELD(
+        default_value="bleu,rouge,bertscore",
+        value="bleu,rouge,bertscore",
+        display_name="Metric names",
+        valid_options="bleu,rouge,bertscore",
+        description="Comma-separated list of metrics to compute (bleu, rouge, bertscore)"
+    )
+    bertscore_model: Optional[str] = STR_FIELD(
+        default_value="microsoft/deberta-xlarge-mnli",
+        value="microsoft/deberta-xlarge-mnli",
+        display_name="BERTScore model",
+        description="Model to use for BERTScore computation (e.g., microsoft/deberta-xlarge-mnli)"
+    )
+    bertscore_lang: str = STR_FIELD(
+        default_value="en",
+        value="en",
+        display_name="BERTScore language",
+        description="Language for BERTScore computation"
+    )
+
+
+@dataclass
+class SoftAccuracyConfig:
+    """Soft accuracy configuration for general evaluation."""
+
+    enabled: bool = BOOL_FIELD(
+        default_value=True,
+        value=True,
+        display_name="Enable soft accuracy",
+        description="Enable soft accuracy computation based on token overlap F1"
+    )
+    f1_threshold: float = FLOAT_FIELD(
+        default_value=0.8,
+        value=0.8,
+        valid_min=0.0,
+        valid_max=1.0,
+        display_name="F1 threshold",
+        description="F1 threshold for soft accuracy (predictions with F1 >= threshold are considered correct)"
+    )
+
+
+@dataclass
 class DatasetConfig:
     """Dataset configuration for evaluation."""
 
@@ -166,6 +224,10 @@ class EvaluationConfig:
         display_name="Shard ID",
         description="Current shard ID (0-based)"
     )
+    soft_accuracy: SoftAccuracyConfig = DATACLASS_FIELD(
+        SoftAccuracyConfig(),
+        description="Soft accuracy configuration for general evaluation"
+    )
 
 
 @dataclass
@@ -272,6 +334,10 @@ class ResultsConfig:
 class EvaluateConfig:
     """Main evaluation configuration."""
 
+    task: TaskConfig = DATACLASS_FIELD(
+        TaskConfig(),
+        description="Task configuration for evaluation"
+    )
     dataset: DatasetConfig = DATACLASS_FIELD(
         DatasetConfig(),
         description="Dataset configuration for evaluation"
@@ -291,6 +357,10 @@ class EvaluateConfig:
     generation: GenerationConfig = DATACLASS_FIELD(
         GenerationConfig(),
         description="Generation parameters"
+    )
+    metrics: MetricsConfig = DATACLASS_FIELD(
+        MetricsConfig(),
+        description="Metrics configuration for general evaluation"
     )
     results: ResultsConfig = DATACLASS_FIELD(
         ResultsConfig(),
