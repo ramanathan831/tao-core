@@ -18,7 +18,7 @@ import os
 import glob
 import logging
 
-from nvidia_tao_core.microservices.handlers.cloud_storage import create_cs_instance
+from nvidia_tao_core.microservices.handlers.cloud_handlers.cloud_storage import create_cs_instance
 from nvidia_tao_core.microservices.handlers.stateless_handlers import get_handler_metadata
 from nvidia_tao_core.microservices.utils import read_network_config
 

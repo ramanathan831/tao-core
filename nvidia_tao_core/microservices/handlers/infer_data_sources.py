@@ -817,7 +817,7 @@ def check_file_exists_in_cloud(source_ds_metadata, source_root, file_path):
     # Try cloud storage check first
     if source_ds_metadata.get('workspace'):
         try:
-            from nvidia_tao_core.microservices.handlers.cloud_storage import create_cs_instance
+            from nvidia_tao_core.microservices.handlers.cloud_handlers.cloud_storage import create_cs_instance
             workspace_metadata = get_handler_metadata(source_ds_metadata.get('workspace'), kind="workspace")
             if workspace_metadata:
                 cloud_instance, _ = create_cs_instance(workspace_metadata)

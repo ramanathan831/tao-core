@@ -32,7 +32,9 @@ from nvidia_tao_core.microservices.constants import (
 )
 if os.getenv("BACKEND") == "NVCF":
     from nvidia_tao_core.microservices.dgx_controller import overwrite_job_logs_from_bcp
-from nvidia_tao_core.microservices.handlers.cloud_storage import create_cs_instance_with_decrypted_metadata
+from nvidia_tao_core.microservices.handlers.cloud_handlers.cloud_storage import (
+    create_cs_instance_with_decrypted_metadata
+)
 from nvidia_tao_core.microservices.handlers.utilities import (
     StatusParser,
     get_total_epochs,
