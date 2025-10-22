@@ -387,13 +387,14 @@ def upload_files(local_path, cloud_storage, file_last_modified=None,
         remaining = len(files_to_upload) - idx
         logger.info("Uploading file %d/%d: %s (remaining: %d)", idx, len(files_to_upload), file_path, remaining)
         try:
-            if not file_last_modified:
-                # Snapshot mode: upload immediately
-                cloud_storage.upload_file(file_path, file_path)
-            else:
-                # Continuous monitoring mode: wait before upload
-                time.sleep(10)
-                cloud_storage.upload_file(file_path, file_path)
+            if "graceful_termination_signal" not in file_path:
+                if not file_last_modified:
+                    # Snapshot mode: upload immediately
+                    cloud_storage.upload_file(file_path, file_path)
+                else:
+                    # Continuous monitoring mode: wait before upload
+                    time.sleep(10)
+                    cloud_storage.upload_file(file_path, file_path)
         except Exception as e:  # pylint: disable=broad-except
             logger.error("Failed to upload file: {} - Error: {}".format(file_path, str(e)))  # noqa pylint: disable=C0209
 

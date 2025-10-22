@@ -201,6 +201,11 @@ if __name__ == "__main__":
         type=str,
     )
     parser.add_argument(
+        '--retain_checkpoints_for_resume',
+        type=str,
+        default='False'
+    )
+    parser.add_argument(
         '--decrypted_workspace_metadata',
         type=json.loads,
     )
@@ -221,6 +226,10 @@ if __name__ == "__main__":
         name = args.name
         platform_id = args.platform_id
         specs = get_job_specs(automl_job_id)
+
+        # Get retain_checkpoints_for_resume from CLI argument
+        retain_checkpoints_for_resume = args.retain_checkpoints_for_resume.lower() in ("true", "1")
+
         jc = JobContext(
             automl_job_id,
             None,
@@ -232,7 +241,8 @@ if __name__ == "__main__":
             "experiment",
             name=name,
             platform_id=platform_id,
-            specs=specs
+            specs=specs,
+            retain_checkpoints_for_resume=retain_checkpoints_for_resume
         )
         resume = args.resume == "True"
         automl_algorithm = args.automl_algorithm

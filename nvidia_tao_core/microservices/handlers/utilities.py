@@ -541,7 +541,7 @@ class StatusParser:
                             trimmed_list.append((epoch, value))
                     else:
                         trimmed_list.append((epoch, value))
-                elif (self.network in ("bevfusion", "ml_recog") and epoch <= brain_epoch_number):
+                elif (self.network in ("bevfusion", "ml_recog", "cosmos-rl") and epoch <= brain_epoch_number):
                     trimmed_list.append((epoch, value))
                 elif epoch < brain_epoch_number:
                     trimmed_list.append((epoch, value))
@@ -1518,25 +1518,33 @@ def search_for_checkpoint(handler_metadata, job_id, res_root, files, checkpoint_
     return result_file
 
 
-def get_files_from_cloud(handler_metadata, job_id):
+def get_files_from_cloud(handler_metadata, job_id, automl=False, automl_experiment_id="0"):
     """Get filelist of a job from cloud - Enhanced with storage fix"""
     if job_id is None:
         return None
 
     action = get_handler_job_metadata(job_id).get("action")
-    res_root = os.path.join("/results", str(job_id))
+    lookup_job_id = job_id
+    if automl:
+        lookup_job_id = get_automl_experiment_job_id(job_id, automl_experiment_id)
+        if not lookup_job_id:
+            lookup_job_id = job_id
+    logger.info("lookup_job_id: %s", lookup_job_id)
+    res_root = os.path.join("/results", str(lookup_job_id))
     workspace_id = handler_metadata.get("workspace")
     workspace_metadata = resolve_metadata("workspace", workspace_id)
     files = get_file_list_from_cloud_storage(workspace_metadata, res_root)
     return files, action, res_root, workspace_id
 
 
-def resolve_checkpoint_root_and_search(handler_metadata, job_id, folder=False, regex=None):
+def resolve_checkpoint_root_and_search(handler_metadata, job_id, folder=False, regex=None,
+                                       automl=False, automl_experiment_id="0"):
     """Returns path of the model based on the action of the job"""
     if job_id is None:
         return None
-
-    files, action, res_root, workspace_id = get_files_from_cloud(handler_metadata, job_id)
+    files, action, res_root, workspace_id = get_files_from_cloud(
+        handler_metadata, job_id, automl=automl, automl_experiment_id=automl_experiment_id
+    )
     network = handler_metadata.get("network_arch", "")
 
     if action == "retrain":
@@ -1577,6 +1585,10 @@ def resolve_checkpoint_root_and_search(handler_metadata, job_id, folder=False, r
     return result_file
 
 
-def get_model_results_path(handler_metadata, job_id, folder=False):
+def get_model_results_path(handler_metadata, job_id, folder=False, automl=False,
+                           automl_experiment_id="0"):
     """Return the model file for the job context and handler metadata passes"""
-    return resolve_checkpoint_root_and_search(handler_metadata, job_id, folder=folder)
+    return resolve_checkpoint_root_and_search(
+        handler_metadata, job_id, folder=folder, automl=automl,
+        automl_experiment_id=automl_experiment_id
+    )

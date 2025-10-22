@@ -590,7 +590,9 @@ class CloudStorage:
                         self.fs.makedirs(dest_dir, exist_ok=True)
 
                     # Copy then delete individual file
+                    logger.info(f"Moving file {file_path} to {dest_file}")
                     self.fs.cp(file_path, dest_file)
+                    logger.info(f"Deleting file {file_path} after moving")
                     self.fs.rm(file_path)
                     moved_files += 1
 

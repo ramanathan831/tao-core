@@ -28,6 +28,7 @@ from nvidia_tao_core.microservices.handlers.stateless_handlers import (
     save_automl_controller_info,
     serialize_object,
     write_job_metadata,
+    get_handler_job_metadata,
     update_handler_with_jobs_info,
     get_automl_controller_info
 )
@@ -56,7 +57,8 @@ class AutoMLHandler:
     """
 
     @staticmethod
-    def start(user_id, org_name, experiment_id, job_id, handler_metadata, name="", platform_id=""):
+    def start(user_id, org_name, experiment_id, job_id, handler_metadata, name="",
+              platform_id="", retain_checkpoints_for_resume=False):
         """Starts an AutoML job by executing `automl_start.py` with the provided parameters.
 
         Args:
@@ -67,6 +69,8 @@ class AutoMLHandler:
             handler_metadata (dict): Metadata containing AutoML configuration settings.
             name (str, optional): Name of the job. Defaults to "automl train job".
             platform_id (str, optional): Platform identifier for execution. Defaults to "".
+            retain_checkpoints_for_resume (bool, optional): Whether to retain .pth
+                checkpoints for training resume. Defaults to False.
         """
         job_metadata = {
             "name": name,
@@ -78,10 +82,9 @@ class AutoMLHandler:
             "created_on": datetime.now(tz=timezone.utc),
             "experiment_id": experiment_id,
             "status": "Pending",
-            "job_details": {}
+            "job_details": {},
+            "retain_checkpoints_for_resume": retain_checkpoints_for_resume
         }
-        write_job_metadata(job_id, job_metadata)
-        update_handler_with_jobs_info(job_metadata, experiment_id, job_id, "experiments")
 
         root = os.path.join(get_jobs_root(user_id, org_name), job_id)
         if not os.path.exists(root):
@@ -93,6 +96,8 @@ class AutoMLHandler:
         metric = handler_metadata.get("metric", "map")
         automl_settings = handler_metadata.get("automl_settings", {})
         automl_algorithm = automl_settings.get("automl_algorithm", "Bayesian")
+        if automl_algorithm.lower() == "hyperband":
+            job_metadata["retain_checkpoints_for_resume"] = True
         automl_max_recommendations = automl_settings.get("automl_max_recommendations", 20)
         automl_delete_intermediate_ckpt = automl_settings.get("automl_delete_intermediate_ckpt", True)
         automl_R = automl_settings.get("automl_R", 27)
@@ -100,6 +105,9 @@ class AutoMLHandler:
         epoch_multiplier = automl_settings.get("epoch_multiplier", 1)
         automl_hyperparameters = automl_settings.get("automl_hyperparameters", "[]")
         override_automl_disabled_params = automl_settings.get("override_automl_disabled_params", False)
+
+        write_job_metadata(job_id, job_metadata)
+        update_handler_with_jobs_info(job_metadata, experiment_id, job_id, "experiments")
 
         workspace_id = handler_metadata.get("workspace")
         workspace_metadata = get_handler_metadata(workspace_id, "workspaces")
@@ -131,6 +139,7 @@ class AutoMLHandler:
             f'--epoch_multiplier={epoch_multiplier} '
             f'--automl_hyperparameters="{automl_hyperparameters}" '
             f'--override_automl_disabled_params={override_automl_disabled_params} '
+            f'--retain_checkpoints_for_resume={retain_checkpoints_for_resume} '
             f"--decrypted_workspace_metadata='{json.dumps(decrypted_workspace_metadata, default=str)}'"
         )
         if platform_id:
@@ -257,6 +266,11 @@ class AutoMLHandler:
         decrypt_handler_metadata(decrypted_workspace_metadata)
         decrypted_workspace_metadata.pop('_id', None)
 
+        job_metadata = get_handler_job_metadata(job_id)
+        retain_checkpoints_for_resume = (
+            job_metadata.get("retain_checkpoints_for_resume", False) if job_metadata else False
+        )
+
         # Call the script
         python_lib_path = sysconfig.get_path("purelib")
         automl_script = os.path.join(python_lib_path, "nvidia_tao_core/microservices/automl_start.py")
@@ -279,6 +293,7 @@ class AutoMLHandler:
             f'--epoch_multiplier={epoch_multiplier} '
             f'--automl_hyperparameters="{automl_hyperparameters}" '
             f'--override_automl_disabled_params={override_automl_disabled_params} '
+            f'--retain_checkpoints_for_resume={retain_checkpoints_for_resume} '
             f"--decrypted_workspace_metadata='{json.dumps(decrypted_workspace_metadata, default=serialize_object)}'"
         )
         if platform_id:

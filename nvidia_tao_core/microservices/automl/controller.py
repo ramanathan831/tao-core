@@ -124,7 +124,7 @@ class Controller:
             self.checkpoint_delimiter = "_"
         self.completed_recommendations = 0
         self.max_recommendations = int(max_recommendations)
-        self.delete_intermediate_ckpt = bool(delete_intermediate_ckpt)
+        self.delete_intermediate_ckpt = bool(delete_intermediate_ckpt.lower() == "true")
         self.automl_algorithm = automl_algorithm
         self.decrypted_workspace_metadata = decrypted_workspace_metadata
         self.metric = metric
@@ -160,6 +160,7 @@ class Controller:
         self.on_new_automl_job = lambda jc: on_new_automl_job(self.automl_context, jc)
 
         self.cs_instance, _ = create_cs_instance_with_decrypted_metadata(self.decrypted_workspace_metadata)
+        self.retain_checkpoints_for_resume = automl_context.retain_checkpoints_for_resume
 
     def _get_checkpoint_config(self):
         """Get checkpoint config from network config"""
@@ -176,9 +177,18 @@ class Controller:
         checkpoint_config = self._get_checkpoint_config()
         return checkpoint_config.get("format", "")
 
-    def _select_best_epoch_folder(self, epoch_folder_files, all_files):
-        """Select the best epoch folder that contains the required checkpoint format"""
-        checkpoint_format = self._get_checkpoint_format()
+    def _select_best_epoch_folder(self, epoch_folder_files, all_files, specific_format=None):
+        """Select the best epoch folder that contains the required checkpoint format
+
+        Args:
+            epoch_folder_files: Files matching the epoch pattern
+            all_files: All available files
+            specific_format: Optional specific format to look for (e.g., 'safetensors', 'pth')
+
+        Returns:
+            str: Path to the selected folder, or None if not found
+        """
+        checkpoint_format = specific_format or self._get_checkpoint_format()
 
         # Extract unique folder paths
         folder_paths = list(set(
@@ -369,7 +379,8 @@ class Controller:
                         for rec in self.recommendations:
                             expt_root = os.path.join("/results", rec.job_id)
                             self.get_best_checkpoint_path(expt_root, rec)
-                            self.delete_not_best_model_checkpoints(expt_root, rec, True)
+                            if self.delete_intermediate_ckpt:
+                                self.delete_not_best_model_checkpoints(expt_root, rec, True)
                         handler_metadata = get_handler_metadata(self.automl_context.handler_id, "experiments")
                         handler_metadata["checkpoint_epoch_number"][f"best_model_{self.automl_context.id}"] = (
                             self.best_epoch_number[self.best_rec_id]
@@ -407,6 +418,8 @@ class Controller:
                 # Save brain state and update current recommendation
                 self.hyperband_cancel_condition_seen = False
                 self.brain.save_state()
+                if self.automl_algorithm in ("hyperband", "h"):
+                    self.automl_context.early_stop_epoch = self.brain.epoch_number
                 # update temp_rec
                 new_id = len(self.recommendations)
                 self.best_epoch_number[new_id] = 0
@@ -426,6 +439,8 @@ class Controller:
                 self.best_epoch_number[rec_id] = 0
                 # Save brain state and update current recommendation
                 self.brain.save_state()
+                if self.automl_algorithm in ("hyperband", "h"):
+                    self.automl_context.early_stop_epoch = self.brain.epoch_number
                 # update temp_rec
                 save_automl_current_rec(self.automl_context.id, rec_id)
                 assert (self.recommendations[rec_id].id == rec_id), (
@@ -499,6 +514,8 @@ class Controller:
             self.calculate_eta(new_results, rec.job_id, rec.id)
             metadata = get_handler_job_metadata(self.automl_context.id)
             results = metadata.get("job_details", {})
+            brain_dict = get_automl_brain_info(self.automl_context.id)
+            self.brain_epoch_number = float(brain_dict.get("epoch_number", float('inf')))
             new_results = status_parser.update_results(
                 experiment_number=str(rec.id),
                 total_epochs=self.total_epochs,
@@ -535,84 +552,6 @@ class Controller:
                     kind="experiments"
                 )
 
-            validation_map_processed = False
-            # Force termination of the case for hyperband training
-            if self.automl_algorithm in ("hyperband", "h"):
-                brain_dict = get_automl_brain_info(self.automl_context.id)
-                if brain_dict:
-                    # if the experiment is in the last set of bracket, do not cancel job.
-                    for result_key in new_results[rec.job_id].keys():
-                        if self.hyperband_cancel_condition_seen or result_key in ("epoch", "cur_iter"):
-                            if not isinstance(new_results[rec.job_id].get(result_key, None), type(None)):
-                                self.brain_epoch_number = float(brain_dict.get("epoch_number", float('inf')))
-                                ni_list = brain_dict.get("ni", [str(float('-inf'))])
-                                bracket_key = str(brain_dict.get("bracket", 0))
-                                sh_iter = brain_dict.get("sh_iter", float('inf'))
-                                if len(ni_list[bracket_key]) != (sh_iter + 1):
-                                    if (
-                                        self.hyperband_cancel_condition_seen or
-                                        new_results[rec.job_id].get(result_key) > self.brain_epoch_number or
-                                        (self.network == "pointpillars" and
-                                         new_results[rec.job_id].get(result_key) + 1 >= self.brain_epoch_number)
-                                    ):
-                                        self.hyperband_cancel_condition_seen = True
-                                        # Cancel the current running job and change the job state to success
-                                        validation_map, self.best_epoch_number[rec.id], _ = status_parser.read_metric(
-                                            results=new_results[rec.job_id],
-                                            metric=self.metric,
-                                            automl_algorithm=self.automl_algorithm,
-                                            automl_brain_job_id=self.automl_context.id,
-                                            brain_epoch_number=self.brain_epoch_number
-                                        )
-                                        if validation_map != 0.0:
-                                            format_epoch_number = format_epoch(
-                                                self.network,
-                                                self.best_epoch_number[rec.id]
-                                            )
-                                            trained_files = get_file_list_from_cloud_storage(
-                                                self.decrypted_workspace_metadata,
-                                                cloud_expt_root
-                                            )
-
-                                            if self._uses_folder_lookup():
-                                                # Look for epoch-numbered folders
-                                                if self.network in MISSING_EPOCH_FORMAT_NETWORKS:
-                                                    folder_pattern = (
-                                                        fr".*{self.checkpoint_delimiter}{format_epoch_number}/"
-                                                    )
-                                                else:
-                                                    folder_pattern = (
-                                                        fr".*epoch_{format_epoch_number}(?:_step_\d+)?/"
-                                                    )
-
-                                                # Find files inside the epoch folder to identify the folder exists
-                                                epoch_folder_files = [
-                                                    f for f in trained_files if re.match(folder_pattern, f)
-                                                ]
-                                                if epoch_folder_files:
-                                                    selected_folder = self._select_best_epoch_folder(
-                                                        epoch_folder_files, trained_files
-                                                    )
-                                                    trained_files = [selected_folder] if selected_folder else []
-                                                else:
-                                                    trained_files = []
-                                                logger.info("Trained files in read_results function: %s", trained_files)
-                                            else:
-                                                # Traditional epoch-based filtering
-                                                regex_pattern = (
-                                                    fr'^(?!.*lightning_logs).*{self.checkpoint_delimiter}'
-                                                    fr'{format_epoch_number}\.(pth|tlt|hdf5)$'
-                                                )
-                                                trained_files = filter_files(trained_files, regex_pattern)
-                                            if trained_files:
-                                                rec.update_status(JobStates.success)
-                                                validation_map_processed = True
-                                                self.hyperband_cancel_condition_seen = False
-                                                logger.info("Cancelling hyperband automl job %s", rec.job_id)
-                                                on_cancel_automl_job(rec.job_id)
-                                                self.delete_checkpoint_files(cloud_expt_root, rec)
-                                                break
-
             # Status is read from the status DB and not from K8s
             status = ""
             if rec.status == JobStates.success:
@@ -623,23 +562,20 @@ class Controller:
                 status = JobStates.pending
             if status in [JobStates.success, JobStates.failure]:
                 logger.info("Post processing of job %s under automl algorithm %s", rec.job_id, self.automl_algorithm)
-                if not validation_map_processed:
-                    brain_epoch_number = self.brain_epoch_number
-                    if self.automl_algorithm in ("bayesian", "b"):
-                        self.brain.num_epochs_per_experiment = get_total_epochs(
-                            self.automl_context,
-                            os.path.dirname(self.root),
-                            automl=True,
-                            automl_experiment_id=rec.id
-                        )
-                        brain_epoch_number = self.brain.num_epochs_per_experiment
-                    validation_map, self.best_epoch_number[rec.id], _ = status_parser.read_metric(
-                        results=new_results[rec.job_id],
-                        metric=self.metric,
-                        automl_algorithm=self.automl_algorithm,
-                        automl_brain_job_id=self.automl_context.id,
-                        brain_epoch_number=brain_epoch_number
+                brain_epoch_number = self.brain_epoch_number
+                if self.automl_algorithm in ("bayesian", "b"):
+                    self.brain.num_epochs_per_experiment = get_total_epochs(
+                        self.automl_context,
+                        os.path.dirname(self.root),
                     )
+                    brain_epoch_number = self.brain.num_epochs_per_experiment
+                validation_map, self.best_epoch_number[rec.id], _ = status_parser.read_metric(
+                    results=new_results[rec.job_id],
+                    metric=self.metric,
+                    automl_algorithm=self.automl_algorithm,
+                    automl_brain_job_id=self.automl_context.id,
+                    brain_epoch_number=brain_epoch_number
+                )
                 if status == JobStates.failure:
                     if self.brain.reverse_sort:
                         validation_map = 1e-7
@@ -828,7 +764,10 @@ class Controller:
 
             if checkpoint_files and (rec.status == JobStates.success and rec.result == best_mAP):
                 cloud_best_model_folder = f"/results/{self.automl_context.id}"
-                logger.info("cloud_best_model_folder %s", cloud_best_model_folder)
+                logger.info("cloud_best_model_folder %s chosen for rec %s", cloud_best_model_folder, rec.id)
+
+                # Clean up invalid checkpoint folders before moving
+                self.delete_checkpoint_files(expt_folder, rec, filter_by_format=True)
 
                 self.cs_instance.move_folder(expt_folder[1:], cloud_best_model_folder)
                 best_specs = get_job_specs(job_name, automl=True, automl_experiment_id=str(rec.id))
@@ -850,7 +789,11 @@ class Controller:
         return -1
 
     def get_checkpoint_paths_matching_epoch_number(self, path, rec_id):
-        """Get checkpoints from cloud_path and filter based on epoch number"""
+        """Get checkpoints from cloud_path and filter based on epoch number
+
+        For networks with folder-based checkpoints (like cosmos-rl), this will find
+        folders for different formats (.pth, .safetensors) separately.
+        """
         checkpoint_files = get_file_list_from_cloud_storage(self.decrypted_workspace_metadata, path)
         format_epoch_number = format_epoch(self.network, self.best_epoch_number[rec_id])
         if self._uses_folder_lookup():
@@ -864,12 +807,34 @@ class Controller:
             epoch_folder_files = [f for f in checkpoint_files if re.match(folder_pattern, f)]
 
             if epoch_folder_files:
-                selected_folder = self._select_best_epoch_folder(
-                    epoch_folder_files, checkpoint_files
+                # For cosmos-rl and similar networks, try to find both safetensors and pth folders
+                safetensors_folder = self._select_best_epoch_folder(
+                    epoch_folder_files, checkpoint_files, specific_format="safetensors"
                 )
-                if selected_folder:
-                    return [selected_folder], [selected_folder], [selected_folder], [selected_folder], [selected_folder]
-                return [], [], [], [], []
+                pth_folder = self._select_best_epoch_folder(
+                    epoch_folder_files, checkpoint_files, specific_format="pth"
+                )
+
+                # If specific formats not found, fall back to default format
+                if not safetensors_folder and not pth_folder:
+                    selected_folder = self._select_best_epoch_folder(
+                        epoch_folder_files, checkpoint_files
+                    )
+                    if selected_folder:
+                        return (
+                            [selected_folder], [selected_folder], [selected_folder],
+                            [selected_folder], [selected_folder]
+                        )
+                    return [], [], [], [], []
+
+                # Return format-specific folders
+                return (
+                    [safetensors_folder] if safetensors_folder else [],  # tlt
+                    [safetensors_folder] if safetensors_folder else [],  # hdf5
+                    [pth_folder] if pth_folder else [],  # pth
+                    [safetensors_folder] if safetensors_folder else [],  # ckzip
+                    [safetensors_folder] if safetensors_folder else []   # safetensors
+                )
             logger.info("No epoch folder found for pattern: %s", folder_pattern)
             return [], [], [], [], []
         # Traditional epoch-based filtering for files
@@ -884,12 +849,14 @@ class Controller:
         find_trained_safetensors = filter_files(checkpoint_files, regex_pattern=fr'.*{regex_pattern}\.safetensors$')
         return find_trained_tlt, find_trained_hdf5, find_trained_pth, find_trained_ckzip, find_trained_safetensors
 
-    def get_best_checkpoint_path(self, path, recommendation):
+    def get_best_checkpoint_path(self, path, recommendation, filter_by_format=False):
         """Get the path to the best checkpoint.
 
         Args:
             path: Path to search for checkpoints
             recommendation: Recommendation object containing experiment info
+            filter_by_format: If True and using folder lookup, only save the configured checkpoint format.
+                            Used in best model workflow to clean up non-matching formats.
 
         Returns:
             None: Updates internal checkpoint path mapping
@@ -913,18 +880,38 @@ class Controller:
          find_trained_safetensors) = self.get_checkpoint_paths_matching_epoch_number(
             path, recommendation.id
         )
-        if find_trained_tlt:
-            self.ckpt_path[path]["tlt"] = find_trained_tlt[0]
-        if find_trained_hdf5:
-            self.ckpt_path[path]["hdf5"] = find_trained_hdf5[0]
-        if find_trained_pth:
-            self.ckpt_path[path]["pth"] = find_trained_pth[0]
-        if find_trained_ckzip:
-            self.ckpt_path[path]["ckzip"] = find_trained_ckzip[0]
-        if find_trained_safetensors:
-            self.ckpt_path[path]["safetensors"] = find_trained_safetensors[0]
 
-    def delete_checkpoint_files(self, path, rec):
+        # Check if a specific checkpoint format is configured
+        checkpoint_format = self._get_checkpoint_format()
+
+        # Map format names to their corresponding found paths
+        format_map = {
+            "tlt": find_trained_tlt,
+            "hdf5": find_trained_hdf5,
+            "pth": find_trained_pth,
+            "ckzip": find_trained_ckzip,
+            "safetensors": find_trained_safetensors
+        }
+
+        if filter_by_format and checkpoint_format and self._uses_folder_lookup():
+            # Only save the configured checkpoint format for folder-based checkpoints
+            logger.info("Filtering: saving only %s format to ckpt_path", checkpoint_format)
+            if checkpoint_format in format_map and format_map[checkpoint_format]:
+                self.ckpt_path[path][checkpoint_format] = format_map[checkpoint_format][0]
+        else:
+            # Save all available formats (default behavior)
+            if find_trained_tlt:
+                self.ckpt_path[path]["tlt"] = find_trained_tlt[0]
+            if find_trained_hdf5:
+                self.ckpt_path[path]["hdf5"] = find_trained_hdf5[0]
+            if find_trained_pth:
+                self.ckpt_path[path]["pth"] = find_trained_pth[0]
+            if find_trained_ckzip:
+                self.ckpt_path[path]["ckzip"] = find_trained_ckzip[0]
+            if find_trained_safetensors:
+                self.ckpt_path[path]["safetensors"] = find_trained_safetensors[0]
+
+    def delete_checkpoint_files(self, path, rec, filter_by_format=False):
         """Remove the extra checkpoints generated after the on_cancel_automl_job"""
         if not os.getenv("CI_PROJECT_DIR", None):
             time.sleep(30)  # Mounted paths can take time to reflect files generated on remote locally
@@ -934,8 +921,10 @@ class Controller:
 
         trained_files = filter_files(trained_files, regex_pattern)
         logger.info("Available checkpoints in delete_checkpoint_files function %s", trained_files)
-        self.get_best_checkpoint_path(path, rec)
+        self.get_best_checkpoint_path(path, rec, filter_by_format=filter_by_format)
         logger.info("self.ckpt_path in delete_checkpoint_files function %s", self.ckpt_path)
+        logger.info("RETAIN_CHECKPOINTS_FOR_RESUME setting: %s", self.retain_checkpoints_for_resume)
+
         for files in trained_files:
             should_delete = True
 

@@ -385,6 +385,15 @@ def update_job_message(handler_id, job_id, kind, message, automl_expt_job_id=Non
         write_job_metadata(job_id, metadata)
 
 
+def get_automl_experiment_job_id(brain_job_id, automl_experiment_id="0"):
+    """Get automl experiment job id"""
+    controller_info = get_automl_controller_info(brain_job_id)
+    automl_experiment_job_id = int(automl_experiment_id)
+    if len(controller_info) > automl_experiment_job_id:
+        return controller_info[automl_experiment_job_id].get("job_id", "")
+    return ""
+
+
 def get_automl_brain_info(brain_job_id):
     """Get automl brain info"""
     mongo_jobs = MongoHandler("tao", "automl_jobs")
