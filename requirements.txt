@@ -13,7 +13,6 @@ Flask-WTF>=1.1.0
 grpcio==1.67.1
 huggingface_hub
 jsonschema
-jupyterlab<4.5,>=4.4.0rc0
 kubernetes==32.0.1
 marshmallow==3.18.0  # Do not update this version, due to potential bug
 marshmallow-enum==1.5.1
