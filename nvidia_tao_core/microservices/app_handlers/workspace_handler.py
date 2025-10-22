@@ -27,7 +27,7 @@ from nvidia_tao_core.microservices.handlers.stateless_handlers import (
     printc,
     write_handler_metadata
 )
-from nvidia_tao_core.microservices.handlers.cloud_storage import create_cs_instance
+from nvidia_tao_core.microservices.handlers.cloud_handlers.cloud_storage import create_cs_instance
 from nvidia_tao_core.microservices.handlers.dataset_handler import validate_dataset
 from nvidia_tao_core.microservices.handlers.encrypt import NVVaultEncryption
 from nvidia_tao_core.microservices.handlers.utilities import Code

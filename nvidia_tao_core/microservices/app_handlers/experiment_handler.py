@@ -47,7 +47,8 @@ from nvidia_tao_core.microservices.handlers.stateless_handlers import (
     get_automl_current_rec,
     get_automl_best_rec_info,
     get_handler_job_metadata,
-    is_request_automl
+    is_request_automl,
+    delete_dnn_status
 )
 from nvidia_tao_core.microservices.handlers.encrypt import NVVaultEncryption
 from nvidia_tao_core.microservices.handlers.tensorboard_handler import TensorboardHandler
@@ -835,6 +836,9 @@ class ExperimentHandler:
         try:
             from nvidia_tao_core.microservices.handlers.stateless_handlers import update_job_status
             update_job_status(experiment_id, job_id, status="Resuming", kind=kind + "s")
+            # Reset timeout timer by clearing old status history
+            delete_dnn_status(job_id, automl=False)
+            logger.info(f"Cleared status history for resumed job {job_id} to reset timeout timer")
             if not name:
                 name = job_metadata.get("name", "")
             if not platform_id:

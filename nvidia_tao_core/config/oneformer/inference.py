@@ -31,15 +31,13 @@ class OneFormerInferenceConfig:
         value=1,
         valid_min=1,
         display_name="Number of GPUs",
-        description="""The number of GPUs to run the evaluation job.""",
+        description="The number of GPUs to run the evaluation job.",
         popular="yes",
     )
     gpu_ids: List[int] = LIST_FIELD(
         arrList=[0],
         display_name="GPU IDs",
-        description="""
-        List of GPU IDs to run the evaluation on. The length of this list
-        must be equal to the number of gpus in evaluate.num_gpus.""",
+        description="List of GPU IDs to run the evaluation on",
         popular="yes",
     )
     checkpoint: str = STR_FIELD(

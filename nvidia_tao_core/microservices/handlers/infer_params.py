@@ -26,8 +26,8 @@ from nvidia_tao_core.microservices.handlers.utilities import (
     get_model_results_path,
     get_file_list_from_cloud_storage, search_for_checkpoint, filter_files
 )
-from nvidia_tao_core.cloud_handlers.utils import search_for_ptm
-from nvidia_tao_core.microservices.handlers.cloud_storage import create_cs_instance
+from nvidia_tao_core.microservices.handlers.cloud_handlers.utils import search_for_ptm
+from nvidia_tao_core.microservices.handlers.cloud_handlers.cloud_storage import create_cs_instance
 from nvidia_tao_core.microservices.handlers.stateless_handlers import (
     get_handler_root, get_jobs_root, get_handler_job_metadata,
     get_handler_metadata, get_handler_kind, get_base_experiment_metadata,

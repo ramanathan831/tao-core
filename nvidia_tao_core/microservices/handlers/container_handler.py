@@ -30,8 +30,10 @@ from tqdm import tqdm
 
 from nvidia_tao_core.api_utils import module_utils
 from nvidia_tao_core.api_utils.entrypoint_mimicker import vlm_entrypoint
-from nvidia_tao_core.cloud_handlers.utils import (
+from nvidia_tao_core.microservices.handlers.cloud_handlers.utils import (
     download_files_from_spec,
+    count_files_in_spec,
+    calculate_total_download_size,
     get_results_cloud_data,
     monitor_and_upload,
     cleanup_cuda_contexts,
@@ -85,8 +87,28 @@ def prepare_data_before_job_run(job, docker_env_vars):
     os.makedirs(specs["results_dir"], exist_ok=True)
     reprocess_files = []
 
-    # Handle additional downloads
+    # Count total files to download before starting
+    logger.info("Analyzing spec for download requirements...")
+
+    # Count files in main spec
+    main_spec_files = count_files_in_spec(specs)
+
+    # Count additional downloads
     additional_downloads = specs.pop("additional_downloads", [])
+    additional_files_count = len(additional_downloads) if additional_downloads else 0
+
+    total_files_to_download = main_spec_files + additional_files_count
+
+    if total_files_to_download > 0:
+        logger.info("Found %d files to download before job launch:", total_files_to_download)
+        if main_spec_files > 0:
+            logger.info("  - Main spec files: %d", main_spec_files)
+        if additional_files_count > 0:
+            logger.info("  - Additional downloads: %d", additional_files_count)
+    else:
+        logger.info("No files to download - job will start immediately")
+
+    # Handle additional downloads
     if additional_downloads:
         logger.info("Processing additional downloads: %s", additional_downloads)
         ContainerJobHandler._handle_additional_downloads(
@@ -97,20 +119,45 @@ def prepare_data_before_job_run(job, docker_env_vars):
             ngc_key,
         )
 
-    # Extract preserve_source_path_params if specified
-    preserve_source_path_params = specs.pop("preserve_source_path_params", set())
-    if isinstance(preserve_source_path_params, list):
-        preserve_source_path_params = set(preserve_source_path_params)
-    logger.info("Downloading files from normal spec (preserve_source_path_params=%s)", preserve_source_path_params)
-    download_files_from_spec(
-        cloud_data=job.get("cloud_metadata"),
-        data=specs,
-        job_id=job["job_id"],
-        network_arch=job["neural_network_name"],
-        ngc_key=ngc_key,
-        reprocess_files=reprocess_files,
-        preserve_source_path_params=preserve_source_path_params
-    )
+    # Download main spec files
+    if main_spec_files > 0:
+        preserve_source_path_params = specs.pop("preserve_source_path_params", set())
+        if isinstance(preserve_source_path_params, list):
+            preserve_source_path_params = set(preserve_source_path_params)
+        logger.info("Downloading files from normal spec (preserve_source_path_params=%s)", preserve_source_path_params)
+
+        # Calculate total size of all files upfront
+        logger.info("Calculating total download size...")
+        total_size_mb = calculate_total_download_size(
+            cloud_data=job.get("cloud_metadata"),
+            data=specs,
+            job_id=job["job_id"]
+        )
+
+        # Create progress tracker for main spec downloads with known total size
+        from nvidia_tao_core.microservices.handlers.cloud_handlers.progress_tracker import ProgressTracker
+        main_progress_tracker = ProgressTracker(
+            "download",
+            total_files=main_spec_files,
+            total_size_mb=total_size_mb,  # Now we know the total size upfront
+            send_callbacks=True
+        )
+
+        download_files_from_spec(
+            cloud_data=job.get("cloud_metadata"),
+            data=specs,
+            job_id=job["job_id"],
+            network_arch=job["neural_network_name"],
+            ngc_key=ngc_key,
+            reprocess_files=reprocess_files,
+            preserve_source_path_params=preserve_source_path_params,
+            progress_tracker=main_progress_tracker
+        )
+
+        main_progress_tracker.complete()
+        logger.info("Main spec file downloads completed")
+    else:
+        logger.info("No files to download from main spec")
 
     # Save spec file with dynamic backend
     network_arch = job["neural_network_name"]
@@ -140,13 +187,40 @@ def prepare_data_before_job_run(job, docker_env_vars):
                 file_type = file_name.split(".")[-1]
                 reprocess_file_data = safe_load_file(file_name, file_type=file_type)
                 if reprocess_file_data:
-                    download_files_from_spec(
-                        cloud_data=job.get("cloud_metadata"),
-                        data=reprocess_file_data,
-                        job_id=job["job_id"],
-                        network_arch=job["neural_network_name"],
-                        ngc_key=ngc_key,
-                    )
+                    # Count files in reprocess data for progress tracking
+                    reprocess_file_count = count_files_in_spec(reprocess_file_data)
+                    if reprocess_file_count > 0:
+                        logger.info(
+                            "Reprocessing %s: found %d additional files to download",
+                            file_name, reprocess_file_count
+                        )
+
+                        # Create progress tracker for reprocessing
+                        reprocess_progress_tracker = ProgressTracker(
+                            "download",
+                            total_files=reprocess_file_count,
+                            total_size_mb=0,
+                            send_callbacks=True
+                        )
+
+                        download_files_from_spec(
+                            cloud_data=job.get("cloud_metadata"),
+                            data=reprocess_file_data,
+                            job_id=job["job_id"],
+                            network_arch=job["neural_network_name"],
+                            ngc_key=ngc_key,
+                            progress_tracker=reprocess_progress_tracker
+                        )
+
+                        reprocess_progress_tracker.complete()
+                    else:
+                        download_files_from_spec(
+                            cloud_data=job.get("cloud_metadata"),
+                            data=reprocess_file_data,
+                            job_id=job["job_id"],
+                            network_arch=job["neural_network_name"],
+                            ngc_key=ngc_key,
+                        )
                     if reprocess_file_data:
                         safe_dump_file(file_name, reprocess_file_data, file_type=file_type)
     return cloud_storage, specs, spec_path
@@ -699,13 +773,24 @@ class ContainerJobHandler:
             if not additional_downloads:
                 return
 
+            logger.info("Starting additional downloads (%d files)...", len(additional_downloads))
+
+            # Create progress tracker for additional downloads
+            from nvidia_tao_core.microservices.handlers.cloud_handlers.progress_tracker import ProgressTracker
+            additional_progress_tracker = ProgressTracker(
+                "download",
+                total_files=len(additional_downloads),
+                total_size_mb=0,  # Size unknown for additional downloads
+                send_callbacks=True
+            )
+
             # Create a spec structure that includes all additional downloads
             # Use preserve_source_path=True to maintain original path structure
             additional_spec = {}
 
-            for i, download_path in enumerate(additional_downloads):
-                logger.info("Preparing additional download: %s", download_path)
-                additional_spec[f"additional_download_{i}"] = download_path
+            for i, download_path in enumerate(additional_downloads, 1):
+                logger.info("Processing additional download %d/%d: %s", i, len(additional_downloads), download_path)
+                additional_spec[f"additional_download_{i - 1}"] = download_path
 
             # Use the existing download utility with preserve_source_path=True
             download_files_from_spec(
@@ -715,9 +800,12 @@ class ContainerJobHandler:
                 network_arch=network_arch,
                 ngc_key=ngc_key,
                 reprocess_files=[],
-                preserve_source_path=True
+                preserve_source_path=True,
+                progress_tracker=additional_progress_tracker
             )
-            logger.info("Additional downloads processed successfully")
+
+            additional_progress_tracker.complete()
+            logger.info("All %d additional downloads completed successfully", len(additional_downloads))
 
         except Exception as e:
             logger.error("Error handling additional downloads: %s", str(e))

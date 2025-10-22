@@ -509,8 +509,14 @@ def status_lookup_job_id(job_id, automl=False, callback_data={}, experiment_numb
     return lookup_job_id
 
 
-def get_internal_job_status_update_data(automl_experiment_number="0", message=""):
-    """Get internal job status update data"""
+def get_internal_job_status_update_data(automl_experiment_number="0", message="", status="FAILURE"):
+    """Get internal job status update data
+
+    Args:
+        automl_experiment_number (str): Experiment number for automl jobs
+        message (str): Status message
+        status (str): Status level (FAILURE, RUNNING, SUCCESS, etc.)
+    """
     date_time = datetime.now()
     date_object = date_time.date()
     time_object = date_time.time()
@@ -527,7 +533,7 @@ def get_internal_job_status_update_data(automl_experiment_number="0", message=""
     data = {
         "date": date,
         "time": time,
-        "status": "FAILURE",
+        "status": status,
         "verbosity": "INFO",
     }
     if message:
@@ -536,11 +542,22 @@ def get_internal_job_status_update_data(automl_experiment_number="0", message=""
     return data_string
 
 
-def internal_job_status_update(job_id, automl=False, automl_experiment_number="0", message="", logfile=""):
-    """Post an status update to the job"""
+def internal_job_status_update(job_id, automl=False, automl_experiment_number="0", message="",
+                               logfile="", status="FAILURE"):
+    """Post an status update to the job
+
+    Args:
+        job_id (str): Job identifier
+        automl (bool): Whether this is an automl job
+        automl_experiment_number (str): Experiment number for automl
+        message (str): Status message
+        logfile (str): Optional log file path
+        status (str): Status level (FAILURE, RUNNING, SUCCESS, etc.)
+    """
     data_string = get_internal_job_status_update_data(
         automl_experiment_number=automl_experiment_number,
-        message=message
+        message=message,
+        status=status
     )
     callback_data = {
         "experiment_number": automl_experiment_number,
@@ -564,6 +581,11 @@ def save_dnn_status(job_id, automl=False, callback_data={}, experiment_number="0
     mongo_status_table_handler = MongoHandler("tao", "job_statuses")
     job_query = {'id': lookup_job_id}
     callback_data_dict = json.loads(callback_data["status"])
+
+    # Add timestamp to status update for timeout monitoring
+    if 'timestamp' not in callback_data_dict:
+        callback_data_dict['timestamp'] = datetime.now(tz=timezone.utc).isoformat()
+
     update_job_message(
         handler_id,
         job_id,
@@ -1004,6 +1026,91 @@ def get_all_pending_jobs():
     }
     jobs = mongo_jobs.find(job_query)
     return jobs
+
+
+def get_all_running_jobs():
+    """Returns a list of all jobs with status of Running or Pending for timeout monitoring"""
+    mongo_jobs = MongoHandler("tao", "jobs")
+    job_query = {
+        'status': {
+            '$in': ['Running', 'Pending']
+        }
+    }
+    jobs = mongo_jobs.find(job_query)
+
+    # Extract necessary information for timeout monitoring
+    running_jobs = []
+    for job in jobs:
+        job_info = {
+            'job_id': job.get('id'),
+            'handler_id': job.get('handler_id'),
+            'kind': job.get('kind', ''),
+            'status': job.get('status'),
+            'user_id': job.get('user_id'),
+            'org_name': job.get('org_name'),
+            'action': job.get('action'),
+            'network': job.get('network'),
+            'last_modified': job.get('last_modified'),
+            'is_automl': False,
+            'experiment_number': '0'
+        }
+        running_jobs.append(job_info)
+
+    return running_jobs
+
+
+def get_all_running_automl_experiments():
+    """Returns a list of all running AutoML experiment jobs for timeout monitoring"""
+    running_automl_experiments = []
+
+    try:
+        # Get all running regular jobs first to find AutoML brain jobs
+        regular_jobs = get_all_running_jobs()
+
+        for job in regular_jobs:
+            job_id = job.get('job_id')
+            handler_id = job.get('handler_id')
+
+            if not job_id or not handler_id:
+                continue
+
+            # Check if this is an AutoML job by looking at handler metadata
+            try:
+                handler_metadata = get_handler_metadata(handler_id, job.get('kind', '') + 's')
+                if handler_metadata and handler_metadata.get("automl_settings", {}).get("automl_enabled", False):
+                    # This is an AutoML brain job, get its running experiments
+                    controller_info = get_automl_controller_info(job_id)
+
+                    if isinstance(controller_info, list):
+                        for recommendation in controller_info:
+                            if isinstance(recommendation, dict):
+                                rec_status = recommendation.get("status", "")
+                                rec_id = recommendation.get("id", "")
+
+                                # Check if this recommendation/experiment is running
+                                if rec_status in ("pending", "running", "started") and rec_id:
+                                    automl_exp_info = {
+                                        'job_id': job_id,
+                                        'handler_id': handler_id,
+                                        'kind': job.get('kind', ''),
+                                        'status': rec_status,
+                                        'user_id': job.get('user_id'),
+                                        'org_name': job.get('org_name'),
+                                        'action': job.get('action'),
+                                        'network': job.get('network'),
+                                        'last_modified': job.get('last_modified'),
+                                        'is_automl': True,
+                                        'experiment_number': str(rec_id)
+                                    }
+                                    running_automl_experiments.append(automl_exp_info)
+            except Exception as e:
+                logger.debug(f"Error checking AutoML status for job {job_id}: {e}")
+                continue
+
+    except Exception as e:
+        logger.error(f"Error getting running AutoML experiments: {e}")
+
+    return running_automl_experiments
 
 
 def get_user(user_id, mongo_users=None):
