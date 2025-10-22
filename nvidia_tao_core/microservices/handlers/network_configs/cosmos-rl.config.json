@@ -29,17 +29,30 @@
 
     "data_sources": {
         "train": {
-            "custom.dataset.annotation_path": {
+            "custom.dataset.train_annotation_path": {
                 "source": "train_datasets",
                 "multiple_sources": false,
                 "path": "annotations.json"
             },
-            "custom.dataset.media_path": {
+            "custom.dataset.train_media_path": {
                 "source": "train_datasets",
                 "multiple_sources": false,
                 "path_from_format": {
                     "llava": ["images.tar.gz", "videos.tar.gz"],
                     "*": "images.tar.gz"
+                }
+            },
+            "custom.dataset.val_annotation_path": {
+                "source": "eval_dataset",
+                "multiple_sources": false,
+                "path": "annotations.json"
+            },
+            "custom.dataset.val_media_path": {
+                "source": "eval_dataset",
+                "multiple_sources": false,
+                "path_from_format": {
+                    "llava": ["images.tar.gz", "videos.tar.gz"],
+                    "*": "videos.tar.gz"
                 }
             }
         },
@@ -82,6 +95,7 @@
 
     "automl_spec_params":{
         "results_dir":"automl_output_dir",
+        "train.resume": "automl_resume_model_bool",
         "train.output_dir":"automl_output_dir",
         "train.ckpt.save_freq_in_epoch": "assign_const_value,train.epoch",
         "validation.freq_in_epoch": "assign_const_value,train.epoch,train.ckpt.save_freq_in_epoch"

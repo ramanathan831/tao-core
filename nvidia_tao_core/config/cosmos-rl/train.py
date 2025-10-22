@@ -34,14 +34,28 @@ from nvidia_tao_core.config.utils.types import (
 class DatasetConfig:
     """Dataset config."""
 
-    annotation_path: Optional[str] = STR_FIELD(
+    train_annotation_path: Optional[str] = STR_FIELD(
         default_value="data/sft/annotations.json",
         value="data/sft/annotations.json",
         display_name="Annotation path",
         description="Path to the annotation file"
     )
 
-    media_path: Optional[str] = STR_FIELD(
+    train_media_path: Optional[str] = STR_FIELD(
+        default_value="data/sft/train2017",
+        value="data/sft/train2017",
+        display_name="Media directory path",
+        description="Path to the media directory"
+    )
+
+    val_annotation_path: Optional[str] = STR_FIELD(
+        default_value="data/sft/annotations.json",
+        value="data/sft/annotations.json",
+        display_name="Annotation path",
+        description="Path to the annotation file"
+    )
+
+    val_media_path: Optional[str] = STR_FIELD(
         default_value="data/sft/train2017",
         value="data/sft/train2017",
         display_name="Media directory path",
@@ -330,7 +344,7 @@ class TrainConfig:
     epoch: int = INT_FIELD(
         value=10,
         default_value=10,
-        valid_min=10,
+        valid_min=1,
         valid_max=20,
         display_name="Number of Epochs",
         description="The number of epochs.",
@@ -432,7 +446,9 @@ class TrainConfig:
         display_name="Optimizer betas",
         description="Beta parameters for Adam/AdamW optimizer.",
         automl_enabled="TRUE",
-        value_type="list_2"
+        value_type="list_2",
+        valid_min=[0.8, 0.9],
+        valid_max=[0.95, 0.999]
     )
 
     optm_warmup_epochs: Optional[Union[int, float]] = UNION_FIELD(
@@ -509,6 +525,32 @@ class TrainConfig:
 
 
 @dataclass
+class ValidationDatasetConfig:
+    """Validation dataset config."""
+
+    name: str = STR_FIELD(
+        value="",
+        default_value="",
+        display_name="Dataset name",
+        description="Name of the dataset."
+    )
+
+    subset: str = STR_FIELD(
+        value="",
+        default_value="",
+        display_name="Dataset subset",
+        description="Subset of the dataset."
+    )
+
+    split: str = STR_FIELD(
+        value="train",
+        default_value="train",
+        display_name="Dataset split",
+        description="Split of the dataset."
+    )
+
+
+@dataclass
 class ValidationConfig:
     """Validation config."""
 
@@ -525,6 +567,17 @@ class ValidationConfig:
         valid_max="inf",
         display_name="Validation frequency",
         description="Validation frequency."
+    )
+    dataset: Optional[ValidationDatasetConfig] = DATACLASS_FIELD(
+        ValidationDatasetConfig(), description="Validation dataset config."
+    )
+    batch_size: int = INT_FIELD(
+        value=4,
+        default_value=4,
+        valid_min=1,
+        valid_max="inf",
+        display_name="Batch size",
+        description="Batch size."
     )
 
 
