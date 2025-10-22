@@ -23,7 +23,6 @@ import shutil
 import hashlib
 import requests
 import functools
-import subprocess
 import numpy as np
 import logging
 from filelock import FileLock
@@ -40,16 +39,6 @@ logger = logging.getLogger(__name__)
 NUM_OF_RETRY = 5
 base_exp_uuid = "00000000-0000-0000-0000-000000000000"
 NVCF_SECRET_FILE = "/var/secrets/secrets.json"
-
-
-def run_system_command(command):
-    """Run a linux command - similar to os.system(). Waits till process ends."""
-    result = subprocess.run(['/bin/bash', '-c', command], stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=False)
-    if result.stdout:
-        logger.info("run_system_command stdout: %s", result.stdout.decode("utf-8"))
-    if result.stderr:
-        logger.error("run_system_command stderr: %s", result.stderr.decode("utf-8"))
-    return 0
 
 
 def sha256_checksum(file_path):
