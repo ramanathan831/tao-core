@@ -272,11 +272,37 @@ class DockerHandler:
                 try:
                     base_url = f"http://{container_name}:{port}"
                     liveness_response = requests.get(f"{base_url}/api/v1/health/liveness", timeout=120)
-                    readiness_response = requests.get(f"{base_url}/api/v1/health/readiness", timeout=120)
-                    if liveness_response.status_code == 200 and readiness_response.status_code == 200:
+                    if liveness_response.status_code == 200:
                         return True
                 except Exception as e:
                     logger.error(f"Exception caught during checking container health: {e}")
+                    return False
+            else:
+                logger.error(f"Container {self._container.name} is in {self._container.status} state")
+                return False
+        return False
+
+    def check_container_readiness(self, port=8000):
+        """Check if the microservice is ready to serve inference requests.
+
+        Returns:
+            True if model is loaded and ready for inference, False otherwise
+        """
+        if self._container:
+            logger.info(f"Checking container readiness: {self._container.name}")
+            self._container.reload()
+            if self._container.status.lower() == "running":
+                container_name = self._container.name
+                try:
+                    base_url = f"http://{container_name}:{port}"
+                    readiness_response = requests.get(f"{base_url}/api/v1/health/readiness", timeout=30)
+                    if readiness_response.status_code == 200:
+                        logger.info(f"Container {container_name} is ready for inference")
+                        return True
+                    logger.info(f"Container {container_name} not ready yet: {readiness_response.status_code}")
+                    return False
+                except Exception as e:
+                    logger.error(f"Exception caught during checking container readiness: {e}")
                     return False
             else:
                 logger.error(f"Container {self._container.name} is in {self._container.status} state")

@@ -1,7 +1,7 @@
 {
     "api_params": {
         "dataset_type": "vlm",
-        "actions": ["train", "inference", "evaluate"],
+        "actions": ["train", "inference", "evaluate", "inference_microservice"],
         "formats": ["llava"],
         "accepted_ds_intents": ["training", "evaluation", "testing"],
         "image": "COSMOS_RL",
