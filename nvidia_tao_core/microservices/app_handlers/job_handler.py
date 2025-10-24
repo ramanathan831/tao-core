@@ -588,7 +588,7 @@ class JobHandler:
             return Code(404, [], "job status not found")
 
     @staticmethod
-    def job_pause(org_name, handler_id, job_id, kind, graceful=False):
+    def job_pause(org_name, handler_id, job_id, kind, graceful=True):
         """Pauses a job based on its current status.
 
         Args:
