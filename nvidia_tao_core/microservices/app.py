@@ -67,7 +67,6 @@ from nvidia_tao_core.microservices.app_handlers.dataset_handler import DatasetHa
 from nvidia_tao_core.microservices.app_handlers.experiment_handler import ExperimentHandler
 from nvidia_tao_core.microservices.app_handlers.job_handler import JobHandler
 from nvidia_tao_core.microservices.app_handlers.spec_handler import SpecHandler
-from nvidia_tao_core.microservices.app_handlers.mongo_handler import MongoBackupHandler
 from nvidia_tao_core.microservices.app_handlers.model_handler import ModelHandler
 from nvidia_tao_core.microservices.handlers.container_handler import ContainerJobHandler as container_handler
 from nvidia_tao_core.microservices.handlers.stateless_handlers import (

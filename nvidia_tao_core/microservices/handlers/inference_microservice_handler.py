@@ -57,9 +57,9 @@ class InferenceMicroserviceHandler:
 
         The network architecture is automatically determined from the experiment metadata.
         """
-        from nvidia_tao_core.microservices.handlers.stateless_handlers import get_handler_metadata
         from nvidia_tao_core.microservices.handlers.stateless_handlers import write_job_metadata
         from nvidia_tao_core.microservices.utils import get_admin_key
+        from nvidia_tao_core.microservices.job_utils.executor.utils import get_cluster_ip
 
         logger.info("Starting Inference Microservice %s for experiment %s", job_id, experiment_id)
         # StatefulSet name
@@ -113,7 +113,7 @@ class InferenceMicroserviceHandler:
         docker_env_vars["CLOUD_BASED"] = "True"
         host_base_url = os.getenv("HOSTBASEURL", "no_url")
         if os.getenv("BACKEND", "local-k8s") == "local-k8s":
-            cluster_ip, cluster_port = jobDriver.get_cluster_ip()
+            cluster_ip, cluster_port = get_cluster_ip()
             if cluster_ip and cluster_port:
                 host_base_url = f"http://{cluster_ip}:{cluster_port}"
         status_url = f"{host_base_url}/api/v1/orgs/{org_name}/experiments/{experiment_id}/jobs/{job_id}"
