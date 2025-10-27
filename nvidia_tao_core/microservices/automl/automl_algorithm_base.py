@@ -19,11 +19,14 @@ import random
 import logging
 
 
-from nvidia_tao_core.microservices.automl.utils import fix_input_dimension, fix_power_of_factor
+from nvidia_tao_core.microservices.automl.utils import fix_input_dimension, fix_power_of_factor, get_valid_options
 from nvidia_tao_core.microservices.automl import network_utils
 from nvidia_tao_core.microservices.network_utils import network_constants
 from nvidia_tao_core.microservices.network_utils import automl_helper
-from nvidia_tao_core.microservices.handlers.stateless_handlers import get_job_specs
+from nvidia_tao_core.microservices.handlers.stateless_handlers import (
+    get_job_specs,
+    get_automl_custom_param_ranges
+)
 
 logger = logging.getLogger(__name__)
 
@@ -41,6 +44,11 @@ class AutoMLAlgorithmBase:
         self.parent_params = {}
         self.default_train_spec = get_job_specs(self.job_context.id)
         self.default_train_spec_flattened = {}
+
+        # Load custom parameter ranges from experiment
+        experiment_id = self.job_context.handler_id
+        self.custom_ranges = get_automl_custom_param_ranges(experiment_id)
+        logger.info(f"Loaded {len(self.custom_ranges)} custom parameter range(s) for experiment {experiment_id}")
 
         # Initialize random seeds to ensure different values across experiments
         # Using job_context.id hash to get different seeds for different jobs
@@ -90,6 +98,14 @@ class AutoMLAlgorithmBase:
         parameter_name = parameter_config.get("parameter")
         data_type = parameter_config.get("value_type")
         default_value = parameter_config.get("default_value", None)
+
+        # Apply custom overrides if provided
+        if self.custom_ranges and parameter_name in self.custom_ranges:
+            for override_key, override_value in self.custom_ranges[parameter_name].items():
+                if override_value is not None:
+                    parameter_config[override_key] = override_value
+
+        # Get potentially overridden values
         math_cond = parameter_config.get("math_cond", None)
         parent_param = parameter_config.get("parent_param", None)
 
@@ -165,22 +181,22 @@ class AutoMLAlgorithmBase:
             return np.random.randint(0, 2) == 1
 
         if data_type == "ordered_int":
-            if parameter_config.get("valid_options", "") == "":
+            valid_values = get_valid_options(parameter_config, self.custom_ranges)
+            if not valid_values or valid_values == "":
                 return default_value
-            valid_values = parameter_config.get("valid_options")
             sample = int(np.random.choice(valid_values))
             return sample
 
         if data_type in ("categorical", "ordered"):
-            if parameter_config.get("valid_options", "") == "":
+            valid_values = get_valid_options(parameter_config, self.custom_ranges)
+            if not valid_values or valid_values == "":
                 return default_value
-            valid_values = parameter_config.get("valid_options")
             sample = np.random.choice(valid_values)
             return sample
 
         if data_type == "subset_list":
             # Generate a random subset from valid_options
-            valid_options = parameter_config.get("valid_options", "")
+            valid_options = get_valid_options(parameter_config, self.custom_ranges)
             if valid_options == "" or valid_options is None:
                 return []  # Return empty list if no valid options
 
@@ -207,7 +223,7 @@ class AutoMLAlgorithmBase:
 
         if data_type == "optional_list":
             # Generate either None or a list with items from valid_options
-            valid_options = parameter_config.get("valid_options", "")
+            valid_options = get_valid_options(parameter_config, self.custom_ranges)
             if valid_options == "" or valid_options is None:
                 result = None
             else:
@@ -303,9 +319,18 @@ class AutoMLAlgorithmBase:
             if data_type == "list_2":
                 if bound_type == "optimizer_betas":
                     # Generate two beta values: beta1 (momentum) and beta2 (RMSprop)
-                    # Typical ranges: beta1: [0.8, 0.95], beta2: [0.9, 0.999]
-                    beta1 = round(np.random.uniform(0.8, 0.95), 3)
-                    beta2 = round(np.random.uniform(0.9, 0.999), 3)
+                    # Get ranges from schema (custom overrides already applied at function start)
+                    schema_min = parameter_config.get("valid_min", [0.8, 0.9])
+                    schema_max = parameter_config.get("valid_max", [0.95, 0.999])
+
+                    # Ensure we have valid lists
+                    if not isinstance(schema_min, list) or len(schema_min) < 2:
+                        schema_min = [0.8, 0.9]
+                    if not isinstance(schema_max, list) or len(schema_max) < 2:
+                        schema_max = [0.95, 0.999]
+
+                    beta1 = np.random.uniform(schema_min[0], schema_max[0])
+                    beta2 = np.random.uniform(schema_min[1], schema_max[1])
                     automl_suggested_value = [beta1, beta2]
                     return automl_suggested_value
 

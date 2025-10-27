@@ -668,9 +668,6 @@ class DataMonitorLogTypeEnum(str, Enum):
     tao_job = "TAO_JOB"
     tao_experiment = "TAO_EXPERIMENT"
     tao_dataset = "TAO_DATASET"
-    medical_job = "MEDICAL_JOB"
-    medical_experiment = "MEDICAL_EXPERIMENT"
-    medical_dataset = "MEDICAL_DATASET"
 
 
 def log_monitor(log_type, log_content):

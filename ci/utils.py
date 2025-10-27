@@ -16,6 +16,7 @@
 
 import json
 import os
+import platform
 
 
 def configure_env():
@@ -55,8 +56,25 @@ def get_docker_information(manifest_file):
     )
     with open(manifest_file, "r") as m_file:
         docker_config = json.load(m_file)
+    
+    # Handle both old and new manifest formats
+    if "digest" in docker_config:
+        # Old format with single digest
+        digest = docker_config["digest"]
+    elif "digests" in docker_config:
+        # New format with platform-specific digests
+        arch = platform.machine()
+        if arch == "x86_64":
+            digest = docker_config["digests"]["x86"]
+        elif arch == "aarch64":
+            digest = docker_config["digests"]["arm"]
+        else:
+            # Fallback to x86
+            digest = docker_config["digests"]["x86"]
+    else:
+        raise ValueError("Invalid manifest format: missing 'digest' or 'digests' field")
 
-    return docker_config["registry"], docker_config["repository"], docker_config["digest"]
+    return docker_config["registry"], docker_config["repository"], digest
 
 
 def get_docker_command(manifest_file, tag):

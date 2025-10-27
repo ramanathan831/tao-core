@@ -23,7 +23,11 @@ from nvidia_tao_core.microservices.handlers.docker_images import DOCKER_IMAGE_MA
 from nvidia_tao_core.microservices.handlers.utilities import (
     Code, add_workspace_to_cloud_metadata, get_model_results_path
 )
-from nvidia_tao_core.microservices.job_utils import executor as jobDriver
+from nvidia_tao_core.microservices.job_utils.executor import (
+    ServiceExecutor,
+    StatefulSetExecutor
+)
+from nvidia_tao_core.microservices.handlers.stateless_handlers import get_handler_metadata
 from nvidia_tao_core.microservices.utils import read_network_config
 
 
@@ -147,7 +151,8 @@ umask 0 &&
             # Create long-lived inference service StatefulSet
             # IMPORTANT: This overrides the default container entrypoint (e.g., "flask run")
             # with our custom command that starts the persistent model server + container_handler.py
-            success = jobDriver.create_statefulset(
+            statefulset_executor = StatefulSetExecutor()
+            success = statefulset_executor.create_statefulset(
                 job_id=job_id,
                 num_gpu_per_node=1,
                 num_nodes=replicas,
@@ -168,7 +173,8 @@ umask 0 &&
             logger.info("Waiting for Inference Microservice service %s to be ready", service_id)
 
             if os.getenv("BACKEND") == "local-k8s":
-                service_status = jobDriver.wait_for_service(job_id, service_name=service_id)
+                service_executor = ServiceExecutor()
+                service_status = service_executor.wait_for_service(job_id, service_name=service_id)
                 if service_status != "Running":
                     logger.error("Inference Microservice service failed to become ready. Status: %s", service_status)
                     return Code(500, {}, f"Inference Microservice service failed to become ready: {service_status}")
@@ -239,7 +245,10 @@ umask 0 &&
 
         try:
             # Delete the StatefulSet and associated service using the enhanced delete function
-            deletion_success = jobDriver.delete(job_id, resource_type="inference_microservice")
+            statefulset_executor = StatefulSetExecutor()
+            deletion_success = statefulset_executor.delete_statefulset(
+                job_id, resource_type="inference_microservice"
+            )
 
             if deletion_success:
                 success_message = "auto-deleted due to inactivity" if auto_deletion else "stopped successfully"
@@ -287,7 +296,7 @@ umask 0 &&
         statefulset_name = f"ims-{job_id}"
 
         try:
-            stat_dict = jobDriver.status_statefulset(
+            stat_dict = StatefulSetExecutor().get_statefulset_status(
                 statefulset_name, replicas=1, resource_type="Inference Microservice"
             )
             status = stat_dict.get("status", "Unknown")
@@ -312,7 +321,7 @@ umask 0 &&
 
             # Check if StatefulSet pods exist and are running
             try:
-                stat_dict = jobDriver.status_statefulset(
+                stat_dict = StatefulSetExecutor().get_statefulset_status(
                     statefulset_name, replicas=1, resource_type="Inference Microservice"
                 )
                 statefulset_status = stat_dict.get("status", "Unknown")
@@ -501,7 +510,7 @@ umask 0 &&
         """Get Inference Microservice service status with model readiness information"""
         try:
             statefulset_name = f"ims-{job_id}"
-            stat_dict = jobDriver.status_statefulset(
+            stat_dict = StatefulSetExecutor().get_statefulset_status(
                 statefulset_name, replicas=1, resource_type="Inference Microservice"
             )
 

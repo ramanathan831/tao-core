@@ -101,6 +101,14 @@ class HyperBand(AutoMLAlgorithmBase):
 
     def generate_automl_param_rec_value(self, parameter_config):
         """Generate a random value for the parameter passed"""
+        parameter_name = parameter_config.get("parameter")
+
+        # Apply custom overrides if provided
+        if self.custom_ranges and parameter_name in self.custom_ranges:
+            for override_key, override_value in self.custom_ranges[parameter_name].items():
+                if override_value is not None:
+                    parameter_config[override_key] = override_value
+
         tp = parameter_config.get("value_type")
         default_value = parameter_config.get("default_value", None)
         math_cond = parameter_config.get("math_cond", None)
@@ -113,7 +121,7 @@ class HyperBand(AutoMLAlgorithmBase):
                 return float(default_value)
             if (type(v_min) is not str and math.isnan(v_min)) or (type(v_max) is not str and math.isnan(v_max)):
                 return float(default_value)
-            v_min, v_max = get_valid_range(parameter_config, self.parent_params)
+            v_min, v_max = get_valid_range(parameter_config, self.parent_params, self.custom_ranges)
 
             # Apply math condition if specified
             if math_cond and type(math_cond) is str:

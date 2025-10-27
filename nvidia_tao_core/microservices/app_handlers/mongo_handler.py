@@ -27,7 +27,7 @@ from nvidia_tao_core.microservices.handlers.stateless_handlers import get_root
 if os.getenv("BACKEND"):
     from nvidia_tao_core.microservices.handlers.mongo_handler import mongo_client
 
-from nvidia_tao_core.microservices.handlers.cloud_storage import create_cs_instance
+from nvidia_tao_core.microservices.handlers.cloud_handlers.cloud_storage import create_cs_instance
 
 # Configure logging
 logger = logging.getLogger(__name__)

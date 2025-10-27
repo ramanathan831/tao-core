@@ -12,4 +12,24 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""App Handlers for TAO microservices"""
+"""App handlers module - provides direct access to specialized handler classes"""
+
+# Import all handlers for direct usage
+from nvidia_tao_core.microservices.app_handlers.workspace_handler import WorkspaceHandler
+from nvidia_tao_core.microservices.app_handlers.dataset_handler import DatasetHandler
+from nvidia_tao_core.microservices.app_handlers.experiment_handler import ExperimentHandler
+from nvidia_tao_core.microservices.app_handlers.job_handler import JobHandler
+from nvidia_tao_core.microservices.app_handlers.spec_handler import SpecHandler
+from nvidia_tao_core.microservices.app_handlers.mongo_handler import MongoBackupHandler
+from nvidia_tao_core.microservices.app_handlers.model_handler import ModelHandler
+
+# Export all handlers for direct access
+__all__ = [
+    'WorkspaceHandler',
+    'DatasetHandler',
+    'ExperimentHandler',
+    'JobHandler',
+    'SpecHandler',
+    'MongoBackupHandler',
+    'ModelHandler'
+]
