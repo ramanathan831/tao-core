@@ -81,8 +81,8 @@ network_action_pairs = get_network_action_pairs()
 @pytest.mark.parametrize("network,action", network_action_pairs)
 def test_networks_with_valid_actions(network, action):
     """Test schema generation for networks with their supported actions"""
-    network_arch, _ = get_microservices_network_and_action(network, action)
-    schema = generate_schema(network_arch, action)
+    network_arch, mapped_action = get_microservices_network_and_action(network, action)
+    schema = generate_schema(network_arch, mapped_action)
     assert isinstance(schema, dict)
     assert "properties" in schema
     assert "default" in schema

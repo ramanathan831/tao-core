@@ -13,6 +13,12 @@
         }
     },
 
+    "actions_mapping": {
+        "inference_microservice": {
+            "action": "inference"
+        }
+    },
+
     "checkpoint": {
         "format": "safetensors",
         "folder": "true"
