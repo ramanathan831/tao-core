@@ -13,7 +13,6 @@ Flask-WTF>=1.1.0
 grpcio==1.67.1
 huggingface_hub
 jsonschema
-jupyterlab<4.5,>=4.4.0rc0
 kubernetes==32.0.1
 marshmallow==3.26.1
 marshmallow-enum==1.5.1
@@ -43,7 +42,7 @@ setuptools==78.1.1
 six==1.16.0
 timeloop==1.0.2
 toml
-torchao
+torchao==0.11.0
 transformers
 tritonclient[all]
 uWSGI

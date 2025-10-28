@@ -47,6 +47,7 @@ from nvidia_tao_core.microservices.health_utils import health_check
 from nvidia_tao_core.telemetry.processor import MetricProcessor
 from nvidia_tao_core.microservices.handlers.inference_microservice_handler import InferenceMicroserviceHandler
 from nvidia_tao_core.microservices.handlers.mongo_handler import MongoHandler
+from nvidia_tao_core.microservices.app_handlers.mongo_handler import MongoBackupHandler
 from nvidia_tao_core.microservices.constants import AIRGAP_DEFAULT_USER
 from nvidia_tao_core.microservices.enum_constants import (
     ActionEnum,
@@ -67,7 +68,6 @@ from nvidia_tao_core.microservices.app_handlers.dataset_handler import DatasetHa
 from nvidia_tao_core.microservices.app_handlers.experiment_handler import ExperimentHandler
 from nvidia_tao_core.microservices.app_handlers.job_handler import JobHandler
 from nvidia_tao_core.microservices.app_handlers.spec_handler import SpecHandler
-from nvidia_tao_core.microservices.app_handlers.mongo_handler import MongoBackupHandler
 from nvidia_tao_core.microservices.app_handlers.model_handler import ModelHandler
 from nvidia_tao_core.microservices.handlers.container_handler import ContainerJobHandler as container_handler
 from nvidia_tao_core.microservices.handlers.stateless_handlers import (
@@ -9314,20 +9314,11 @@ def inference_microservice_start(org_name, experiment_id):
         job_id = str(uuid.uuid4())
 
         # Create job configuration
-        success = InferenceMicroserviceHandler.start_inference_microservice(
+        response = InferenceMicroserviceHandler.start_inference_microservice(
             org_name, experiment_id, job_id, request_data
         )
 
-        if success:
-            return make_response(jsonify({
-                'job_id': job_id,
-                'status': 'starting',
-                'message': f'Inference Microservice started with job_id: {job_id}'
-            }), 200)
-        return make_response(jsonify({
-            'error': 'Failed to start Inference Microservice',
-            'error_code': 1
-        }), 500)
+        return make_response(jsonify(response.data), response.code)
 
     except Exception as err:
         logger.error("Error in inference_microservice_start: %s", str(traceback.format_exc()))

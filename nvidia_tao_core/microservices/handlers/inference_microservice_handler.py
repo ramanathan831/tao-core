@@ -15,7 +15,7 @@
 """Inference Microservice handler using StatefulSets for long-lived inference"""
 import logging
 import requests
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Dict, Any
 import os
 
@@ -57,6 +57,10 @@ class InferenceMicroserviceHandler:
 
         The network architecture is automatically determined from the experiment metadata.
         """
+        from nvidia_tao_core.microservices.handlers.stateless_handlers import write_job_metadata
+        from nvidia_tao_core.microservices.utils import get_admin_key
+        from nvidia_tao_core.microservices.job_utils.executor.utils import get_cluster_ip
+
         logger.info("Starting Inference Microservice %s for experiment %s", job_id, experiment_id)
         # StatefulSet name
         statefulset_name = f"ims-{job_id}"
@@ -103,6 +107,18 @@ class InferenceMicroserviceHandler:
 
         docker_env_vars = experiment_metadata.get("docker_env_vars", {})
         docker_env_vars["BACKEND"] = os.getenv("BACKEND", "local-k8s")
+        docker_env_vars["TAO_API_JOB_ID"] = job_id
+
+        # Set up environment variables for status callbacks (auto-deletion)
+        docker_env_vars["CLOUD_BASED"] = "True"
+        host_base_url = os.getenv("HOSTBASEURL", "no_url")
+        if os.getenv("BACKEND", "local-k8s") == "local-k8s":
+            cluster_ip, cluster_port = get_cluster_ip()
+            if cluster_ip and cluster_port:
+                host_base_url = f"http://{cluster_ip}:{cluster_port}"
+        status_url = f"{host_base_url}/api/v1/orgs/{org_name}/experiments/{experiment_id}/jobs/{job_id}"
+        docker_env_vars["TAO_LOGGING_SERVER_URL"] = status_url
+        docker_env_vars["TAO_ADMIN_KEY"] = get_admin_key()
 
         workspace_id = experiment_metadata.get("workspace", "")
         workspace_metadata = get_handler_metadata(workspace_id, kind="workspaces")
@@ -156,11 +172,12 @@ umask 0 &&
             service_id = f"ims-svc-{job_id}"
             logger.info("Waiting for Inference Microservice service %s to be ready", service_id)
 
-            service_executor = ServiceExecutor()
-            service_status = service_executor.wait_for_service(job_id, service_name=service_id)
-            if service_status != "Running":
-                logger.error("Inference Microservice service failed to become ready. Status: %s", service_status)
-                return Code(500, {}, f"Inference Microservice service failed to become ready: {service_status}")
+            if os.getenv("BACKEND") == "local-k8s":
+                service_executor = ServiceExecutor()
+                service_status = service_executor.wait_for_service(job_id, service_name=service_id)
+                if service_status != "Running":
+                    logger.error("Inference Microservice service failed to become ready. Status: %s", service_status)
+                    return Code(500, {}, f"Inference Microservice service failed to become ready: {service_status}")
 
             logger.info("Inference Microservice %s is ready", statefulset_name)
 
@@ -168,6 +185,29 @@ umask 0 &&
             service_url = f"http://{service_id}:{api_port}"
 
             logger.info("Inference Microservice created at %s", service_url)
+
+            # Save job metadata to database so status callbacks can find it
+
+            job_metadata = {
+                "id": job_id,
+                "action": "inference_microservice",  # Special action for inference microservices
+                "status": "Running",
+                "created_on": datetime.now(tz=timezone.utc),
+                "last_modified": datetime.now(tz=timezone.utc),
+                "experiment_id": experiment_id,
+                "org_name": org_name,
+                "user_id": experiment_metadata.get("user_id"),
+                "network": network_arch,
+                "parent_id": job_config.get("parent_id", ""),
+                "num_gpu": 1,
+                "platform_id": None,
+                "kind": "experiment",
+                "specs": {},
+                "workflow_status": "Running",  # Not enqueued since it's already running
+            }
+
+            write_job_metadata(job_id, job_metadata)
+            logger.info("Saved inference microservice job metadata for %s", job_id)
 
             return Code(200, {
                 "service_id": service_id,
@@ -185,7 +225,7 @@ umask 0 &&
 
         except Exception as e:
             logger.error("Error starting Inference Microservice: %s", str(e))
-            return Code(500, {}, f"Failed to start Inference Microservice: {str(e)}")
+            return Code(500, {}, f"Failed to start Inference Microservice: {str(e)}. Try again")
 
     @staticmethod
     def stop_inference_microservice(job_id: str, auto_deletion: bool = False) -> Code:
@@ -216,6 +256,22 @@ umask 0 &&
                     "Successfully %s Inference Microservice %s",
                     "auto-deleted" if auto_deletion else "stopped", job_id
                 )
+
+                # Update job status to Done in database
+                from nvidia_tao_core.microservices.handlers.stateless_handlers import (
+                    update_job_status, get_handler_job_metadata
+                )
+                job_metadata = get_handler_job_metadata(job_id)
+                if job_metadata:
+                    experiment_id = job_metadata.get("experiment_id")
+                    if experiment_id:
+                        update_job_status(
+                            experiment_id,
+                            job_id,
+                            status="Done",
+                            kind="experiments"
+                        )
+                        logger.info("Updated job status to Done for %s", job_id)
 
                 result = {
                     "status": "success",

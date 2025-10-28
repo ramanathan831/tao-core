@@ -69,6 +69,9 @@ IS_MASTER = int(os.environ.get("NODE_RANK", 0)) == 0
 
 def prepare_data_before_job_run(job, docker_env_vars):
     """Prepare data before job run"""
+    if docker_env_vars:
+        os.environ.update(docker_env_vars)
+
     cloud_storage, specs = get_results_cloud_data(
         job.get("cloud_metadata"),
         job["specs"],
@@ -305,8 +308,6 @@ class ContainerJobHandler:
         """
         try:
             docker_env_vars = job.get('docker_env_vars', {})
-            if docker_env_vars:
-                os.environ.update(docker_env_vars)
 
             def async_setup_and_run():
                 cloud_storage = None
@@ -317,7 +318,6 @@ class ContainerJobHandler:
 
                 try:
                     # Setup cloud storage and specs
-
                     cloud_storage, specs, spec_path = prepare_data_before_job_run(job, docker_env_vars)
 
                     # Capture snapshot of results directory after downloads but before job execution
