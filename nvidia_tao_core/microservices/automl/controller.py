@@ -173,6 +173,28 @@ class Controller:
         checkpoint_config = self._get_checkpoint_config()
         return checkpoint_config.get("folder", "false") == "true"
 
+    def _inject_automl_env_vars(self):
+        """Inject AutoML-specific environment variables into experiment docker_env_vars."""
+        # Get current experiment metadata
+        experiment_metadata = get_handler_metadata(self.automl_context.handler_id, "experiments")
+
+        # Initialize docker_env_vars if not present
+        if "docker_env_vars" not in experiment_metadata:
+            experiment_metadata["docker_env_vars"] = {}
+
+        # Set AutoML triggered flag and client type
+        experiment_metadata["docker_env_vars"]["TAO_AUTOML_TRIGGERED"] = "true"
+        if "TAO_CLIENT_TYPE" not in experiment_metadata["docker_env_vars"]:
+            # Set to api since AutoML is triggered by API server
+            experiment_metadata["docker_env_vars"]["TAO_CLIENT_TYPE"] = "api"
+
+        # Save updated metadata
+        write_handler_metadata(self.automl_context.handler_id, experiment_metadata, "experiments")
+        logger.info(
+            "Injected TAO_AUTOML_TRIGGERED=true for experiment %s",
+            self.automl_context.handler_id
+        )
+
     def _get_checkpoint_format(self):
         """Get checkpoint format from network config"""
         checkpoint_config = self._get_checkpoint_config()
@@ -420,6 +442,10 @@ class Controller:
                 rec.assign_job_id(job_id)
                 self.recommendations.append(rec)
                 self.save_state()
+
+                # Inject TAO_AUTOML_TRIGGERED flag into experiment docker_env_vars
+                self._inject_automl_env_vars()
+
                 self.on_new_automl_job(rec)
 
             elif type(spec) is ResumeRecommendation:
@@ -460,6 +486,10 @@ class Controller:
                 )
 
                 self.save_state()
+
+                # Inject TAO_AUTOML_TRIGGERED flag into experiment docker_env_vars
+                self._inject_automl_env_vars()
+
                 self.on_new_automl_job(self.recommendations[rec_id])
 
     def read_results(self):
