@@ -230,6 +230,13 @@ class JobHandler:
                     spec_schema = spec_schema_response.data
                     default_spec = spec_schema["default"]
                     check_and_convert(specs, default_spec)
+
+            # Inject TAO_CLIENT_TYPE=api for jobs triggered via API
+            if "docker_env_vars" not in handler_metadata:
+                handler_metadata["docker_env_vars"] = {}
+            if "TAO_CLIENT_TYPE" not in handler_metadata["docker_env_vars"]:
+                handler_metadata["docker_env_vars"]["TAO_CLIENT_TYPE"] = "api"
+
             msg = ""
             if is_request_automl(handler_id, action, kind):
                 logger.info("Creating AutoML job %s", job_id)

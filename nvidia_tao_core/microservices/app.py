@@ -44,6 +44,7 @@ from marshmallow_enum import EnumField, Enum
 from nvidia_tao_core.microservices.filter_utils import filtering, pagination
 from nvidia_tao_core.microservices.auth_utils import credentials, authentication, access_control, metrics
 from nvidia_tao_core.microservices.health_utils import health_check
+from nvidia_tao_core.telemetry.processor import MetricProcessor
 from nvidia_tao_core.microservices.handlers.inference_microservice_handler import InferenceMicroserviceHandler
 from nvidia_tao_core.microservices.handlers.mongo_handler import MongoHandler
 from nvidia_tao_core.microservices.constants import AIRGAP_DEFAULT_USER
@@ -698,6 +699,10 @@ class AllowedDockerEnvVariables(Enum):
     AUTOML_EXPERIMENT_NUMBER = "AUTOML_EXPERIMENT_NUMBER"
     JOB_ID = "JOB_ID"
     TAO_API_JOB_ID = "TAO_API_JOB_ID"  # Automl brain job id
+
+    TAO_TELEMETRY_SERVER = "TAO_TELEMETRY_SERVER"
+    TAO_CLIENT_TYPE = "TAO_CLIENT_TYPE"  # Client type: container, api, cli, sdk, ui, etc.
+    TAO_AUTOML_TRIGGERED = "TAO_AUTOML_TRIGGERED"  # Whether job is triggered by AutoML
 
 
 #
@@ -1580,7 +1585,10 @@ class TelemetryReqSchema(Schema):
     action = fields.Str()
     success = fields.Bool()
     gpu = fields.List(fields.Str())
-    time_lapsed = fields.Int()
+    time_lapsed = fields.Int(allow_none=True)
+    user_error = fields.Bool(allow_none=True)
+    client_type = fields.Str(allow_none=True)  # Client type: container, api, cli, sdk, ui, etc.
+    automl_triggered = fields.Bool(allow_none=True)  # Whether job is triggered by AutoML
 
 
 @app.route('/api/v1/metrics', methods=['POST'])
@@ -1608,82 +1616,29 @@ def metrics_upsert():
                     application/json:
                         schema: ErrorRspSchema
     """
-    now = old_now = datetime.now()
-
-    # get action report
-
+    # Validate and load telemetry data
     try:
-        data = TelemetryReqSchema().load(request.get_json(force=True))
+        raw_data = TelemetryReqSchema().load(request.get_json(force=True))
     except Exception as e:
         logger.error("Exception thrown in metrics_upsert: %s", str(e))
         return make_response(jsonify({}), 400)
 
-    # update metrics.json
-
+    # Load existing metrics
     metrics = get_metrics()
     if not metrics:
         metrics = safe_load_file(os.path.join(get_root(), 'metrics.json'))
         if not metrics:
-            metadata = {
-                "error_desc": "Metrics.json file not exists or can not be updated now, please try again later.",
-                "error_code": 503
-            }
-            schema = ErrorRspSchema()
-            response = make_response(jsonify(schema.dump(schema.load(metadata))), 500)
-            return response
+            # Warning: No historical metrics data found, starting with new record.
+            logger.warning("No existing metrics history found; starting new metrics record.")
+            metrics = {}  # Start a new, empty metrics dict
 
-    old_now = datetime.fromisoformat(metrics.get('last_updated', now.isoformat()))
-    version = re.sub("[^a-zA-Z0-9]", "_", data.get('version', 'unknown')).lower()
-    action = re.sub("[^a-zA-Z0-9]", "_", data.get('action', 'unknown')).lower()
-    network = re.sub("[^a-zA-Z0-9]", "_", data.get('network', 'unknown')).lower()
-    success = data.get('success', False)
-    time_lapsed = data.get('time_lapsed', 0)
-    gpus = data.get('gpu', ['unknown'])
-    if success:
-        metrics[f'total_action_{action}_pass'] = metrics.get(f'total_action_{action}_pass', 0) + 1
-    else:
-        metrics[f'total_action_{action}_fail'] = metrics.get(f'total_action_{action}_fail', 0) + 1
-    metrics[f'version_{version}_action_{action}'] = metrics.get(f'version_{version}_action_{action}', 0) + 1
-    metrics[f'network_{network}_action_{action}'] = metrics.get(f'network_{network}_action_{action}', 0) + 1
-    metrics['time_lapsed_today'] = metrics.get('time_lapsed_today', 0) + time_lapsed
-    if now.strftime("%d") != old_now.strftime("%d"):
-        metrics['time_lapsed_today'] = time_lapsed
-    for gpu in gpus:
-        gpu = re.sub("[^a-zA-Z0-9]", "_", gpu).lower()
-        metrics[f'gpu_{gpu}_action_{action}'] = metrics.get(f'gpu_{gpu}_action_{action}', 0) + 1
-    metrics['last_updated'] = now.isoformat()
+    # Process metrics using the extensible MetricProcessor
+    # This orchestrator handles all metric building using configured builders
+    processor = MetricProcessor()
+    metrics = processor.process(metrics, raw_data)
 
-    def sanitize_gpu_name(gpu_name):
-        # Convert to uppercase first, then replace all non-alphanumeric characters with _
-        return re.sub("[^a-zA-Z0-9]", "_", gpu_name.upper())
-
-    def create_gpu_identifier(gpu_list):
-        # Count occurrences of each GPU type (case insensitive)
-        gpu_counts = {}
-        for gpu in map(sanitize_gpu_name, gpu_list):
-            gpu_counts[gpu] = gpu_counts.get(gpu, 0) + 1
-
-        # Format as "gpu_count_gpu1_count_gpu2_count..."
-        gpu_parts = [f"{gpu}_{count}" for gpu, count in sorted(gpu_counts.items())]
-        return f"{len(gpu_list)}_{'_'.join(gpu_parts)}"
-
-    # Build metric name with all attributes
-    status = "pass" if success else "fail"
-    metric_components = [
-        "network", network,
-        "action", action,
-        "version", version,
-        "status", status,
-        "gpu", create_gpu_identifier(gpus)
-    ]
-    full_metric_name = "_".join(metric_components)
-
-    # Update metric counter
-    metrics[full_metric_name] = metrics.get(full_metric_name, 0) + 1
-
+    # Persist metrics
     set_metrics(metrics)
-
-    # success
 
     return make_response(bson.json_util.dumps(metrics), 201)
 
