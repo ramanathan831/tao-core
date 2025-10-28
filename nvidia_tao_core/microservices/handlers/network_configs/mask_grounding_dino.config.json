@@ -40,9 +40,6 @@
                     },
                     "json_file": {
                         "path": "annotations_odvg.jsonl"
-                    },
-                    "label_map": {
-                        "path": "annotations_odvg_labelmap.json"
                     }
                 }
             },
@@ -55,7 +52,7 @@
                         "transform": "handle_tar_path"
                     },
                     "json_file": {
-                        "path": "annotations.json"
+                        "path": "val.jsonl"
                     }
                 }
             }
@@ -70,7 +67,7 @@
                         "transform": "handle_tar_path"
                     },
                     "json_file": {
-                        "path": "annotations.json"
+                        "path": "val.jsonl"
                     }
                 }
             }
@@ -82,13 +79,16 @@
                 "mapping": {
                     "image_dir": {
                         "path": "images.tar.gz",
-                        "transform": [
-                            "handle_tar_path",
-                            "wrap_in_list"
-                        ]
+                        "transform": "handle_tar_path"
                     },
                     "classmap": {
                         "path": "label_map.txt"
+                    },
+                    "json_file": {
+                        "path": "inference.jsonl"
+                    },
+                    "captions": {
+                        "path": "inference.jsonl"
                     }
                 }
             }
@@ -140,7 +140,8 @@
             "results_dir": "output_dir",
             "inference.checkpoint": "parent_model",
             "inference.trt_engine": "parent_model",
-            "encryption_key": "key"
+            "encryption_key": "key",
+            "dataset.infer_data_sources.data_type": "VG"
         },
         "export": {
             "results_dir": "output_dir",
