@@ -41,8 +41,10 @@ class TestLabeledMetricsBuilder:
 
         # Check job total metric exists with primary_gpu and gpu_count
         expected_key = (
-            'tao_job_total{tao_action="train",tao_automl_triggered="false",tao_client_type="container",tao_gpu_count="2",'
-            'tao_network="resnet50",tao_primary_gpu="A100",tao_status="pass",tao_user_error="false",tao_version="5_3_0"}'
+            'tao_job_total{tao_action="train",tao_automl_triggered="false",'
+            'tao_client_type="container",tao_gpu_count="2",'
+            'tao_network="resnet50",tao_primary_gpu="A100",'
+            'tao_status="pass",tao_user_error="false",tao_version="5_3_0"}'
         )
         assert expected_key in metrics
         assert metrics[expected_key] == 1
@@ -67,8 +69,10 @@ class TestLabeledMetricsBuilder:
 
         # Check duration sum metric (same labels as tao_job_total)
         expected_key = (
-            'tao_job_duration_sum{tao_action="train",tao_automl_triggered="false",tao_client_type="container",tao_gpu_count="1",'
-            'tao_network="resnet50",tao_primary_gpu="A100",tao_status="pass",tao_user_error="false",tao_version="5_3_0"}'
+            'tao_job_duration_sum{tao_action="train",tao_automl_triggered="false",'
+            'tao_client_type="container",tao_gpu_count="1",'
+            'tao_network="resnet50",tao_primary_gpu="A100",'
+            'tao_status="pass",tao_user_error="false",tao_version="5_3_0"}'
         )
         assert expected_key in metrics
         assert metrics[expected_key] == 3600
@@ -93,8 +97,10 @@ class TestLabeledMetricsBuilder:
 
         # Check GPU-time sum metric (gpu_count × duration = 2 × 3600 = 7200)
         expected_key = (
-            'tao_job_gpu_time_sum{tao_action="train",tao_automl_triggered="false",tao_client_type="container",tao_gpu_count="2",'
-            'tao_network="resnet50",tao_primary_gpu="A100",tao_status="pass",tao_user_error="false",tao_version="5_3_0"}'
+            'tao_job_gpu_time_sum{tao_action="train",tao_automl_triggered="false",'
+            'tao_client_type="container",tao_gpu_count="2",'
+            'tao_network="resnet50",tao_primary_gpu="A100",'
+            'tao_status="pass",tao_user_error="false",tao_version="5_3_0"}'
         )
         assert expected_key in metrics
         assert metrics[expected_key] == 7200  # 2 GPUs × 3600 seconds
@@ -123,15 +129,21 @@ class TestLabeledMetricsBuilder:
         builder.build(metrics, telemetry_data, {})
 
         # Duration sum should accumulate
-        duration_key = [k for k in metrics.keys() if k.startswith('tao_job_duration_sum')][0]
+        duration_key = [
+            k for k in metrics.keys() if k.startswith('tao_job_duration_sum')
+        ][0]
         assert metrics[duration_key] == 5400  # 3600 + 1800
 
         # GPU-time sum should also accumulate (1 GPU each job)
-        gpu_time_key = [k for k in metrics.keys() if k.startswith('tao_job_gpu_time_sum')][0]
+        gpu_time_key = [
+            k for k in metrics.keys() if k.startswith('tao_job_gpu_time_sum')
+        ][0]
         assert metrics[gpu_time_key] == 5400  # (1×3600) + (1×1800)
 
         # Job total should also increment
-        job_key = [k for k in metrics.keys() if k.startswith('tao_job_total')][0]
+        job_key = [
+            k for k in metrics.keys() if k.startswith('tao_job_total')
+        ][0]
         assert metrics[job_key] == 2
 
     def test_build_gpu_total_metric(self):
@@ -206,7 +218,9 @@ class TestLabeledMetricsBuilder:
         builder = LabeledMetricsBuilder()
 
         # Single type
-        assert builder._extract_primary_gpu(['NVIDIA_A100', 'NVIDIA_A100', 'NVIDIA_A100']) == 'A100'
+        assert builder._extract_primary_gpu(
+            ['NVIDIA_A100', 'NVIDIA_A100', 'NVIDIA_A100']
+        ) == 'A100'
         assert builder._extract_primary_gpu(['NVIDIA_V100']) == 'V100'
 
     def test_extract_primary_gpu_mixed_prioritizes_newer(self):
@@ -214,42 +228,66 @@ class TestLabeledMetricsBuilder:
         builder = LabeledMetricsBuilder()
 
         # A100 is newer than V100 → should return A100
-        assert builder._extract_primary_gpu(['NVIDIA_A100', 'NVIDIA_V100', 'NVIDIA_V100']) == 'A100'
+        assert builder._extract_primary_gpu(
+            ['NVIDIA_A100', 'NVIDIA_V100', 'NVIDIA_V100']
+        ) == 'A100'
 
         # H100 is newest → should return H100
-        assert builder._extract_primary_gpu(['NVIDIA_V100', 'NVIDIA_A100', 'NVIDIA_H100']) == 'H100'
+        assert builder._extract_primary_gpu(
+            ['NVIDIA_V100', 'NVIDIA_A100', 'NVIDIA_H100']
+        ) == 'H100'
 
         # Even if A100 is more common, H100 is newer
-        assert builder._extract_primary_gpu(['NVIDIA_A100', 'NVIDIA_A100', 'NVIDIA_A100', 'NVIDIA_H100']) == 'H100'
+        assert builder._extract_primary_gpu(
+            ['NVIDIA_A100', 'NVIDIA_A100', 'NVIDIA_A100', 'NVIDIA_H100']
+        ) == 'H100'
 
     def test_extract_primary_gpu_priority_order(self):
         """Test GPU priority order from newest to oldest based on compute capability."""
         builder = LabeledMetricsBuilder()
 
         # GB200 > GH200 > H200
-        assert builder._extract_primary_gpu(['NVIDIA_GB200', 'NVIDIA_GH200']) == 'GB200'
-        assert builder._extract_primary_gpu(['NVIDIA_GH200', 'NVIDIA_H200']) == 'GH200'
+        assert builder._extract_primary_gpu(
+            ['NVIDIA_GB200', 'NVIDIA_GH200']
+        ) == 'GB200'
+        assert builder._extract_primary_gpu(
+            ['NVIDIA_GH200', 'NVIDIA_H200']
+        ) == 'GH200'
 
         # H200 > H100
-        assert builder._extract_primary_gpu(['NVIDIA_H200', 'NVIDIA_H100']) == 'H200'
+        assert builder._extract_primary_gpu(
+            ['NVIDIA_H200', 'NVIDIA_H100']
+        ) == 'H200'
 
         # H100 > L40S (Hopper > Ada datacenter)
-        assert builder._extract_primary_gpu(['NVIDIA_H100', 'NVIDIA_L40S']) == 'H100'
+        assert builder._extract_primary_gpu(
+            ['NVIDIA_H100', 'NVIDIA_L40S']
+        ) == 'H100'
 
         # L40S > A100 (Ada > Ampere datacenter)
-        assert builder._extract_primary_gpu(['NVIDIA_L40S', 'NVIDIA_A100']) == 'L40S'
+        assert builder._extract_primary_gpu(
+            ['NVIDIA_L40S', 'NVIDIA_A100']
+        ) == 'L40S'
 
         # A100 > V100 (Ampere > Volta)
-        assert builder._extract_primary_gpu(['NVIDIA_A100', 'NVIDIA_V100']) == 'A100'
+        assert builder._extract_primary_gpu(
+            ['NVIDIA_A100', 'NVIDIA_V100']
+        ) == 'A100'
 
         # A100 > A30 (within same generation)
-        assert builder._extract_primary_gpu(['NVIDIA_A100', 'NVIDIA_A30']) == 'A100'
+        assert builder._extract_primary_gpu(
+            ['NVIDIA_A100', 'NVIDIA_A30']
+        ) == 'A100'
 
         # RTX 5090 > RTX 4090 (newer generation)
-        assert builder._extract_primary_gpu(['GeForce_RTX_5090', 'GeForce_RTX_4090']) == 'RTX5090'
+        assert builder._extract_primary_gpu(
+            ['GeForce_RTX_5090', 'GeForce_RTX_4090']
+        ) == 'RTX5090'
 
         # RTX 4090 > RTX 3090
-        assert builder._extract_primary_gpu(['GeForce_RTX_4090', 'GeForce_RTX_3090']) == 'RTX4090'
+        assert builder._extract_primary_gpu(
+            ['GeForce_RTX_4090', 'GeForce_RTX_3090']
+        ) == 'RTX4090'
 
     def test_status_derived_from_success(self):
         """Test that status label is derived from success field."""
@@ -299,7 +337,9 @@ class TestLabeledMetricsBuilder:
             'network': 'resnet50',
             'success': True,
             'user_error': False,
-            'gpus': ['NVIDIA_A100', 'NVIDIA_A100', 'NVIDIA_A100', 'NVIDIA_A100'],
+            'gpus': [
+                'NVIDIA_A100', 'NVIDIA_A100', 'NVIDIA_A100', 'NVIDIA_A100'
+            ],
             'time_lapsed': 0,
             'client_type': 'container',
             'automl_triggered': False
@@ -308,7 +348,9 @@ class TestLabeledMetricsBuilder:
         builder.build(metrics, telemetry_data, {})
 
         # Should have gpu_count="4"
-        job_keys = [k for k in metrics.keys() if k.startswith('tao_job_total')]
+        job_keys = [
+            k for k in metrics.keys() if k.startswith('tao_job_total')
+        ]
         assert len(job_keys) == 1
         assert 'tao_gpu_count="4"' in job_keys[0]
 
@@ -329,7 +371,9 @@ class TestLabeledMetricsBuilder:
         builder.build(metrics, telemetry_data, {})
 
         # GPU-time = 3 GPUs × 3600 seconds = 10800 GPU-seconds
-        gpu_time_keys = [k for k in metrics.keys() if k.startswith('tao_job_gpu_time_sum')]
+        gpu_time_keys = [
+            k for k in metrics.keys() if k.startswith('tao_job_gpu_time_sum')
+        ]
         assert len(gpu_time_keys) == 1
         assert metrics[gpu_time_keys[0]] == 10800
 
@@ -352,11 +396,15 @@ class TestLabeledMetricsBuilder:
         builder.build(metrics, telemetry_data, {})
 
         # Find the job total metric
-        job_total_keys = [k for k in metrics.keys() if k.startswith('tao_job_total')]
+        job_total_keys = [
+            k for k in metrics.keys() if k.startswith('tao_job_total')
+        ]
         assert len(job_total_keys) == 1
 
         key = job_total_keys[0]
-        # Labels should be alphabetically sorted: tao_action, tao_automl_triggered, tao_client_type, tao_gpu_count, tao_network, tao_primary_gpu, tao_status, tao_user_error, tao_version
+        # Labels should be alphabetically sorted:
+        # tao_action, tao_automl_triggered, tao_client_type, tao_gpu_count,
+        # tao_network, tao_primary_gpu, tao_status, tao_user_error, tao_version
         assert key.index('tao_action') < key.index('tao_automl_triggered')
         assert key.index('tao_automl_triggered') < key.index('tao_client_type')
         assert key.index('tao_client_type') < key.index('tao_gpu_count')
@@ -387,11 +435,15 @@ class TestLabeledMetricsBuilder:
             builder.build(metrics, telemetry_data, {})
 
         # Job total should increment
-        job_total_key = [k for k in metrics.keys() if k.startswith('tao_job_total')][0]
+        job_total_key = [
+            k for k in metrics.keys() if k.startswith('tao_job_total')
+        ][0]
         assert metrics[job_total_key] == 3
 
         # Duration sum should accumulate (counter behavior)
-        duration_key = [k for k in metrics.keys() if k.startswith('tao_job_duration_sum')][0]
+        duration_key = [
+            k for k in metrics.keys() if k.startswith('tao_job_duration_sum')
+        ][0]
         assert metrics[duration_key] == 5400  # 1800 * 3
 
     def test_different_gpu_types(self):
@@ -428,8 +480,14 @@ class TestLabeledMetricsBuilder:
         builder.build(metrics, telemetry_data_v100, {})
 
         # Should have separate metrics for different primary GPUs
-        a100_key = [k for k in metrics.keys() if 'tao_primary_gpu="A100"' in k and k.startswith('tao_job_total')]
-        v100_key = [k for k in metrics.keys() if 'tao_primary_gpu="V100"' in k and k.startswith('tao_job_total')]
+        a100_key = [
+            k for k in metrics.keys()
+            if 'tao_primary_gpu="A100"' in k and k.startswith('tao_job_total')
+        ]
+        v100_key = [
+            k for k in metrics.keys()
+            if 'tao_primary_gpu="V100"' in k and k.startswith('tao_job_total')
+        ]
 
         assert len(a100_key) == 1
         assert len(v100_key) == 1
@@ -461,7 +519,9 @@ class TestLabeledMetricsBuilder:
         builder.build(metrics, telemetry_data, {})
 
         # Primary GPU should be A100 (newer than V100)
-        job_keys = [k for k in metrics.keys() if k.startswith('tao_job_total')]
+        job_keys = [
+            k for k in metrics.keys() if k.startswith('tao_job_total')
+        ]
         assert len(job_keys) == 1
         assert 'tao_primary_gpu="A100"' in job_keys[0]
         assert 'tao_gpu_count="3"' in job_keys[0]
@@ -471,7 +531,9 @@ class TestLabeledMetricsBuilder:
         assert metrics['tao_job_gpu_total{tao_gpu_type="V100"}'] == 1
 
         # GPU-time should be 3 × 3600 = 10800
-        gpu_time_keys = [k for k in metrics.keys() if k.startswith('tao_job_gpu_time_sum')]
+        gpu_time_keys = [
+            k for k in metrics.keys() if k.startswith('tao_job_gpu_time_sum')
+        ]
         assert metrics[gpu_time_keys[0]] == 10800
 
     def test_no_duration_when_zero(self):
@@ -493,7 +555,9 @@ class TestLabeledMetricsBuilder:
         builder.build(metrics, telemetry_data, {})
 
         # Duration sum metric should not be created
-        duration_metrics = [k for k in metrics.keys() if k.startswith('tao_job_duration_sum')]
+        duration_metrics = [
+            k for k in metrics.keys() if k.startswith('tao_job_duration_sum')
+        ]
         assert len(duration_metrics) == 0
 
     def test_average_duration_calculation(self):
@@ -520,8 +584,12 @@ class TestLabeledMetricsBuilder:
         builder.build(metrics, telemetry_data, {})
 
         # Get the metrics
-        duration_sum = [v for k, v in metrics.items() if k.startswith('tao_job_duration_sum')][0]
-        job_total = [v for k, v in metrics.items() if k.startswith('tao_job_total')][0]
+        duration_sum = [
+            v for k, v in metrics.items() if k.startswith('tao_job_duration_sum')
+        ][0]
+        job_total = [
+            v for k, v in metrics.items() if k.startswith('tao_job_total')
+        ][0]
 
         # Calculate average
         average_duration = duration_sum / job_total
@@ -562,8 +630,10 @@ class TestLabeledMetricsBuilder:
 
         # Check that client_type and automl_triggered are in labels
         expected_key = (
-            'tao_job_total{tao_action="train",tao_automl_triggered="true",tao_client_type="api",tao_gpu_count="1",'
-            'tao_network="resnet50",tao_primary_gpu="A100",tao_status="pass",tao_user_error="false",tao_version="5_3_0"}'
+            'tao_job_total{tao_action="train",tao_automl_triggered="true",'
+            'tao_client_type="api",tao_gpu_count="1",'
+            'tao_network="resnet50",tao_primary_gpu="A100",'
+            'tao_status="pass",tao_user_error="false",tao_version="5_3_0"}'
         )
         assert expected_key in metrics
         assert metrics[expected_key] == 1
@@ -586,8 +656,10 @@ class TestLabeledMetricsBuilder:
 
         # Should default to container and false
         expected_key_default = (
-            'tao_job_total{tao_action="train",tao_automl_triggered="false",tao_client_type="container",tao_gpu_count="1",'
-            'tao_network="resnet50",tao_primary_gpu="A100",tao_status="pass",tao_user_error="false",tao_version="5_3_0"}'
+            'tao_job_total{tao_action="train",tao_automl_triggered="false",'
+            'tao_client_type="container",tao_gpu_count="1",'
+            'tao_network="resnet50",tao_primary_gpu="A100",'
+            'tao_status="pass",tao_user_error="false",tao_version="5_3_0"}'
         )
         assert expected_key_default in metrics
         assert metrics[expected_key_default] == 1
@@ -609,8 +681,10 @@ class TestLabeledMetricsBuilder:
 
         # Check CLI client type
         expected_key_cli = (
-            'tao_job_total{tao_action="evaluate",tao_automl_triggered="false",tao_client_type="cli",tao_gpu_count="1",'
-            'tao_network="dino",tao_primary_gpu="H100",tao_status="fail",tao_user_error="true",tao_version="6_0_0"}'
+            'tao_job_total{tao_action="evaluate",tao_automl_triggered="false",'
+            'tao_client_type="cli",tao_gpu_count="1",'
+            'tao_network="dino",tao_primary_gpu="H100",'
+            'tao_status="fail",tao_user_error="true",tao_version="6_0_0"}'
         )
         assert expected_key_cli in metrics
         assert metrics[expected_key_cli] == 1
@@ -643,11 +717,15 @@ class TestIntegrationWithOtherBuilders:
         assert 'version_5_3_0_action_train' in result
 
         # Should have comprehensive metric
-        comprehensive_keys = [k for k in result.keys() if k.startswith('network_resnet_50')]
+        comprehensive_keys = [
+            k for k in result.keys() if k.startswith('network_resnet_50')
+        ]
         assert len(comprehensive_keys) >= 1
 
         # Should have labeled metrics
-        labeled_keys = [k for k in result.keys() if k.startswith('tao_job_total{')]
+        labeled_keys = [
+            k for k in result.keys() if k.startswith('tao_job_total{')
+        ]
         assert len(labeled_keys) >= 1
 
         # Should have time metric
