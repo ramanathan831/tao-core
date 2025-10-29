@@ -285,6 +285,9 @@ def upload_files(local_path, cloud_storage, file_last_modified=None,
         exit_event: Threading event to check for early exit during continuous upload
     """
     # If no snapshot provided, create one from directory walk (for continuous monitoring)
+    # Track which files need their modification time updated after successful upload
+    pending_mod_time_updates = {}
+
     if not file_snapshot:
         file_snapshot = set()
         for root, _, files in os.walk(local_path):
@@ -299,8 +302,9 @@ def upload_files(local_path, cloud_storage, file_last_modified=None,
                     ):
                         rel_path = os.path.relpath(file_path, local_path)
                         file_snapshot.add(rel_path)
-                        # Update modification time
-                        file_last_modified[file_path] = current_last_modified
+                        # Don't update file_last_modified yet - do it after successful upload
+                        # to avoid marking files as uploaded when they weren't
+                        pending_mod_time_updates[file_path] = current_last_modified
                 else:
                     logger.error("File could not be uploaded: %s", file_path)
 
@@ -346,6 +350,9 @@ def upload_files(local_path, cloud_storage, file_last_modified=None,
 
     # Process all files to upload
     for idx, (rel_path, file_path) in enumerate(files_to_upload, 1):
+        if exit_event and exit_event.is_set() and progress_tracker is None:
+            logger.info("Exit event detected during continuous upload, breaking early")
+            return
         remaining = len(files_to_upload) - idx
         logger.info("Uploading file %d/%d: %s (remaining: %d)", idx, len(files_to_upload), file_path, remaining)
         try:
@@ -365,6 +372,21 @@ def upload_files(local_path, cloud_storage, file_last_modified=None,
 
         except Exception as e:  # pylint: disable=broad-except
             logger.error("Failed to upload file: {} - Error: {}".format(file_path, str(e)))  # noqa pylint: disable=C0209
+            continue  # Skip updating file_last_modified if upload failed
+
+        # Update file_last_modified after successful upload
+        # This ensures files aren't marked as uploaded if exit_event interrupts the loop
+        if file_last_modified is not None:
+            if file_path in pending_mod_time_updates:
+                # Continuous monitoring mode: use the timestamp from when we detected the change
+                file_last_modified[file_path] = pending_mod_time_updates[file_path]
+                logger.info("Updated modification time for successfully uploaded file: %s", file_path)
+            else:
+                # Snapshot mode: get current modification time
+                current_mod_time = get_file_modification_time(file_path)
+                if current_mod_time:
+                    file_last_modified[file_path] = current_mod_time
+                    logger.info("Updated modification time for snapshot-mode file: %s", file_path)
 
         # Remove file after successful upload only if size > 50MB
         try:
