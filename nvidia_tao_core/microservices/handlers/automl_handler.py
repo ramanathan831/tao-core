@@ -72,6 +72,12 @@ class AutoMLHandler:
             retain_checkpoints_for_resume (bool, optional): Whether to retain .pth
                 checkpoints for training resume. Defaults to False.
         """
+        network = get_handler_type(handler_metadata)
+        metric = handler_metadata.get("metric", "map")
+        automl_settings = handler_metadata.get("automl_settings", {})
+        automl_algorithm = automl_settings.get("automl_algorithm", "Bayesian")
+        if automl_algorithm.lower() == "hyperband":
+            retain_checkpoints_for_resume = True
         job_metadata = {
             "name": name,
             "id": job_id,
@@ -92,12 +98,6 @@ class AutoMLHandler:
 
         if not name:
             name = "automl train job"
-        network = get_handler_type(handler_metadata)
-        metric = handler_metadata.get("metric", "map")
-        automl_settings = handler_metadata.get("automl_settings", {})
-        automl_algorithm = automl_settings.get("automl_algorithm", "Bayesian")
-        if automl_algorithm.lower() == "hyperband":
-            job_metadata["retain_checkpoints_for_resume"] = True
         automl_max_recommendations = automl_settings.get("automl_max_recommendations", 20)
         automl_delete_intermediate_ckpt = automl_settings.get("automl_delete_intermediate_ckpt", True)
         automl_R = automl_settings.get("automl_R", 27)
@@ -270,6 +270,8 @@ class AutoMLHandler:
         retain_checkpoints_for_resume = (
             job_metadata.get("retain_checkpoints_for_resume", False) if job_metadata else False
         )
+        if automl_algorithm.lower() == "hyperband":
+            retain_checkpoints_for_resume = True
 
         # Call the script
         python_lib_path = sysconfig.get_path("purelib")
