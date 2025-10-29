@@ -41,6 +41,7 @@ from nvidia_tao_core.microservices.handlers.cloud_handlers.utils import (
     upload_tarball_to_cloud,
     upload_files
 )
+from nvidia_tao_core.microservices.handlers.cloud_handlers.progress_tracker import ProgressTracker
 import nvidia_tao_core.loggers.logging as status_logging
 from nvidia_tao_core.api_utils.module_utils import entrypoint_paths, entry_points
 from nvidia_tao_core.microservices.utils import (
@@ -135,7 +136,6 @@ def prepare_data_before_job_run(job, docker_env_vars):
         )
 
         # Create progress tracker for main spec downloads with known total size
-        from nvidia_tao_core.microservices.handlers.cloud_handlers.progress_tracker import ProgressTracker
         main_progress_tracker = ProgressTracker(
             "download",
             total_files=main_spec_files,
@@ -497,14 +497,54 @@ class ContainerJobHandler:
                                     # Upload snapshot files using common upload function
                                     if cloud_storage and files_to_upload:
                                         logger.info("Starting snapshot upload of %d files", len(files_to_upload))
-                                        upload_files(
-                                            specs["results_dir"],
-                                            cloud_storage,
-                                            file_snapshot=files_to_upload,
-                                            selective_tarball_config=selective_tarball_config,
-                                            exclude_patterns=exclude_patterns
-                                        )
-                                        logger.info("Snapshot upload completed")
+                                        logger.info("Files to upload: %s", files_to_upload)
+
+                                        # Create progress tracker for snapshot upload
+                                        snapshot_progress_tracker = None
+                                        try:
+                                            # Calculate total size of files to upload
+                                            total_size_mb = 0.0
+                                            valid_files = []
+                                            for rel_path in files_to_upload:
+                                                file_path = os.path.join(specs["results_dir"], rel_path)
+                                                if os.path.exists(file_path) and os.path.isfile(file_path):
+                                                    total_size_mb += os.path.getsize(file_path) / (1024 * 1024)
+                                                    valid_files.append(rel_path)
+                                            logger.info("Valid files: %s", valid_files)
+                                            if valid_files:
+                                                logger.info(
+                                                    "Snapshot upload: %d files (%.1f MB) to upload",
+                                                    len(valid_files), total_size_mb
+                                                )
+
+                                                snapshot_progress_tracker = ProgressTracker(
+                                                    "upload",
+                                                    total_files=len(valid_files),
+                                                    total_size_mb=total_size_mb,
+                                                    send_callbacks=True  # Enable callbacks for snapshot uploads
+                                                )
+
+                                                upload_files(
+                                                    specs["results_dir"],
+                                                    cloud_storage,
+                                                    file_snapshot=valid_files,
+                                                    selective_tarball_config=selective_tarball_config,
+                                                    exclude_patterns=exclude_patterns,
+                                                    progress_tracker=snapshot_progress_tracker
+                                                )
+
+                                                # Complete the progress tracker
+                                                snapshot_progress_tracker.complete()
+                                                logger.info("Snapshot upload completed successfully")
+                                            else:
+                                                logger.warning("No valid files found in snapshot to upload")
+                                        except Exception as e:
+                                            logger.error("Error during snapshot upload: %s", str(e))
+                                            logger.error("Traceback: %s", traceback.format_exc())
+                                            if snapshot_progress_tracker:
+                                                # Mark as complete even on error to send final status
+                                                snapshot_progress_tracker.complete()
+                                            raise
                                     else:
                                         logger.warning(
                                             "Snapshot upload skipped - cloud_storage=%s, files_to_upload=%s",
@@ -776,7 +816,6 @@ class ContainerJobHandler:
             logger.info("Starting additional downloads (%d files)...", len(additional_downloads))
 
             # Create progress tracker for additional downloads
-            from nvidia_tao_core.microservices.handlers.cloud_handlers.progress_tracker import ProgressTracker
             additional_progress_tracker = ProgressTracker(
                 "download",
                 total_files=len(additional_downloads),
