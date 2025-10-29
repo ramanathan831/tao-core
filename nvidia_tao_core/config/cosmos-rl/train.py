@@ -34,38 +34,18 @@ from nvidia_tao_core.config.utils.types import (
 class DatasetConfig:
     """Dataset config."""
 
-    train_annotation_path: Optional[str] = STR_FIELD(
+    annotation_path: Optional[str] = STR_FIELD(
         default_value="data/sft/annotations.json",
         value="data/sft/annotations.json",
         display_name="Annotation path",
         description="Path to the annotation file"
     )
 
-    train_media_path: Optional[str] = STR_FIELD(
+    media_path: Optional[str] = STR_FIELD(
         default_value="data/sft/train2017",
         value="data/sft/train2017",
         display_name="Media directory path",
         description="Path to the media directory"
-    )
-
-    val_annotation_path: Optional[str] = STR_FIELD(
-        default_value="data/sft/annotations.json",
-        value="data/sft/annotations.json",
-        display_name="Annotation path",
-        description="Path to the annotation file"
-    )
-
-    val_media_path: Optional[str] = STR_FIELD(
-        default_value="data/sft/train2017",
-        value="data/sft/train2017",
-        display_name="Media directory path",
-        description="Path to the media directory"
-    )
-    system_prompt: Optional[str] = STR_FIELD(
-        default_value="",
-        value="",
-        display_name="System prompt",
-        description="System prompt."
     )
 
 
@@ -579,6 +559,23 @@ class ValidationConfig:
         display_name="Batch size",
         description="Batch size."
     )
+    dataloader_num_workers: int = INT_FIELD(
+        value=8,
+        default_value=8,
+        valid_min=0,
+        valid_max="inf",
+        display_name="Dataloader num workers",
+        description="Number of worker processes for data loading."
+    )
+
+    dataloader_prefetch_factor: int = INT_FIELD(
+        value=8,
+        default_value=8,
+        valid_min=1,
+        valid_max="inf",
+        display_name="Dataloader prefetch factor",
+        description="Number of batches to prefetch per worker."
+    )
 
 
 @dataclass
@@ -709,8 +706,15 @@ class VisionConfig:
 class CustomConfig:
     """Custom config."""
 
-    dataset: DatasetConfig = DATACLASS_FIELD(DatasetConfig(), description="Dataset config.")
+    train_dataset: DatasetConfig = DATACLASS_FIELD(DatasetConfig(), description="Training dataset config.")
+    val_dataset: Optional[DatasetConfig] = DATACLASS_FIELD(None, description="Validation dataset config (optional).")
     vision: VisionConfig = DATACLASS_FIELD(VisionConfig(), description="Vision config.")
+    system_prompt: Optional[str] = STR_FIELD(
+        default_value="",
+        value="",
+        display_name="System prompt",
+        description="System prompt."
+    )
 
 
 @dataclass
@@ -734,3 +738,9 @@ class ExperimentConfig:
         description="Output directory."
     )
     custom: CustomConfig = DATACLASS_FIELD(CustomConfig(), description="Custom config.")
+    custom_script: Optional[str] = STR_FIELD(
+        default_value="",
+        value="",
+        display_name="Custom script",
+        description="Custom script."
+    )
