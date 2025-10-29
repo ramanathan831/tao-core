@@ -1218,7 +1218,8 @@ def send_microservice_request(
         request_metadata["statefulset_replicas"] = statefulset_replicas
     # Send request
     if os.getenv("DEBUG_MODE", "false").lower() == "true":
-        logger.info("Sending request to %s with request_metadata %s", endpoint, request_metadata)
+        logger.info("Sending request to %s", endpoint)
+        logger.info("request_metadata = %s", request_metadata)
     try:
         if api_endpoint == "get_job_status":
             response = requests.get(endpoint, params=request_metadata, timeout=120)
