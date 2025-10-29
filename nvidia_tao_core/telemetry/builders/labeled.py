@@ -27,30 +27,30 @@ Benefits:
 
 Example metrics:
     tao_job_total{
-        network="resnet50",
-        action="train",
-        version="5_3_0",
-        status="pass",
-        primary_gpu="A100",
-        gpu_count="2"
+        tao_network="resnet50",
+        tao_action="train",
+        tao_version="5_3_0",
+        tao_status="pass",
+        tao_primary_gpu="A100",
+        tao_gpu_count="2"
     } = 1
     tao_job_duration_sum{
-        network="resnet50",
-        action="train",
-        version="5_3_0",
-        status="pass",
-        primary_gpu="A100",
-        gpu_count="2"
+        tao_network="resnet50",
+        tao_action="train",
+        tao_version="5_3_0",
+        tao_status="pass",
+        tao_primary_gpu="A100",
+        tao_gpu_count="2"
     } = 3600
     tao_job_gpu_time_sum{
-        network="resnet50",
-        action="train",
-        version="5_3_0",
-        status="pass",
-        primary_gpu="A100",
-        gpu_count="2"
+        tao_network="resnet50",
+        tao_action="train",
+        tao_version="5_3_0",
+        tao_status="pass",
+        tao_primary_gpu="A100",
+        tao_gpu_count="2"
     } = 7200
-    tao_job_gpu_total{gpu_type="A100"} = 2
+    tao_job_gpu_total{tao_gpu_type="A100"} = 2
 """
 
 from typing import Any, Dict
@@ -182,7 +182,7 @@ class LabeledMetricsBuilder(MetricBuilder):
         for gpu_type, count in gpu_type_counts.items():
             gpu_total_key = self._build_metric_key(
                 self.metric_names['gpu_total'],
-                {'gpu_type': gpu_type}
+                {'tao_gpu_type': gpu_type}
             )
             metrics[gpu_total_key] = metrics.get(gpu_total_key, 0) + count
 
@@ -211,28 +211,28 @@ class LabeledMetricsBuilder(MetricBuilder):
             value = telemetry_data[attr.name]
 
             if attr.attr_type == AttributeType.BOOLEAN:
-                labels[attr.name] = str(value).lower()
+                labels[f'tao_{attr.name}'] = str(value).lower()
             elif attr.attr_type == AttributeType.LIST:
                 # Lists handled separately (e.g., GPUs)
                 continue
             else:
-                labels[attr.name] = str(value)
+                labels[f'tao_{attr.name}'] = str(value)
 
         # Add derived status label (from success field)
         success = telemetry_data.get('success', False)
-        labels['status'] = 'pass' if success else 'fail'
+        labels['tao_status'] = 'pass' if success else 'fail'
 
         # Add GPU labels
         if gpus:
             # Primary GPU (most recent/modern, or most common if same generation)
             primary_gpu = self._extract_primary_gpu(gpus)
-            labels['primary_gpu'] = primary_gpu
+            labels['tao_primary_gpu'] = primary_gpu
 
             # GPU count
-            labels['gpu_count'] = str(len(gpus))
+            labels['tao_gpu_count'] = str(len(gpus))
         else:
-            labels['primary_gpu'] = 'unknown'
-            labels['gpu_count'] = '0'
+            labels['tao_primary_gpu'] = 'unknown'
+            labels['tao_gpu_count'] = '0'
 
         return labels
 
@@ -420,8 +420,8 @@ class LabeledMetricsBuilder(MetricBuilder):
             Metric key string in Prometheus format
 
         Examples:
-            >>> _build_metric_key("tao_job_total", {"action": "train", "network": "resnet50"})
-            'tao_job_total{action="train",network="resnet50"}'
+            >>> _build_metric_key("tao_job_total", {"tao_action": "train", "tao_network": "resnet50"})
+            'tao_job_total{tao_action="train",tao_network="resnet50"}'
         """
         if not labels:
             return metric_name

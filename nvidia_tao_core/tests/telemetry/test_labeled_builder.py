@@ -41,8 +41,8 @@ class TestLabeledMetricsBuilder:
 
         # Check job total metric exists with primary_gpu and gpu_count
         expected_key = (
-            'tao_job_total{action="train",automl_triggered="false",client_type="container",gpu_count="2",'
-            'network="resnet50",primary_gpu="A100",status="pass",user_error="false",version="5_3_0"}'
+            'tao_job_total{tao_action="train",tao_automl_triggered="false",tao_client_type="container",tao_gpu_count="2",'
+            'tao_network="resnet50",tao_primary_gpu="A100",tao_status="pass",tao_user_error="false",tao_version="5_3_0"}'
         )
         assert expected_key in metrics
         assert metrics[expected_key] == 1
@@ -67,8 +67,8 @@ class TestLabeledMetricsBuilder:
 
         # Check duration sum metric (same labels as tao_job_total)
         expected_key = (
-            'tao_job_duration_sum{action="train",automl_triggered="false",client_type="container",gpu_count="1",'
-            'network="resnet50",primary_gpu="A100",status="pass",user_error="false",version="5_3_0"}'
+            'tao_job_duration_sum{tao_action="train",tao_automl_triggered="false",tao_client_type="container",tao_gpu_count="1",'
+            'tao_network="resnet50",tao_primary_gpu="A100",tao_status="pass",tao_user_error="false",tao_version="5_3_0"}'
         )
         assert expected_key in metrics
         assert metrics[expected_key] == 3600
@@ -93,8 +93,8 @@ class TestLabeledMetricsBuilder:
 
         # Check GPU-time sum metric (gpu_count × duration = 2 × 3600 = 7200)
         expected_key = (
-            'tao_job_gpu_time_sum{action="train",automl_triggered="false",client_type="container",gpu_count="2",'
-            'network="resnet50",primary_gpu="A100",status="pass",user_error="false",version="5_3_0"}'
+            'tao_job_gpu_time_sum{tao_action="train",tao_automl_triggered="false",tao_client_type="container",tao_gpu_count="2",'
+            'tao_network="resnet50",tao_primary_gpu="A100",tao_status="pass",tao_user_error="false",tao_version="5_3_0"}'
         )
         assert expected_key in metrics
         assert metrics[expected_key] == 7200  # 2 GPUs × 3600 seconds
@@ -153,7 +153,7 @@ class TestLabeledMetricsBuilder:
         builder.build(metrics, telemetry_data, {})
 
         # Check GPU total metric (only gpu_type label)
-        expected_key = 'tao_job_gpu_total{gpu_type="A100"}'
+        expected_key = 'tao_job_gpu_total{tao_gpu_type="A100"}'
         assert expected_key in metrics
         assert metrics[expected_key] == 2  # Two GPUs
 
@@ -270,7 +270,7 @@ class TestLabeledMetricsBuilder:
         }
 
         builder.build(metrics, telemetry_data_pass, {})
-        assert any('status="pass"' in k for k in metrics.keys())
+        assert any('tao_status="pass"' in k for k in metrics.keys())
 
         # Test success=False → status=fail
         metrics = {}
@@ -287,7 +287,7 @@ class TestLabeledMetricsBuilder:
         }
 
         builder.build(metrics, telemetry_data_fail, {})
-        assert any('status="fail"' in k for k in metrics.keys())
+        assert any('tao_status="fail"' in k for k in metrics.keys())
 
     def test_gpu_count_label(self):
         """Test that gpu_count label is added."""
@@ -310,7 +310,7 @@ class TestLabeledMetricsBuilder:
         # Should have gpu_count="4"
         job_keys = [k for k in metrics.keys() if k.startswith('tao_job_total')]
         assert len(job_keys) == 1
-        assert 'gpu_count="4"' in job_keys[0]
+        assert 'tao_gpu_count="4"' in job_keys[0]
 
     def test_gpu_time_calculation(self):
         """Test that GPU-time is calculated correctly (gpu_count × duration)."""
@@ -356,13 +356,15 @@ class TestLabeledMetricsBuilder:
         assert len(job_total_keys) == 1
 
         key = job_total_keys[0]
-        # Labels should be alphabetically sorted: action, gpu_count, network, primary_gpu, status, user_error, version
-        assert key.index('action') < key.index('gpu_count')
-        assert key.index('gpu_count') < key.index('network')
-        assert key.index('network') < key.index('primary_gpu')
-        assert key.index('primary_gpu') < key.index('status')
-        assert key.index('status') < key.index('user_error')
-        assert key.index('user_error') < key.index('version')
+        # Labels should be alphabetically sorted: tao_action, tao_automl_triggered, tao_client_type, tao_gpu_count, tao_network, tao_primary_gpu, tao_status, tao_user_error, tao_version
+        assert key.index('tao_action') < key.index('tao_automl_triggered')
+        assert key.index('tao_automl_triggered') < key.index('tao_client_type')
+        assert key.index('tao_client_type') < key.index('tao_gpu_count')
+        assert key.index('tao_gpu_count') < key.index('tao_network')
+        assert key.index('tao_network') < key.index('tao_primary_gpu')
+        assert key.index('tao_primary_gpu') < key.index('tao_status')
+        assert key.index('tao_status') < key.index('tao_user_error')
+        assert key.index('tao_user_error') < key.index('tao_version')
 
     def test_incremental_updates(self):
         """Test that labeled metrics increment correctly."""
@@ -426,8 +428,8 @@ class TestLabeledMetricsBuilder:
         builder.build(metrics, telemetry_data_v100, {})
 
         # Should have separate metrics for different primary GPUs
-        a100_key = [k for k in metrics.keys() if 'primary_gpu="A100"' in k and k.startswith('tao_job_total')]
-        v100_key = [k for k in metrics.keys() if 'primary_gpu="V100"' in k and k.startswith('tao_job_total')]
+        a100_key = [k for k in metrics.keys() if 'tao_primary_gpu="A100"' in k and k.startswith('tao_job_total')]
+        v100_key = [k for k in metrics.keys() if 'tao_primary_gpu="V100"' in k and k.startswith('tao_job_total')]
 
         assert len(a100_key) == 1
         assert len(v100_key) == 1
@@ -435,10 +437,10 @@ class TestLabeledMetricsBuilder:
         assert metrics[v100_key[0]] == 1
 
         # GPU total should track all GPUs by type
-        assert 'tao_job_gpu_total{gpu_type="A100"}' in metrics
-        assert metrics['tao_job_gpu_total{gpu_type="A100"}'] == 2  # Two A100s
-        assert 'tao_job_gpu_total{gpu_type="V100"}' in metrics
-        assert metrics['tao_job_gpu_total{gpu_type="V100"}'] == 1  # One V100
+        assert 'tao_job_gpu_total{tao_gpu_type="A100"}' in metrics
+        assert metrics['tao_job_gpu_total{tao_gpu_type="A100"}'] == 2  # Two A100s
+        assert 'tao_job_gpu_total{tao_gpu_type="V100"}' in metrics
+        assert metrics['tao_job_gpu_total{tao_gpu_type="V100"}'] == 1  # One V100
 
     def test_mixed_gpu_job(self):
         """Test that mixed-GPU jobs prioritize newer GPU and track all types."""
@@ -461,12 +463,12 @@ class TestLabeledMetricsBuilder:
         # Primary GPU should be A100 (newer than V100)
         job_keys = [k for k in metrics.keys() if k.startswith('tao_job_total')]
         assert len(job_keys) == 1
-        assert 'primary_gpu="A100"' in job_keys[0]
-        assert 'gpu_count="3"' in job_keys[0]
+        assert 'tao_primary_gpu="A100"' in job_keys[0]
+        assert 'tao_gpu_count="3"' in job_keys[0]
 
         # But GPU total should track BOTH types
-        assert metrics['tao_job_gpu_total{gpu_type="A100"}'] == 2
-        assert metrics['tao_job_gpu_total{gpu_type="V100"}'] == 1
+        assert metrics['tao_job_gpu_total{tao_gpu_type="A100"}'] == 2
+        assert metrics['tao_job_gpu_total{tao_gpu_type="V100"}'] == 1
 
         # GPU-time should be 3 × 3600 = 10800
         gpu_time_keys = [k for k in metrics.keys() if k.startswith('tao_job_gpu_time_sum')]
@@ -529,12 +531,12 @@ class TestLabeledMetricsBuilder:
         """Test that label values are properly quoted."""
         builder = LabeledMetricsBuilder()
 
-        labels = {'network': 'resnet50', 'action': 'train'}
+        labels = {'tao_network': 'resnet50', 'tao_action': 'train'}
         key = builder._build_metric_key('tao_job_total', labels)
 
         # Should have quotes around values
-        assert 'action="train"' in key
-        assert 'network="resnet50"' in key
+        assert 'tao_action="train"' in key
+        assert 'tao_network="resnet50"' in key
         assert key.startswith('tao_job_total{')
         assert key.endswith('}')
 
@@ -560,8 +562,8 @@ class TestLabeledMetricsBuilder:
 
         # Check that client_type and automl_triggered are in labels
         expected_key = (
-            'tao_job_total{action="train",automl_triggered="true",client_type="api",gpu_count="1",'
-            'network="resnet50",primary_gpu="A100",status="pass",user_error="false",version="5_3_0"}'
+            'tao_job_total{tao_action="train",tao_automl_triggered="true",tao_client_type="api",tao_gpu_count="1",'
+            'tao_network="resnet50",tao_primary_gpu="A100",tao_status="pass",tao_user_error="false",tao_version="5_3_0"}'
         )
         assert expected_key in metrics
         assert metrics[expected_key] == 1
@@ -584,8 +586,8 @@ class TestLabeledMetricsBuilder:
 
         # Should default to container and false
         expected_key_default = (
-            'tao_job_total{action="train",automl_triggered="false",client_type="container",gpu_count="1",'
-            'network="resnet50",primary_gpu="A100",status="pass",user_error="false",version="5_3_0"}'
+            'tao_job_total{tao_action="train",tao_automl_triggered="false",tao_client_type="container",tao_gpu_count="1",'
+            'tao_network="resnet50",tao_primary_gpu="A100",tao_status="pass",tao_user_error="false",tao_version="5_3_0"}'
         )
         assert expected_key_default in metrics
         assert metrics[expected_key_default] == 1
@@ -607,8 +609,8 @@ class TestLabeledMetricsBuilder:
 
         # Check CLI client type
         expected_key_cli = (
-            'tao_job_total{action="evaluate",automl_triggered="false",client_type="cli",gpu_count="1",'
-            'network="dino",primary_gpu="H100",status="fail",user_error="true",version="6_0_0"}'
+            'tao_job_total{tao_action="evaluate",tao_automl_triggered="false",tao_client_type="cli",tao_gpu_count="1",'
+            'tao_network="dino",tao_primary_gpu="H100",tao_status="fail",tao_user_error="true",tao_version="6_0_0"}'
         )
         assert expected_key_cli in metrics
         assert metrics[expected_key_cli] == 1
