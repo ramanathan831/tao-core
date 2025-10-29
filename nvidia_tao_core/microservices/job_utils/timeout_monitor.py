@@ -26,7 +26,6 @@ from nvidia_tao_core.microservices.handlers.stateless_handlers import (
     internal_job_status_update,
     get_health_beat
 )
-from nvidia_tao_core.microservices.constants import JOB_STATUS_TIMEOUT_MINUTES
 
 # Configure logging
 logging.basicConfig(
@@ -142,7 +141,9 @@ def check_brain_job_timeout(job_info):
         return False
 
     try:
-        timeout_seconds = JOB_STATUS_TIMEOUT_MINUTES * 60
+        # Use per-job timeout if available, otherwise use global timeout
+        timeout_minutes = job_info.get('timeout_minutes') or 60
+        timeout_seconds = timeout_minutes * 60
 
         # Get the last health beat timestamp
         health_beat = get_health_beat(job_id)
@@ -236,6 +237,8 @@ def check_brain_job_timeout(job_info):
 
     except Exception as e:
         logger.error(f"Error checking brain job timeout for {job_id}: {e}")
+        import traceback
+        logger.error(traceback.format_exc())
         return False
 
 
@@ -250,6 +253,7 @@ def check_job_timeout(job_info):
     is_automl_brain = job_info.get('is_automl_brain', False)
     experiment_number = job_info.get('experiment_number', '0')
     brain_job_id = job_info.get('brain_job_id', None)
+    lookup_job_id = job_id if not brain_job_id else brain_job_id
 
     if not job_id:
         return False
@@ -259,10 +263,15 @@ def check_job_timeout(job_info):
         if is_automl_brain:
             return check_brain_job_timeout(job_info)
 
-        timeout_seconds = JOB_STATUS_TIMEOUT_MINUTES * 60
-        last_timestamp = get_last_status_timestamp(job_id, automl=is_automl, experiment_number=experiment_number)
+        # Use per-job timeout if available, otherwise use global timeout
+        timeout_minutes = job_info.get('timeout_minutes') or 60
+        timeout_seconds = timeout_minutes * 60
+        last_timestamp = get_last_status_timestamp(lookup_job_id, automl=is_automl, experiment_number=experiment_number)
 
-        job_description = f"AutoML experiment {experiment_number} for job {job_id}" if is_automl else f"Job {job_id}"
+        if is_automl:
+            job_description = f"AutoML experiment {experiment_number} for job {lookup_job_id}"
+        else:
+            job_description = f"Job {lookup_job_id}"
 
         # CASE 1: We have status updates - check if they're recent
         if last_timestamp is not None:
@@ -279,7 +288,7 @@ def check_job_timeout(job_info):
 
                 # Update job status before terminating
                 internal_job_status_update(
-                    job_id=job_id,
+                    job_id=lookup_job_id,
                     automl=is_automl,
                     automl_experiment_number=experiment_number,
                     message=timeout_message,
@@ -314,7 +323,6 @@ def check_job_timeout(job_info):
             )
 
             # Get job creation/start time from job metadata
-            lookup_job_id = job_id if not brain_job_id else brain_job_id
             job_metadata = get_handler_job_metadata(lookup_job_id)
             if job_metadata:
                 last_modified = job_metadata.get("last_modified")
@@ -380,6 +388,8 @@ def check_job_timeout(job_info):
 
     except Exception as e:
         logger.error(f"Error checking timeout for job {job_id} (AutoML: {is_automl}): {e}")
+        import traceback
+        logger.error(traceback.format_exc())
         return False
 
 

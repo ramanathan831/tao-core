@@ -140,7 +140,8 @@ class JobContext:
         num_gpu=-1,
         platform_id=None,
         retain_checkpoints_for_resume=False,
-        early_stop_epoch=None
+        early_stop_epoch=None,
+        timeout_minutes=None
     ):
         """Initialize JobContext class"""
         # Non-state variables
@@ -168,6 +169,7 @@ class JobContext:
         self.platform_id = platform_id
         self.retain_checkpoints_for_resume = retain_checkpoints_for_resume
         self.early_stop_epoch = early_stop_epoch
+        self.timeout_minutes = timeout_minutes
 
         self.write()
 
@@ -200,7 +202,8 @@ class JobContext:
             "status": self.status,
             "job_details": self.job_details,
             "retain_checkpoints_for_resume": self.retain_checkpoints_for_resume,
-            "early_stop_epoch": self.early_stop_epoch}
+            "early_stop_epoch": self.early_stop_epoch,
+            "timeout_minutes": self.timeout_minutes}
         return _schema
 
 

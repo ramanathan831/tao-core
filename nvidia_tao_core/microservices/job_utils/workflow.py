@@ -109,6 +109,7 @@ class Job(PrioritizedItem, IdedItem):
     workflow_status: str = field(compare=False, default=None)
     retain_checkpoints_for_resume: bool = field(compare=False, default=False)
     early_stop_epoch: int = field(compare=False, default=None)
+    timeout_minutes: int = field(compare=False, default=None)
 
 
 def dependency_check(job_context, dependency):
@@ -245,6 +246,8 @@ def check_for_timed_out_jobs():
                 continue
 
     except Exception as e:
+        import traceback
+        logger.info(traceback.print_exc())
         logger.error(f"Error checking running jobs for timeouts: {e}")
 
     if terminated_jobs:
@@ -463,6 +466,7 @@ class Workflow:
             platform_id = job_dict.get("platform_id")
             retain_checkpoints_for_resume = job_dict.get("retain_checkpoints_for_resume", False)
             early_stop_epoch = job_dict.get("early_stop_epoch", None)
+            timeout_minutes = job_dict.get("timeout_minutes", None)
             if 'experiment_id' in job_dict:
                 kind = 'experiment'
                 handler_id = job_dict['experiment_id']
@@ -518,7 +522,8 @@ class Workflow:
                 specs=specs,
                 platform_id=platform_id,
                 retain_checkpoints_for_resume=retain_checkpoints_for_resume,
-                early_stop_epoch=early_stop_epoch
+                early_stop_epoch=early_stop_epoch,
+                timeout_minutes=timeout_minutes
             )
             # If job has yet to be executed, skip monitoring
             if still_exists(job_context):
@@ -576,7 +581,8 @@ class Workflow:
                                 num_gpu=num_gpu,
                                 platform_id=platform_id,
                                 retain_checkpoints_for_resume=retain_checkpoints_for_resume,
-                                early_stop_epoch=early_stop_epoch
+                                early_stop_epoch=early_stop_epoch,
+                                timeout_minutes=timeout_minutes
                             )
                             automl_context.dependencies = deps
                             _AutoMLPipeline = AutoMLPipeline(automl_context)

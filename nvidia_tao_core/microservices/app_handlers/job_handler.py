@@ -93,7 +93,8 @@ class JobHandler:
         platform_id=None,
         from_ui=False,
         retain_checkpoints_for_resume=False,
-        early_stop_epoch=None
+        early_stop_epoch=None,
+        timeout_minutes=60
     ):
         """Runs a job based on the specified parameters.
 
@@ -116,6 +117,7 @@ class JobHandler:
             from_ui (bool, optional): Indicates whether the job call is from the UI.
             retain_checkpoints_for_resume (bool, optional): Whether to retain .pth checkpoints for training resume.
             early_stop_epoch (int, optional): The epoch number to early stop training.
+            timeout_minutes (int, optional): The job-specific timeout in minutes. Defaults to 60 minutes.
 
         Returns:
             Code: A response code object containing the status and job ID or error details:
@@ -253,6 +255,8 @@ class JobHandler:
                     handler_metadata,
                     name=name,
                     platform_id=platform_id,
+                    retain_checkpoints_for_resume=retain_checkpoints_for_resume,
+                    timeout_minutes=timeout_minutes
                 )
                 msg = "AutoML "
             else:
@@ -272,7 +276,8 @@ class JobHandler:
                     num_gpu=num_gpu,
                     platform_id=platform_id,
                     retain_checkpoints_for_resume=retain_checkpoints_for_resume,
-                    early_stop_epoch=early_stop_epoch
+                    early_stop_epoch=early_stop_epoch,
+                    timeout_minutes=timeout_minutes
                 )
                 on_new_job(job_context)
             if specs:
