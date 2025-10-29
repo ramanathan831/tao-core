@@ -368,7 +368,11 @@ def update_job_metadata(handler_id, job_id, metadata_key="job_details", data="",
 
 
 def update_job_message(handler_id, job_id, kind, message, automl_expt_job_id=None, update_automl_expt=False):
-    """Update detailed status message"""
+    """Update detailed status message and optionally other fields
+
+    Args:
+        message: Can be either a string (just message) or dict with date/time/status/message
+    """
     metadata = get_handler_job_metadata(job_id)
     if metadata:
         if "job_details" not in metadata:
@@ -380,9 +384,28 @@ def update_job_message(handler_id, job_id, kind, message, automl_expt_job_id=Non
             metadata["job_details"][update_job_id] = {}
         if "detailed_status" not in metadata["job_details"][update_job_id]:
             metadata["job_details"][update_job_id]["detailed_status"] = {}
-        metadata["job_details"][update_job_id]["detailed_status"]["message"] = message
+
+        # Handle both string message and dict with multiple fields
+        if isinstance(message, dict):
+            # Update all fields from the dict
+            for key in ['date', 'time', 'status', 'message']:
+                if key in message:
+                    metadata["job_details"][update_job_id]["detailed_status"][key] = message[key]
+        else:
+            # Backwards compatibility: just update message if it's a string
+            metadata["job_details"][update_job_id]["detailed_status"]["message"] = message
+
         update_handler_with_jobs_info(metadata, handler_id, job_id, kind)
         write_job_metadata(job_id, metadata)
+
+
+def get_automl_experiment_job_id(brain_job_id, automl_experiment_id="0"):
+    """Get automl experiment job id"""
+    controller_info = get_automl_controller_info(brain_job_id)
+    automl_experiment_job_id = int(automl_experiment_id)
+    if len(controller_info) > automl_experiment_job_id:
+        return controller_info[automl_experiment_job_id].get("job_id", "")
+    return ""
 
 
 def get_automl_brain_info(brain_job_id):
@@ -534,7 +557,7 @@ def get_internal_job_status_update_data(automl_experiment_number="0", message=""
 
 
 def internal_job_status_update(job_id, automl=False, automl_experiment_number="0", message="",
-                               logfile="", status="FAILURE"):
+                               logfile="", status="FAILURE", handler_id=None, kind=None):
     """Post an status update to the job
 
     Args:
@@ -554,7 +577,10 @@ def internal_job_status_update(job_id, automl=False, automl_experiment_number="0
         "experiment_number": automl_experiment_number,
         "status": data_string,
     }
-    save_dnn_status(job_id, automl=automl, callback_data=callback_data, experiment_number=automl_experiment_number)
+    save_dnn_status(
+        job_id, automl=automl, callback_data=callback_data,
+        experiment_number=automl_experiment_number, handler_id=handler_id, kind=kind
+    )
 
     if logfile and os.path.exists(os.path.dirname(logfile)):
         with open(logfile, "a", encoding='utf-8') as f:
@@ -569,6 +595,7 @@ def save_dnn_status(job_id, automl=False, callback_data={}, experiment_number="0
         callback_data=callback_data,
         experiment_number=experiment_number
     )
+    automl_expt_job_id = get_automl_experiment_job_id(job_id, experiment_number)
     mongo_status_table_handler = MongoHandler("tao", "job_statuses")
     job_query = {'id': lookup_job_id}
     callback_data_dict = json.loads(callback_data["status"])
@@ -581,8 +608,8 @@ def save_dnn_status(job_id, automl=False, callback_data={}, experiment_number="0
         handler_id,
         job_id,
         kind,
-        callback_data_dict["message"],
-        automl_expt_job_id=job_id,
+        callback_data_dict,
+        automl_expt_job_id=automl_expt_job_id,
         update_automl_expt=automl)
     mongo_status_table_handler.upsert_append(job_query, callback_data_dict)
 
@@ -1032,6 +1059,21 @@ def get_all_running_jobs():
     # Extract necessary information for timeout monitoring
     running_jobs = []
     for job in jobs:
+        automl_brain = False
+
+        # Check if this is an AutoML brain job by looking at the job's own metadata
+        # Don't rely on handler's current automl_enabled setting as it can change after job creation
+        job_details = job.get('job_details', {})
+        job_id = job.get('id')
+        if job_id and job_id in job_details:
+            # If job has automl_brain_info or automl_result, it's an AutoML brain job
+            if 'automl_brain_info' in job_details[job_id] or 'automl_result' in job_details[job_id]:
+                automl_brain = True
+
+        # Fallback: check handler's current settings (for backwards compatibility)
+        if not automl_brain and is_request_automl(job.get('handler_id'), job.get('action'), job.get('kind', '')):
+            automl_brain = True
+
         job_info = {
             'job_id': job.get('id'),
             'handler_id': job.get('handler_id'),
@@ -1043,6 +1085,7 @@ def get_all_running_jobs():
             'network': job.get('network'),
             'last_modified': job.get('last_modified'),
             'is_automl': False,
+            'is_automl_brain': automl_brain,
             'experiment_number': '0'
         }
         running_jobs.append(job_info)
@@ -1076,12 +1119,12 @@ def get_all_running_automl_experiments():
                         for recommendation in controller_info:
                             if isinstance(recommendation, dict):
                                 rec_status = recommendation.get("status", "")
-                                rec_id = recommendation.get("id", "")
-
+                                rec_id = str(recommendation.get("id", ""))
+                                is_running = rec_status in ("pending", "running", "started") and rec_id
                                 # Check if this recommendation/experiment is running
-                                if rec_status in ("pending", "running", "started") and rec_id:
+                                if is_running:
                                     automl_exp_info = {
-                                        'job_id': job_id,
+                                        'job_id': recommendation.get("job_id", ""),
                                         'handler_id': handler_id,
                                         'kind': job.get('kind', ''),
                                         'status': rec_status,
@@ -1091,6 +1134,7 @@ def get_all_running_automl_experiments():
                                         'network': job.get('network'),
                                         'last_modified': job.get('last_modified'),
                                         'is_automl': True,
+                                        'brain_job_id': job_id,
                                         'experiment_number': str(rec_id)
                                     }
                                     running_automl_experiments.append(automl_exp_info)
@@ -1154,6 +1198,74 @@ def get_user_telemetry_opt_out(user_id: str, org_name: str, user_db: MongoHandle
     if user:
         enable_telemetry = user.get("settings", {}).get(org_name, {}).get("enable_telemetry", True)
     return "no" if enable_telemetry else "yes"
+
+
+def report_health_beat(job_id, message=""):
+    """Report health beat for a job (brain job or regular job)
+
+    Stores only the latest health beat timestamp in DB for storage efficiency.
+    This is used for timeout monitoring of long-running processes like AutoML brain.
+
+    Args:
+        job_id: The job identifier
+        message: Optional message to include with the health beat
+    """
+    try:
+        mongo_health = MongoHandler("tao", "health_beats")
+        now = datetime.now(tz=timezone.utc)
+
+        health_data = {
+            'id': job_id,
+            'last_beat': now,
+            'message': message or "Health beat"
+        }
+
+        # Upsert will replace the existing document, keeping only the latest beat
+        mongo_health.upsert({'id': job_id}, health_data)
+        logger.debug(f"Health beat reported for job {job_id}")
+
+    except Exception as e:
+        logger.error(f"Error reporting health beat for job {job_id}: {e}")
+
+
+def get_health_beat(job_id):
+    """Get the last health beat timestamp for a job
+
+    Args:
+        job_id: The job identifier
+
+    Returns:
+        dict with 'last_beat' timestamp and 'message', or None if not found
+    """
+    try:
+        mongo_health = MongoHandler("tao", "health_beats")
+        health_data = mongo_health.find_one({'id': job_id})
+
+        if health_data:
+            return {
+                'last_beat': health_data.get('last_beat'),
+                'message': health_data.get('message', '')
+            }
+        return None
+
+    except Exception as e:
+        logger.error(f"Error getting health beat for job {job_id}: {e}")
+        return None
+
+
+def delete_health_beat(job_id):
+    """Delete health beat for a job (cleanup when job completes)
+
+    Args:
+        job_id: The job identifier
+    """
+    try:
+        mongo_health = MongoHandler("tao", "health_beats")
+        mongo_health.delete_one({'id': job_id})
+        logger.debug(f"Health beat deleted for job {job_id}")
+
+    except Exception as e:
+        logger.error(f"Error deleting health beat for job {job_id}: {e}")
 
 
 def serialize_object(obj):

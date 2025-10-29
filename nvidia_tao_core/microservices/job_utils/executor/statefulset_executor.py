@@ -428,6 +428,16 @@ echo "Starting Inference Microservice..." &&
             )
             self.logger.info(f"Statefulset deleted. status='{str(api_response.status)}'")
             return True
+        except ApiException as e:
+            if e.status == 404:
+                # Resource not found - deletion goal already achieved (likely already deleted by another process)
+                self.logger.info(
+                    f"Statefulset {stateful_set_name} not found (404) - already deleted. Deletion successful."
+                )
+                return True
+            self.logger.error(f"ApiException caught in delete_statefulset {str(e)}")
+            self.logger.error("Statefulset failed to delete.")
+            return False
         except Exception as e:
             self.logger.error(f"Exception caught in delete_statefulset {str(e)}")
             self.logger.error("Statefulset failed to delete.")

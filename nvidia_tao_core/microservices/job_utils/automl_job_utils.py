@@ -85,7 +85,9 @@ def on_new_automl_job(automl_context, recommendation):
         'created_on': automl_context.created_on,
         'last_modified': automl_context.last_modified,
         'specs': get_job_specs(automl_context.id),
-        'dependencies': deps
+        'dependencies': deps,
+        'retain_checkpoints_for_resume': automl_context.retain_checkpoints_for_resume,
+        'early_stop_epoch': automl_context.early_stop_epoch
     }
     j = Job(**job)
     Workflow.enqueue(j)
@@ -118,6 +120,8 @@ def on_delete_automl_job(job_id):
         'last_modified': job_metadata["last_modified"],
         'specs': job_metadata["specs"],
         'workflow_status': job_metadata["workflow_status"],
+        'retain_checkpoints_for_resume': job_metadata["retain_checkpoints_for_resume"],
+        'early_stop_epoch': job_metadata["early_stop_epoch"]
     }
     job = Job(**job_dict)
     Workflow.dequeue(job)

@@ -67,6 +67,7 @@ from nvidia_tao_core.microservices.handlers.stateless_handlers import (
     experiment_update_handler_attributes,
     update_handler_with_jobs_info,
     get_workspace_string_identifier,
+    get_automl_experiment_job_id,
     BACKEND
 )
 from nvidia_tao_core.microservices.handlers.ngc_handler import validate_ptm_download
@@ -137,7 +138,9 @@ class JobContext:
         name=None,
         description=None,
         num_gpu=-1,
-        platform_id=None
+        platform_id=None,
+        retain_checkpoints_for_resume=False,
+        early_stop_epoch=None
     ):
         """Initialize JobContext class"""
         # Non-state variables
@@ -163,6 +166,8 @@ class JobContext:
         self.description = description
         self.num_gpu = num_gpu
         self.platform_id = platform_id
+        self.retain_checkpoints_for_resume = retain_checkpoints_for_resume
+        self.early_stop_epoch = early_stop_epoch
 
         self.write()
 
@@ -193,7 +198,9 @@ class JobContext:
             # Can modify
             "last_modified": self.last_modified,
             "status": self.status,
-            "job_details": self.job_details}
+            "job_details": self.job_details,
+            "retain_checkpoints_for_resume": self.retain_checkpoints_for_resume,
+            "early_stop_epoch": self.early_stop_epoch}
         return _schema
 
 
@@ -535,7 +542,7 @@ class StatusParser:
                             trimmed_list.append((epoch, value))
                     else:
                         trimmed_list.append((epoch, value))
-                elif (self.network in ("bevfusion", "ml_recog") and epoch <= brain_epoch_number):
+                elif (self.network in ("bevfusion", "ml_recog", "cosmos-rl") and epoch <= brain_epoch_number):
                     trimmed_list.append((epoch, value))
                 elif epoch < brain_epoch_number:
                     trimmed_list.append((epoch, value))
@@ -1204,14 +1211,21 @@ def send_microservice_request(
     if api_endpoint == "get_job_status":
         endpoint = f"{base_url}/api/v1/internal/container_job:status"
         request_metadata = {"results_dir": specs.get("results_dir", "")}
+    elif api_endpoint == "pause_job":
+        endpoint = f"{base_url}/api/v1/internal/container_job:pause"
+        request_metadata = {"job_id": job_id}
     elif api_endpoint == "post_action" and statefulset_replica_index == 0 and statefulset_replicas > 1:
         request_metadata["statefulset_replicas"] = statefulset_replicas
     # Send request
     if os.getenv("DEBUG_MODE", "false").lower() == "true":
-        logger.info("Sending request to %s with request_metadata %s", endpoint, request_metadata)
+        logger.info("Sending request to %s", endpoint)
+        logger.info("request_metadata = %s", request_metadata)
     try:
         if api_endpoint == "get_job_status":
             response = requests.get(endpoint, params=request_metadata, timeout=120)
+        elif api_endpoint == "pause_job":
+            data = json.dumps(request_metadata)
+            response = requests.post(endpoint, data=data, timeout=120, headers={'Content-Type': 'application/json'})
         else:
             data = json.dumps(request_metadata)
             response = requests.post(endpoint, data=data, timeout=120)
@@ -1506,25 +1520,33 @@ def search_for_checkpoint(handler_metadata, job_id, res_root, files, checkpoint_
     return result_file
 
 
-def get_files_from_cloud(handler_metadata, job_id):
+def get_files_from_cloud(handler_metadata, job_id, automl=False, automl_experiment_id="0"):
     """Get filelist of a job from cloud - Enhanced with storage fix"""
     if job_id is None:
         return None
 
     action = get_handler_job_metadata(job_id).get("action")
-    res_root = os.path.join("/results", str(job_id))
+    lookup_job_id = job_id
+    if automl:
+        lookup_job_id = get_automl_experiment_job_id(job_id, automl_experiment_id)
+        if not lookup_job_id:
+            lookup_job_id = job_id
+    logger.info("lookup_job_id: %s", lookup_job_id)
+    res_root = os.path.join("/results", str(lookup_job_id))
     workspace_id = handler_metadata.get("workspace")
     workspace_metadata = resolve_metadata("workspace", workspace_id)
     files = get_file_list_from_cloud_storage(workspace_metadata, res_root)
     return files, action, res_root, workspace_id
 
 
-def resolve_checkpoint_root_and_search(handler_metadata, job_id, folder=False, regex=None):
+def resolve_checkpoint_root_and_search(handler_metadata, job_id, folder=False, regex=None,
+                                       automl=False, automl_experiment_id="0"):
     """Returns path of the model based on the action of the job"""
     if job_id is None:
         return None
-
-    files, action, res_root, workspace_id = get_files_from_cloud(handler_metadata, job_id)
+    files, action, res_root, workspace_id = get_files_from_cloud(
+        handler_metadata, job_id, automl=automl, automl_experiment_id=automl_experiment_id
+    )
     network = handler_metadata.get("network_arch", "")
 
     if action == "retrain":
@@ -1565,6 +1587,10 @@ def resolve_checkpoint_root_and_search(handler_metadata, job_id, folder=False, r
     return result_file
 
 
-def get_model_results_path(handler_metadata, job_id, folder=False):
+def get_model_results_path(handler_metadata, job_id, folder=False, automl=False,
+                           automl_experiment_id="0"):
     """Return the model file for the job context and handler metadata passes"""
-    return resolve_checkpoint_root_and_search(handler_metadata, job_id, folder=folder)
+    return resolve_checkpoint_root_and_search(
+        handler_metadata, job_id, folder=folder, automl=automl,
+        automl_experiment_id=automl_experiment_id
+    )

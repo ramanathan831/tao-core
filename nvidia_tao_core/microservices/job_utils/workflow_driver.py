@@ -32,7 +32,9 @@ def create_job_context(
     name=None,
     description=None,
     num_gpu=-1,
-    platform_id=None
+    platform_id=None,
+    retain_checkpoints_for_resume=False,
+    early_stop_epoch=None
 ):
     """Calls the create job contexts function"""
     network = get_handler_type(handler_metadata)
@@ -56,7 +58,9 @@ def create_job_context(
         name=name,
         description=description,
         num_gpu=num_gpu,
-        platform_id=platform_id
+        platform_id=platform_id,
+        retain_checkpoints_for_resume=retain_checkpoints_for_resume,
+        early_stop_epoch=early_stop_epoch
     )
     return job_context
 
@@ -102,7 +106,9 @@ def on_new_job(job_context):
         'last_modified': job_context.last_modified,
         'dependencies': deps,
         'specs': job_context.specs,
-        'workflow_status': 'enqueued'
+        'workflow_status': 'enqueued',
+        'retain_checkpoints_for_resume': job_context.retain_checkpoints_for_resume,
+        'early_stop_epoch': job_context.early_stop_epoch
     }
     j = Job(**job)
     Workflow.enqueue(j)

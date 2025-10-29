@@ -16,8 +16,9 @@
 import time
 import traceback
 from kubernetes import client
+from kubernetes.client.rest import ApiException
 
-from nvidia_tao_core.microservices.handlers.stateless_handlers import get_handler_job_metadata
+from nvidia_tao_core.microservices.handlers.stateless_handlers import get_handler_job_metadata, get_dnn_status
 from nvidia_tao_core.microservices.handlers.utilities import get_statefulset_service_name
 
 from nvidia_tao_core.microservices.job_utils.executor.base_executor import BaseExecutor
@@ -237,6 +238,14 @@ class ServiceExecutor(BaseExecutor):
             core_v1.delete_namespaced_service(name=service_name, namespace=name_space)
             self.logger.info(f"Successfully deleted service: {service_name}")
             return True
+        except ApiException as e:
+            if e.status == 404:
+                # Service not found - deletion goal already achieved (likely already deleted by another process)
+                self.logger.info(f"Service {service_name} not found (404) - already deleted. Deletion successful.")
+                return True
+            self.logger.error(f"ApiException thrown in delete_service is {str(e)}")
+            self.logger.error(traceback.format_exc())
+            return False
         except Exception as e:
             self.logger.error(f"Exception thrown in delete_service is {str(e)}")
             self.logger.error(traceback.format_exc())
@@ -257,9 +266,45 @@ class ServiceExecutor(BaseExecutor):
         namespace = self.get_namespace()
         start_time = time.time()
         while time.time() - start_time < 300:
-            metadata_status = get_handler_job_metadata(job_id).get("status")
-            if metadata_status in ("Canceled", "Canceling", "Paused", "Pausing"):
-                return metadata_status
+            # Check job metadata status - if job is already terminated, exit early
+            job_metadata = get_handler_job_metadata(job_id)
+            if job_metadata:
+                metadata_status = job_metadata.get("status")
+                # Check if job has been terminated (by timeout, cancellation, or completion)
+                if metadata_status in ("Canceled", "Canceling", "Paused", "Pausing", "Error", "Done"):
+                    self.logger.info(
+                        f"Job {job_id} has status '{metadata_status}'. "
+                        f"Exiting wait_for_service early (no need to wait for service that won't come up)."
+                    )
+                    return metadata_status
+
+            # Also check DNN status to catch timeout terminations early
+            try:
+                dnn_status = get_dnn_status(job_id, automl=False)
+                if dnn_status:
+                    # Check the most recent status entry
+                    latest_status = dnn_status[-1] if isinstance(dnn_status, list) and len(dnn_status) > 0 else {}
+                    if isinstance(latest_status, dict):
+                        status_msg = latest_status.get('status', '')
+                        if isinstance(status_msg, str):
+                            import json
+                            try:
+                                status_data = json.loads(status_msg)
+                                job_status = status_data.get('status', '')
+                                # If job has FAILURE status, it's been terminated
+                                if job_status == 'FAILURE':
+                                    self.logger.info(
+                                        f"Job {job_id} has DNN status 'FAILURE'. "
+                                        f"Exiting wait_for_service early (job terminated)."
+                                    )
+                                    return "Error"
+                            except (json.JSONDecodeError, AttributeError):
+                                pass
+            except Exception as e:
+                # Don't fail the wait if we can't check DNN status
+                self.logger.debug(f"Could not check DNN status for {job_id}: {e}")
+
+            # Check if service is ready
             if (self.check_service_ready(service_name, namespace) and
                     self.check_endpoints_ready(service_name, namespace)):
                 self.logger.info(f"Service '{service_name}' is ready.")

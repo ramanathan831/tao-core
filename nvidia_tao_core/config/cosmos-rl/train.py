@@ -47,12 +47,6 @@ class DatasetConfig:
         display_name="Media directory path",
         description="Path to the media directory"
     )
-    system_prompt: Optional[str] = STR_FIELD(
-        default_value="",
-        value="",
-        display_name="System prompt",
-        description="System prompt."
-    )
 
 
 @dataclass
@@ -330,7 +324,7 @@ class TrainConfig:
     epoch: int = INT_FIELD(
         value=10,
         default_value=10,
-        valid_min=10,
+        valid_min=1,
         valid_max=20,
         display_name="Number of Epochs",
         description="The number of epochs.",
@@ -432,7 +426,9 @@ class TrainConfig:
         display_name="Optimizer betas",
         description="Beta parameters for Adam/AdamW optimizer.",
         automl_enabled="TRUE",
-        value_type="list_2"
+        value_type="list_2",
+        valid_min=[0.8, 0.9],
+        valid_max=[0.95, 0.999]
     )
 
     optm_warmup_epochs: Optional[Union[int, float]] = UNION_FIELD(
@@ -509,6 +505,32 @@ class TrainConfig:
 
 
 @dataclass
+class ValidationDatasetConfig:
+    """Validation dataset config."""
+
+    name: str = STR_FIELD(
+        value="",
+        default_value="",
+        display_name="Dataset name",
+        description="Name of the dataset."
+    )
+
+    subset: str = STR_FIELD(
+        value="",
+        default_value="",
+        display_name="Dataset subset",
+        description="Subset of the dataset."
+    )
+
+    split: str = STR_FIELD(
+        value="train",
+        default_value="train",
+        display_name="Dataset split",
+        description="Split of the dataset."
+    )
+
+
+@dataclass
 class ValidationConfig:
     """Validation config."""
 
@@ -525,6 +547,34 @@ class ValidationConfig:
         valid_max="inf",
         display_name="Validation frequency",
         description="Validation frequency."
+    )
+    dataset: Optional[ValidationDatasetConfig] = DATACLASS_FIELD(
+        ValidationDatasetConfig(), description="Validation dataset config."
+    )
+    batch_size: int = INT_FIELD(
+        value=4,
+        default_value=4,
+        valid_min=1,
+        valid_max="inf",
+        display_name="Batch size",
+        description="Batch size."
+    )
+    dataloader_num_workers: int = INT_FIELD(
+        value=8,
+        default_value=8,
+        valid_min=0,
+        valid_max="inf",
+        display_name="Dataloader num workers",
+        description="Number of worker processes for data loading."
+    )
+
+    dataloader_prefetch_factor: int = INT_FIELD(
+        value=8,
+        default_value=8,
+        valid_min=1,
+        valid_max="inf",
+        display_name="Dataloader prefetch factor",
+        description="Number of batches to prefetch per worker."
     )
 
 
@@ -656,8 +706,15 @@ class VisionConfig:
 class CustomConfig:
     """Custom config."""
 
-    dataset: DatasetConfig = DATACLASS_FIELD(DatasetConfig(), description="Dataset config.")
+    train_dataset: DatasetConfig = DATACLASS_FIELD(DatasetConfig(), description="Training dataset config.")
+    val_dataset: Optional[DatasetConfig] = DATACLASS_FIELD(None, description="Validation dataset config (optional).")
     vision: VisionConfig = DATACLASS_FIELD(VisionConfig(), description="Vision config.")
+    system_prompt: Optional[str] = STR_FIELD(
+        default_value="",
+        value="",
+        display_name="System prompt",
+        description="System prompt."
+    )
 
 
 @dataclass
@@ -681,3 +738,9 @@ class ExperimentConfig:
         description="Output directory."
     )
     custom: CustomConfig = DATACLASS_FIELD(CustomConfig(), description="Custom config.")
+    custom_script: Optional[str] = STR_FIELD(
+        default_value="",
+        value="",
+        display_name="Custom script",
+        description="Custom script."
+    )

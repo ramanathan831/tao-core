@@ -209,6 +209,22 @@ def infer_pruned_model(job_context, handler_metadata):
     return pruned_model
 
 
+def infer_resume_model_bool(job_context, handler_metadata):
+    """Returns path of the weight file of the parent job"""
+    resume_model = get_model_results_path(handler_metadata, job_context.id)
+    return resume_model is not None
+
+
+def infer_automl_resume_model_bool(job_context, handler_metadata, job_root,
+                                   rec_number,
+                                   exp_job_id):
+    """Returns path of the weight file of the automl job"""
+    resume_model = get_model_results_path(
+        handler_metadata, job_context.id, automl=True, automl_experiment_id=rec_number
+    )
+    return resume_model is not None
+
+
 def infer_parent_model(job_context, handler_metadata):
     """Returns path of the weight file of the parent job"""
     parent_model = get_model_results_path(handler_metadata, job_context.parent_id)
@@ -455,6 +471,8 @@ CLI_CONFIG_TO_FUNCTIONS = {"output_dir": infer_output_dir,
                            "automl_output_dir": infer_automl_output_dir,
                            "key": infer_key,
                            "pruned_model": infer_pruned_model,
+                           "resume_model_bool": infer_resume_model_bool,
+                           "automl_resume_model_bool": infer_automl_resume_model_bool,
                            "parent_model": infer_parent_model,
                            "parent_model_folder": infer_parent_model_folder,
                            "parent_model_evaluate": infer_parent_model_evaluate,

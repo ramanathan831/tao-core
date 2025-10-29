@@ -14,7 +14,7 @@
 
 """Default evaluation config file for Cosmos-RL"""
 
-from typing import Optional
+from typing import Optional, List
 from dataclasses import dataclass
 
 from nvidia_tao_core.config.utils.types import (
@@ -22,6 +22,7 @@ from nvidia_tao_core.config.utils.types import (
     FLOAT_FIELD,
     STR_FIELD,
     INT_FIELD,
+    LIST_FIELD,
     DATACLASS_FIELD,
 )
 
@@ -43,12 +44,11 @@ class TaskConfig:
 class MetricsConfig:
     """Metrics configuration for general evaluation."""
 
-    names: str = STR_FIELD(
-        default_value="bleu,rouge,bertscore",
-        value="bleu,rouge,bertscore",
+    names: List[str] = LIST_FIELD(
+        ["bleu", "rouge", "bertscore"],
         display_name="Metric names",
         valid_options="bleu,rouge,bertscore",
-        description="Comma-separated list of metrics to compute (bleu, rouge, bertscore)"
+        description="List of metrics to compute (bleu, rouge, bertscore)"
     )
     bertscore_model: Optional[str] = STR_FIELD(
         default_value="microsoft/deberta-xlarge-mnli",
