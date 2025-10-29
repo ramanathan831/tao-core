@@ -1200,6 +1200,74 @@ def get_user_telemetry_opt_out(user_id: str, org_name: str, user_db: MongoHandle
     return "no" if enable_telemetry else "yes"
 
 
+def report_health_beat(job_id, message=""):
+    """Report health beat for a job (brain job or regular job)
+
+    Stores only the latest health beat timestamp in DB for storage efficiency.
+    This is used for timeout monitoring of long-running processes like AutoML brain.
+
+    Args:
+        job_id: The job identifier
+        message: Optional message to include with the health beat
+    """
+    try:
+        mongo_health = MongoHandler("tao", "health_beats")
+        now = datetime.now(tz=timezone.utc)
+
+        health_data = {
+            'id': job_id,
+            'last_beat': now,
+            'message': message or "Health beat"
+        }
+
+        # Upsert will replace the existing document, keeping only the latest beat
+        mongo_health.upsert({'id': job_id}, health_data)
+        logger.debug(f"Health beat reported for job {job_id}")
+
+    except Exception as e:
+        logger.error(f"Error reporting health beat for job {job_id}: {e}")
+
+
+def get_health_beat(job_id):
+    """Get the last health beat timestamp for a job
+
+    Args:
+        job_id: The job identifier
+
+    Returns:
+        dict with 'last_beat' timestamp and 'message', or None if not found
+    """
+    try:
+        mongo_health = MongoHandler("tao", "health_beats")
+        health_data = mongo_health.find_one({'id': job_id})
+
+        if health_data:
+            return {
+                'last_beat': health_data.get('last_beat'),
+                'message': health_data.get('message', '')
+            }
+        return None
+
+    except Exception as e:
+        logger.error(f"Error getting health beat for job {job_id}: {e}")
+        return None
+
+
+def delete_health_beat(job_id):
+    """Delete health beat for a job (cleanup when job completes)
+
+    Args:
+        job_id: The job identifier
+    """
+    try:
+        mongo_health = MongoHandler("tao", "health_beats")
+        mongo_health.delete_one({'id': job_id})
+        logger.debug(f"Health beat deleted for job {job_id}")
+
+    except Exception as e:
+        logger.error(f"Error deleting health beat for job {job_id}: {e}")
+
+
 def serialize_object(obj):
     """Serialize Database metadata to strings"""
     if isinstance(obj, datetime):

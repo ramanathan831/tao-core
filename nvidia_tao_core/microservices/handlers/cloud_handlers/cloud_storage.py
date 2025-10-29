@@ -27,6 +27,7 @@ from nvidia_tao_core.microservices.handlers.cloud_handlers.progress_tracker impo
 from nvidia_tao_core.microservices.handlers.cloud_handlers.progress_tracker_utils import (
     get_file_size_mb, get_folder_stats, send_progress_status_callback
 )
+from nvidia_tao_core.microservices.handlers.stateless_handlers import report_health_beat
 
 NUM_RETRY = 5
 
@@ -926,19 +927,31 @@ class CloudStorage:
 
     @retry_method
     @master_node_only
-    def move_folder(self, source_path, destination_path):
-        """Move a folder within cloud storage."""
+    def move_folder(self, source_path, destination_path, job_id=None):
+        """Move a folder within cloud storage.
+
+        Args:
+            source_path: Source folder path
+            destination_path: Destination folder path
+            job_id: Optional job ID for health beat reporting during long operations
+        """
         full_source = self.root + source_path.strip('/').rstrip('/') + '/'
         full_destination = self.root + destination_path.strip('/').rstrip('/') + '/'
 
         try:
             logger.info(f"Moving folder {full_source} to {full_destination}")
 
+            if job_id:
+                report_health_beat(job_id, f"Starting folder move: {source_path} -> {destination_path}")
+
             # Get all files in source
             all_files = self.fs.find(full_source)
             files_only = [f for f in all_files if self.fs.isfile(f)]
 
             logger.info(f"Attempting to move {len(files_only)} files individually")
+
+            if job_id and len(files_only) > 0:
+                report_health_beat(job_id, f"Moving {len(files_only)} files from {source_path}")
 
             # Create destination directory
             self.fs.makedirs(full_destination, exist_ok=True)
@@ -962,16 +975,32 @@ class CloudStorage:
                     self.fs.rm(file_path)
                     moved_files += 1
 
+                    # Report health beat for every file to prevent timeout during long moves
+                    if job_id:
+                        report_health_beat(
+                            job_id,
+                            f"Moved {moved_files}/{len(files_only)} files ({int(moved_files / len(files_only) * 100)}%)"
+                        )
+
                 except Exception as file_err:
                     logger.warning(f"Could not move file {file_path}: {file_err}")
 
             if moved_files > 0:
+                if job_id:
+                    report_health_beat(job_id, f"Cleaning up source directory after moving {moved_files} files")
+
                 try:
                     self.fs.rm(full_source, recursive=True)
                 except Exception:
                     logger.warning("Could not remove source directory after file moves")
 
                 logger.info(f"Successfully moved {moved_files} files using file-by-file approach")
+
+                if job_id:
+                    report_health_beat(
+                        job_id,
+                        f"Completed folder move: {moved_files} files moved to {destination_path}"
+                    )
             else:
                 raise Exception("No files could be moved using any method")
         except Exception as e:

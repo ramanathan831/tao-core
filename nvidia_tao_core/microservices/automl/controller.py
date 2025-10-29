@@ -60,7 +60,9 @@ from nvidia_tao_core.microservices.handlers.stateless_handlers import (
     save_automl_best_rec_info,
     get_automl_brain_info,
     delete_dnn_status,
-    update_automl_stats
+    update_automl_stats,
+    report_health_beat,
+    delete_health_beat
 )
 from nvidia_tao_core.microservices.job_utils.automl_job_utils import (
     on_new_automl_job,
@@ -235,6 +237,9 @@ class Controller:
     def start(self):
         """Starts the automl controller"""
         try:
+            # Report initial health beat
+            report_health_beat(self.automl_context.id, "AutoML controller starting")
+
             update_job_message(
                 self.automl_context.handler_id,
                 self.automl_context.id,
@@ -265,6 +270,9 @@ class Controller:
             update_job_status(self.automl_context.handler_id, self.automl_context.id, status=status, kind="experiments")
             self.cancel_recommendation_jobs()
 
+            # Clean up health beat on completion
+            delete_health_beat(self.automl_context.id)
+
         except Exception:
             result_metadata = get_handler_job_metadata(self.automl_context.id)
             result_metadata["job_details"][self.automl_context.id] = {
@@ -285,6 +293,20 @@ class Controller:
                 status="Error",
                 kind="experiments"
             )
+
+            # Clean up health beat on error
+            delete_health_beat(self.automl_context.id)
+
+    def refresh_recommendations(self):
+        """Refresh the recommendations"""
+        self.recommendations = []
+        recs_dict = get_automl_controller_info(self.automl_context.id)
+        for rec_dict in recs_dict:
+            rec = Recommendation(rec_dict["id"], rec_dict["specs"], self.metric_key)
+            rec.update_result(rec_dict["result"])
+            rec.update_status(rec_dict["status"])
+            rec.assign_job_id(rec_dict["job_id"])
+            self.recommendations.append(rec)
 
     def save_state(self):
         """Save the self.recommendations into automl brain DB"""
@@ -356,7 +378,17 @@ class Controller:
         3.Writes AutoML status into a file which can be shown to the end user
         """
         update_job_status(self.automl_context.handler_id, self.automl_context.id, status="Running", kind="experiments")
+
+        # Report health beat at start of loop
+        report_health_beat(self.automl_context.id, "AutoML execute loop started")
+
         while True:
+            # Report health beat on each iteration
+            report_health_beat(
+                self.automl_context.id,
+                f"AutoML loop iteration (completed: {self.completed_recommendations}/{self.max_recommendations})"
+            )
+
             metadata = get_handler_job_metadata(self.automl_context.id)
             current_status = metadata.get("status", "")
             automl_status = get_automl_controller_info(self.automl_context.id)
@@ -409,6 +441,8 @@ class Controller:
         if a new job is requested, add it to self.recommendations and execute it (add it to workflow)
         if a resume is requested, add the relevant recommendation to the workflow
         """
+        report_health_beat(self.automl_context.id, "Running experiments")
+
         if self.automl_algorithm in ("bayesian", "b") and len(self.recommendations) == self.max_recommendations:
             return
         history = deepcopy(self.recommendations)
@@ -479,8 +513,17 @@ class Controller:
 
     def read_results(self):
         """Update results for each recommendation"""
+        report_health_beat(self.automl_context.id, "Reading results")
+
         flag = False
+        self.refresh_recommendations()
         for rec in self.recommendations:
+            # Report health beat for each experiment being processed
+            report_health_beat(
+                self.automl_context.id,
+                f"Processing experiment {rec.id} (status: {rec.status})"
+            )
+
             old_status = rec.status
 
             job_name = rec.job_id
@@ -513,6 +556,7 @@ class Controller:
                 job_id=self.automl_context.id,
                 rec_job_id=rec.job_id
             )
+            report_health_beat(self.automl_context.id, f"Recieved updated results for experiment {rec.id}")
             self.calculate_eta(new_results, rec.job_id, rec.id)
             metadata = get_handler_job_metadata(self.automl_context.id)
             results = metadata.get("job_details", {})
@@ -571,6 +615,10 @@ class Controller:
                         os.path.dirname(self.root),
                     )
                     brain_epoch_number = self.brain.num_epochs_per_experiment
+                report_health_beat(
+                    self.automl_context.id,
+                    f"Reading final metrics for experiment {rec.id}"
+                )
                 validation_map, self.best_epoch_number[rec.id], _ = status_parser.read_metric(
                     results=new_results[rec.job_id],
                     metric=self.metric,
@@ -587,6 +635,10 @@ class Controller:
                     rec.update_result(validation_map)
                 self.save_state()
                 logger.info("Cancelling automl job with status %s and job id %s", status, rec.job_id)
+                report_health_beat(
+                    self.automl_context.id,
+                    f"Cancelling completed job {rec.job_id} (experiment {rec.id})"
+                )
                 on_cancel_automl_job(rec.job_id)
             if old_status != status:
                 rec.update_status(status)
@@ -609,6 +661,8 @@ class Controller:
 
     def calculate_eta(self, new_results, rec_job_id, rec_id):
         """Calculate estimated time remaining for automl job"""
+        report_health_beat(self.automl_context.id, f"Calculating ETA for experiment {rec_id}")
+
         global time_per_epoch  # pylint: disable=global-statement
         global time_per_epoch_counter  # pylint: disable=global-statement
         self.total_epochs = 0
@@ -697,6 +751,8 @@ class Controller:
 
     def write_results(self, final=False):
         """Update stats value and write to job metadata"""
+        report_health_beat(self.automl_context.id, "Writing results" if not final else "Writing final results")
+
         # Best mAP seen till now
         result_dict = {}
         try:
@@ -733,6 +789,8 @@ class Controller:
 
     def find_best_model(self):
         """Find best model based on metric value chosen and move those artifacts to best_model folder"""
+        report_health_beat(self.automl_context.id, "Finding best model")
+
         logger.info("Finding best recommendation config")
         try:
             best_mAP = self.min_max(self.recommendations, key=lambda rec: rec.result).result
@@ -743,6 +801,8 @@ class Controller:
 
         logger.info("Best metric value %s", best_mAP)
         for rec in self.recommendations:
+            # Report health beat while processing each recommendation
+            report_health_beat(self.automl_context.id, f"Checking experiment {rec.id} for best model")
             logger.info("\nRecommendation in function find_best_model %s", rec)
             job_name = rec.job_id
             if not job_name:
@@ -771,7 +831,16 @@ class Controller:
                 # Clean up invalid checkpoint folders before moving
                 self.delete_checkpoint_files(expt_folder, rec, filter_by_format=True)
 
-                self.cs_instance.move_folder(expt_folder[1:], cloud_best_model_folder)
+                report_health_beat(
+                    self.automl_context.id,
+                    f"Moving best model folder for experiment {rec.id} to {cloud_best_model_folder}"
+                )
+                # Pass job_id to move_folder so it can report health beats during the long operation
+                self.cs_instance.move_folder(expt_folder[1:], cloud_best_model_folder, job_id=self.automl_context.id)
+                report_health_beat(
+                    self.automl_context.id,
+                    f"Completed moving best model folder for experiment {rec.id}"
+                )
                 best_specs = get_job_specs(job_name, automl=True, automl_experiment_id=str(rec.id))
                 save_automl_best_rec_info(self.automl_context.id, rec.id, rec.job_id)
                 save_job_specs(self.automl_context.id, specs=best_specs, automl=True, automl_experiment_id="-1")
@@ -915,6 +984,10 @@ class Controller:
 
     def delete_checkpoint_files(self, path, rec, filter_by_format=False):
         """Remove the extra checkpoints generated after the on_cancel_automl_job"""
+        report_health_beat(
+            self.automl_context.id,
+            f"Starting checkpoint cleanup for experiment {rec.id}"
+        )
         if not os.getenv("CI_PROJECT_DIR", None):
             time.sleep(30)  # Mounted paths can take time to reflect files generated on remote locally
         trained_files = get_file_list_from_cloud_storage(self.decrypted_workspace_metadata, path)
@@ -946,9 +1019,17 @@ class Controller:
                 if self.cs_instance.is_file(files):
                     logger.info("Removing file in delete_checkpoint_files function %s", files)
                     self.cs_instance.delete_file(files)
+                    report_health_beat(
+                        self.automl_context.id,
+                        f"Deleting checkpoint file {files} for experiment {rec.id}"
+                    )
                 elif self._uses_folder_lookup():
                     logger.info("Removing folder in delete_checkpoint_files function %s", files)
                     self.cs_instance.delete_folder(files[1:])
+                    report_health_beat(
+                        self.automl_context.id,
+                        f"Deleting checkpoint file {files} for experiment {rec.id}"
+                    )
 
     def delete_not_best_model_checkpoints(self, path, rec, flag):
         """Remove the checkpoints which don't correspond to the best result"""
