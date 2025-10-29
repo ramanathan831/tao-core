@@ -385,7 +385,7 @@ class JobHandler:
         automl = False
         if is_request_automl(handler_id, action, kind) and action == "train":
             automl = True
-        save_dnn_status(job_id, automl, callback_data, handler_id, kind)
+        save_dnn_status(job_id, automl, callback_data, handler_id=handler_id, kind=kind)
         return Code(200, [], "Job status updated")
 
     @staticmethod
