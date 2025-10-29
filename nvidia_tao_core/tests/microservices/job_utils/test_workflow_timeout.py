@@ -18,10 +18,12 @@ import os
 from unittest.mock import Mock, patch
 from datetime import datetime, timezone, timedelta
 
-from nvidia_tao_core.microservices.job_utils.workflow import (
+from nvidia_tao_core.microservices.job_utils.timeout_monitor import (
     get_last_status_timestamp,
     check_job_timeout,
-    terminate_timed_out_job,
+    terminate_timed_out_job
+)
+from nvidia_tao_core.microservices.job_utils.workflow import (
     check_for_timed_out_jobs
 )
 
@@ -29,7 +31,7 @@ from nvidia_tao_core.microservices.job_utils.workflow import (
 class TestGetLastStatusTimestamp:
     """Test get_last_status_timestamp function"""
 
-    @patch('nvidia_tao_core.microservices.job_utils.workflow.get_dnn_status')
+    @patch('nvidia_tao_core.microservices.job_utils.timeout_monitor.get_dnn_status')
     def test_get_last_status_timestamp_with_valid_status(self, mock_get_dnn_status):
         """Test getting timestamp from valid status data"""
         job_id = "test-job-123"
@@ -48,7 +50,7 @@ class TestGetLastStatusTimestamp:
         # Should return the most recent timestamp
         assert abs((result - now).total_seconds()) < 1
 
-    @patch('nvidia_tao_core.microservices.job_utils.workflow.get_dnn_status')
+    @patch('nvidia_tao_core.microservices.job_utils.timeout_monitor.get_dnn_status')
     def test_get_last_status_timestamp_no_status(self, mock_get_dnn_status):
         """Test when no status data is available"""
         mock_get_dnn_status.return_value = None
@@ -57,7 +59,7 @@ class TestGetLastStatusTimestamp:
 
         assert result is None
 
-    @patch('nvidia_tao_core.microservices.job_utils.workflow.get_dnn_status')
+    @patch('nvidia_tao_core.microservices.job_utils.timeout_monitor.get_dnn_status')
     def test_get_last_status_timestamp_empty_status(self, mock_get_dnn_status):
         """Test when status data is empty"""
         mock_get_dnn_status.return_value = []
@@ -66,7 +68,7 @@ class TestGetLastStatusTimestamp:
 
         assert result is None
 
-    @patch('nvidia_tao_core.microservices.job_utils.workflow.get_dnn_status')
+    @patch('nvidia_tao_core.microservices.job_utils.timeout_monitor.get_dnn_status')
     def test_get_last_status_timestamp_multiple_formats(self, mock_get_dnn_status):
         """Test parsing multiple timestamp formats"""
         now = datetime.now(tz=timezone.utc)
@@ -82,7 +84,7 @@ class TestGetLastStatusTimestamp:
         assert result is not None
         assert abs((result - now).total_seconds()) < 1
 
-    @patch('nvidia_tao_core.microservices.job_utils.workflow.get_dnn_status')
+    @patch('nvidia_tao_core.microservices.job_utils.timeout_monitor.get_dnn_status')
     def test_get_last_status_timestamp_automl_experiment(self, mock_get_dnn_status):
         """Test getting timestamp for AutoML experiment"""
         job_id = "automl-job-123"
@@ -102,10 +104,9 @@ class TestGetLastStatusTimestamp:
 class TestCheckJobTimeout:
     """Test check_job_timeout function"""
 
-    @patch('nvidia_tao_core.microservices.job_utils.workflow.get_handler_job_metadata')
-    @patch('nvidia_tao_core.microservices.job_utils.workflow.get_last_status_timestamp')
-    @patch('nvidia_tao_core.microservices.job_utils.workflow.JOB_STATUS_TIMEOUT_MINUTES', 2)
-    def test_check_job_timeout_not_timed_out(self, mock_get_timestamp, mock_get_metadata):
+    @patch('nvidia_tao_core.microservices.job_utils.timeout_monitor.get_last_status_timestamp')
+    @patch('nvidia_tao_core.microservices.job_utils.timeout_monitor.JOB_STATUS_TIMEOUT_MINUTES', 1)
+    def test_check_job_timeout_not_timed_out(self, mock_get_timestamp):
         """Test job that has not timed out"""
         job_id = "test-job-123"
         job_info = {
@@ -115,19 +116,18 @@ class TestCheckJobTimeout:
             'kind': 'experiment'
         }
 
-        # Job last updated 1 minute ago (within 2 minute timeout)
-        last_update = datetime.now(tz=timezone.utc) - timedelta(minutes=1)
+        # Job last updated 30 seconds ago (within 1 minute timeout)
+        last_update = datetime.now(tz=timezone.utc) - timedelta(seconds=30)
         mock_get_timestamp.return_value = last_update
-        mock_get_metadata.return_value = {'status': 'Running'}
 
         result = check_job_timeout(job_info)
 
         assert result is False
 
-    @patch('nvidia_tao_core.microservices.job_utils.workflow.get_handler_job_metadata')
-    @patch('nvidia_tao_core.microservices.job_utils.workflow.get_last_status_timestamp')
-    @patch('nvidia_tao_core.microservices.job_utils.workflow.JOB_STATUS_TIMEOUT_MINUTES', 2)
-    def test_check_job_timeout_timed_out(self, mock_get_timestamp, mock_get_metadata):
+    @patch('nvidia_tao_core.microservices.job_utils.timeout_monitor.internal_job_status_update')
+    @patch('nvidia_tao_core.microservices.job_utils.timeout_monitor.get_last_status_timestamp')
+    @patch('nvidia_tao_core.microservices.job_utils.timeout_monitor.JOB_STATUS_TIMEOUT_MINUTES', 1)
+    def test_check_job_timeout_timed_out(self, mock_get_timestamp, mock_status_update):
         """Test job that has timed out"""
         job_id = "test-job-123"
         job_info = {
@@ -137,61 +137,70 @@ class TestCheckJobTimeout:
             'kind': 'experiment'
         }
 
-        # Job last updated 5 minutes ago (exceeds 2 minute timeout)
+        # Job last updated 5 minutes ago (exceeds 1 minute timeout)
         last_update = datetime.now(tz=timezone.utc) - timedelta(minutes=5)
         mock_get_timestamp.return_value = last_update
-        mock_get_metadata.return_value = {'status': 'Running'}
 
         result = check_job_timeout(job_info)
 
         assert result is True
+        mock_status_update.assert_called_once()
 
-    @patch('nvidia_tao_core.microservices.job_utils.workflow.get_handler_job_metadata')
-    def test_check_job_timeout_done_status(self, mock_get_metadata):
-        """Test that completed jobs are not checked for timeout"""
+    @patch('nvidia_tao_core.microservices.job_utils.timeout_monitor.get_last_status_timestamp')
+    @patch('nvidia_tao_core.microservices.job_utils.timeout_monitor.JOB_STATUS_TIMEOUT_MINUTES', 1)
+    def test_check_job_timeout_done_status(self, mock_get_timestamp):
+        """Test that jobs with recent updates don't time out even if old"""
         job_info = {
             'job_id': 'test-job-123',
             'is_automl': False
         }
 
-        mock_get_metadata.return_value = {'status': 'Done'}
+        # Recent timestamp (30 seconds ago)
+        last_update = datetime.now(tz=timezone.utc) - timedelta(seconds=30)
+        mock_get_timestamp.return_value = last_update
 
         result = check_job_timeout(job_info)
 
         assert result is False
 
-    @patch('nvidia_tao_core.microservices.job_utils.workflow.get_handler_job_metadata')
-    def test_check_job_timeout_error_status(self, mock_get_metadata):
-        """Test that errored jobs are not checked for timeout"""
+    @patch('nvidia_tao_core.microservices.job_utils.timeout_monitor.get_handler_job_metadata')
+    @patch('nvidia_tao_core.microservices.job_utils.timeout_monitor.check_pod_liveness')
+    @patch('nvidia_tao_core.microservices.job_utils.timeout_monitor.get_last_status_timestamp')
+    @patch('nvidia_tao_core.microservices.job_utils.timeout_monitor.JOB_STATUS_TIMEOUT_MINUTES', 1)
+    def test_check_job_timeout_no_status_pod_alive(self, mock_get_timestamp, mock_pod_liveness, mock_get_metadata):
+        """Test that jobs with no status but alive pods don't time out if recently started"""
         job_info = {
             'job_id': 'test-job-123',
             'is_automl': False
         }
 
-        mock_get_metadata.return_value = {'status': 'Error'}
+        # No status updates
+        mock_get_timestamp.return_value = None
+        # But pod is alive
+        mock_pod_liveness.return_value = True
+        # Job started recently (30 seconds ago, within 1 minute timeout)
+        mock_get_metadata.return_value = {
+            'last_modified': (datetime.now(tz=timezone.utc) - timedelta(seconds=30)).isoformat()
+        }
 
         result = check_job_timeout(job_info)
 
         assert result is False
 
-    @patch('nvidia_tao_core.microservices.job_utils.workflow.get_automl_controller_info')
-    @patch('nvidia_tao_core.microservices.job_utils.workflow.get_last_status_timestamp')
-    @patch('nvidia_tao_core.microservices.job_utils.workflow.JOB_STATUS_TIMEOUT_MINUTES', 2)
-    def test_check_job_timeout_automl_experiment(self, mock_get_timestamp, mock_get_controller):
+    @patch('nvidia_tao_core.microservices.job_utils.timeout_monitor.internal_job_status_update')
+    @patch('nvidia_tao_core.microservices.job_utils.timeout_monitor.get_last_status_timestamp')
+    @patch('nvidia_tao_core.microservices.job_utils.timeout_monitor.JOB_STATUS_TIMEOUT_MINUTES', 1)
+    def test_check_job_timeout_automl_experiment(self, mock_get_timestamp, mock_status_update):
         """Test timeout check for AutoML experiment"""
         job_id = "automl-job-123"
         experiment_number = "5"
         job_info = {
             'job_id': job_id,
             'is_automl': True,
-            'experiment_number': experiment_number
+            'experiment_number': experiment_number,
+            'handler_id': 'handler-123',
+            'kind': 'experiment'
         }
-
-        # Mock controller info showing experiment is running
-        mock_get_controller.return_value = [
-            {'id': '5', 'status': 'running'},
-            {'id': '6', 'status': 'pending'}
-        ]
 
         # Experiment timed out (5 minutes exceeds 2 minute timeout)
         last_update = datetime.now(tz=timezone.utc) - timedelta(minutes=5)
@@ -200,28 +209,33 @@ class TestCheckJobTimeout:
         result = check_job_timeout(job_info)
 
         assert result is True
+        mock_status_update.assert_called_once()
 
-    @patch('nvidia_tao_core.microservices.job_utils.workflow.get_automl_controller_info')
-    def test_check_job_timeout_automl_experiment_completed(self, mock_get_controller):
-        """Test that completed AutoML experiments are not checked"""
+    @patch('nvidia_tao_core.microservices.job_utils.timeout_monitor.get_last_status_timestamp')
+    @patch('nvidia_tao_core.microservices.job_utils.timeout_monitor.JOB_STATUS_TIMEOUT_MINUTES', 1)
+    def test_check_job_timeout_automl_experiment_not_timed_out(self, mock_get_timestamp):
+        """Test that AutoML experiments with recent updates don't time out"""
         job_info = {
             'job_id': 'automl-job-123',
             'is_automl': True,
             'experiment_number': '5'
         }
 
-        mock_get_controller.return_value = [
-            {'id': '5', 'status': 'done'}
-        ]
+        # Recent update (30 seconds ago, within 1 minute timeout)
+        last_update = datetime.now(tz=timezone.utc) - timedelta(seconds=30)
+        mock_get_timestamp.return_value = last_update
 
         result = check_job_timeout(job_info)
 
         assert result is False
 
-    @patch('nvidia_tao_core.microservices.job_utils.workflow.get_handler_job_metadata')
-    @patch('nvidia_tao_core.microservices.job_utils.workflow.get_last_status_timestamp')
-    @patch('nvidia_tao_core.microservices.job_utils.workflow.JOB_STATUS_TIMEOUT_MINUTES', 2)
-    def test_check_job_timeout_no_timestamp_uses_last_modified(self, mock_get_timestamp, mock_get_metadata):
+    @patch('nvidia_tao_core.microservices.job_utils.timeout_monitor.get_handler_job_metadata')
+    @patch('nvidia_tao_core.microservices.job_utils.timeout_monitor.check_pod_liveness')
+    @patch('nvidia_tao_core.microservices.job_utils.timeout_monitor.get_last_status_timestamp')
+    @patch('nvidia_tao_core.microservices.job_utils.timeout_monitor.JOB_STATUS_TIMEOUT_MINUTES', 1)
+    def test_check_job_timeout_no_timestamp_uses_last_modified(
+        self, mock_get_timestamp, mock_pod_liveness, mock_get_metadata
+    ):
         """Test fallback to last_modified when no status timestamp exists"""
         job_id = "test-job-123"
         job_info = {
@@ -231,9 +245,11 @@ class TestCheckJobTimeout:
 
         # No status timestamp
         mock_get_timestamp.return_value = None
+        # Pod is alive
+        mock_pod_liveness.return_value = True
 
-        # But has last_modified that's recent (within 2 minute timeout)
-        last_modified = datetime.now(tz=timezone.utc) - timedelta(minutes=1)
+        # Has last_modified that's recent (within 1 minute timeout)
+        last_modified = datetime.now(tz=timezone.utc) - timedelta(seconds=30)
         mock_get_metadata.return_value = {
             'status': 'Running',
             'last_modified': last_modified.isoformat()
@@ -258,7 +274,7 @@ class TestTerminateTimedOutJob:
     """Test terminate_timed_out_job function"""
 
     @patch('nvidia_tao_core.microservices.job_utils.executor.statefulset_executor.StatefulSetExecutor')
-    @patch('nvidia_tao_core.microservices.job_utils.workflow.update_job_status')
+    @patch('nvidia_tao_core.microservices.job_utils.timeout_monitor.update_job_status')
     def test_terminate_timed_out_regular_job(self, mock_update_status, mock_executor_class):
         """Test terminating a timed out regular job"""
         job_id = "test-job-123"
@@ -281,28 +297,31 @@ class TestTerminateTimedOutJob:
         mock_executor.delete_statefulset.assert_called_once_with(job_id, use_ngc=True)
 
     @patch('nvidia_tao_core.microservices.job_utils.executor.statefulset_executor.StatefulSetExecutor')
-    @patch('nvidia_tao_core.microservices.job_utils.workflow.save_automl_controller_info')
-    @patch('nvidia_tao_core.microservices.job_utils.workflow.get_automl_controller_info')
+    @patch('nvidia_tao_core.microservices.job_utils.timeout_monitor.save_automl_controller_info')
+    @patch('nvidia_tao_core.microservices.job_utils.timeout_monitor.get_automl_controller_info')
     def test_terminate_timed_out_automl_experiment(
         self, mock_get_controller, mock_save_controller, mock_executor_class
     ):
         """Test terminating a timed out AutoML experiment"""
         job_id = "automl-job-123"
+        brain_job_id = "brain-job-123"
         handler_id = "handler-123"
         experiment_number = "5"
         job_info = {
             'job_id': job_id,
+            'brain_job_id': brain_job_id,
             'handler_id': handler_id,
             'kind': 'experiment',
             'is_automl': True,
             'experiment_number': experiment_number
         }
 
-        # Mock controller info
-        mock_get_controller.return_value = [
+        # Mock controller info - need to return it twice (one for getting, one for verifying after save)
+        controller_data = [
             {'id': '5', 'status': 'running', 'message': 'Training'},
             {'id': '6', 'status': 'pending', 'message': 'Waiting'}
         ]
+        mock_get_controller.return_value = controller_data
 
         mock_executor = Mock()
         mock_executor.delete_statefulset.return_value = True
@@ -314,16 +333,16 @@ class TestTerminateTimedOutJob:
 
         # Verify controller info was updated
         call_args = mock_save_controller.call_args[0]
-        assert call_args[0] == job_id
+        assert call_args[0] == brain_job_id  # Should use brain_job_id, not job_id
         updated_controller = call_args[1]
 
-        # Find the experiment that should be marked as error
+        # Find the experiment that should be marked as failure
         experiment_5 = next(exp for exp in updated_controller if exp['id'] == '5')
-        assert experiment_5['status'] == 'error'
+        assert experiment_5['status'] == 'failure'
         assert 'timeout' in experiment_5['message'].lower()
 
-        # Verify StatefulSet was deleted
-        mock_executor.delete_statefulset.assert_called()
+        # Verify StatefulSet was deleted with the correct job_id
+        mock_executor.delete_statefulset.assert_called_once_with(job_id, use_ngc=True)
 
     @patch('nvidia_tao_core.microservices.job_utils.executor.statefulset_executor.StatefulSetExecutor')
     def test_terminate_timed_out_job_missing_info(self, mock_executor_class):
@@ -339,7 +358,7 @@ class TestTerminateTimedOutJob:
         assert result is False
 
     @patch('nvidia_tao_core.microservices.job_utils.executor.statefulset_executor.StatefulSetExecutor')
-    @patch('nvidia_tao_core.microservices.job_utils.workflow.update_job_status')
+    @patch('nvidia_tao_core.microservices.job_utils.timeout_monitor.update_job_status')
     def test_terminate_timed_out_job_statefulset_deletion_fails(self, mock_update_status, mock_executor_class):
         """Test when StatefulSet deletion fails"""
         job_id = "test-job-123"
@@ -584,10 +603,9 @@ class TestTimeoutConfiguration:
 class TestTimeoutWithStatusUpdates:
     """Test timeout behavior with various status update patterns"""
 
-    @patch('nvidia_tao_core.microservices.job_utils.workflow.get_handler_job_metadata')
-    @patch('nvidia_tao_core.microservices.job_utils.workflow.get_dnn_status')
-    @patch('nvidia_tao_core.microservices.job_utils.workflow.JOB_STATUS_TIMEOUT_MINUTES', 2)
-    def test_timeout_with_continuous_updates(self, mock_get_status, mock_get_metadata):
+    @patch('nvidia_tao_core.microservices.job_utils.timeout_monitor.get_last_status_timestamp')
+    @patch('nvidia_tao_core.microservices.job_utils.timeout_monitor.JOB_STATUS_TIMEOUT_MINUTES', 1)
+    def test_timeout_with_continuous_updates(self, mock_get_timestamp):
         """Test that jobs with continuous updates don't time out"""
         job_id = "test-job-123"
         job_info = {
@@ -597,48 +615,40 @@ class TestTimeoutWithStatusUpdates:
 
         now = datetime.now(tz=timezone.utc)
 
-        # Job has regular status updates (all within 2 minute window)
-        mock_get_status.return_value = [
-            {'timestamp': (now - timedelta(seconds=90)).strftime('%Y-%m-%dT%H:%M:%S.%fZ'), 'message': 'Epoch 1'},
-            {'timestamp': (now - timedelta(seconds=60)).strftime('%Y-%m-%dT%H:%M:%S.%fZ'), 'message': 'Epoch 2'},
-            {'timestamp': (now - timedelta(seconds=30)).strftime('%Y-%m-%dT%H:%M:%S.%fZ'), 'message': 'Epoch 3'},
-            {'timestamp': (now - timedelta(seconds=10)).strftime('%Y-%m-%dT%H:%M:%S.%fZ'), 'message': 'Epoch 4'}
-        ]
-        mock_get_metadata.return_value = {'status': 'Running'}
+        # Job has regular status updates (most recent is 10 seconds ago, within 1 minute window)
+        mock_get_timestamp.return_value = now - timedelta(seconds=10)
 
         result = check_job_timeout(job_info)
 
         assert result is False
 
-    @patch('nvidia_tao_core.microservices.job_utils.workflow.get_handler_job_metadata')
-    @patch('nvidia_tao_core.microservices.job_utils.workflow.get_dnn_status')
-    @patch('nvidia_tao_core.microservices.job_utils.workflow.JOB_STATUS_TIMEOUT_MINUTES', 2)
-    def test_timeout_with_stale_updates(self, mock_get_status, mock_get_metadata):
+    @patch('nvidia_tao_core.microservices.job_utils.timeout_monitor.internal_job_status_update')
+    @patch('nvidia_tao_core.microservices.job_utils.timeout_monitor.get_last_status_timestamp')
+    @patch('nvidia_tao_core.microservices.job_utils.timeout_monitor.JOB_STATUS_TIMEOUT_MINUTES', 1)
+    def test_timeout_with_stale_updates(self, mock_get_timestamp, mock_status_update):
         """Test that jobs with stale updates time out"""
         job_id = "test-job-123"
         job_info = {
             'job_id': job_id,
-            'is_automl': False
+            'is_automl': False,
+            'handler_id': 'handler-123',
+            'kind': 'experiment'
         }
 
         now = datetime.now(tz=timezone.utc)
 
-        # Job has old status updates, nothing recent (5 minutes ago exceeds 2 minute timeout)
-        mock_get_status.return_value = [
-            {'timestamp': (now - timedelta(minutes=10)).strftime('%Y-%m-%dT%H:%M:%S.%fZ'), 'message': 'Epoch 1'},
-            {'timestamp': (now - timedelta(minutes=5)).strftime('%Y-%m-%dT%H:%M:%S.%fZ'), 'message': 'Epoch 2'}
-        ]
-        mock_get_metadata.return_value = {'status': 'Running'}
+        # Job has old status updates, most recent was 5 minutes ago (exceeds 1 minute timeout)
+        mock_get_timestamp.return_value = now - timedelta(minutes=5)
 
         result = check_job_timeout(job_info)
 
         assert result is True
+        mock_status_update.assert_called_once()
 
-    @patch('nvidia_tao_core.microservices.job_utils.workflow.get_handler_job_metadata')
-    @patch('nvidia_tao_core.microservices.job_utils.workflow.get_dnn_status')
-    @patch('nvidia_tao_core.microservices.job_utils.workflow.JOB_STATUS_TIMEOUT_MINUTES', 2)
-    def test_timeout_boundary_condition(self, mock_get_status, mock_get_metadata):
-        """Test timeout just below boundary (2 minutes)"""
+    @patch('nvidia_tao_core.microservices.job_utils.timeout_monitor.get_last_status_timestamp')
+    @patch('nvidia_tao_core.microservices.job_utils.timeout_monitor.JOB_STATUS_TIMEOUT_MINUTES', 1)
+    def test_timeout_boundary_condition(self, mock_get_timestamp):
+        """Test timeout just below boundary (1 minute)"""
         job_id = "test-job-123"
         job_info = {
             'job_id': job_id,
@@ -647,13 +657,10 @@ class TestTimeoutWithStatusUpdates:
 
         now = datetime.now(tz=timezone.utc)
 
-        # Job last updated 119 seconds ago (just under 2 minute timeout)
-        mock_get_status.return_value = [
-            {'timestamp': (now - timedelta(seconds=119)).strftime('%Y-%m-%dT%H:%M:%S.%fZ'), 'message': 'Training'}
-        ]
-        mock_get_metadata.return_value = {'status': 'Running'}
+        # Job last updated 59 seconds ago (just under 1 minute timeout)
+        mock_get_timestamp.return_value = now - timedelta(seconds=59)
 
         result = check_job_timeout(job_info)
 
-        # Just under 2 minutes, should not be timed out
+        # Just under 1 minute, should not be timed out
         assert result is False
