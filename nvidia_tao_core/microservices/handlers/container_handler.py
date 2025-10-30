@@ -162,6 +162,8 @@ def prepare_data_before_job_run(job, docker_env_vars):
     else:
         logger.info("No files to download from main spec")
 
+    custom_script = specs.pop("custom_script", None)
+
     # Save spec file with dynamic backend
     network_arch = job["neural_network_name"]
     spec_backend, file_extension = get_spec_backend_info(network_arch)
@@ -226,6 +228,11 @@ def prepare_data_before_job_run(job, docker_env_vars):
                         )
                     if reprocess_file_data:
                         safe_dump_file(file_name, reprocess_file_data, file_type=file_type)
+
+    # Add custom_script back to specs for vlm_entrypoint to handle
+    if custom_script:
+        specs["custom_script"] = custom_script
+
     return cloud_storage, specs, spec_path
 
 

@@ -798,6 +798,14 @@ def apply_data_source_config(config, job_context, handler_metadata):
     additional_downloads = process_additional_downloads(
         network_config, job_context, handler_metadata, workspace_cache, dataset_convert_action, endpoint_action
     )
+
+    # Handle custom data loader script for cosmos-rl and other networks
+    if "custom_script" in config:
+        custom_script_path = config.get("custom_script")
+        if custom_script_path:
+            logger.info("Custom data loader script found in config: %s", custom_script_path)
+            additional_downloads.append(custom_script_path)
+
     if additional_downloads:
         config["additional_downloads"] = additional_downloads
 
