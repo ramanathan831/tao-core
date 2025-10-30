@@ -781,7 +781,8 @@ class ExperimentHandler:
         name=None,
         description=None,
         num_gpu=-1,
-        platform_id=None
+        platform_id=None,
+        timeout_minutes=None
     ):
         """Resumes a paused experiment job, adding it back to the queue for processing.
 
@@ -796,7 +797,7 @@ class ExperimentHandler:
             description (str, optional): Description of the job.
             num_gpu (int, optional): Number of GPUs to allocate.
             platform_id (str, optional): Platform ID for the job.
-
+            timeout_minutes (int, optional): The job-specific timeout in minutes. Defaults to None.
         Returns:
             Response: A response indicating the outcome of the operation (200 for success, error responses for failure).
         """
@@ -818,6 +819,8 @@ class ExperimentHandler:
         action = job_metadata.get("action", "")
         action = infer_action_from_job(experiment_id, job_id)
         status = job_metadata.get("status", "")
+        if not timeout_minutes:
+            timeout_minutes = job_metadata.get("timeout_minutes", 60)
         if status != "Paused":
             return Code(400, [], f"Job status should be paused, not {status}")
         if action not in ("train", "distill", "quantize", "retrain"):
@@ -853,7 +856,8 @@ class ExperimentHandler:
                     job_id,
                     handler_metadata,
                     name=name,
-                    platform_id=platform_id
+                    platform_id=platform_id,
+                    timeout_minutes=timeout_minutes
                 )
             else:
                 # Create a job and run it
@@ -869,6 +873,7 @@ class ExperimentHandler:
                     num_gpu = job_metadata.get("num_gpu", -1)
                 retain_checkpoints_for_resume = job_metadata.get("retain_checkpoints_for_resume", False)
                 early_stop_epoch = job_metadata.get("early_stop_epoch", None)
+                timeout_minutes = job_metadata.get("timeout_minutes", None)
                 job_context = create_job_context(
                     parent_job_id,
                     "train",
@@ -884,7 +889,8 @@ class ExperimentHandler:
                     num_gpu=num_gpu,
                     platform_id=platform_id,
                     retain_checkpoints_for_resume=retain_checkpoints_for_resume,
-                    early_stop_epoch=early_stop_epoch
+                    early_stop_epoch=early_stop_epoch,
+                    timeout_minutes=timeout_minutes
                 )
                 on_new_job(job_context)
             return Code(200, {"message": f"{msg}Action for job {job_id} resumed"})

@@ -2823,6 +2823,7 @@ class DatasetActions(Schema):
     platform_id = fields.Str(format="uuid", validate=fields.validate.Length(max=36), allow_none=True)
     retain_checkpoints_for_resume = fields.Bool(allow_none=True)
     early_stop_epoch = fields.Int(format="int64", validate=validate.Range(min=0, max=sys.maxsize), allow_none=True)
+    timeout_minutes = fields.Int(format="int64", validate=validate.Range(min=1, max=sys.maxsize), allow_none=True)
 
 
 class DatasetIntentEnum(Enum):
@@ -3779,11 +3780,12 @@ def dataset_job_run(org_name, dataset_id):
     description = request_schema_data.get('description', '')
     num_gpu = request_schema_data.get('num_gpu', -1)
     platform_id = request_schema_data.get('platform_id', None)
+    timeout_minutes = request_schema_data.get('timeout_minutes', 60)
     # Get response
     response = JobHandler.job_run(
         org_name, dataset_id, requested_job, requested_action, "dataset",
         specs=specs, name=name, description=description, num_gpu=num_gpu,
-        platform_id=platform_id
+        platform_id=platform_id, timeout_minutes=timeout_minutes
     )
     # Get schema
     if response.code == 200:
@@ -5403,6 +5405,7 @@ class ExperimentActions(Schema):
     platform_id = fields.Str(format="uuid", validate=fields.validate.Length(max=36), allow_none=True)
     retain_checkpoints_for_resume = fields.Bool(allow_none=True)
     early_stop_epoch = fields.Int(format="int64", validate=validate.Range(min=0, max=sys.maxsize), allow_none=True)
+    timeout_minutes = fields.Int(format="int64", validate=validate.Range(min=1, max=sys.maxsize), allow_none=True)
 
 
 class PublishModel(Schema):
@@ -7099,6 +7102,7 @@ def experiment_job_run(org_name, experiment_id):
     platform_id = request_schema_data.get('platform_id', None)
     retain_checkpoints_for_resume = request_schema_data.get('retain_checkpoints_for_resume', False)
     early_stop_epoch = request_schema_data.get('early_stop_epoch', None)
+    timeout_minutes = request_schema_data.get('timeout_minutes', 60)
     if isinstance(specs, dict) and "cluster" in specs:
         metadata = {"error_desc": "cluster is an invalid spec", "error_code": 3}
         schema = ErrorRspSchema()
@@ -7109,7 +7113,7 @@ def experiment_job_run(org_name, experiment_id):
         org_name, experiment_id, requested_job, requested_action, "experiment",
         specs=specs, name=name, description=description, num_gpu=num_gpu,
         platform_id=platform_id, retain_checkpoints_for_resume=retain_checkpoints_for_resume,
-        early_stop_epoch=early_stop_epoch
+        early_stop_epoch=early_stop_epoch, timeout_minutes=timeout_minutes
     )
     # Get schema
     schema = None
@@ -8997,6 +9001,7 @@ def experiment_job_resume(org_name, experiment_id, job_id):
     description = request_schema_data.get('description', '')
     num_gpu = request_schema_data.get('num_gpu', -1)
     platform_id = request_schema_data.get('platform_id', None)
+    timeout_minutes = request_schema_data.get('timeout_minutes', None)
     if parent_job_id:
         parent_job_id = str(parent_job_id)
     specs = request_schema_data.get('specs', {})
@@ -9011,7 +9016,8 @@ def experiment_job_resume(org_name, experiment_id, job_id):
         name=name,
         description=description,
         num_gpu=num_gpu,
-        platform_id=platform_id
+        platform_id=platform_id,
+        timeout_minutes=timeout_minutes
     )
     # Get schema
     if response.code == 200:

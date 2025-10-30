@@ -1086,7 +1086,8 @@ def get_all_running_jobs():
             'last_modified': job.get('last_modified'),
             'is_automl': False,
             'is_automl_brain': automl_brain,
-            'experiment_number': '0'
+            'experiment_number': '0',
+            'timeout_minutes': job.get('timeout_minutes')
         }
         running_jobs.append(job_info)
 
@@ -1135,7 +1136,8 @@ def get_all_running_automl_experiments():
                                         'last_modified': job.get('last_modified'),
                                         'is_automl': True,
                                         'brain_job_id': job_id,
-                                        'experiment_number': str(rec_id)
+                                        'experiment_number': str(rec_id),
+                                        'timeout_minutes': job.get('timeout_minutes')
                                     }
                                     running_automl_experiments.append(automl_exp_info)
             except Exception as e:

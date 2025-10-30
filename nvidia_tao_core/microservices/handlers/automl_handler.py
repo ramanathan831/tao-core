@@ -58,7 +58,7 @@ class AutoMLHandler:
 
     @staticmethod
     def start(user_id, org_name, experiment_id, job_id, handler_metadata, name="",
-              platform_id="", retain_checkpoints_for_resume=False):
+              platform_id="", retain_checkpoints_for_resume=False, timeout_minutes=60):
         """Starts an AutoML job by executing `automl_start.py` with the provided parameters.
 
         Args:
@@ -71,6 +71,7 @@ class AutoMLHandler:
             platform_id (str, optional): Platform identifier for execution. Defaults to "".
             retain_checkpoints_for_resume (bool, optional): Whether to retain .pth
                 checkpoints for training resume. Defaults to False.
+            timeout_minutes (int, optional): The job-specific timeout in minutes. If not specified, uses global timeout.
         """
         network = get_handler_type(handler_metadata)
         metric = handler_metadata.get("metric", "map")
@@ -89,9 +90,9 @@ class AutoMLHandler:
             "experiment_id": experiment_id,
             "status": "Pending",
             "job_details": {},
-            "retain_checkpoints_for_resume": retain_checkpoints_for_resume
+            "retain_checkpoints_for_resume": retain_checkpoints_for_resume,
+            "timeout_minutes": timeout_minutes
         }
-
         root = os.path.join(get_jobs_root(user_id, org_name), job_id)
         if not os.path.exists(root):
             os.makedirs(root)
@@ -140,6 +141,7 @@ class AutoMLHandler:
             f'--automl_hyperparameters="{automl_hyperparameters}" '
             f'--override_automl_disabled_params={override_automl_disabled_params} '
             f'--retain_checkpoints_for_resume={retain_checkpoints_for_resume} '
+            f'--timeout_minutes={timeout_minutes} '
             f"--decrypted_workspace_metadata='{json.dumps(decrypted_workspace_metadata, default=str)}'"
         )
         if platform_id:
@@ -228,7 +230,7 @@ class AutoMLHandler:
         return Code(200, {"message": f"job {job_id} cancelled"})
 
     @staticmethod
-    def resume(user_id, org_name, experiment_id, job_id, handler_metadata, name="", platform_id=""):
+    def resume(user_id, org_name, experiment_id, job_id, handler_metadata, name="", platform_id="", timeout_minutes=60):
         """Resumes a previously stopped AutoML job by re-running `automl_start.py` with the resume flag.
 
         Args:
@@ -296,6 +298,7 @@ class AutoMLHandler:
             f'--automl_hyperparameters="{automl_hyperparameters}" '
             f'--override_automl_disabled_params={override_automl_disabled_params} '
             f'--retain_checkpoints_for_resume={retain_checkpoints_for_resume} '
+            f'--timeout_minutes={timeout_minutes} '
             f"--decrypted_workspace_metadata='{json.dumps(decrypted_workspace_metadata, default=serialize_object)}'"
         )
         if platform_id:

@@ -206,6 +206,11 @@ if __name__ == "__main__":
         default='False'
     )
     parser.add_argument(
+        '--timeout_minutes',
+        type=str,
+        default='60'
+    )
+    parser.add_argument(
         '--decrypted_workspace_metadata',
         type=json.loads,
     )
@@ -229,7 +234,7 @@ if __name__ == "__main__":
 
         # Get retain_checkpoints_for_resume from CLI argument
         retain_checkpoints_for_resume = args.retain_checkpoints_for_resume.lower() in ("true", "1")
-
+        timeout_minutes = int(args.timeout_minutes)
         jc = JobContext(
             automl_job_id,
             None,
@@ -242,7 +247,8 @@ if __name__ == "__main__":
             name=name,
             platform_id=platform_id,
             specs=specs,
-            retain_checkpoints_for_resume=retain_checkpoints_for_resume
+            retain_checkpoints_for_resume=retain_checkpoints_for_resume,
+            timeout_minutes=timeout_minutes
         )
         resume = args.resume == "True"
         automl_algorithm = args.automl_algorithm
