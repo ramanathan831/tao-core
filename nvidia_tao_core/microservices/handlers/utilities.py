@@ -384,8 +384,9 @@ class StatusParser:
                 if math.isnan(value) or value in {float("inf"), float("-inf")}:
                     return None
             return float(value)
-        except Exception as e:
-            logger.error("Exception thrown in force_float is %s", str(e))
+        except Exception:
+            print(traceback.format_exc())
+            logger.error("Exception thrown in force_float is %s", traceback.format_exc())
             return None
 
     @staticmethod

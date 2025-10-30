@@ -1,7 +1,7 @@
 {
     "api_params": {
         "dataset_type": "vlm",
-        "actions": ["train", "inference", "evaluate", "inference_microservice"],
+        "actions": ["train", "inference", "evaluate", "inference_microservice", "quantize"],
         "formats": ["llava"],
         "accepted_ds_intents": ["training", "evaluation", "testing"],
         "image": "COSMOS_RL",
@@ -9,7 +9,8 @@
         "actions_pipe": {
             "train": "train",
             "inference":"inference",
-            "evaluate": "evaluate"
+            "evaluate": "evaluate",
+            "quantize": "train"
         }
     },
 
@@ -80,6 +81,21 @@
                 "source": "parent_job_specs",
                 "check_key_exists": "policy.lora"
             }
+        },
+        "quantize": {
+            "calibration_dataset.annotation_path": {
+                "source": "calibration_dataset",
+                "multiple_sources": false,
+                "path": "annotations.json"
+            },
+            "calibration_dataset.media_dir": {
+                "source": "calibration_dataset",
+                "multiple_sources": false,
+                "path_from_format": {
+                    "llava": ["images.tar.gz", "videos.tar.gz"],
+                    "*": "images.tar.gz"
+                }
+            }
         }
     },
     "preserve_source_path_params": ["train.output_dir"],
@@ -96,6 +112,10 @@
         "evaluate": {
             "results_dir":"output_dir",
             "model.model_name":"parent_model_folder"
+        },
+        "quantize": {
+            "results_dir":"output_dir",
+            "model.model_path":"parent_model_folder"
         }
     },
 
@@ -141,9 +161,9 @@
             "^rougel(sum)?$",
             "^bertscore_(precision|recall|f1)$",
             "^(count|distance|left_right|mcq|quantitative|qualitative)_(accuracy|total|correct)$",
-            "^(going_straight|turning_left|turning_right)_(accuracy|total|correct)$",
-            "^(quantization_status|quantization_scheme|num_calibration_samples|smoothing_strength|group_size)$",
-            "^(model_path|save_dir)$"
+            "^(going.straight|turning.left|turning.right)_(accuracy|total|correct)$",
+            "^(quantization_status|quantization_scheme|num_calibration_samples|smoothing_strength)$",
+            "^model_path$"
         ]
     }
 }
