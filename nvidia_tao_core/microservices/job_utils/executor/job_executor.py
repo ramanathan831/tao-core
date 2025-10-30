@@ -246,10 +246,18 @@ class JobExecutor(BaseExecutor):
             ttl_seconds_after_finished=100,
             template=template,
             backoff_limit=0)
+
+        # Create metadata with Helm annotations for proper lifecycle management
+        # This ensures the Job is deleted when helm delete is run
+        job_metadata = {
+            "name": job_name,
+            "owner_references": [self.get_owner_reference()]
+        }
+
         job = client.V1Job(
             api_version="batch/v1",
             kind="Job",
-            metadata=client.V1ObjectMeta(name=job_name),
+            metadata=client.V1ObjectMeta(**job_metadata),
             spec=spec)
 
         try:
