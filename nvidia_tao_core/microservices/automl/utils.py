@@ -144,6 +144,28 @@ def get_valid_options(parameter_config, custom_ranges=None):
     return valid_options
 
 
+def get_option_weights(parameter_config, custom_ranges=None):
+    """Get the weights for valid options, considering custom overrides
+
+    Args:
+        parameter_config: Configuration dict for the parameter
+        custom_ranges: Optional dict of custom parameter ranges from user
+
+    Returns:
+        List of weights corresponding to valid_options, or None for uniform sampling
+    """
+    parameter_name = parameter_config.get("parameter", "")
+    option_weights = parameter_config.get("option_weights", None)
+
+    # Apply custom option_weights if provided
+    if custom_ranges and parameter_name in custom_ranges:
+        custom_weights = custom_ranges[parameter_name].get("option_weights")
+        if custom_weights is not None:
+            option_weights = custom_weights
+
+    return option_weights
+
+
 def report_healthy(path, message, clear=False):
     """Write health message to the provided file"""
     mode = "w" if clear else "a"
