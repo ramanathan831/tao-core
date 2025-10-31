@@ -31,10 +31,12 @@ from nvidia_tao_core.microservices.handlers.stateless_handlers import (
     get_all_pending_jobs,
     get_all_running_jobs,
     get_all_running_automl_experiments,
+    update_job_status,
     update_job_message,
     get_handler_type,
     get_handler_metadata,
     get_automl_controller_info,
+    get_automl_experiment_job_id,
     delete_dnn_status
 )
 from nvidia_tao_core.microservices.job_utils.timeout_monitor import (
@@ -303,19 +305,55 @@ def scan_for_jobs():
             report_healthy(f"Total dependencies: {len(job.dependencies)}")
             all_met = True
             pending_reason_message = ""
+
+            # Check if this is an AutoML experiment job (not brain job) in a single pass
+            automl_experiment_job_id = None
+            for dep in job.dependencies:
+                if dep.type == "automl":
+                    recommendation_id = dep.name
+                    # Map recommendation_id to actual job_id
+                    automl_experiment_job_id = get_automl_experiment_job_id(job.id, recommendation_id)
+                    break
+
             for dep in job.dependencies:
                 dependency_met, message = dependency_check(job, dep)
                 if not dependency_met:
                     pending_reason_message += f"{message} and, "
                     report_healthy(f"Unmet dependency: {dep.type} {pending_reason_message}")
                     all_met = False
+                # Handle permanent failures that should error out the job
                 if "Parent job " in message and "errored out" in message:
+                    jobs_to_dequeue.append(job)
+                    break
+                # Handle GPU validation failures (e.g., requested GPUs > available GPUs)
+                if "GPUs requested count" in message and "is greater than" in message:
+                    update_job_status(job.handler_id, job.id, status="Error", kind=job.kind + "s")
+                    # Update detailed status with both status and message
+                    detailed_status_message = {
+                        "status": "FAILURE",
+                        "message": message
+                    }
+                    if automl_experiment_job_id:
+                        # For AutoML experiments, update both the specific experiment and the brain job
+                        update_job_message(
+                            job.handler_id, job.id, kind=job.kind + "s", message=detailed_status_message,
+                            automl_expt_job_id=automl_experiment_job_id, update_automl_expt=True
+                        )
+                    update_job_message(job.handler_id, job.id, kind=job.kind + "s", message=detailed_status_message)
                     jobs_to_dequeue.append(job)
                     break
 
             # Update detailed status message in response when appropriate message is available
             pending_reason_message = ''.join(pending_reason_message.rsplit(" and, ", 1))
-            update_job_message(job.handler_id, job.id, kind=job.kind + "s", message=pending_reason_message)
+            if automl_experiment_job_id:
+                # For AutoML experiments, update the specific experiment
+                update_job_message(
+                    job.handler_id, job.id, kind=job.kind + "s", message=pending_reason_message,
+                    automl_expt_job_id=automl_experiment_job_id, update_automl_expt=True
+                )
+            else:
+                # For regular jobs and AutoML brain jobs
+                update_job_message(job.handler_id, job.id, kind=job.kind + "s", message=pending_reason_message)
 
             # if all dependencies are met
             if all_met and still_exists(job):
