@@ -72,6 +72,7 @@ def flatten_properties(data, parent_key='', sep='.'):
                 'valid_min': v.get('minimum', ''),
                 'valid_max': v.get('maximum', ''),
                 'valid_options': v.get('enum', []),
+                'option_weights': v.get('option_weights', None),
                 'automl_enabled': v.get('automl_enabled', ''),
                 'math_cond': v.get('math_cond', ''),
                 'parent_param': v.get('parent_param', ''),
@@ -141,6 +142,7 @@ def generate_hyperparams_to_search(
             "valid_min",
             "valid_max",
             "valid_options",
+            "option_weights",
             "math_cond",
             "parent_param",
             "depends_on"

@@ -19,7 +19,12 @@ import random
 import logging
 
 
-from nvidia_tao_core.microservices.automl.utils import fix_input_dimension, fix_power_of_factor, get_valid_options
+from nvidia_tao_core.microservices.automl.utils import (
+    fix_input_dimension,
+    fix_power_of_factor,
+    get_valid_options,
+    get_option_weights
+)
 from nvidia_tao_core.microservices.automl import network_utils
 from nvidia_tao_core.microservices.network_utils import network_constants
 from nvidia_tao_core.microservices.network_utils import automl_helper
@@ -27,6 +32,7 @@ from nvidia_tao_core.microservices.handlers.stateless_handlers import (
     get_job_specs,
     get_automl_custom_param_ranges
 )
+
 
 logger = logging.getLogger(__name__)
 
@@ -184,14 +190,30 @@ class AutoMLAlgorithmBase:
             valid_values = get_valid_options(parameter_config, self.custom_ranges)
             if not valid_values or valid_values == "":
                 return default_value
-            sample = int(np.random.choice(valid_values))
+            # Get weights for weighted sampling
+            weights = get_option_weights(parameter_config, self.custom_ranges)
+            if weights and len(weights) == len(valid_values):
+                # Normalize weights
+                total_weight = sum(weights)
+                probabilities = [w / total_weight for w in weights]
+                sample = int(np.random.choice(valid_values, p=probabilities))
+            else:
+                sample = int(np.random.choice(valid_values))
             return sample
 
         if data_type in ("categorical", "ordered"):
             valid_values = get_valid_options(parameter_config, self.custom_ranges)
             if not valid_values or valid_values == "":
                 return default_value
-            sample = np.random.choice(valid_values)
+            # Get weights for weighted sampling
+            weights = get_option_weights(parameter_config, self.custom_ranges)
+            if weights and len(weights) == len(valid_values):
+                # Normalize weights
+                total_weight = sum(weights)
+                probabilities = [w / total_weight for w in weights]
+                sample = np.random.choice(valid_values, p=probabilities)
+            else:
+                sample = np.random.choice(valid_values)
             return sample
 
         if data_type == "subset_list":

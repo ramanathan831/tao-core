@@ -443,6 +443,15 @@ class TrainConfig:
         automl_enabled="TRUE",
         depends_on="train.epoch"
     )
+    optm_decay_type: str = STR_FIELD(
+        value="linear",
+        default_value="linear",
+        valid_options="linear,sqrt,cosine,none",
+        option_weights=[0.1, 0.1, 0.4, 0.4],
+        display_name="Decay type",
+        description="Type of decay for learning rate scheduler. Weights: none=0.4, cosine=0.4, linear=0.1, sqrt=0.1",
+        automl_enabled="TRUE"
+    )
 
     async_tp_enabled: bool = BOOL_FIELD(
         value=False,

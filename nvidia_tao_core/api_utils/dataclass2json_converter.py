@@ -422,6 +422,7 @@ def create_json_schema(json_data):
         valid_min = param_meta.get("valid_min")
         valid_max = param_meta.get("valid_max")
         valid_options = param_meta.get("valid_options")
+        option_weights = param_meta.get("option_weights")
         required = param_meta.get("required")
         math_cond = param_meta.get("math_cond")
         parent_param = param_meta.get("parent_param")
@@ -506,6 +507,8 @@ def create_json_schema(json_data):
             props[param_name]["depends_on"] = depends_on
         if valid_options:
             props[param_name]["enum"] = valid_options
+        if option_weights is not None:
+            props[param_name]["option_weights"] = option_weights
         if regex and mapped_value_type == "string":
             props[param_name]["pattern"] = regex
         if link and link.startswith("http"):

@@ -79,6 +79,7 @@ class ParameterRangeSchema(Schema):
     valid_min = fields.Raw(allow_none=True)  # Can be float or list of floats
     valid_max = fields.Raw(allow_none=True)  # Can be float or list of floats
     valid_options = fields.List(fields.Raw(), allow_none=True)
+    option_weights = fields.List(fields.Float(), allow_none=True)  # Weights for valid_options
     math_cond = fields.Str(format="regex", regex=r'.*', validate=fields.validate.Length(max=100), allow_none=True)
     depends_on = fields.Str(format="regex", regex=r'.*', validate=fields.validate.Length(max=500), allow_none=True)
     parent_param = fields.Str(format="regex", regex=r'.*', validate=fields.validate.Length(max=500), allow_none=True)
@@ -222,6 +223,7 @@ def get_automl_param_details(org_name, experiment_id):
                     "valid_min": valid_min,
                     "valid_max": valid_max,
                     "valid_options": param_info.get("valid_options", []),
+                    "option_weights": param_info.get("option_weights", None),
                     "math_cond": param_info.get("math_cond", None),
                     "depends_on": param_info.get("depends_on", None),
                     "parent_param": param_info.get("parent_param", None)
@@ -234,6 +236,7 @@ def get_automl_param_details(org_name, experiment_id):
                         "valid_min": custom_ranges[param_name].get("valid_min"),
                         "valid_max": custom_ranges[param_name].get("valid_max"),
                         "valid_options": custom_ranges[param_name].get("valid_options"),
+                        "option_weights": custom_ranges[param_name].get("option_weights"),
                         "depends_on": custom_ranges[param_name].get("depends_on"),
                         "math_cond": custom_ranges[param_name].get("math_cond"),
                         "parent_param": custom_ranges[param_name].get("parent_param")
@@ -361,6 +364,7 @@ def update_automl_param_ranges(org_name, experiment_id):
             custom_min = param_range.get("valid_min")
             custom_max = param_range.get("valid_max")
             custom_options = param_range.get("valid_options")
+            custom_weights = param_range.get("option_weights")
             custom_depends_on = param_range.get("depends_on")
             custom_math_cond = param_range.get("math_cond")
             custom_parent_param = param_range.get("parent_param")
@@ -451,10 +455,43 @@ def update_automl_param_ranges(org_name, experiment_id):
                         )
                         continue
 
+            # Validate option_weights if provided
+            if custom_weights is not None:
+                # Get the options to validate against (custom or schema)
+                options_to_check = custom_options if custom_options is not None else param_info.get("valid_options", [])
+
+                if not options_to_check:
+                    errors.append(
+                        f"Parameter '{param_name}': option_weights provided but no valid_options exist"
+                    )
+                    continue
+
+                if len(custom_weights) != len(options_to_check):
+                    errors.append(
+                        f"Parameter '{param_name}': option_weights length ({len(custom_weights)}) "
+                        f"must match valid_options length ({len(options_to_check)})"
+                    )
+                    continue
+
+                # Validate all weights are positive
+                if any(w <= 0 for w in custom_weights):
+                    errors.append(
+                        f"Parameter '{param_name}': all option_weights must be positive numbers"
+                    )
+                    continue
+
+                # Validate weights sum to a reasonable value (allow flexibility, just check they're not all zeros)
+                if sum(custom_weights) <= 0:
+                    errors.append(
+                        f"Parameter '{param_name}': option_weights must sum to a positive value"
+                    )
+                    continue
+
             validated_ranges[param_name] = {
                 "valid_min": custom_min,
                 "valid_max": custom_max,
                 "valid_options": custom_options,
+                "option_weights": custom_weights,
                 "depends_on": custom_depends_on,
                 "math_cond": custom_math_cond,
                 "parent_param": custom_parent_param
