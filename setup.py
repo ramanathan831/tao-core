@@ -58,12 +58,14 @@ setuptools.setup(
         '': ['*.py', "*.pyc", "*.yaml", "*.so", "*.pdf"],
         'nvidia_tao_core.microservices': [
             'pretrained_models.csv',
-            'specs_utils/specs/**/*.csv',
+            'utils/specs_utils/specs/**/*.csv',
             '*.sh',
             'uwsgi.ini',
             'handlers/network_configs/*',
             'nginx.conf',
-            'templates/*'
+            'blueprints/v1/templates/**/*.html',
+            'blueprints/v2/templates/**/*.html',
+            'api_spec/*.json',
         ]
     },
     include_package_data=True,

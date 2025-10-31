@@ -23,10 +23,10 @@ from scipy.stats import norm
 from scipy.optimize import minimize
 
 from nvidia_tao_core.microservices.automl import network_utils
-from nvidia_tao_core.microservices.automl.utils import JobStates, get_valid_range, clamp_value
+from nvidia_tao_core.microservices.utils.automl_utils import JobStates, get_valid_range, clamp_value
 from nvidia_tao_core.microservices.automl.automl_algorithm_base import AutoMLAlgorithmBase
-from nvidia_tao_core.microservices.handlers.utilities import get_total_epochs, get_flatten_specs
-from nvidia_tao_core.microservices.handlers.stateless_handlers import save_automl_brain_info, get_automl_brain_info
+from nvidia_tao_core.microservices.utils.handler_utils import get_total_epochs, get_flatten_specs
+from nvidia_tao_core.microservices.utils.stateless_handler_utils import save_automl_brain_info, get_automl_brain_info
 
 # Configure logging
 logging.basicConfig(

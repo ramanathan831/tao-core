@@ -1,6 +1,7 @@
 apache-libcloud
-apispec
-apispec-webframeworks
+apispec==6.8.2
+apispec-oneofschema==3.0.2
+apispec-webframeworks==1.2.0
 cryptography>43.0.1
 # Cython==0.29.36 # indirect dependency
 dicomweb-client==0.60.0
@@ -16,6 +17,7 @@ jsonschema
 kubernetes==32.0.1
 marshmallow==3.26.1
 marshmallow-enum==1.5.1
+marshmallow-oneofschema==3.2.0
 ngcsdk==3.151.0
 numpy
 omegaconf==2.3.0

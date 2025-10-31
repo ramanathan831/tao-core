@@ -21,22 +21,28 @@ import time
 import traceback
 import uuid
 import logging
+import re
 
-from nvidia_tao_core.microservices.automl.utils import delete_lingering_checkpoints, wait_for_job_completion
+from nvidia_tao_core.microservices.utils.automl_utils import (
+    delete_lingering_checkpoints,
+    wait_for_job_completion,
+    update_automl_details_metadata
+)
 from nvidia_tao_core.microservices.constants import (
     _DATA_GENERATE_ACTIONS,
     _DATA_SERVICES_ACTIONS,
     NETWORK_CONTAINER_MAPPING,
     COPY_MODEL_PARAMS_FROM_TRAIN_NETWORKS
 )
-from nvidia_tao_core.microservices.handlers.cloud_handlers.cloud_storage import create_cs_instance
-from nvidia_tao_core.microservices.handlers.ngc_handler import get_user_key
-from nvidia_tao_core.microservices.handlers.nvcf_handler import get_available_nvcf_instances
-from nvidia_tao_core.microservices.handlers.docker_images import DOCKER_IMAGE_MAPPER, DOCKER_IMAGE_VERSION
-from nvidia_tao_core.microservices.handlers.infer_data_sources import apply_data_source_config
-from nvidia_tao_core.microservices.handlers.infer_params import CLI_CONFIG_TO_FUNCTIONS
-from nvidia_tao_core.microservices.handlers.encrypt import NVVaultEncryption
-from nvidia_tao_core.microservices.handlers.stateless_handlers import (
+from nvidia_tao_core.microservices.utils.cloud_utils import create_cs_instance
+from nvidia_tao_core.microservices.utils.handler_utils import get_files_from_cloud
+from nvidia_tao_core.microservices.utils.ngc_utils import get_user_key
+from nvidia_tao_core.microservices.utils.nvcf_utils import get_available_nvcf_instances
+from .docker_images import DOCKER_IMAGE_MAPPER, DOCKER_IMAGE_VERSION
+from .infer_data_sources import apply_data_source_config
+from .infer_params import CLI_CONFIG_TO_FUNCTIONS
+from nvidia_tao_core.microservices.utils.encrypt_utils import NVVaultEncryption
+from nvidia_tao_core.microservices.utils.stateless_handler_utils import (
     BACKEND,
     base_exp_uuid,
     get_base_experiment_metadata,
@@ -60,7 +66,7 @@ from nvidia_tao_core.microservices.handlers.stateless_handlers import (
     update_job_details_with_microservices_response,
     get_user_telemetry_opt_out
 )
-from nvidia_tao_core.microservices.handlers.utilities import (
+from nvidia_tao_core.microservices.utils.handler_utils import (
     StatusParser,
     build_cli_command,
     get_num_nodes_from_spec,
@@ -71,7 +77,7 @@ from nvidia_tao_core.microservices.handlers.utilities import (
     write_nested_dict,
     get_cloud_metadata
 )
-from nvidia_tao_core.microservices.utils import (
+from nvidia_tao_core.microservices.utils.core_utils import (
     remove_key_by_flattened_string,
     read_network_config,
     get_admin_key,
@@ -80,14 +86,14 @@ from nvidia_tao_core.microservices.utils import (
     get_monitoring_metric,
     get_microservices_network_and_action
 )
-from nvidia_tao_core.microservices.job_utils.executor import (
+from nvidia_tao_core.microservices.utils.job_utils.executor import (
     JobExecutor,
     StatefulSetExecutor,
     MicroserviceExecutor
 )
-from nvidia_tao_core.microservices.job_utils.executor.utils import get_cluster_ip
-from nvidia_tao_core.microservices.network_utils.network_constants import ptm_mapper
-from nvidia_tao_core.microservices.specs_utils import json_to_kitti, json_to_yaml, json_to_toml
+from nvidia_tao_core.microservices.utils.executor_utils import get_cluster_ip
+from nvidia_tao_core.microservices.utils.network_utils.network_constants import ptm_mapper
+from nvidia_tao_core.microservices.utils.specs_utils import json_to_kitti, json_to_yaml, json_to_toml
 
 SPEC_BACKEND_TO_FUNCTIONS = {
     "protobuf": json_to_kitti.kitti,
@@ -253,6 +259,35 @@ class ActionPipeline:
             for docker_env_var_key, docker_env_var_value in docker_env_vars.items():
                 if encryption.check_config()[0]:
                     docker_env_vars[docker_env_var_key] = encryption.decrypt(docker_env_var_value)
+
+    def get_epoch_numbers_from_job(self):
+        """Extract epoch numbers from checkpoint files and store in job metadata"""
+        try:
+            job_files, _, _, _ = get_files_from_cloud(self.handler_metadata, self.job_name)
+            epoch_numbers = []
+            for job_file in job_files:
+                # Extract numbers before the extension using regex
+                match = re.search(r'(\d+)(?=\.(pth|hdf5|tlt)$)', job_file)
+                if match:
+                    epoch_number = match.group(1)
+                    if epoch_number not in epoch_numbers:
+                        epoch_numbers.append(epoch_number)
+
+            # Sort epoch numbers as integers
+            if epoch_numbers:
+                epoch_numbers = sorted([int(e) for e in epoch_numbers])
+                # Update job metadata with epoch numbers
+                update_job_metadata(
+                    self.handler_id,
+                    self.job_name,
+                    metadata_key="epoch_numbers",
+                    data=epoch_numbers,
+                    kind=self.handler_kind
+                )
+                self.detailed_print(f"Stored epoch numbers for job {self.job_name}: {epoch_numbers}")
+        except Exception as e:
+            logger.error("Exception while extracting epoch numbers: %s", str(e))
+            self.detailed_print(f"Failed to extract epoch numbers: {str(e)}")
 
     def generate_env_variables(self, automl_brain_job_id=None, experiment_number=None, automl_exp_job_id=None):
         """Generate env variables required for a job"""
@@ -528,6 +563,8 @@ class ActionPipeline:
                             f"latest_model_{self.job_name}"
                         ] = latest_checkpoint_epoch_number
                         write_handler_metadata(self.handler_id, self.handler_metadata, self.handler_kind)
+                        # Extract and store epoch numbers in job metadata
+                        self.get_epoch_numbers_from_job()
                     if not os.path.exists(f"{self.jobs_root}/{self.job_name}"):
                         os.makedirs(f"{self.jobs_root}/{self.job_name}")
                     update_job_status(self.handler_id, self.job_name, status="Done", kind=self.handler_kind)
@@ -793,6 +830,8 @@ class CLIPipeline(ActionPipeline):
 
 
 # Specs are modified as well => Train, Evaluate, Retrain Actions
+
+
 class TrainVal(CLIPipeline):
     """Class for experiment actions which involves both spec file as well as cli params"""
 
@@ -832,7 +871,7 @@ class TrainVal(CLIPipeline):
                     break
                 if parent_action in ("train", "distill", "quantize"):
                     # pylint: disable=C0415
-                    from nvidia_tao_core.microservices.app_handlers.spec_handler import SpecHandler
+                    from .spec_handler import SpecHandler
                     default_spec_schema_response = SpecHandler.get_spec_schema(
                         self.job_context.user_id,
                         self.job_context.org_name,
@@ -915,7 +954,7 @@ class TrainVal(CLIPipeline):
         # These actions create a new dataset as part of their actions
         if action in _DATA_GENERATE_ACTIONS:
             # pylint: disable=C0415
-            from nvidia_tao_core.microservices.app_handlers.dataset_handler import DatasetHandler
+            from .dataset_handler import DatasetHandler
             handler_metadata = get_handler_metadata(self.handler_id, self.handler_kind)
             request_dict = DatasetHandler.create_dataset_dict_from_experiment_metadata(
                 self.job_context.id,
@@ -964,6 +1003,7 @@ class AutoMLPipeline(ActionPipeline):
             self.detailed_print("New job id being assigned to recommendation", self.job_name)
             self.recs_dict[self.rec_number]["job_id"] = self.job_name
             save_automl_controller_info(self.automl_brain_job_id, self.recs_dict)
+            update_automl_details_metadata(self.automl_brain_job_id, self.handler_id, self.handler_kind)
 
         if not os.path.exists(self.expt_root):
             os.makedirs(self.expt_root)
@@ -1144,6 +1184,7 @@ class AutoMLPipeline(ActionPipeline):
         if k8s_status == "Error":
             self.recs_dict[self.rec_number]["status"] = "failure"
             save_automl_controller_info(self.automl_brain_job_id, self.recs_dict)
+            update_automl_details_metadata(self.automl_brain_job_id, self.handler_id, self.handler_kind)
 
     def run(self):
         """Calls necessary setup functions and calls job creation"""
@@ -1225,6 +1266,7 @@ class AutoMLPipeline(ActionPipeline):
 
             self.recs_dict[self.rec_number]["status"] = "failure"
             save_automl_controller_info(self.automl_brain_job_id, self.recs_dict)
+            update_automl_details_metadata(self.automl_brain_job_id, self.handler_id, self.handler_kind)
 
             update_job_status(self.handler_id, self.job_context.id, status="Error", kind=self.handler_kind)
             StatefulSetExecutor().delete_statefulset(self.job_context.id, use_ngc=False)
@@ -1232,6 +1274,8 @@ class AutoMLPipeline(ActionPipeline):
 
 
 # Each Element can be called with a job_context and returns an ActionPipeline (or its derivative) object
+
+
 ACTIONS_TO_FUNCTIONS = {"train": TrainVal,
                         "evaluate": TrainVal,
                         "prune": CLIPipeline,

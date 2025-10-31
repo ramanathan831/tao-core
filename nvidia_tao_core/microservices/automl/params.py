@@ -16,10 +16,10 @@
 import pandas as pd
 
 from nvidia_tao_core.microservices.constants import AUTOML_DISABLED_NETWORKS
-from nvidia_tao_core.microservices.handlers.utilities import get_flatten_specs
-from nvidia_tao_core.microservices.handlers.stateless_handlers import get_job_specs
+from nvidia_tao_core.microservices.utils.handler_utils import get_flatten_specs
+from nvidia_tao_core.microservices.utils.stateless_handler_utils import get_job_specs
 from nvidia_tao_core.scripts.generate_schema import generate_schema
-from nvidia_tao_core.microservices.utils import get_microservices_network_and_action
+from nvidia_tao_core.microservices.utils.core_utils import get_microservices_network_and_action
 
 import logging
 logger = logging.getLogger(__name__)

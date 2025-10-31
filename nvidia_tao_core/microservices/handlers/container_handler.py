@@ -44,13 +44,13 @@ from nvidia_tao_core.microservices.handlers.cloud_handlers.utils import (
 from nvidia_tao_core.microservices.handlers.cloud_handlers.progress_tracker import ProgressTracker
 import nvidia_tao_core.loggers.logging as status_logging
 from nvidia_tao_core.api_utils.module_utils import entrypoint_paths, entry_points
-from nvidia_tao_core.microservices.utils import (
+from nvidia_tao_core.microservices.utils.core_utils import (
     safe_load_file,
     safe_dump_file,
     read_network_config,
     get_spec_backend_info
 )
-from nvidia_tao_core.microservices.specs_utils import json_to_kitti, json_to_yaml, json_to_toml
+from nvidia_tao_core.microservices.utils.specs_utils import json_to_kitti, json_to_yaml, json_to_toml
 
 # Configure logging
 logging.basicConfig(

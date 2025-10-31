@@ -14,7 +14,7 @@ import os
 import json
 import re
 import time
-from nvidia_tao_core.microservices.handlers.stateless_handlers import get_metrics, get_root
+from nvidia_tao_core.microservices.utils.stateless_handler_utils import get_metrics, get_root
 from prometheus_client import start_http_server, Gauge, Counter
 
 

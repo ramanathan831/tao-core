@@ -22,11 +22,11 @@ import logging
 import sysconfig
 
 from nvidia_tao_core.microservices.constants import TENSORBOARD_EXPERIMENT_LIMIT
-from nvidia_tao_core.microservices.handlers.mongo_handler import MongoHandler
-from nvidia_tao_core.microservices.handlers.stateless_handlers import get_user, get_handler_metadata, serialize_object
-from nvidia_tao_core.microservices.handlers.utilities import Code, decrypt_handler_metadata
-from nvidia_tao_core.microservices.handlers.docker_images import DOCKER_IMAGE_MAPPER
-from nvidia_tao_core.microservices.job_utils.executor import DeploymentExecutor
+from nvidia_tao_core.microservices.utils.mongo_utils import MongoHandler
+from nvidia_tao_core.microservices.utils.stateless_handler_utils import get_user, get_handler_metadata, serialize_object
+from nvidia_tao_core.microservices.utils.handler_utils import Code, decrypt_handler_metadata
+from .docker_images import DOCKER_IMAGE_MAPPER
+from nvidia_tao_core.microservices.utils.job_utils.executor import DeploymentExecutor
 
 release_name = os.getenv("RELEASE_NAME", 'tao-api')
 

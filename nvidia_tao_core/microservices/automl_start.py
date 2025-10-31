@@ -23,8 +23,8 @@ from nvidia_tao_core.microservices.automl.controller import Controller
 from nvidia_tao_core.microservices.automl.bayesian import Bayesian
 from nvidia_tao_core.microservices.automl.hyperband import HyperBand
 from nvidia_tao_core.microservices.automl.params import generate_hyperparams_to_search
-from nvidia_tao_core.microservices.handlers.utilities import JobContext
-from nvidia_tao_core.microservices.handlers.stateless_handlers import (
+from nvidia_tao_core.microservices.utils.handler_utils import JobContext
+from nvidia_tao_core.microservices.utils.stateless_handler_utils import (
     update_job_status,
     update_job_metadata,
     get_job_specs

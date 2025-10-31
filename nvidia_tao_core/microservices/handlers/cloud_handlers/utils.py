@@ -27,10 +27,10 @@ import tarfile
 import time
 import traceback
 
-from nvidia_tao_core.microservices.handlers.cloud_handlers.cloud_storage import CloudStorage
-from nvidia_tao_core.microservices.handlers.ngc_handler import split_ngc_path
-from nvidia_tao_core.microservices.handlers.nvcf_handler import invoke_function
-from nvidia_tao_core.microservices.handlers.stateless_handlers import get_internal_job_status_update_data
+from nvidia_tao_core.microservices.utils.cloud_utils import CloudStorage
+from nvidia_tao_core.microservices.utils.ngc_utils import download_ngc_model, split_ngc_path, get_model_size_info
+from nvidia_tao_core.microservices.utils.nvcf_utils import invoke_function
+from nvidia_tao_core.microservices.utils.stateless_handler_utils import get_internal_job_status_update_data
 from nvidia_tao_core.distributed.decorators import master_node_only
 
 
@@ -830,11 +830,6 @@ def download_files_from_cloud(
             org, team, model_name, model_version = split_ngc_path(ngc_model)
             destination_path = f"/ptm/{org}/{team}/{model_name}/{model_version}/model"
 
-            # Get model size for progress tracking
-            from nvidia_tao_core.microservices.handlers.ngc_handler import (
-                get_model_size_info, download_ngc_model
-            )
-
             total_size_bytes, _ = get_model_size_info(ngc_model, ngc_key)
             total_size_mb = total_size_bytes / (1024 * 1024) if total_size_bytes else 0
 
@@ -1026,9 +1021,6 @@ def calculate_total_download_size(cloud_data, data, job_id):
         try:
             # Handle NGC models
             if file_path.startswith("ngc://"):
-                from nvidia_tao_core.microservices.handlers.ngc_handler import (
-                    get_model_size_info
-                )
                 ngc_key = os.getenv("TAO_USER_KEY")
                 if ngc_key:
                     ngc_model = file_path.split("ngc://")[-1]

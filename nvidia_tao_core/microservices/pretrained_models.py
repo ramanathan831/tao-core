@@ -31,9 +31,9 @@ from enum import Enum
 import logging
 
 if os.getenv("AIRGAPPED_MODE", "False").lower() == "false":
-    from nvidia_tao_core.microservices.handlers.mongo_handler import MongoHandler
-from nvidia_tao_core.microservices.handlers.ngc_handler import get_ngc_token_from_api_key
-from nvidia_tao_core.microservices.utils import read_network_config, get_admin_key, safe_load_file
+    from nvidia_tao_core.microservices.utils.mongo_utils import MongoHandler
+from nvidia_tao_core.microservices.utils.ngc_utils import get_ngc_token_from_api_key
+from nvidia_tao_core.microservices.utils.core_utils import read_network_config, get_admin_key, safe_load_file
 from nvidia_tao_core.microservices.handlers.cloud_handlers.huggingface import (
     download_huggingface_model as download_hf_model
 )

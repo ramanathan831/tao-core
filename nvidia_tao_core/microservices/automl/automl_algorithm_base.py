@@ -19,16 +19,16 @@ import random
 import logging
 
 
-from nvidia_tao_core.microservices.automl.utils import (
+from nvidia_tao_core.microservices.utils.automl_utils import (
     fix_input_dimension,
     fix_power_of_factor,
     get_valid_options,
     get_option_weights
 )
 from nvidia_tao_core.microservices.automl import network_utils
-from nvidia_tao_core.microservices.network_utils import network_constants
-from nvidia_tao_core.microservices.network_utils import automl_helper
-from nvidia_tao_core.microservices.handlers.stateless_handlers import (
+from nvidia_tao_core.microservices.utils.network_utils import network_constants
+from nvidia_tao_core.microservices.utils.network_utils import automl_helper
+from nvidia_tao_core.microservices.utils.stateless_handler_utils import (
     get_job_specs,
     get_automl_custom_param_ranges
 )

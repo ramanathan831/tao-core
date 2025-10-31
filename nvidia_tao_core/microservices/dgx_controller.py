@@ -22,8 +22,8 @@ import logging
 from datetime import datetime
 from kubernetes import client, config
 
-from nvidia_tao_core.microservices.handlers.ngc_handler import send_ngc_api_request
-from nvidia_tao_core.microservices.job_utils.executor.utils import get_namespace
+from nvidia_tao_core.microservices.utils.ngc_utils import send_ngc_api_request
+from nvidia_tao_core.microservices.utils.executor_utils import get_namespace
 
 # Configure logging
 logging.basicConfig(

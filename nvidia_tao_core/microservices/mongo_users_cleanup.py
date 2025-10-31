@@ -15,7 +15,7 @@
 from datetime import datetime, timezone
 import logging
 
-from nvidia_tao_core.microservices.handlers.mongo_handler import MongoHandler
+from nvidia_tao_core.microservices.utils.mongo_utils import MongoHandler
 
 __SESSION_EXPIRY_SECONDS__ = 86400  # Equal to 24 hours
 
