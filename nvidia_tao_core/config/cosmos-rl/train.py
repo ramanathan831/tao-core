@@ -14,11 +14,12 @@
 
 """Default config file"""
 
-from typing import List, Optional, Union
+from typing import List, Dict, Optional, Union
 from dataclasses import dataclass
 
 from nvidia_tao_core.config.utils.types import (
     BOOL_FIELD,
+    DICT_FIELD,
     FLOAT_FIELD,
     STR_FIELD,
     INT_FIELD,
@@ -206,6 +207,15 @@ class LoraConfig:
         automl_enabled="TRUE"
     )
 
+    r_pattern: Optional[Dict[str, int]] = DICT_FIELD(
+        hashMap=None,
+        display_name="LoRA rank pattern",
+        description="Per-module overrides for LoRA rank r. Keys are regex patterns; "
+                    "evaluated in insertion order, first match wins. Example: "
+                    "{'visual\\..*': 16, 'attn.*': 8}",
+        automl_enabled="TRUE"
+    )
+
     lora_alpha: int = INT_FIELD(
         value=8,
         default_value=8,
@@ -214,6 +224,15 @@ class LoraConfig:
         math_cond="^ 2",
         display_name="LoRA alpha",
         description="LoRA alpha (must be power of 2)",
+        automl_enabled="TRUE"
+    )
+
+    alpha_pattern: Optional[Dict[str, float]] = DICT_FIELD(
+        hashMap=None,
+        display_name="LoRA alpha pattern",
+        description="Per-module overrides for lora_alpha. Keys are regex patterns; "
+                    "evaluated in insertion order, first match wins. Example: "
+                    "{'visual\\..*': 32.0, 'attn.*': 16.0}",
         automl_enabled="TRUE"
     )
 
@@ -358,13 +377,16 @@ class TrainConfig:
         description="Output directory."
     )
 
-    optm_lr: float = FLOAT_FIELD(
+    optm_lr: Union[float, List[float]] = UNION_FIELD(
         value=1e-6,
+        union_types=["float", "list"],
         default_value=1e-6,
         valid_min=0,
         valid_max="inf",
         display_name="Learning rate",
-        description="Learning rate.",
+        description="Learning rate for optimizer. Can be a single float (applied to whole model) "
+                    "or a list of 2 floats [llm_lr, vision_lr] for separate learning rates "
+                    "for language model and vision encoder during full SFT finetuning.",
         automl_enabled="TRUE"
     )
 

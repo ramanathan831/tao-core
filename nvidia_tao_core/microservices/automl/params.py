@@ -28,7 +28,8 @@ _VALID_TYPES = ["int", "integer",
                 "float",
                 "ordered_int", "bool",
                 "ordered", "categorical",
-                "list_1_backbone", "list_1_normal", "list_2", "list_3", "subset_list", "optional_list"]
+                "list_1_backbone", "list_1_normal", "list_2", "list_3", "subset_list", "optional_list",
+                "collection", "dict"]
 
 
 def flatten_properties(data, parent_key='', sep='.'):
@@ -112,7 +113,23 @@ def generate_hyperparams_to_search(
         get_flatten_specs(updated_train_spec, updated_spec_with_keys_flattened)
 
         deleted_params = original_spec_with_keys_flattened.keys() - updated_spec_with_keys_flattened
+
         format_json_schema = flatten_properties(json_schema["properties"])
+
+        # Check if specific parent objects exist in the updated spec (e.g., policy.lora for cosmos-rl)
+        # If not, exclude all parameters under that parent
+        params_to_exclude = set()
+
+        # For cosmos-rl: if policy.lora.* parameters are not in the spec, exclude all policy.lora.* parameters
+        if network_arch == "cosmos-rl":
+            # Check if ANY policy.lora.* key exists in the flattened spec
+            has_lora_params = any(key.startswith("policy.lora.") for key in updated_spec_with_keys_flattened)
+            if not has_lora_params:
+                logger.info("policy.lora not found in updated spec - excluding LoRA parameters from AutoML")
+                # Filter schema parameters that start with policy.lora.
+                params_to_exclude.update([p for p in format_json_schema.keys() if p.startswith("policy.lora.")])
+                logger.info(f"Excluding {len(params_to_exclude)} LoRA parameters: {params_to_exclude}")
+
         data_frame = pd.DataFrame.from_dict(format_json_schema, orient='index').reset_index()
         data_frame = data_frame[data_frame['value_type'].isin(_VALID_TYPES)]
 
@@ -129,6 +146,7 @@ def generate_hyperparams_to_search(
         # Filter for automl-enabled and non-deleted parameters
         automl_params = data_frame.loc[data_frame['automl_enabled'] == True]  # pylint: disable=C0121  # noqa: E712
         automl_params = automl_params.loc[~automl_params['parameter'].isin(deleted_params)]
+        automl_params = automl_params.loc[~automl_params['parameter'].isin(params_to_exclude)]
 
         # Sort automl parameters: push params that are dependent on other params to the bottom
         # Use na_position='first' to put NaN (no depends_on) first, non-NaN (has depends_on) last
