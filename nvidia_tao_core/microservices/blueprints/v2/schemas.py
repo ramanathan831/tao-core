@@ -200,6 +200,12 @@ class AllowedDockerEnvVariables(Enum):
     AUTOML_EXPERIMENT_NUMBER = "AUTOML_EXPERIMENT_NUMBER"
     JOB_ID = "JOB_ID"
     TAO_API_JOB_ID = "TAO_API_JOB_ID"  # Automl brain job id
+    RETAIN_CHECKPOINTS_FOR_RESUME = "RETAIN_CHECKPOINTS_FOR_RESUME"
+    EARLY_STOP_EPOCH = "EARLY_STOP_EPOCH"
+
+    TAO_TELEMETRY_SERVER = "TAO_TELEMETRY_SERVER"
+    TAO_CLIENT_TYPE = "TAO_CLIENT_TYPE"  # Client type: container, api, cli, sdk, ui, etc.
+    TAO_AUTOML_TRIGGERED = "TAO_AUTOML_TRIGGERED"  # Whether job is triggered by AutoML
 
 
 class NVCFEndpoint(Enum):
@@ -692,7 +698,10 @@ class TelemetryReq(Schema):
     action = fields.Str()
     success = fields.Bool()
     gpu = fields.List(fields.Str())
-    time_lapsed = fields.Int()
+    time_lapsed = fields.Int(allow_none=True)
+    user_error = fields.Bool(allow_none=True)
+    client_type = fields.Str(allow_none=True)  # Client type: container, api, cli, sdk, ui, etc.
+    automl_triggered = fields.Bool(allow_none=True)  # Whether job is triggered by AutoML
 
 
 class AWSCloudPull(Schema):

@@ -151,6 +151,9 @@ def job_create(org_name):
     description = request_dict.get('description', '')
     num_gpu = request_dict.get('num_gpu', -1)
     platform_id = request_dict.get('platform_id', None)
+    retain_checkpoints_for_resume = request_dict.get('retain_checkpoints_for_resume', None)
+    early_stop_epoch = request_dict.get('early_stop_epoch', None)
+    timeout_minutes = request_dict.get('timeout_minutes', 60)
     if isinstance(specs, dict) and "cluster" in specs:
         metadata = {"error_desc": "cluster is an invalid spec", "error_code": 4}
         schema = ErrorRsp()
@@ -173,7 +176,10 @@ def job_create(org_name):
         kind,
         specs=specs, name=name, description=description, num_gpu=num_gpu,
         platform_id=platform_id,
-        job_id=experiment_id if kind == 'experiment' else None
+        job_id=experiment_id if kind == 'experiment' else None,
+        retain_checkpoints_for_resume=retain_checkpoints_for_resume,
+        early_stop_epoch=early_stop_epoch,
+        timeout_minutes=timeout_minutes
     )
     if job_response.code != 200:
         schema = ErrorRsp()
@@ -1463,7 +1469,9 @@ def job_pause(org_name, job_id):  # noqa: D214
         schema_dict = schema.dump(schema.load(metadata))
         return make_response(jsonify(schema_dict), 400)
     experiment_id = handler_id
-    response = JobHandler.job_pause(org_name, experiment_id, job_id, "experiment")
+    request_data = request.get_json()
+    graceful = request_data.get("graceful", False)
+    response = JobHandler.job_pause(org_name, experiment_id, job_id, "experiment", graceful=graceful)
     schema = MessageOnly() if response.code == 200 else ErrorRsp()
     schema_dict = schema.dump(schema.load(response.data))
     return make_response(jsonify(schema_dict), response.code)
@@ -1644,6 +1652,7 @@ def job_resume(org_name, job_id):
     description = request_schema_data.get('description', '')
     num_gpu = request_schema_data.get('num_gpu', -1)
     platform_id = request_schema_data.get('platform_id', None)
+    timeout_minutes = request_schema_data.get('timeout_minutes', 60)
     if parent_job_id:
         parent_job_id = str(parent_job_id)
     specs = request_schema_data.get('specs', {})
@@ -1657,7 +1666,8 @@ def job_resume(org_name, job_id):
         name=name,
         description=description,
         num_gpu=num_gpu,
-        platform_id=platform_id
+        platform_id=platform_id,
+        timeout_minutes=timeout_minutes
     )
     schema = MessageOnly() if response.code == 200 else ErrorRsp()
     schema_dict = schema.dump(schema.load(response.data))
