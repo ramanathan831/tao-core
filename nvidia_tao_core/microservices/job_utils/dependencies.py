@@ -184,9 +184,18 @@ def dependency_check_gpu(job_context, dependency):
     local_job = (job_context.specs and "cluster" in job_context.specs and job_context.specs["cluster"] == "local")
     if os.getenv("BACKEND") == "NVCF" and not local_job:
         return True, ""
-    num_gpu = get_num_gpus_from_spec(
-        job_context.specs, job_context.action, network=job_context.network, default=dependency.num
-    )
+
+    try:
+        num_gpu = get_num_gpus_from_spec(
+            job_context.specs, job_context.action, network=job_context.network, default=dependency.num
+        )
+    except ValueError as e:
+        # GPU validation failed (e.g., requested GPUs > available GPUs)
+        # Return False to fail the dependency check with the error message
+        error_message = str(e)
+        logger.error(f"GPU dependency check failed for job {job_context.id}: {error_message}")
+        return False, error_message
+
     gpu_available = dependency_check(num_gpu=num_gpu, accelerator=dependency.name)
     message = ""
     if not gpu_available:

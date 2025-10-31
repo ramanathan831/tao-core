@@ -378,15 +378,20 @@ class StatusParser:
         """Convert str to float"""
         try:
             if isinstance(value, str):
+                # Check for special float values first
                 if value.lower() in {"nan", "infinity", "inf"}:
+                    return None
+                # Silently ignore non-numeric strings (like status strings)
+                try:
+                    return float(value)
+                except ValueError:
                     return None
             elif isinstance(value, float):
                 if math.isnan(value) or value in {float("inf"), float("-inf")}:
                     return None
             return float(value)
         except Exception:
-            print(traceback.format_exc())
-            logger.error("Exception thrown in force_float is %s", traceback.format_exc())
+            # Only log unexpected errors, not conversion failures
             return None
 
     @staticmethod
@@ -928,8 +933,12 @@ def get_num_gpus_from_spec(spec, action, network=None, default=0):
             network_gpu_value = get_nested_dict_value(spec, gpu_param_path)
             if network_gpu_value is not None and network_gpu_value != 0:
                 if isinstance(network_gpu_value, (int, float)):
+                    # Check GPU conditions for network-specific parameter
+                    _check_gpu_conditions("num_gpus", network_gpu_value)
                     gpu_set_values.append(int(network_gpu_value))
                 elif isinstance(network_gpu_value, list):
+                    # Check GPU conditions for network-specific parameter
+                    _check_gpu_conditions("gpu_ids", network_gpu_value)
                     gpu_set_values.append(len(set(network_gpu_value)))
 
     # Fall back to original logic for standard GPU parameters
