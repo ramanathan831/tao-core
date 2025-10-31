@@ -777,7 +777,7 @@ def workspace_backup(org_name):
           description: Backup successful
           content:
             application/json:
-              schema: MessageOnlySchema
+              schema: MessageOnly
           headers:
             Access-Control-Allow-Origin:
               $ref: '#/components/headers/Access-Control-Allow-Origin'
@@ -787,7 +787,7 @@ def workspace_backup(org_name):
           description: Bad request
           content:
             application/json:
-              schema: ErrorRspSchema
+              schema: ErrorRsp
           headers:
             Access-Control-Allow-Origin:
               $ref: '#/components/headers/Access-Control-Allow-Origin'
@@ -798,7 +798,7 @@ def workspace_backup(org_name):
         request_data = request.get_json(force=True)
         workspace_metadata = request_data.get("workspace_metadata")
         backup_file_name = request_data.get("backup_file_name", "mongodb_backup.tar.gz")
-        schema = WorkspaceReq()
+        schema = WorkspaceBackupReq()
         workspace_metadata = schema.dump(schema.load(workspace_metadata))
 
         if not workspace_metadata:
@@ -866,7 +866,7 @@ def workspace_restore(org_name):
           description: Restore successful
           content:
             application/json:
-              schema: MessageOnlySchema
+              schema: MessageOnly
           headers:
             Access-Control-Allow-Origin:
               $ref: '#/components/headers/Access-Control-Allow-Origin'
@@ -876,7 +876,7 @@ def workspace_restore(org_name):
           description: Bad request
           content:
             application/json:
-              schema: ErrorRspSchema
+              schema: ErrorRsp
           headers:
             Access-Control-Allow-Origin:
               $ref: '#/components/headers/Access-Control-Allow-Origin'

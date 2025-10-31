@@ -1469,7 +1469,7 @@ def job_pause(org_name, job_id):  # noqa: D214
         schema_dict = schema.dump(schema.load(metadata))
         return make_response(jsonify(schema_dict), 400)
     experiment_id = handler_id
-    request_data = request.get_json()
+    request_data = request.get_json(silent=True) or {}
     graceful = request_data.get("graceful", False)
     response = JobHandler.job_pause(org_name, experiment_id, job_id, "experiment", graceful=graceful)
     schema = MessageOnly() if response.code == 200 else ErrorRsp()

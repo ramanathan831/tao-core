@@ -326,7 +326,7 @@ def container_job_pause():
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorRspSchema'
+                $ref: '#/components/schemas/ErrorRsp'
           headers:
             Access-Control-Allow-Origin:
               $ref: '#/components/headers/Access-Control-Allow-Origin'
@@ -337,7 +337,7 @@ def container_job_pause():
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorRspSchema'
+                $ref: '#/components/schemas/ErrorRsp'
           headers:
             Access-Control-Allow-Origin:
               $ref: '#/components/headers/Access-Control-Allow-Origin'
