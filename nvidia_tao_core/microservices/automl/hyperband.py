@@ -28,6 +28,7 @@ from nvidia_tao_core.microservices.handlers.stateless_handlers import (
     save_automl_brain_info,
     get_automl_brain_info
 )
+from nvidia_tao_core.microservices.automl import network_utils
 
 # Configure logging
 logging.basicConfig(
@@ -148,7 +149,17 @@ class HyperBand(AutoMLAlgorithmBase):
                 if ((type(parent_param) is str and parent_param != "nan" and parent_param == "TRUE") or
                         (type(parent_param) is bool and parent_param)):
                     self.parent_params[parameter_config.get("parameter")] = random_float
-            return random_float
+
+            # Apply network-specific parameter logic
+            return network_utils.apply_network_specific_param_logic(
+                network=self.network,
+                data_type=tp,
+                parameter_name=parameter_name,
+                value=random_float,
+                v_max=v_max,
+                default_train_spec=self.default_train_spec,
+                parent_params=self.parent_params
+            )
 
         return super().generate_automl_param_rec_value(parameter_config)
 

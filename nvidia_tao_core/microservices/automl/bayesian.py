@@ -22,6 +22,7 @@ from sklearn.gaussian_process.kernels import ConstantKernel, Matern
 from scipy.stats import norm
 from scipy.optimize import minimize
 
+from nvidia_tao_core.microservices.automl import network_utils
 from nvidia_tao_core.microservices.automl.utils import JobStates, get_valid_range, clamp_value
 from nvidia_tao_core.microservices.automl.automl_algorithm_base import AutoMLAlgorithmBase
 from nvidia_tao_core.microservices.handlers.utilities import get_total_epochs, get_flatten_specs
@@ -116,7 +117,17 @@ class Bayesian(AutoMLAlgorithmBase):
                     isinstance(parent_param, bool) and parent_param
                 ):
                     self.parent_params[parameter_name] = quantized
-            return quantized
+
+            # Apply network-specific parameter logic
+            return network_utils.apply_network_specific_param_logic(
+                network=self.network,
+                data_type=data_type,
+                parameter_name=parameter_name,
+                value=quantized,
+                v_max=v_max,
+                default_train_spec=self.default_train_spec,
+                parent_params=self.parent_params
+            )
 
         return super().generate_automl_param_rec_value(parameter_config)
 

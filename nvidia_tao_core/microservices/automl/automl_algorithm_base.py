@@ -392,4 +392,14 @@ class AutoMLAlgorithmBase:
                     return automl_suggested_value
                 return []
 
+        if data_type in ("dict", "collection"):
+            # Handle dictionary-type parameters via network-specific handlers
+            return network_utils.apply_network_specific_param_logic(
+                network=self.network,
+                data_type=data_type,
+                parameter_name=parameter_name,
+                value=None,
+                parent_params=self.parent_params
+            )
+
         return default_value
