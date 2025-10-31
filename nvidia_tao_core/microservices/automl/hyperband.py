@@ -17,12 +17,12 @@ import numpy as np
 import math
 import logging
 
-from nvidia_tao_core.microservices.automl.utils import (
+from nvidia_tao_core.microservices.utils.automl_utils import (
     ResumeRecommendation, JobStates, get_valid_range, clamp_value
 )
 from nvidia_tao_core.microservices.automl.automl_algorithm_base import AutoMLAlgorithmBase
-from nvidia_tao_core.microservices.handlers.utilities import get_flatten_specs
-from nvidia_tao_core.microservices.handlers.stateless_handlers import (
+from nvidia_tao_core.microservices.utils.handler_utils import get_flatten_specs
+from nvidia_tao_core.microservices.utils.stateless_handler_utils import (
     save_job_specs,
     get_job_specs,
     save_automl_brain_info,

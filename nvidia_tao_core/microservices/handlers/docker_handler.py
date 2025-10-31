@@ -23,9 +23,9 @@ import docker
 import os
 import logging
 import requests
-from nvidia_tao_core.microservices.utils import get_admin_key
+from nvidia_tao_core.microservices.utils.core_utils import get_admin_key
 if os.getenv("BACKEND") == "local-docker":
-    from nvidia_tao_core.microservices.job_utils.gpu_manager import gpu_manager
+    from nvidia_tao_core.microservices.utils.job_utils.gpu_manager import gpu_manager
 
 # Configure logging
 logging.basicConfig(

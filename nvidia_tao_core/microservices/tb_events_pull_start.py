@@ -22,11 +22,9 @@ import os
 import logging
 from datetime import datetime, timezone
 
-from nvidia_tao_core.microservices.handlers.stateless_handlers import get_handler_metadata_with_jobs
-from nvidia_tao_core.microservices.handlers.utilities import filter_file_objects
-from nvidia_tao_core.microservices.handlers.cloud_handlers.cloud_storage import (
-    create_cs_instance_with_decrypted_metadata
-)
+from nvidia_tao_core.microservices.utils.stateless_handler_utils import get_handler_metadata_with_jobs
+from nvidia_tao_core.microservices.utils.handler_utils import filter_file_objects
+from nvidia_tao_core.microservices.utils.cloud_utils import create_cs_instance_with_decrypted_metadata
 
 # Configure logging
 logging.basicConfig(

@@ -27,11 +27,11 @@ from datetime import datetime
 from typing import Dict, List, Any, Tuple
 from flask import Flask, request, jsonify
 
-from nvidia_tao_core.microservices.handlers.container_handler import prepare_data_before_job_run
+from .container_handler import prepare_data_before_job_run
 from nvidia_tao_core.microservices.handlers.cloud_handlers.utils import (
     download_from_user_storage, get_file_path_from_cloud_string
 )
-from nvidia_tao_core.microservices.utils import safe_load_file
+from nvidia_tao_core.microservices.utils.core_utils import safe_load_file
 
 logging.basicConfig(
     level=logging.INFO,
@@ -236,7 +236,7 @@ class BaseInferenceMicroserviceServer(ABC):
             logger.info("Requesting auto-deletion via status callback")
 
             # Import here to avoid circular dependencies
-            from nvidia_tao_core.cloud_handlers.utils import status_callback
+            from nvidia_tao_core.microservices.handlers.cloud_handlers.utils import status_callback
 
             # Create status data in the format expected by status_callback
             status_data = {

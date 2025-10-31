@@ -21,7 +21,8 @@ from datetime import datetime, timezone
 import sysconfig
 import logging
 
-from nvidia_tao_core.microservices.handlers.stateless_handlers import (
+from nvidia_tao_core.microservices.utils.automl_utils import update_automl_details_metadata
+from nvidia_tao_core.microservices.utils.stateless_handler_utils import (
     get_handler_metadata,
     get_handler_type,
     get_jobs_root,
@@ -32,9 +33,9 @@ from nvidia_tao_core.microservices.handlers.stateless_handlers import (
     update_handler_with_jobs_info,
     get_automl_controller_info
 )
-from nvidia_tao_core.microservices.handlers.utilities import Code, decrypt_handler_metadata
-from nvidia_tao_core.microservices.handlers.docker_images import DOCKER_IMAGE_MAPPER
-from nvidia_tao_core.microservices.job_utils.executor import (
+from nvidia_tao_core.microservices.utils.handler_utils import Code, decrypt_handler_metadata
+from .docker_images import DOCKER_IMAGE_MAPPER
+from nvidia_tao_core.microservices.utils.job_utils.executor import (
     JobExecutor,
     StatefulSetExecutor
 )
@@ -201,6 +202,7 @@ class AutoMLHandler:
                     if recommendation.get("status") in ("pending", "running", "started"):
                         recommendation["status"] = "canceling"
                         save_automl_controller_info(job_id, recommendations)
+                        update_automl_details_metadata(job_id, experiment_id, "experiments")
                     StatefulSetExecutor().delete_statefulset(recommendation_job_id)
                     rec_k8s_status = JobExecutor().get_job_status(
                         org_name,
@@ -223,6 +225,7 @@ class AutoMLHandler:
                     if recommendation.get("status") in ("pending", "running", "started", "canceling"):
                         recommendation["status"] = "canceled"
                         save_automl_controller_info(job_id, recommendations)
+                        update_automl_details_metadata(job_id, experiment_id, "experiments")
         except Exception as e:
             logger.error("Exception thrown in AutomlHandler stop is %s", str(e))
             return Code(404, [], "job cannot be stopped in platform")

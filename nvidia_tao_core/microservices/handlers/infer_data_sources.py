@@ -17,12 +17,12 @@ import os
 import re
 import logging
 
-from nvidia_tao_core.microservices.handlers.stateless_handlers import (
+from nvidia_tao_core.microservices.utils.stateless_handler_utils import (
     get_handler_metadata,
     get_workspace_string_identifier,
     get_handler_job_metadata
 )
-from nvidia_tao_core.microservices.utils import read_network_config
+from nvidia_tao_core.microservices.utils.core_utils import read_network_config
 
 # Configure logging
 logging.basicConfig(
@@ -825,7 +825,7 @@ def check_file_exists_in_cloud(source_ds_metadata, source_root, file_path):
     # Try cloud storage check first
     if source_ds_metadata.get('workspace'):
         try:
-            from nvidia_tao_core.microservices.handlers.cloud_handlers.cloud_storage import create_cs_instance
+            from nvidia_tao_core.microservices.utils.cloud_utils import create_cs_instance
             workspace_metadata = get_handler_metadata(source_ds_metadata.get('workspace'), kind="workspace")
             if workspace_metadata:
                 cloud_instance, _ = create_cs_instance(workspace_metadata)

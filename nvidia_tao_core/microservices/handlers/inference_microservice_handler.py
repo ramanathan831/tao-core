@@ -19,16 +19,16 @@ from datetime import datetime, timezone
 from typing import Dict, Any
 import os
 
-from nvidia_tao_core.microservices.handlers.docker_images import DOCKER_IMAGE_MAPPER
-from nvidia_tao_core.microservices.handlers.utilities import (
+from .docker_images import DOCKER_IMAGE_MAPPER
+from nvidia_tao_core.microservices.utils.handler_utils import (
     Code, add_workspace_to_cloud_metadata, get_model_results_path
 )
-from nvidia_tao_core.microservices.job_utils.executor import (
+from nvidia_tao_core.microservices.utils.job_utils.executor import (
     ServiceExecutor,
     StatefulSetExecutor
 )
-from nvidia_tao_core.microservices.handlers.stateless_handlers import get_handler_metadata
-from nvidia_tao_core.microservices.utils import read_network_config
+from nvidia_tao_core.microservices.utils.stateless_handler_utils import get_handler_metadata
+from nvidia_tao_core.microservices.utils.core_utils import read_network_config
 
 
 # Configure logging
@@ -143,6 +143,8 @@ class InferenceMicroserviceHandler:
         # Clean TAO-compliant StatefulSet setup: Pure container_handler.py approach
         run_command = f"""
 umask 0 &&
+
+
 {network_arch}-inference-microservice --job "{str(job_metadata)}" --docker_env_vars "{str(docker_env_vars)}"
         """
         logger.info("Using run command: %s", run_command)

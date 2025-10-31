@@ -23,8 +23,8 @@ import logging
 from copy import deepcopy
 from datetime import timedelta
 
-from nvidia_tao_core.microservices.automl.utils import Recommendation, ResumeRecommendation, JobStates
-from nvidia_tao_core.microservices.utils import get_monitoring_metric
+from nvidia_tao_core.microservices.utils.automl_utils import Recommendation, ResumeRecommendation, JobStates
+from nvidia_tao_core.microservices.utils.core_utils import get_monitoring_metric
 from nvidia_tao_core.microservices.constants import (
     _ITER_MODELS,
     NO_VAL_METRICS_DURING_TRAINING_NETWORKS,
@@ -32,10 +32,8 @@ from nvidia_tao_core.microservices.constants import (
 )
 if os.getenv("BACKEND") == "NVCF":
     from nvidia_tao_core.microservices.dgx_controller import overwrite_job_logs_from_bcp
-from nvidia_tao_core.microservices.handlers.cloud_handlers.cloud_storage import (
-    create_cs_instance_with_decrypted_metadata
-)
-from nvidia_tao_core.microservices.handlers.utilities import (
+from nvidia_tao_core.microservices.utils.cloud_utils import create_cs_instance_with_decrypted_metadata
+from nvidia_tao_core.microservices.utils.handler_utils import (
     StatusParser,
     get_total_epochs,
     get_file_list_from_cloud_storage,
@@ -43,7 +41,7 @@ from nvidia_tao_core.microservices.handlers.utilities import (
     format_epoch,
     get_network_config
 )
-from nvidia_tao_core.microservices.handlers.stateless_handlers import (
+from nvidia_tao_core.microservices.utils.stateless_handler_utils import (
     update_job_status,
     get_handler_metadata,
     write_handler_metadata,
@@ -64,7 +62,7 @@ from nvidia_tao_core.microservices.handlers.stateless_handlers import (
     report_health_beat,
     delete_health_beat
 )
-from nvidia_tao_core.microservices.job_utils.automl_job_utils import (
+from nvidia_tao_core.microservices.utils.automl_job_utils import (
     on_new_automl_job,
     on_delete_automl_job,
     on_cancel_automl_job

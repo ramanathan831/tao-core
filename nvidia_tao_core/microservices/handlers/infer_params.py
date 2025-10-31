@@ -22,13 +22,13 @@ Each function takes as input:
 import os
 import logging
 
-from nvidia_tao_core.microservices.handlers.utilities import (
+from nvidia_tao_core.microservices.utils.handler_utils import (
     get_model_results_path,
     get_file_list_from_cloud_storage, search_for_checkpoint, filter_files
 )
 from nvidia_tao_core.microservices.handlers.cloud_handlers.utils import search_for_ptm
-from nvidia_tao_core.microservices.handlers.cloud_handlers.cloud_storage import create_cs_instance
-from nvidia_tao_core.microservices.handlers.stateless_handlers import (
+from nvidia_tao_core.microservices.utils.cloud_utils import create_cs_instance
+from nvidia_tao_core.microservices.utils.stateless_handler_utils import (
     get_handler_root, get_jobs_root, get_handler_job_metadata,
     get_handler_metadata, get_handler_kind, get_base_experiment_metadata,
     get_automl_brain_info, get_workspace_string_identifier
@@ -109,6 +109,8 @@ def infer_automl_output_dir(
 
 
 # NOTE: Only supports those with ngc_path to be PTMs
+
+
 def infer_ptm(job_context, handler_metadata):
     """Returns a list of path of the ptm files of a network"""
     network = job_context.network
@@ -437,6 +439,7 @@ def infer_create_inference_result_file_json(job_context, handler_metadata):
 
 
 # OD helper functions
+
 
 def infer_od_dir(job_context, handler_metadata, dirname):
     """Returns joined-path of handler_root and dirname"""
