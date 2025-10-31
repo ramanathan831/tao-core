@@ -15,15 +15,14 @@
 """Admin blueprint for v2 API - documentation, metrics, and utility endpoints."""
 
 import os
-import re
 import bson
 import shutil
 import logging
-from datetime import datetime
 from flask import Blueprint, jsonify, make_response, render_template, send_file
 from flask import current_app, request
 
 from nvidia_tao_core.microservices.decorators import disk_space_check
+from nvidia_tao_core.telemetry.processor import MetricProcessor
 from .schemas import ErrorRsp, TelemetryReq
 from nvidia_tao_core.microservices.config import get_tao_version
 from nvidia_tao_core.microservices.utils.stateless_handler_utils import set_metrics, get_metrics, get_root
@@ -137,82 +136,46 @@ def download_folder():
 
 @admin_bp_v2.route('/metrics', methods=['POST'])
 def metrics_upsert():
-    """Report execution of new action."""
-    now = old_now = datetime.now()
+    """Report execution of new action.
 
-    # get action report
-
+    ---
+    post:
+        tags:
+        - TELEMETRY
+        summary: Report execution of new action
+        description: Post anonymous metrics to NVIDIA Kratos
+        requestBody:
+            content:
+                application/json:
+                    schema: TelemetryReq
+                    description: Report new action, network and gpu list
+                    required: true
+        responses:
+            201:
+                description: Sucessfully reported execution of new action
+    """
+    # Validate and load telemetry data
     try:
-        data = TelemetryReq().load(request.get_json(force=True))
+        raw_data = TelemetryReq().load(request.get_json(force=True))
     except Exception as e:
         logger.error("Exception thrown in metrics_upsert: %s", str(e))
         return make_response(jsonify({}), 400)
 
-    # update metrics.json
-
+    # Load existing metrics
     metrics = get_metrics()
     if not metrics:
         metrics = safe_load_file(os.path.join(get_root(), 'metrics.json'))
         if not metrics:
-            metadata = {
-                "error_desc": "Metrics.json file not exists or can not be updated now, please try again later.",
-                "error_code": 503
-            }
-            schema = ErrorRsp()
-            response = make_response(jsonify(schema.dump(schema.load(metadata))), 500)
-            return response
+            # Warning: No historical metrics data found, starting with new record.
+            logger.warning("No existing metrics history found; starting new metrics record.")
+            metrics = {}  # Start a new, empty metrics dict
 
-    old_now = datetime.fromisoformat(metrics.get('last_updated', now.isoformat()))
-    version = re.sub("[^a-zA-Z0-9]", "_", data.get('version', 'unknown')).lower()
-    action = re.sub("[^a-zA-Z0-9]", "_", data.get('action', 'unknown')).lower()
-    network = re.sub("[^a-zA-Z0-9]", "_", data.get('network', 'unknown')).lower()
-    success = data.get('success', False)
-    time_lapsed = data.get('time_lapsed', 0)
-    gpus = data.get('gpu', ['unknown'])
-    if success:
-        metrics[f'total_action_{action}_pass'] = metrics.get(f'total_action_{action}_pass', 0) + 1
-    else:
-        metrics[f'total_action_{action}_fail'] = metrics.get(f'total_action_{action}_fail', 0) + 1
-    metrics[f'version_{version}_action_{action}'] = metrics.get(f'version_{version}_action_{action}', 0) + 1
-    metrics[f'network_{network}_action_{action}'] = metrics.get(f'network_{network}_action_{action}', 0) + 1
-    metrics['time_lapsed_today'] = metrics.get('time_lapsed_today', 0) + time_lapsed
-    if now.strftime("%d") != old_now.strftime("%d"):
-        metrics['time_lapsed_today'] = time_lapsed
-    for gpu in gpus:
-        gpu = re.sub("[^a-zA-Z0-9]", "_", gpu).lower()
-        metrics[f'gpu_{gpu}_action_{action}'] = metrics.get(f'gpu_{gpu}_action_{action}', 0) + 1
-    metrics['last_updated'] = now.isoformat()
+    # Process metrics using the extensible MetricProcessor
+    # This orchestrator handles all metric building using configured builders
+    processor = MetricProcessor()
+    metrics = processor.process(metrics, raw_data)
 
-    def sanitize_gpu_name(gpu_name):
-        # Convert to uppercase first, then replace all non-alphanumeric characters with _
-        return re.sub("[^a-zA-Z0-9]", "_", gpu_name.upper())
-
-    def create_gpu_identifier(gpu_list):
-        # Count occurrences of each GPU type (case insensitive)
-        gpu_counts = {}
-        for gpu in map(sanitize_gpu_name, gpu_list):
-            gpu_counts[gpu] = gpu_counts.get(gpu, 0) + 1
-
-        # Format as "gpu_count_gpu1_count_gpu2_count..."
-        gpu_parts = [f"{gpu}_{count}" for gpu, count in sorted(gpu_counts.items())]
-        return f"{len(gpu_list)}_{'_'.join(gpu_parts)}"
-
-    # Build metric name with all attributes
-    status = "pass" if success else "fail"
-    metric_components = [
-        "network", network,
-        "action", action,
-        "version", version,
-        "status", status,
-        "gpu", create_gpu_identifier(gpus)
-    ]
-    full_metric_name = "_".join(metric_components)
-
-    # Update metric counter
-    metrics[full_metric_name] = metrics.get(full_metric_name, 0) + 1
-
+    # Persist metrics
     set_metrics(metrics)
-
-    # success
 
     return make_response(bson.json_util.dumps(metrics), 201)
