@@ -727,19 +727,15 @@ def dataset_job_run(org_name, dataset_id):
     description = request_schema_data.get('description', '')
     num_gpu = request_schema_data.get('num_gpu', -1)
     platform_id = request_schema_data.get('platform_id', None)
+    timeout_minutes = request_schema_data.get('timeout_minutes', 60)
     # Get response
     response = JobHandler.job_run(
         org_name, dataset_id, requested_job, requested_action, "dataset",
         specs=specs, name=name, description=description, num_gpu=num_gpu,
-        platform_id=platform_id
+        platform_id=platform_id, timeout_minutes=timeout_minutes
     )
-    handler_metadata = resolve_metadata("dataset", dataset_id)
-    dataset_format = handler_metadata.get("format")
     # Get schema
     if response.code == 200:
-        # MONAI dataset jobs are sync jobs and the response should be returned directly.
-        if dataset_format == "monai":
-            return make_response(jsonify(response.data), response.code)
         if isinstance(response.data, str) and not validate_uuid(response.data):
             return make_response(jsonify(response.data), response.code)
         metadata = {"error_desc": "internal error: invalid job IDs", "error_code": 2}

@@ -21,12 +21,8 @@ import logging
 import functools
 from datetime import datetime
 
-# Lazy import to avoid circular dependencies - this will be imported inside functions that use it
+# Lazy import to avoid circular dependencies
 from nvidia_tao_core.distributed.decorators import master_node_only
-from nvidia_tao_core.microservices.handlers.cloud_handlers.progress_tracker import ProgressTracker
-from nvidia_tao_core.microservices.handlers.cloud_handlers.progress_tracker_utils import (
-    get_file_size_mb, get_folder_stats, send_progress_status_callback
-)
 from nvidia_tao_core.microservices.utils.stateless_handler_utils import report_health_beat
 
 NUM_RETRY = 5
@@ -446,6 +442,11 @@ class CloudStorage:
             local_destination (str): Local destination path
             progress_tracker (ProgressTracker, optional): Progress tracker instance
         """
+        from nvidia_tao_core.microservices.handlers.cloud_handlers.progress_tracker import ProgressTracker
+        from nvidia_tao_core.microservices.handlers.cloud_handlers.progress_tracker_utils import (
+            send_progress_status_callback
+        )
+
         full_path = self.root + cloud_file_path.strip('/')
         try:
             if os.path.exists(local_destination):
@@ -504,6 +505,11 @@ class CloudStorage:
     def download_folder(self, cloud_folder, local_destination,
                         maintain_src_folder_structure=False, progress_tracker=None):
         """Download a folder from cloud storage to local destination with progress tracking."""
+        from nvidia_tao_core.microservices.handlers.cloud_handlers.progress_tracker import ProgressTracker
+        from nvidia_tao_core.microservices.handlers.cloud_handlers.progress_tracker_utils import (
+            send_progress_status_callback
+        )
+
         # Normalize path to avoid double slashes
         cloud_folder_normalized = cloud_folder.strip('/')
         full_path = self.root + cloud_folder_normalized + '/' if cloud_folder_normalized else self.root
@@ -635,6 +641,11 @@ class CloudStorage:
             display_name (str): Display name for progress messages
             external_progress_tracker (ProgressTracker, optional): External progress tracker to use
         """
+        from nvidia_tao_core.microservices.handlers.cloud_handlers.progress_tracker import ProgressTracker
+        from nvidia_tao_core.microservices.handlers.cloud_handlers.progress_tracker_utils import (
+            send_progress_status_callback
+        )
+
         # Use external progress tracker if provided, otherwise create streaming tracker
         if external_progress_tracker:
             streaming_tracker = external_progress_tracker
@@ -689,6 +700,11 @@ class CloudStorage:
             display_name (str): Display name for progress messages
             external_progress_tracker (ProgressTracker, optional): External progress tracker to use
         """
+        from nvidia_tao_core.microservices.handlers.cloud_handlers.progress_tracker import ProgressTracker
+        from nvidia_tao_core.microservices.handlers.cloud_handlers.progress_tracker_utils import (
+            send_progress_status_callback
+        )
+
         # Use external progress tracker if provided, otherwise create streaming tracker
         if external_progress_tracker:
             streaming_tracker = external_progress_tracker
@@ -751,6 +767,11 @@ class CloudStorage:
             progress_tracker (ProgressTracker, optional): Progress tracker instance
             send_status_callbacks (bool): Whether to send status callbacks (False for background uploads)
         """
+        from nvidia_tao_core.microservices.handlers.cloud_handlers.progress_tracker import ProgressTracker
+        from nvidia_tao_core.microservices.handlers.cloud_handlers.progress_tracker_utils import (
+            get_file_size_mb, send_progress_status_callback
+        )
+
         full_path = self.root + cloud_file_path.strip('/')
         try:
             # Get file size for progress tracking
@@ -813,6 +834,11 @@ class CloudStorage:
             cloud_subfolder (str): Cloud destination path
             send_status_callbacks (bool): Whether to send status callbacks (False for background uploads)
         """
+        from nvidia_tao_core.microservices.handlers.cloud_handlers.progress_tracker import ProgressTracker
+        from nvidia_tao_core.microservices.handlers.cloud_handlers.progress_tracker_utils import (
+            get_folder_stats, send_progress_status_callback
+        )
+
         full_path = self.root + cloud_subfolder.strip('/').rstrip('/') + '/'
         try:
             # Get folder statistics for progress tracking
@@ -846,6 +872,8 @@ class CloudStorage:
 
     def _upload_folder_with_progress(self, local_folder, cloud_path, progress_tracker):
         """Upload folder contents with detailed progress tracking."""
+        from nvidia_tao_core.microservices.handlers.cloud_handlers.progress_tracker_utils import get_file_size_mb
+
         try:
             for root, _, files in os.walk(local_folder):
                 for file in files:

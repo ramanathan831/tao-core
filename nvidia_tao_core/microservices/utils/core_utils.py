@@ -156,7 +156,7 @@ def get_monitoring_metric(network):
         None: If network not found or has no monitoring metric defined
     """
     _dir_path = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
-    config_json_path = os.path.join(_dir_path, "microservices", "handlers", "network_configs", f"{network}.config.json")
+    config_json_path = os.path.join(_dir_path, "handlers", "network_configs", f"{network}.config.json")
 
     try:
         with open(config_json_path, 'r', encoding='utf-8') as f:

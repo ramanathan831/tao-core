@@ -276,3 +276,95 @@ def org_gpu_types(org_name):
     # Load metadata in schema and return
     schema_dict = schema.dump(schema.load(response.data))
     return make_response(jsonify(schema_dict), response.code)
+
+
+@internal_bp_v1.route('internal/container_job:pause', methods=['POST'])
+@disk_space_check
+def container_job_pause():
+    """Pause Job within container (graceful termination).
+
+    ---
+    post:
+      tags:
+        - INTERNAL
+      summary: Pause Container Job Gracefully
+      description:
+        Signals a running job within a container to gracefully terminate by writing
+        a termination signal file. The job will detect this signal and perform cleanup
+        operations including uploading checkpoints before shutting down.
+        The results directory is inferred as /results/{job_id}.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - job_id
+              properties:
+                job_id:
+                  type: string
+                  description: The ID of the job to pause (results_dir is inferred as /results/{job_id})
+      responses:
+        200:
+          description: The graceful termination signal was successfully written.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  message:
+                    type: string
+                    description: Success message
+          headers:
+            Access-Control-Allow-Origin:
+              $ref: '#/components/headers/Access-Control-Allow-Origin'
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/X-RateLimit-Limit'
+        400:
+          description: Invalid request payload or failed to write signal.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorRsp'
+          headers:
+            Access-Control-Allow-Origin:
+              $ref: '#/components/headers/Access-Control-Allow-Origin'
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/X-RateLimit-Limit'
+        500:
+          description: Internal server error encountered while processing the request.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorRsp'
+          headers:
+            Access-Control-Allow-Origin:
+              $ref: '#/components/headers/Access-Control-Allow-Origin'
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/X-RateLimit-Limit'
+    """
+    try:
+        request_data = request.get_json(force=True)
+        job_id = request_data.get("job_id")
+
+        if not job_id:
+            metadata = {"error": "job_id is required", "error_code": 1}
+            schema = ErrorRsp()
+            return make_response(jsonify(schema.dump(schema.load(metadata))), 400)
+
+        # Write graceful termination signal (results_dir is inferred from job_id)
+        signal_written = container_handler.write_graceful_termination_signal(job_id)
+
+        if signal_written:
+            return make_response(jsonify({'message': f'Graceful termination signal written for job {job_id}'}), 200)
+
+        metadata = {"error": "Failed to write graceful termination signal", "error_code": 1}
+        schema = ErrorRsp()
+        return make_response(jsonify(schema.dump(schema.load(metadata))), 400)
+
+    except Exception as err:
+        logger.error("Error in container_job_pause: %s", str(traceback.format_exc()))
+        metadata = {"error": str(err), "error_code": 1}
+        schema = ErrorRsp()
+        return make_response(jsonify(schema.dump(schema.load(metadata))), 500)

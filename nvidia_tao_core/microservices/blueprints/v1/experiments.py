@@ -1277,6 +1277,10 @@ def experiment_job_run(org_name, experiment_id):
     description = request_schema_data.get('description', '')
     num_gpu = request_schema_data.get('num_gpu', -1)
     platform_id = request_schema_data.get('platform_id', None)
+    retain_checkpoints_for_resume = request_schema_data.get('retain_checkpoints_for_resume', None)
+    early_stop_epoch = request_schema_data.get('early_stop_epoch', None)
+    timeout_minutes = request_schema_data.get('timeout_minutes', 60)
+
     if isinstance(specs, dict) and "cluster" in specs:
         metadata = {"error_desc": "cluster is an invalid spec", "error_code": 3}
         schema = ErrorRsp()
@@ -1286,7 +1290,8 @@ def experiment_job_run(org_name, experiment_id):
     response = JobHandler.job_run(
         org_name, experiment_id, requested_job, requested_action, "experiment",
         specs=specs, name=name, description=description, num_gpu=num_gpu,
-        platform_id=platform_id
+        platform_id=platform_id, retain_checkpoints_for_resume=retain_checkpoints_for_resume,
+        early_stop_epoch=early_stop_epoch, timeout_minutes=timeout_minutes
     )
     # Get schema
     schema = None
@@ -1910,6 +1915,7 @@ def experiment_job_pause(org_name, experiment_id, job_id):
         - Persists status changes to storage
         - Triggers any necessary pause workflows
         - Returns the pause status
+        - Supports graceful pause which allows checkpoints to be uploaded before shutdown
       parameters:
       - name: org_name
         in: path
@@ -1935,6 +1941,20 @@ def experiment_job_pause(org_name, experiment_id, job_id):
           type: string
           format: uuid
           maxLength: 36
+      requestBody:
+        description: Optional parameters for job pause
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                graceful:
+                  type: boolean
+                  description: |
+                    If true, performs graceful pause by signaling the job to terminate
+                    and upload checkpoints before shutting down. Default is false (abrupt pause).
+                  default: false
       responses:
         200:
           description: Successfully requested training pause of specified Job ID (asynchronous)
@@ -1947,7 +1967,7 @@ def experiment_job_pause(org_name, experiment_id, job_id):
           description: Invalid request (e.g. invalid experiment ID, job ID)
           content:
             application/json:
-              schema: ErrorRsp
+              schema: ErrorRspSchema
           headers:
             Access-Control-Allow-Origin:
               $ref: '#/components/headers/Access-Control-Allow-Origin'
@@ -1957,7 +1977,7 @@ def experiment_job_pause(org_name, experiment_id, job_id):
           description: User, Experiment or Job not found
           content:
             application/json:
-              schema: ErrorRsp
+              schema: ErrorRspSchema
           headers:
             Access-Control-Allow-Origin:
               $ref: '#/components/headers/Access-Control-Allow-Origin'
@@ -1970,8 +1990,13 @@ def experiment_job_pause(org_name, experiment_id, job_id):
         schema = ErrorRsp()
         response = make_response(jsonify(schema.dump(schema.load(metadata))), 400)
         return response
+
+    # Parse request body for graceful parameter
+    request_data = request.get_json()
+    graceful = request_data.get("graceful", False)
+
     # Get response
-    response = JobHandler.job_pause(org_name, experiment_id, job_id, "experiment")
+    response = JobHandler.job_pause(org_name, experiment_id, job_id, "experiment", graceful=graceful)
     # Get schema
     if response.code == 200:
         schema = MessageOnly()
@@ -2164,6 +2189,7 @@ def experiment_job_resume(org_name, experiment_id, job_id):
     description = request_schema_data.get('description', '')
     num_gpu = request_schema_data.get('num_gpu', -1)
     platform_id = request_schema_data.get('platform_id', None)
+    timeout_minutes = request_schema_data.get('timeout_minutes', 60)
     if parent_job_id:
         parent_job_id = str(parent_job_id)
     specs = request_schema_data.get('specs', {})
@@ -2178,7 +2204,8 @@ def experiment_job_resume(org_name, experiment_id, job_id):
         name=name,
         description=description,
         num_gpu=num_gpu,
-        platform_id=platform_id
+        platform_id=platform_id,
+        timeout_minutes=timeout_minutes
     )
     # Get schema
     if response.code == 200:
