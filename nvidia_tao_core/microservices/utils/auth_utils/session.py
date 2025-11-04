@@ -42,6 +42,30 @@ def synchronized(wrapped):
     return _wrap
 
 
+def get_user_metadata_from_ngc_response(ngc_response):
+    """Extract user metadata from NGC API response.
+
+    Args:
+        ngc_response: Response object from NGC API /users/me endpoint
+
+    Returns:
+        Dictionary with 'member_of' key containing list of user memberships
+    """
+    member_of = []
+    roles = ngc_response.json().get('user', {}).get('roles', [])
+    for role in roles:
+        org = role.get('org', {}).get('name', '')
+        team = role.get('team', {}).get('name', '')
+        for role_type in ("orgRoles", "teamRoles"):
+            entitlements = role.get(role_type, [])
+            if not entitlements:
+                member_of.append(f"{org}/{team}")
+            else:
+                for entitlement in entitlements:
+                    member_of.append(f"{org}/{team}:{entitlement}")
+    return {'member_of': member_of}
+
+
 @synchronized
 def set_session(user_id, org_name, token, extra_user_metadata):
     """Save session in DB"""

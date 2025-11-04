@@ -26,10 +26,12 @@ from dataclasses import dataclass, field, asdict, fields
 from datetime import datetime, timezone
 
 from nvidia_tao_core.microservices.utils.handler_utils import JobContext
-from nvidia_tao_core.microservices.utils.stateless_handler_utils import (
-    get_all_pending_jobs,
+from nvidia_tao_core.microservices.utils.timeout_utils import (
     get_all_running_jobs,
     get_all_running_automl_experiments,
+)
+from nvidia_tao_core.microservices.utils.stateless_handler_utils import (
+    get_all_pending_jobs,
     update_job_status,
     update_job_message,
     get_handler_type,

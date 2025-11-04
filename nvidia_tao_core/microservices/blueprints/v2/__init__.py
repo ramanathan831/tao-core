@@ -21,13 +21,17 @@ from .jobs import jobs_bp_v2
 from .health import health_bp_v2
 from .admin import admin_bp_v2
 from .inference_microservices import inference_microservices_bp_v2
+from .automl import automl_params_bp_v2
 
 # Import all schemas from v2 schemas module
 from .schemas import (
     AWSCloudPull,
+    AutoMLParameterDetail,
+    AutoMLParameterDetailsRsp,
     AutoMLResultsDetailed,
     AutoMLResults,
     AutoML,
+    AutoMLUpdateParameterRangesReq,
     AzureCloudPull,
     BaseExperimentMetadata,
     BulkOpsRsp,
@@ -67,6 +71,7 @@ from .schemas import (
     MissingFile,
     NVCFReq,
     PaginationInfo,
+    ParameterRangeSchema,
     PublishModel,
     Stats,
     ValidationDetails,
@@ -79,9 +84,12 @@ from .schemas import (
 # V2 Blueprint Schemas - List of tuples with (name, schema_class)
 V2_SCHEMAS = [
     ("AWSCloudPull", AWSCloudPull),
+    ("AutoMLParameterDetail", AutoMLParameterDetail),
+    ("AutoMLParameterDetailsRsp", AutoMLParameterDetailsRsp),
     ("AutoMLResultsDetailed", AutoMLResultsDetailed),
     ("AutoMLResults", AutoMLResults),
     ("AutoML", AutoML),
+    ("AutoMLUpdateParameterRangesReq", AutoMLUpdateParameterRangesReq),
     ("AzureCloudPull", AzureCloudPull),
     ("BaseExperimentMetadata", BaseExperimentMetadata),
     ("BulkOpsRsp", BulkOpsRsp),
@@ -121,6 +129,7 @@ V2_SCHEMAS = [
     ("MissingFile", MissingFile),
     ("NVCFReq", NVCFReq),
     ("PaginationInfo", PaginationInfo),
+    ("ParameterRangeSchema", ParameterRangeSchema),
     ("PublishModel", PublishModel),
     ("Stats", Stats),
     ("ValidationDetails", ValidationDetails),
@@ -138,5 +147,6 @@ __all__ = [
     'health_bp_v2',
     'admin_bp_v2',
     'inference_microservices_bp_v2',
+    'automl_params_bp_v2',
     'V2_SCHEMAS'
 ]

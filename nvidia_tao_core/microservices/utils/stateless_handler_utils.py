@@ -29,16 +29,16 @@ from nvidia_tao_core.microservices.constants import CV_ACTION_CHAINED_ONLY, CV_A
 from .encrypt_utils import NVVaultEncryption
 from .mongo_utils import MongoHandler
 
-BACKEND = os.getenv("BACKEND", "local-k8s")
-tao_root = os.environ.get("TAO_ROOT", "/tmp/shared/orgs/")
-base_exp_uuid = "00000000-0000-0000-0000-000000000000"
-
 # Configure logging
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+
+BACKEND = os.getenv("BACKEND", "local-k8s")
+tao_root = os.environ.get("TAO_ROOT", "/tmp/shared/orgs/")
+base_exp_uuid = "00000000-0000-0000-0000-000000000000"
 
 
 def get_root():
@@ -223,16 +223,16 @@ def get_handler_jobs_metadata_root(org_name, handler_id, kind=None):
 
 
 def get_base_experiment_metadata(base_experiment_id):
-    """Read PTM metadata from DB"""
-    mongo_experiments = MongoHandler("tao", "experiments")
-    base_experiment_metadata = mongo_experiments.find_one({'id': base_experiment_id})
+    """Read PTM metadata from DB (stored as jobs)"""
+    mongo_jobs = MongoHandler("tao", "jobs")
+    base_experiment_metadata = mongo_jobs.find_one({'id': base_experiment_id})
     return base_experiment_metadata
 
 
 def update_base_experiment_metadata(base_experiment_id, base_experiment_metadata_update):
-    """Read PTM metadata file and update the metadata info of a particular base_experiment"""
-    mongo_experiments = MongoHandler("tao", "experiments")
-    mongo_experiments.upsert({'id': base_experiment_id}, base_experiment_metadata_update)
+    """Read PTM metadata and update the metadata info of a particular base_experiment (stored as jobs)"""
+    mongo_jobs = MongoHandler("tao", "jobs")
+    mongo_jobs.upsert({'id': base_experiment_id}, base_experiment_metadata_update)
 
 
 def get_handler_metadata(handler_id, kind):
@@ -783,11 +783,11 @@ def check_write_access(user_id, org_name, handler_id, base_experiment=False, kin
 
 
 def get_public_experiments(maxine=False):
-    """Get public experiments"""
+    """Get public experiments (base experiments/pretrained models)"""
     # Make sure to check if it exists
     public_experiments_metadata = []
-    mongo_experiments = MongoHandler("tao", "experiments")
-    base_experiments = mongo_experiments.find({'public': True})
+    mongo_jobs = MongoHandler("tao", "jobs")
+    base_experiments = mongo_jobs.find({'public': True})
     for base_experiment_metadata in base_experiments:
         if not maxine and base_experiment_metadata.get("network_arch", "").startswith("maxine"):
             continue
@@ -946,7 +946,7 @@ def experiment_update_handler_attributes(user_id, org_name, experiment_meta, key
     elif key in ["calibration_dataset", "inference_dataset"]:
         if not check_dataset_type_match(user_id, org_name, experiment_meta, value):
             return False
-    elif key in ["base_experiment"]:
+    elif key in ["base_experiment_ids"]:
         if not check_experiment_type_match(user_id, org_name, experiment_meta, value):
             return False
     elif key in ["checkpoint_choose_method"]:
@@ -1055,110 +1055,6 @@ def get_all_pending_jobs():
     }
     jobs = mongo_jobs.find(job_query)
     return jobs
-
-
-def get_all_running_jobs():
-    """Returns a list of all jobs with status of Running or Pending for timeout monitoring"""
-    mongo_jobs = MongoHandler("tao", "jobs")
-    job_query = {
-        'status': {
-            '$in': ['Running', 'Pending']
-        }
-    }
-    jobs = mongo_jobs.find(job_query)
-
-    # Extract necessary information for timeout monitoring
-    running_jobs = []
-    for job in jobs:
-        automl_brain = False
-
-        # Check if this is an AutoML brain job by looking at the job's own metadata
-        # Don't rely on handler's current automl_enabled setting as it can change after job creation
-        job_details = job.get('job_details', {})
-        job_id = job.get('id')
-        if job_id and job_id in job_details:
-            # If job has automl_brain_info or automl_result, it's an AutoML brain job
-            if 'automl_brain_info' in job_details[job_id] or 'automl_result' in job_details[job_id]:
-                automl_brain = True
-
-        # Fallback: check handler's current settings (for backwards compatibility)
-        if not automl_brain and is_request_automl(job.get('handler_id'), job.get('action'), job.get('kind', '')):
-            automl_brain = True
-
-        job_info = {
-            'job_id': job.get('id'),
-            'handler_id': job.get('handler_id'),
-            'kind': job.get('kind', ''),
-            'status': job.get('status'),
-            'user_id': job.get('user_id'),
-            'org_name': job.get('org_name'),
-            'action': job.get('action'),
-            'network': job.get('network'),
-            'last_modified': job.get('last_modified'),
-            'is_automl': False,
-            'is_automl_brain': automl_brain,
-            'experiment_number': '0',
-            'timeout_minutes': job.get('timeout_minutes')
-        }
-        running_jobs.append(job_info)
-
-    return running_jobs
-
-
-def get_all_running_automl_experiments():
-    """Returns a list of all running AutoML experiment jobs for timeout monitoring"""
-    running_automl_experiments = []
-
-    try:
-        # Get all running regular jobs first to find AutoML brain jobs
-        regular_jobs = get_all_running_jobs()
-
-        for job in regular_jobs:
-            job_id = job.get('job_id')
-            handler_id = job.get('handler_id')
-
-            if not job_id or not handler_id:
-                continue
-
-            # Check if this is an AutoML job by looking at handler metadata
-            try:
-                handler_metadata = get_handler_metadata(handler_id, job.get('kind', '') + 's')
-                if handler_metadata and handler_metadata.get("automl_settings", {}).get("automl_enabled", False):
-                    # This is an AutoML brain job, get its running experiments
-                    controller_info = get_automl_controller_info(job_id)
-
-                    if isinstance(controller_info, list):
-                        for recommendation in controller_info:
-                            if isinstance(recommendation, dict):
-                                rec_status = recommendation.get("status", "")
-                                rec_id = str(recommendation.get("id", ""))
-                                is_running = rec_status in ("pending", "running", "started") and rec_id
-                                # Check if this recommendation/experiment is running
-                                if is_running:
-                                    automl_exp_info = {
-                                        'job_id': recommendation.get("job_id", ""),
-                                        'handler_id': handler_id,
-                                        'kind': job.get('kind', ''),
-                                        'status': rec_status,
-                                        'user_id': job.get('user_id'),
-                                        'org_name': job.get('org_name'),
-                                        'action': job.get('action'),
-                                        'network': job.get('network'),
-                                        'last_modified': job.get('last_modified'),
-                                        'is_automl': True,
-                                        'brain_job_id': job_id,
-                                        'experiment_number': str(rec_id),
-                                        'timeout_minutes': job.get('timeout_minutes')
-                                    }
-                                    running_automl_experiments.append(automl_exp_info)
-            except Exception as e:
-                logger.debug(f"Error checking AutoML status for job {job_id}: {e}")
-                continue
-
-    except Exception as e:
-        logger.error(f"Error getting running AutoML experiments: {e}")
-
-    return running_automl_experiments
 
 
 def get_user(user_id, mongo_users=None):

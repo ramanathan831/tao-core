@@ -89,7 +89,7 @@ def send_progress_status_callback(message):
             # Use status_callback (HTTP) instead of internal_job_status_update (MongoDB)
             # Job pods don't have MongoDB access, so we send via HTTP to the server
             from nvidia_tao_core.microservices.handlers.cloud_handlers.utils import status_callback
-            from nvidia_tao_core.microservices.handlers.stateless_handlers import get_internal_job_status_update_data
+            from nvidia_tao_core.microservices.utils.stateless_handler_utils import get_internal_job_status_update_data
 
             # Create status update data with RUNNING status for progress updates
             callback_data = get_internal_job_status_update_data(

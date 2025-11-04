@@ -13,19 +13,18 @@
 # limitations under the License.
 
 """AutoML Flask Routes - Manage parameter ranges and details"""
-import sys
 import logging
 import traceback
 from flask import Blueprint, request, jsonify
-from marshmallow import Schema, fields, validate, EXCLUDE
 
+from .schemas import AutoMLParameterDetailsRsp, AutoMLUpdateParameterRangesReq
 from nvidia_tao_core.microservices.automl.params import flatten_properties
-from nvidia_tao_core.microservices.handlers.stateless_handlers import (
+from nvidia_tao_core.microservices.utils.stateless_handler_utils import (
     get_automl_custom_param_ranges,
     save_automl_custom_param_ranges,
     get_handler_metadata
 )
-from nvidia_tao_core.microservices.handlers.utilities import validate_uuid
+from nvidia_tao_core.microservices.utils.handler_utils import validate_uuid
 from nvidia_tao_core.scripts.generate_schema import generate_schema
 from nvidia_tao_core.microservices.utils import get_microservices_network_and_action
 from nvidia_tao_core.microservices.enum_constants import ExperimentNetworkArch
@@ -38,94 +37,10 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Create blueprint for automl params routes
-automl_params_bp = Blueprint('automl_params', __name__)
+automl_params_bp_v1 = Blueprint('automl_params_v1', __name__, template_folder='templates')
 
 
-class ParameterDetailsReqSchema(Schema):
-    """Class defining request schema for getting parameter details"""
-
-    class Meta:
-        """Class enabling sorting field values by the order in which they are declared"""
-
-        ordered = True
-        unknown = EXCLUDE
-    parameters = fields.List(
-        fields.Str(
-            format="regex",
-            regex=r'.*',
-            validate=fields.validate.Length(max=500)
-        ),
-        validate=validate.Length(min=1, max=sys.maxsize),
-        required=True
-    )
-
-
-class ParameterRangeSchema(Schema):
-    """Schema for parameter attributes (used for both default and custom)"""
-
-    class Meta:
-        """Class enabling sorting field values by the order in which they are declared"""
-
-        ordered = True
-        unknown = EXCLUDE
-
-    parameter = fields.Str(
-        format="regex",
-        regex=r'.*',
-        validate=fields.validate.Length(max=500),
-        required=False  # Not required when used as nested schema
-    )
-    default_value = fields.Raw(allow_none=True)  # Only used for default section
-    valid_min = fields.Raw(allow_none=True)  # Can be float or list of floats
-    valid_max = fields.Raw(allow_none=True)  # Can be float or list of floats
-    valid_options = fields.List(fields.Raw(), allow_none=True)
-    option_weights = fields.List(fields.Float(), allow_none=True)  # Weights for valid_options
-    math_cond = fields.Str(format="regex", regex=r'.*', validate=fields.validate.Length(max=100), allow_none=True)
-    depends_on = fields.Str(format="regex", regex=r'.*', validate=fields.validate.Length(max=500), allow_none=True)
-    parent_param = fields.Str(format="regex", regex=r'.*', validate=fields.validate.Length(max=500), allow_none=True)
-
-
-class ParameterDetailSchema(Schema):
-    """Class defining individual parameter detail schema"""
-
-    class Meta:
-        """Class enabling sorting field values by the order in which they are declared"""
-
-        ordered = True
-        unknown = EXCLUDE
-    parameter = fields.Str(format="regex", regex=r'.*', validate=fields.validate.Length(max=500))
-    value_type = fields.Str(format="regex", regex=r'.*', validate=fields.validate.Length(max=100))
-    default = fields.Nested(ParameterRangeSchema)
-    custom = fields.Nested(ParameterRangeSchema, allow_none=True)
-
-
-class ParameterDetailsRspSchema(Schema):
-    """Class defining response schema for getting parameter details"""
-
-    class Meta:
-        """Class enabling sorting field values by the order in which they are declared"""
-
-        ordered = True
-        unknown = EXCLUDE
-    parameter_details = fields.List(fields.Nested(ParameterDetailSchema), validate=validate.Length(max=sys.maxsize))
-
-
-class UpdateParameterRangesReqSchema(Schema):
-    """Class defining request schema for updating parameter ranges"""
-
-    class Meta:
-        """Class enabling sorting field values by the order in which they are declared"""
-
-        ordered = True
-        unknown = EXCLUDE
-    parameter_ranges = fields.List(
-        fields.Nested(ParameterRangeSchema),
-        validate=validate.Length(min=1, max=sys.maxsize),
-        required=True
-    )
-
-
-@automl_params_bp.route('/api/v1/orgs/<org_name>/experiments/<experiment_id>:get_automl_param_details', methods=['GET'])
+@automl_params_bp_v1.route('/orgs/<org_name>/experiments/<experiment_id>:get_automl_param_details', methods=['GET'])
 def get_automl_param_details(org_name, experiment_id):
     """Get detailed information about AutoML parameters including valid ranges, options, and math conditions.
 
@@ -260,7 +175,7 @@ def get_automl_param_details(org_name, experiment_id):
             }), 404
 
         # Validate and serialize response
-        rsp_schema = ParameterDetailsRspSchema()
+        rsp_schema = AutoMLParameterDetailsRsp()
         response_data = {"parameter_details": parameter_details}
         serialized = rsp_schema.dump(response_data)
 
@@ -275,8 +190,8 @@ def get_automl_param_details(org_name, experiment_id):
         }), 500
 
 
-@automl_params_bp.route(
-    '/api/v1/orgs/<org_name>/experiments/<experiment_id>:update_automl_param_ranges',
+@automl_params_bp_v1.route(
+    '/orgs/<org_name>/experiments/<experiment_id>:update_automl_param_ranges',
     methods=['POST', 'PATCH']
 )
 def update_automl_param_ranges(org_name, experiment_id):
@@ -303,7 +218,7 @@ def update_automl_param_ranges(org_name, experiment_id):
             }), 400
 
         # Validate request body
-        req_schema = UpdateParameterRangesReqSchema()
+        req_schema = AutoMLUpdateParameterRangesReq()
         errors = req_schema.validate(request.json)
         if errors:
             return jsonify({

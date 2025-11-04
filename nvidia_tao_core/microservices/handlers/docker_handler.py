@@ -380,3 +380,41 @@ class DockerHandler:
             self._container.stop()
         else:
             logger.error("No container to stop")
+
+
+def get_all_docker_running_containers():
+    """Get all running Docker containers for TAO jobs
+
+    Returns:
+        list: List of container info dictionaries
+    """
+    backend = os.getenv("BACKEND", "local-k8s")
+    if backend != "local-docker":
+        return []
+
+    try:
+        if not docker_client:
+            logger.error("Docker client not available")
+            return []
+
+        # List all running Docker containers with TAO labels
+        containers = []
+        all_containers = docker_client.containers.list(
+            filters={'label': 'tao-toolkit'}
+        )
+
+        for container in all_containers:
+            container_name = container.name
+            container_id = container.id
+            # Container name is typically the job_id
+            containers.append({
+                'job_id': container_name,
+                'container_id': container_id,
+                'status': 'Running'
+            })
+
+        return containers
+
+    except Exception as e:
+        logger.error(f"Error getting Docker containers: {e}")
+        return []

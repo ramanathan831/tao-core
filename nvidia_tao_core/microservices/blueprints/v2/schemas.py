@@ -869,7 +869,7 @@ class DatasetReq(Schema):
     name = fields.Str(format="regex", regex=r'.*', validate=fields.validate.Length(max=500))
     shared = fields.Bool(allow_none=False)
     user_id = fields.Str(format="uuid", validate=fields.validate.Length(max=36))
-    description = fields.Str(format="regex", regex=r'.*', validate=fields.validate.Length(max=1000))
+    description = fields.Str(format="regex", regex=r'.*', validate=fields.validate.Length(max=1000), allow_none=True)
     docker_env_vars = fields.Dict(
         keys=EnumField(AllowedDockerEnvVariables),
         values=fields.Str(
@@ -898,7 +898,7 @@ class DatasetReq(Schema):
     status = EnumField(PullStatus)
     use_for = fields.List(EnumField(DatasetIntentEnum), allow_none=True, validate=validate.Length(max=3))
     base_experiment_pull_complete = EnumField(PullStatus)
-    base_experiment = fields.List(
+    base_experiment_ids = fields.List(
         fields.Str(format="uuid", validate=fields.validate.Length(max=36)),
         validate=validate.Length(max=2)
     )
@@ -967,7 +967,7 @@ class DatasetRsp(Schema):
     last_modified = DateTimeField(metadata={"maxLength": 24})
     name = fields.Str(format="regex", regex=r'.*', validate=fields.validate.Length(max=500))
     shared = fields.Bool(allow_none=False)
-    description = fields.Str(format="regex", regex=r'.*', validate=fields.validate.Length(max=1000))
+    description = fields.Str(format="regex", regex=r'.*', validate=fields.validate.Length(max=1000), allow_none=True)
     docker_env_vars = fields.Dict(
         keys=EnumField(AllowedDockerEnvVariables),
         values=fields.Str(
@@ -1002,7 +1002,7 @@ class DatasetRsp(Schema):
     status = EnumField(PullStatus)
     use_for = fields.List(EnumField(DatasetIntentEnum), allow_none=True, validate=validate.Length(max=3))
     base_experiment_pull_complete = EnumField(PullStatus)
-    base_experiment = fields.List(
+    base_experiment_ids = fields.List(
         fields.Str(format="uuid", validate=fields.validate.Length(max=36)),
         validate=validate.Length(max=2)
     )
@@ -1064,6 +1064,73 @@ class JobResume(Schema):
     specs = fields.Raw(allow_none=True)
 
 
+class ParameterRangeSchema(Schema):
+    """Schema for parameter attributes (used for both default and custom)"""
+
+    class Meta:
+        """Class enabling sorting field values by the order in which they are declared"""
+
+        ordered = True
+        unknown = EXCLUDE
+
+    parameter = fields.Str(
+        format="regex",
+        regex=r'.*',
+        validate=fields.validate.Length(max=500),
+        required=False  # Not required when used as nested schema
+    )
+    default_value = fields.Raw(allow_none=True)  # Only used for default section
+    valid_min = fields.Raw(allow_none=True)  # Can be float or list of floats
+    valid_max = fields.Raw(allow_none=True)  # Can be float or list of floats
+    valid_options = fields.List(fields.Raw(), allow_none=True)
+    option_weights = fields.List(fields.Float(), allow_none=True)  # Weights for valid_options
+    math_cond = fields.Str(format="regex", regex=r'.*', validate=fields.validate.Length(max=100), allow_none=True)
+    depends_on = fields.Str(format="regex", regex=r'.*', validate=fields.validate.Length(max=500), allow_none=True)
+    parent_param = fields.Str(format="regex", regex=r'.*', validate=fields.validate.Length(max=500), allow_none=True)
+
+
+class AutoMLParameterDetail(Schema):
+    """Class defining individual parameter detail schema"""
+
+    class Meta:
+        """Class enabling sorting field values by the order in which they are declared"""
+
+        ordered = True
+        unknown = EXCLUDE
+    parameter = fields.Str(format="regex", regex=r'.*', validate=fields.validate.Length(max=500))
+    value_type = fields.Str(format="regex", regex=r'.*', validate=fields.validate.Length(max=100))
+    default = fields.Nested(ParameterRangeSchema)
+    custom = fields.Nested(ParameterRangeSchema, allow_none=True)
+
+
+class AutoMLParameterDetailsRsp(Schema):
+    """Class defining response schema for getting parameter details"""
+
+    class Meta:
+        """Class enabling sorting field values by the order in which they are declared"""
+
+        ordered = True
+        unknown = EXCLUDE
+    parameter_details = fields.List(fields.Nested(AutoMLParameterDetail), validate=validate.Length(max=sys.maxsize))
+
+
+class AutoMLUpdateParameterRangesReq(Schema):
+    """Class defining request schema for updating parameter ranges"""
+
+    class Meta:
+        """Class enabling sorting field values by the order in which they are declared"""
+
+        ordered = True
+        unknown = EXCLUDE
+    job_id = fields.Str(format="uuid", validate=fields.validate.Length(max=36), required=True)
+    network_arch = fields.Str(format="regex", regex=r'.*', validate=fields.validate.Length(max=100), required=True)
+    parameter_ranges = fields.List(
+        fields.Nested(ParameterRangeSchema),
+        validate=validate.Length(min=1, max=sys.maxsize),
+        required=True
+    )
+
+
 class AutoML(Schema):
     """Class defining automl parameters in a schema"""
 
@@ -1088,6 +1155,11 @@ class AutoML(Schema):
         format="regex",
         regex=r'\[.*\]',
         validate=fields.validate.Length(max=5000),
+        allow_none=True
+    )
+    automl_range_override = fields.List(
+        fields.Nested(ParameterRangeSchema),
+        validate=validate.Length(max=sys.maxsize),
         allow_none=True
     )
 
@@ -1133,12 +1205,27 @@ class InferenceMicroserviceReq(Schema):
         ordered = True
         unknown = EXCLUDE
 
+    parent_job_id = fields.Str(
+        format="uuid",
+        validate=fields.validate.Length(max=36),
+        description="Parent job ID",
+        example="12345678-1234-1234-1234-123456789012",
+        allow_none=True,
+        required=False
+    )
+    kind = fields.Str(
+        validate=fields.validate.OneOf(["experiment", "dataset"]),
+        description="Job kind",
+        example="experiment",
+        allow_none=True,
+        required=False
+    )
     model_path = fields.Str(
         validate=fields.validate.Length(max=2048),
         description="Path to the model",
         example="/workspace/model",
-        allow_none=False,
-        required=True
+        allow_none=True,
+        required=False
     )
     docker_image = fields.Str(
         validate=fields.validate.Length(max=2048),
@@ -1182,7 +1269,7 @@ class InferenceMicroserviceReq(Schema):
             allow_none=True
         )
     )
-    network_arch = EnumField(ExperimentNetworkArch)
+    network_arch = EnumField(ExperimentNetworkArch, allow_none=False)
 
 
 class InferenceMicroserviceRsp(Schema):
@@ -1222,16 +1309,35 @@ class InferenceReq(Schema):
     input = fields.List(
         fields.Str(
             description="Base64-encoded images/videos with data URI format (data:image/jpeg;base64,...)",
-            required=True
-        )
+            required=False
+        ),
+        allow_none=True
+    )
+    media = fields.Str(
+        description="Cloud path to media file (e.g., aws://bucket/path/to/video.mp4)",
+        required=False,
+        allow_none=True
     )
     model = fields.Str(
         description="Model identifier (e.g. nvidia/nvdino-v2)",
-        required=True
+        required=False,
+        allow_none=True
     )
     prompt = fields.Str(
-        description="Text prompt for Inference Microservice inference",
+        description="Text prompt for VLM inference",
+        required=False,
+        allow_none=True,
         default=""
+    )
+    enable_lora = fields.Bool(
+        description="Enable LoRA for inference",
+        required=False,
+        allow_none=True
+    )
+    base_model_path = fields.Str(
+        description="Base model path (e.g., hf_model://nvidia/Cosmos-Reason1-7B)",
+        required=False,
+        allow_none=True
     )
 
 
@@ -1314,12 +1420,14 @@ class ExperimentJobReq(Schema):
     description = fields.Str(
         format="regex",
         regex=r'.*',
-        validate=fields.validate.Length(max=1000)
+        validate=fields.validate.Length(max=1000),
+        allow_none=True
     )  # Model version description - not changing variable name for backward compatibility
     model_description = fields.Str(
         format="regex",
         regex=r'.*',
-        validate=fields.validate.Length(max=1000)
+        validate=fields.validate.Length(max=1000),
+        allow_none=True
     )  # Description common to all versions of models
     version = fields.Str(format="regex", regex=r'.*', validate=fields.validate.Length(max=500))
     logo = fields.URL(validate=fields.validate.Length(max=2048), allow_none=True)
@@ -1508,12 +1616,14 @@ class ExperimentJobRsp(Schema):
     description = fields.Str(
         format="regex",
         regex=r'.*',
-        validate=fields.validate.Length(max=1000)
+        validate=fields.validate.Length(max=1000),
+        allow_none=True
     )  # Model version description - not changing variable name for backward compatibility
     model_description = fields.Str(
         format="regex",
         regex=r'.*',
-        validate=fields.validate.Length(max=1000)
+        validate=fields.validate.Length(max=1000),
+        allow_none=True
     )  # Description common to all versions of models
     version = fields.Str(format="regex", regex=r'.*', validate=fields.validate.Length(max=500))
     logo = fields.URL(validate=fields.validate.Length(max=2048), allow_none=True)
