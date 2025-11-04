@@ -1348,10 +1348,10 @@ def get_network_config(network_name):
         return {}
 
     # Get the directory where this utilities.py file is located
-    current_dir = os.path.dirname(os.path.abspath(__file__))
-    config_file = os.path.join(current_dir, "network_configs", f"{network_name}.config.json")
-
+    current_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    config_file = os.path.join(current_dir, "handlers", "network_configs", f"{network_name}.config.json")
     if not os.path.exists(config_file):
+        logger.error("Network config file not found: %s", config_file)
         return {}
 
     try:

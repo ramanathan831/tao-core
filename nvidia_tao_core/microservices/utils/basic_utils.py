@@ -116,7 +116,7 @@ def get_user_workspaces(user_id, mongo_users=None):
 
 
 def get_job(job_id):
-    """Returns job from DB"""
+    """Returns job from DB (converted to dict for schema compatibility)"""
     mongo_jobs = MongoHandler("tao", "jobs")
     job_query = {'id': job_id}
     job = mongo_jobs.find_one(job_query)
@@ -124,7 +124,7 @@ def get_job(job_id):
 
 
 def get_experiment(experiment_id):
-    """Returns experiment from DB"""
+    """Returns experiment from DB (converted to dict for schema compatibility)"""
     mongo_experiments = MongoHandler("tao", "experiments")
     experiment_query = {'id': experiment_id}
     experiment = mongo_experiments.find_one(experiment_query)
@@ -132,7 +132,7 @@ def get_experiment(experiment_id):
 
 
 def get_dataset(dataset_id):
-    """Returns dataset from DB"""
+    """Returns dataset from DB (converted to dict for schema compatibility)"""
     mongo_datasets = MongoHandler("tao", "datasets")
     dataset_query = {'id': dataset_id}
     dataset = mongo_datasets.find_one(dataset_query)

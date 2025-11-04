@@ -21,7 +21,12 @@ import traceback
 import jwt
 import logging
 
-from .session import __SESSION_EXPIRY_SECONDS__, _SESSION_REFRESH_SECONDS__
+from .session import (
+    __SESSION_EXPIRY_SECONDS__,
+    _SESSION_REFRESH_SECONDS__,
+    set_session,
+    get_user_metadata_from_ngc_response
+)
 from nvidia_tao_core.microservices.utils.ngc_utils import (
     get_user_key,
     get_user_info,
@@ -109,8 +114,13 @@ def get_from_ngc(key, org_name: str, enable_telemetry: bool | None = None) -> tu
 
         user_metadata['settings'] = copy.copy(user.get('settings', {}))
         user_metadata['settings'][org_name] = {'enable_telemetry': enable_telemetry}
-
         mongo.upsert(user_query, user_metadata)
+
+        # Add JWT token to token_info array for session management
+        extra_user_metadata = get_user_metadata_from_ngc_response(r)
+        set_session(user_id, org_name, creds['token'], extra_user_metadata)
+        if key.startswith("nvapi"):
+            set_session(user_id, org_name, key, extra_user_metadata)
 
     except Exception as e:
         logger.error(traceback.format_exc())

@@ -36,7 +36,7 @@ import sys
 from pathlib import Path
 
 try:
-    from nvidia_tao_core.microservices.handlers.stateless_handlers import get_metrics, set_metrics
+    from nvidia_tao_core.microservices.utils.stateless_handler_utils import get_metrics, set_metrics
     HAS_MONGO_ACCESS = True
 except ImportError:
     HAS_MONGO_ACCESS = False

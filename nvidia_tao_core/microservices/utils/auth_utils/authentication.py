@@ -20,6 +20,7 @@ import logging
 
 from .credentials import decode_jwt_token
 from . import session
+from .session import get_user_metadata_from_ngc_response
 from nvidia_tao_core.microservices.constants import AIRGAP_DEFAULT_USER
 
 # Configure logging
@@ -111,19 +112,7 @@ def validate(url, token):
     user_id = str(uuid.uuid5(uuid.UUID(int=0), str(ngc_user_id)))
     logger.info("New session for user: %s", str(user_id))
     # Create a new or update an expired session
-    member_of = []
-    roles = r.json().get('user', {}).get('roles', [])
-    for role in roles:
-        org = role.get('org', {}).get('name', '')
-        team = role.get('team', {}).get('name', '')
-        for role_type in ("orgRoles", "teamRoles"):
-            entitlements = role.get(role_type, [])
-            if not entitlements:
-                member_of.append(f"{org}/{team}")
-            else:
-                for entitlement in entitlements:
-                    member_of.append(f"{org}/{team}:{entitlement}")
-    extra_user_metadata = {'member_of': member_of}
+    extra_user_metadata = get_user_metadata_from_ngc_response(r)
     if jwt_token:
         session.set_session(user_id, org_name, jwt_token, extra_user_metadata)
     if token:

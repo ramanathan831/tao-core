@@ -19,6 +19,7 @@ import logging
 import math
 import os
 from flask import Blueprint, request, jsonify, make_response, send_from_directory
+from marshmallow import ValidationError
 
 from nvidia_tao_core.microservices.decorators import disk_space_check
 from nvidia_tao_core.microservices.utils.auth_utils import authentication
@@ -33,15 +34,14 @@ from nvidia_tao_core.microservices.utils.filter_utils import filtering, paginati
 from nvidia_tao_core.microservices.utils.handler_utils import validate_uuid
 from nvidia_tao_core.microservices.utils.basic_utils import (
     get_experiment,
-    get_dataset
+    get_dataset,
+    get_job
 )
 from .schemas import (
     ErrorRsp,
     GpuDetails,
-    JobReq,
     DatasetJobReq,
     ExperimentJobReq,
-    JobRsp,
     DatasetJobRsp,
     ExperimentJobRsp,
     JobListRsp,
@@ -117,16 +117,40 @@ def job_create(org_name):
               $ref: '#/components/headers/X-RateLimit-Limit'
     """
     request_data = request.get_json(force=True)
-    schema = JobReq()
-    schema_loaded = schema.load(request_data)
-    kind = schema_loaded.get('kind')
-    if kind not in ['experiment', 'dataset']:
-        metadata = {"error_desc": "Invalid input", "error_code": 1}
+
+    # First check if 'kind' field exists in raw request
+    kind = request_data.get('kind')
+    if not kind:
+        available_fields = list(request_data.keys())
+        metadata = {
+            "error_desc": (
+                f"Missing required field 'kind'. Must be either 'experiment' or 'dataset'. "
+                f"Received fields: {available_fields}"
+            ),
+            "error_code": 1
+        }
         schema = ErrorRsp()
         schema_dict = schema.dump(schema.load(metadata))
         return make_response(jsonify(schema_dict), 400)
-    schema = ExperimentJobReq() if kind == 'experiment' else DatasetJobReq()
-    request_dict = schema.dump(schema_loaded)
+
+    if kind not in ['experiment', 'dataset']:
+        metadata = {
+            "error_desc": f"Invalid 'kind' field: must be 'experiment' or 'dataset', got '{kind}'",
+            "error_code": 1
+        }
+        schema = ErrorRsp()
+        schema_dict = schema.dump(schema.load(metadata))
+        return make_response(jsonify(schema_dict), 400)
+
+    # Validate with specific schema based on kind
+    try:
+        schema = ExperimentJobReq() if kind == 'experiment' else DatasetJobReq()
+        request_dict = schema.dump(schema.load(request_data))
+    except Exception as e:
+        metadata = {"error_desc": f"Validation error for {kind} job: {str(e)}", "error_code": 1}
+        schema = ErrorRsp()
+        schema_dict = schema.dump(schema.load(metadata))
+        return make_response(jsonify(schema_dict), 400)
     user_id = authentication.get_user_id(request.headers.get('Authorization', ''), org_name)
     dataset_id = None
     if kind == 'dataset':
@@ -142,7 +166,11 @@ def job_create(org_name):
         parent_job_id = str(parent_job_id)
     action = request_dict.get('action', None)
     if not action:
-        metadata = {"error_desc": "Action is required to run job", "error_code": 3}
+        metadata = {
+            "error_desc": ("Missing required field 'action'. Valid actions include: train, evaluate, "
+                           "export, inference, prune, retrain, etc."),
+            "error_code": 3
+        }
         schema = ErrorRsp()
         response = make_response(jsonify(schema.dump(schema.load(metadata))), 400)
         return response
@@ -155,11 +183,31 @@ def job_create(org_name):
     early_stop_epoch = request_dict.get('early_stop_epoch', None)
     timeout_minutes = request_dict.get('timeout_minutes', 60)
     if isinstance(specs, dict) and "cluster" in specs:
-        metadata = {"error_desc": "cluster is an invalid spec", "error_code": 4}
+        metadata = {
+            "error_desc": ("'cluster' is not allowed in specs. "
+                           "Remove the 'cluster' field from your request."),
+            "error_code": 4
+        }
         schema = ErrorRsp()
         return make_response(jsonify(schema.dump(schema.load(metadata))), 400)
     experiment_id = None
     if kind == 'experiment':
+        # Validate required fields for experiment creation
+        network_arch = request_dict.get('network_arch')
+        base_experiment_ids = request_dict.get('base_experiment_ids', [])
+        if not network_arch and not base_experiment_ids:
+            metadata = {
+                "error_desc": (
+                    "Missing required field: either 'network_arch' or 'base_experiment_ids' must be provided. "
+                    "Specify 'network_arch' (e.g., 'vila', 'classification_pyt') for a new experiment, "
+                    "or 'base_experiment_ids' to use pretrained models."
+                ),
+                "error_code": 5
+            }
+            schema = ErrorRsp()
+            schema_dict = schema.dump(schema.load(metadata))
+            return make_response(jsonify(schema_dict), 400)
+
         experiment_response = ExperimentHandler.create_experiment(user_id, org_name, request_dict)
         if experiment_response.code != 200:
             schema = ErrorRsp()
@@ -167,6 +215,9 @@ def job_create(org_name):
             log_api_error(user_id, org_name, schema_dict, DataMonitorLogTypeEnum.tao_experiment, action="creation")
             return make_response(jsonify(schema_dict), experiment_response.code)
         experiment_id = experiment_response.data.get("id")
+    # Get automl_settings if present (only for experiment jobs)
+    automl_settings = request_dict.get('automl_settings') if kind == 'experiment' else None
+
     # Get job response
     job_response = JobHandler.job_run(
         org_name,
@@ -179,7 +230,8 @@ def job_create(org_name):
         job_id=experiment_id if kind == 'experiment' else None,
         retain_checkpoints_for_resume=retain_checkpoints_for_resume,
         early_stop_epoch=early_stop_epoch,
-        timeout_minutes=timeout_minutes
+        timeout_minutes=timeout_minutes,
+        automl_settings=automl_settings
     )
     if job_response.code != 200:
         schema = ErrorRsp()
@@ -187,25 +239,47 @@ def job_create(org_name):
         log_api_error(user_id, org_name, schema_dict, DataMonitorLogTypeEnum.tao_experiment, action="creation")
         return make_response(jsonify(schema_dict), job_response.code)
     job_id = job_response.data
-    if isinstance(job_response.data, str) and not validate_uuid(job_id=job_id):
-        metadata = {"error_desc": "internal error: invalid job IDs", "error_code": 5}
+    # Validate job ID
+    if not isinstance(job_response.data, str):
+        metadata = {
+            "error_desc": (
+                f"Internal error: Job creation returned unexpected type '{type(job_id).__name__}' "
+                f"instead of job ID string. Response: {job_id}"
+            ),
+            "error_code": 5
+        }
         schema = ErrorRsp()
         schema_dict = schema.dump(schema.load(metadata))
         log_api_error(user_id, org_name, schema_dict, DataMonitorLogTypeEnum.tao_experiment, action="creation")
         return make_response(jsonify(schema_dict), 500)
-    job = JobHandler.get_job(job_id)
+
+    # validate_uuid returns a message if invalid, None if valid
+    validation_error = validate_uuid(job_id=job_id)
+    if validation_error:
+        metadata = {
+            "error_desc": (
+                f"Internal error: Job creation returned invalid job ID: '{job_id}'. "
+                f"Validation error: {validation_error}"
+            ),
+            "error_code": 5
+        }
+        schema = ErrorRsp()
+        schema_dict = schema.dump(schema.load(metadata))
+        log_api_error(user_id, org_name, schema_dict, DataMonitorLogTypeEnum.tao_experiment, action="creation")
+        return make_response(jsonify(schema_dict), 500)
+    job_rsp = JobHandler.job_retrieve(org_name, experiment_id if kind == 'experiment' else dataset_id, job_id, kind)
+    job = job_rsp.data
     if kind == 'experiment':
         schema = ExperimentJobRsp()
         exp = experiment_response.data
         experiment = {key: exp[key] for key in exp if key not in ["jobs"]}
-        schema_loaded = schema.load(experiment | job)
+        combined_data = experiment | job
     else:
         schema = DatasetJobRsp()
         dataset = get_dataset(dataset_id)
-        tags = dataset.tags
-        schema_loaded = schema.load({"tags": tags} | job)
-    schema = JobRsp()   # Polymorphic schema
-    schema_dict = schema.dump(schema_loaded)
+        tags = dataset.get('tags', [])
+        combined_data = {"tags": tags} | job
+    schema_dict = schema.dump(schema.load(combined_data))
     return make_response(jsonify(schema_dict), 201)
 
 
@@ -277,7 +351,11 @@ def job_retrieve(org_name, job_id):
         return make_response(jsonify(schema_dict), 400)
     handler_id, kind = get_handler_id_and_kind(job_id)
     if kind not in ['experiment', 'dataset']:
-        metadata = {"error_desc": "Invalid input", "error_code": 1}
+        metadata = {
+            "error_desc": (f"Invalid job type '{kind}' for job_id {job_id}. "
+                           "Job must be associated with an experiment or dataset."),
+            "error_code": 1
+        }
         schema = ErrorRsp()
         schema_dict = schema.dump(schema.load(metadata))
         return make_response(jsonify(schema_dict), 400)
@@ -311,14 +389,13 @@ def job_retrieve(org_name, job_id):
         schema = ExperimentJobRsp()
         exp = experiment_response.data
         experiment = {key: exp[key] for key in exp if key not in ["jobs"]}
-        schema_loaded = schema.load(experiment | job)
+        combined_data = experiment | job
     else:
         schema = DatasetJobRsp()
         dataset = get_dataset(dataset_id)
-        tags = dataset.tags
-        schema_loaded = schema.load({"tags": tags} | job)
-    schema = JobRsp()   # Polymorphic schema
-    schema_dict = schema.dump(schema_loaded)
+        tags = dataset.get('tags', [])
+        combined_data = {"tags": tags} | job
+    schema_dict = schema.dump(schema.load(combined_data))
     return make_response(jsonify(schema_dict), 200)
 
 
@@ -390,7 +467,11 @@ def job_delete(org_name, job_id):
         return make_response(jsonify(schema_dict), 400)
     handler_id, kind = get_handler_id_and_kind(job_id)
     if kind not in ['experiment', 'dataset']:
-        metadata = {"error_desc": "Invalid input", "error_code": 1}
+        metadata = {
+            "error_desc": (f"Invalid job type for job_id {job_id}. "
+                           "Job must be associated with an experiment or dataset."),
+            "error_code": 1
+        }
         schema = ErrorRsp()
         schema_dict = schema.dump(schema.load(metadata))
         return make_response(jsonify(schema_dict), 400)
@@ -414,7 +495,7 @@ def job_delete(org_name, job_id):
     if kind == 'experiment':
         exp = get_experiment(experiment_id)
         # Delete experiment if no more jobs
-        if not exp.jobs:
+        if not exp.get('jobs', {}):
             # Get experiment_response
             experiment_response = ExperimentHandler.delete_experiment(org_name, experiment_id)
             if experiment_response.code != 200:
@@ -423,14 +504,13 @@ def job_delete(org_name, job_id):
                 return make_response(jsonify(schema_dict), experiment_response.code)
         schema = ExperimentJobRsp()
         experiment = {key: exp[key] for key in exp if key not in ["jobs"]}
-        schema_loaded = schema.load(experiment | job)
+        combined_data = experiment | job
     else:
         schema = DatasetJobRsp()
         dataset = get_dataset(dataset_id)
-        tags = dataset.tags
-        schema_loaded = schema.load({"tags": tags} | job)
-    schema = JobRsp()   # Polymorphic schema
-    schema_dict = schema.dump(schema_loaded)
+        tags = dataset.get('tags', [])
+        combined_data = {"tags": tags} | job
+    schema_dict = schema.dump(schema.load(combined_data))
     return make_response(jsonify(schema_dict), 200)
 
 
@@ -546,32 +626,33 @@ def job_list(org_name):
     """
     user_only = str(request.args.get('user_only', None)) in {'True', 'yes', 'y', 'true', 't', '1', 'on'}
     user_id = authentication.get_user_id(request.headers.get('Authorization', ''), org_name)
-    experiment_jobs = []
-    schema = ExperimentJobRsp()
+    jobs = []
+
+    # Process experiment jobs
+    exp_schema = ExperimentJobRsp()
     experiments = ExperimentHandler.list_experiments(user_id, org_name, user_only)
     for exp in experiments:
-        experiment_id = exp.id
+        experiment_id = exp.get('id')
         response = JobHandler.job_list(user_id, org_name, experiment_id, "experiment")
         if response.code == 200 and isinstance(response.data, list):
             for job in response.data:
                 experiment = {key: exp[key] for key in exp if key not in ["jobs"]}
-                experiment_jobs.append(schema.load(experiment | job))
-    dataset_jobs = []
-    schema = DatasetJobRsp()
+                combined_data = experiment | job
+                # Serialize with schema validation
+                jobs.append(dict(exp_schema.dump(exp_schema.load(combined_data))))
+
+    # Process dataset jobs
+    ds_schema = DatasetJobRsp()
     datasets = DatasetHandler.list_datasets(user_id, org_name, user_only)
     for dataset in datasets:
-        dataset_id = dataset.id
-        tags = dataset.tags
+        dataset_id = dataset.get('id')
+        tags = dataset.get('tags', [])
         response = JobHandler.job_list(user_id, org_name, dataset_id, "dataset")
         if response.code == 200 and isinstance(response.data, list):
             for job in response.data:
-                dataset_jobs.append(schema.load({"tags": tags} | job))
-    jobs = []
-    schema = JobRsp()
-    for job in experiment_jobs:
-        jobs.append(schema.dump(job))
-    for job in dataset_jobs:
-        jobs.append(schema.dump(job))
+                combined_data = {"tags": tags} | job
+                # Serialize with schema validation
+                jobs.append(dict(ds_schema.dump(ds_schema.load(combined_data))))
     filtered_jobs = filtering.apply(request.args, jobs)
     paginated_jobs = pagination.apply(request.args, filtered_jobs)
     metadata = {"jobs": paginated_jobs}
@@ -587,8 +668,25 @@ def job_list(org_name):
             "page_size": size,
             "page_index": skip // size,
         }
+    # Validate overall structure with JobListRsp schema
     schema = JobListRsp()
-    response = make_response(jsonify(schema.dump(schema.load(metadata))))
+    try:
+        schema.load(metadata)  # Validate structure
+    except Exception as e:
+        # Extract detailed validation errors
+        if isinstance(e, ValidationError):
+            # Marshmallow ValidationError contains field-specific errors
+            error_details = e.messages
+            error_message = f"Job list response validation failed. Errors: {error_details}"
+        else:
+            error_message = f"Job list response validation failed: {str(e)}"
+
+        metadata = {"error_desc": error_message, "error_code": 1}
+        error_schema = ErrorRsp()
+        schema_dict = error_schema.dump(error_schema.load(metadata))
+        return make_response(jsonify(schema_dict), 400)
+    # Return the pre-serialized metadata (OneOfSchema dump() doesn't work with pre-serialized dicts)
+    response = make_response(jsonify(metadata))
     return response
 
 
@@ -764,16 +862,21 @@ def base_experiments_list(org_name):
     user_id = authentication.get_user_id(request.headers.get('Authorization', ''), org_name)
     experiments = ExperimentHandler.list_base_experiments(user_id, org_name)
     jobs = []
-    for exp in experiments:
-        job_id = exp.id
-        job = exp.jobs.get(job_id)
-        if job:
-            job = JobHandler.get_job(job_id)
-            experiment = {key: exp[key] for key in exp if key not in ["jobs"]}
-            jobs.append(experiment | job)
+    # Fields that are not part of ExperimentJobRsp schema and should be removed
+    fields_to_remove = ['_id', 'type']
+    exp_schema = ExperimentJobRsp()
+    for job in experiments:
+        # Remove fields that aren't in the schema
+        for field in fields_to_remove:
+            job.pop(field, None)
+        # Serialize each job individually with schema validation
+        serialized_job = dict(exp_schema.dump(exp_schema.load(job)))
+        # Ensure kind field is present for polymorphic JobRsp routing
+        serialized_job['kind'] = 'experiment'
+        jobs.append(serialized_job)
     filtered_jobs = filtering.apply(request.args, jobs)
     paginated_jobs = pagination.apply(request.args, filtered_jobs)
-    metadata = {"jobs": paginated_jobs}
+    metadata = {"experiments": paginated_jobs}
     # Pagination
     skip = request.args.get("skip", None)
     size = request.args.get("size", None)
@@ -786,8 +889,26 @@ def base_experiments_list(org_name):
             "page_size": size,
             "page_index": skip // size,
         }
+    # Validate overall structure with JobListRsp schema
     schema = JobListRsp()
-    response = make_response(jsonify(schema.dump(schema.load(metadata))))
+    try:
+        schema.load(metadata)  # Validate structure
+    except Exception as e:
+        # Extract detailed validation errors
+        if isinstance(e, ValidationError):
+            # Marshmallow ValidationError contains field-specific errors
+            error_details = e.messages
+            error_message = f"Base experiments list response validation failed. Errors: {error_details}"
+        else:
+            error_message = f"Base experiments list response validation failed: {str(e)}"
+
+        logger.error(f"Base experiments list response validation failed: {error_message}")
+        metadata = {"error_desc": error_message, "error_code": 1}
+        error_schema = ErrorRsp()
+        schema_dict = error_schema.dump(error_schema.load(metadata))
+        return make_response(jsonify(schema_dict), 400)
+    # Return the pre-serialized metadata (OneOfSchema dump() doesn't work with pre-serialized dicts)
+    response = make_response(jsonify(metadata))
     return response
 
 
@@ -865,7 +986,11 @@ def job_partial_update(org_name, job_id):
         return make_response(jsonify(schema_dict), 400)
     handler_id, kind = get_handler_id_and_kind(job_id)
     if kind not in ['experiment', 'dataset']:
-        metadata = {"error_desc": "Invalid input", "error_code": 1}
+        metadata = {
+            "error_desc": (f"Invalid job type for job_id {job_id}. "
+                           "Job must be associated with an experiment or dataset."),
+            "error_code": 1
+        }
         schema = ErrorRsp()
         schema_dict = schema.dump(schema.load(metadata))
         return make_response(jsonify(schema_dict), 400)
@@ -875,8 +1000,6 @@ def job_partial_update(org_name, job_id):
         experiment_id = handler_id
         schema = ExperimentJobReq()
         request_dict = schema.dump(schema.load(request.get_json(force=True)))
-        # Only tags can be updated
-        request_dict = {key: request_dict[key] for key in request_dict if key in ["tags"]}
         # Get response
         response = ExperimentHandler.update_experiment(org_name, experiment_id, request_dict)
         if response.code != 200:
@@ -884,10 +1007,12 @@ def job_partial_update(org_name, job_id):
             schema_dict = schema.dump(schema.load(response.data))
             return make_response(jsonify(schema_dict), response.code)
         schema = ExperimentJobRsp()
-        job = JobHandler.get_job(job_id)
+        job = get_job(job_id)
+        if job.get("num_gpu") and job.get("num_gpu") == -1:
+            job["num_gpu"] = 1
         exp = response.data
         experiment = {key: exp[key] for key in exp if key not in ["jobs"]}
-        schema_loaded = schema.load(experiment | job)
+        combined_data = experiment | job
     else:
         dataset_id = handler_id
         message = validate_uuid(dataset_id=dataset_id)
@@ -907,12 +1032,11 @@ def job_partial_update(org_name, job_id):
             schema_dict = schema.dump(schema.load(response.data))
             return make_response(jsonify(schema_dict), response.code)
         schema = DatasetJobRsp()
-        job = JobHandler.get_job(job_id)
+        job = get_job(job_id)
         dataset = response.data
-        tags = dataset.get['tags']
-        schema_loaded = schema.load({"tags": tags} | job)
-    schema = JobRsp()   # Polymorphic schema
-    schema_dict = schema.dump(schema_loaded)
+        tags = dataset.get('tags', [])
+        combined_data = {"tags": tags} | job
+    schema_dict = schema.dump(schema.load(combined_data))
     return make_response(jsonify(schema_dict), 200)
 
 
@@ -1057,7 +1181,11 @@ def specs_schema(org_name):
         user_id = authentication.get_user_id(request.headers.get('Authorization', ''), org_name)
         handler_id, kind = get_handler_id_and_kind(job_id)
         if kind not in ['experiment', 'dataset']:
-            metadata = {"error_desc": "Invalid job", "error_code": 1}
+            metadata = {
+                "error_desc": (f"Invalid job: {job_id} is not an experiment job. "
+                               "This operation is only supported for experiment jobs."),
+                "error_code": 1
+            }
             schema = ErrorRsp()
             schema_dict = schema.dump(schema.load(metadata))
             return make_response(jsonify(schema_dict), 400)
@@ -1155,7 +1283,11 @@ def job_retry(org_name, job_id):
         return make_response(jsonify(schema_dict), 400)
     handler_id, kind = get_handler_id_and_kind(job_id)
     if kind not in ['experiment', 'dataset']:
-        metadata = {"error_desc": "Invalid input", "error_code": 1}
+        metadata = {
+            "error_desc": (f"Invalid job type for job_id {job_id}. "
+                           "Job must be associated with an experiment or dataset."),
+            "error_code": 1
+        }
         schema = ErrorRsp()
         schema_dict = schema.dump(schema.load(metadata))
         return make_response(jsonify(schema_dict), 400)
@@ -1176,24 +1308,36 @@ def job_retry(org_name, job_id):
         schema_dict = schema.dump(schema.load(response.data))
         return make_response(jsonify(schema_dict), response.code)
     job_id = response.data
-    if isinstance(response.data, str) and not validate_uuid(job_id=job_id):
-        metadata = {"error_desc": "internal error: invalid job IDs", "error_code": 5}
+    if not isinstance(response.data, str):
+        metadata = {
+            "error_desc": f"Internal error: Job retry returned unexpected type '{type(job_id).__name__}'",
+            "error_code": 5
+        }
         schema = ErrorRsp()
         schema_dict = schema.dump(schema.load(metadata))
         return make_response(jsonify(schema_dict), 500)
-    job = JobHandler.get_job(job_id)
+
+    validation_error = validate_uuid(job_id=job_id)
+    if validation_error:
+        metadata = {
+            "error_desc": f"Internal error: Job retry returned invalid job ID: '{job_id}'. {validation_error}",
+            "error_code": 5
+        }
+        schema = ErrorRsp()
+        schema_dict = schema.dump(schema.load(metadata))
+        return make_response(jsonify(schema_dict), 500)
+    job = get_job(job_id)
     if kind == 'experiment':
         schema = ExperimentJobRsp()
         exp = get_experiment(experiment_id)
         experiment = {key: exp[key] for key in exp if key not in ["jobs"]}
-        schema_loaded = schema.load(experiment | job)
+        combined_data = experiment | job
     else:
         schema = DatasetJobRsp()
         dataset = get_dataset(dataset_id)
-        tags = dataset.tags
-        schema_loaded = schema.load({"tags": tags} | job)
-    schema = JobRsp()   # Polymorphic schema
-    schema_dict = schema.dump(schema_loaded)
+        tags = dataset.get('tags', [])
+        combined_data = {"tags": tags} | job
+    schema_dict = schema.dump(schema.load(combined_data))
     return make_response(jsonify(schema_dict), 201)
 
 
@@ -1272,7 +1416,11 @@ def model_publish(org_name, job_id):
         return make_response(jsonify(schema_dict), 400)
     handler_id, kind = get_handler_id_and_kind(job_id)
     if kind not in ['experiment']:
-        metadata = {"error_desc": "Invalid job", "error_code": 1}
+        metadata = {
+            "error_desc": (f"Invalid job: {job_id} is not an experiment job. "
+                           "This operation is only supported for experiment jobs."),
+            "error_code": 1
+        }
         schema = ErrorRsp()
         schema_dict = schema.dump(schema.load(metadata))
         return make_response(jsonify(schema_dict), 400)
@@ -1376,7 +1524,11 @@ def remove_published_model(org_name, job_id):
         return make_response(jsonify(schema_dict), 400)
     handler_id, kind = get_handler_id_and_kind(job_id)
     if kind not in ['experiment']:
-        metadata = {"error_desc": "Invalid job", "error_code": 1}
+        metadata = {
+            "error_desc": (f"Invalid job: {job_id} is not an experiment job. "
+                           "This operation is only supported for experiment jobs."),
+            "error_code": 1
+        }
         schema = ErrorRsp()
         schema_dict = schema.dump(schema.load(metadata))
         return make_response(jsonify(schema_dict), 400)
@@ -1464,7 +1616,11 @@ def job_pause(org_name, job_id):  # noqa: D214
         return make_response(jsonify(schema_dict), 400)
     handler_id, kind = get_handler_id_and_kind(job_id)
     if kind not in ['experiment']:
-        metadata = {"error_desc": "Invalid job", "error_code": 1}
+        metadata = {
+            "error_desc": (f"Invalid job: {job_id} is not an experiment job. "
+                           "This operation is only supported for experiment jobs."),
+            "error_code": 1
+        }
         schema = ErrorRsp()
         schema_dict = schema.dump(schema.load(metadata))
         return make_response(jsonify(schema_dict), 400)
@@ -1545,7 +1701,11 @@ def job_cancel(org_name, job_id):
         return make_response(jsonify(schema_dict), 400)
     handler_id, kind = get_handler_id_and_kind(job_id)
     if kind not in ['experiment', 'dataset']:
-        metadata = {"error_desc": "Invalid input", "error_code": 1}
+        metadata = {
+            "error_desc": (f"Invalid job type for job_id {job_id}. "
+                           "Job must be associated with an experiment or dataset."),
+            "error_code": 1
+        }
         schema = ErrorRsp()
         schema_dict = schema.dump(schema.load(metadata))
         return make_response(jsonify(schema_dict), 400)
@@ -1639,7 +1799,11 @@ def job_resume(org_name, job_id):
         return make_response(jsonify(schema_dict), 400)
     handler_id, kind = get_handler_id_and_kind(job_id)
     if kind not in ['experiment']:
-        metadata = {"error_desc": "Invalid job", "error_code": 1}
+        metadata = {
+            "error_desc": (f"Invalid job: {job_id} is not an experiment job. "
+                           "This operation is only supported for experiment jobs."),
+            "error_code": 1
+        }
         schema = ErrorRsp()
         schema_dict = schema.dump(schema.load(metadata))
         return make_response(jsonify(schema_dict), 400)
@@ -1746,7 +1910,11 @@ def job_files_list(org_name, job_id):
         return make_response(jsonify(schema_dict), 400)
     handler_id, kind = get_handler_id_and_kind(job_id)
     if kind not in ['experiment', 'dataset']:
-        metadata = {"error_desc": "Invalid input", "error_code": 1}
+        metadata = {
+            "error_desc": (f"Invalid job type for job_id {job_id}. "
+                           "Job must be associated with an experiment or dataset."),
+            "error_code": 1
+        }
         schema = ErrorRsp()
         schema_dict = schema.dump(schema.load(metadata))
         return make_response(jsonify(schema_dict), 400)
@@ -1845,7 +2013,11 @@ def job_download(org_name, job_id):
         return make_response(jsonify(schema_dict), 400)
     handler_id, kind = get_handler_id_and_kind(job_id)
     if kind not in ['experiment', 'dataset']:
-        metadata = {"error_desc": "Invalid input", "error_code": 1}
+        metadata = {
+            "error_desc": (f"Invalid job type for job_id {job_id}. "
+                           "Job must be associated with an experiment or dataset."),
+            "error_code": 1
+        }
         schema = ErrorRsp()
         schema_dict = schema.dump(schema.load(metadata))
         return make_response(jsonify(schema_dict), 400)
@@ -1942,7 +2114,11 @@ def job_download_selective_files(org_name, job_id):
         return make_response(jsonify(schema_dict), 400)
     handler_id, kind = get_handler_id_and_kind(job_id)
     if kind not in ['experiment', 'dataset']:
-        metadata = {"error_desc": "Invalid input", "error_code": 1}
+        metadata = {
+            "error_desc": (f"Invalid job type for job_id {job_id}. "
+                           "Job must be associated with an experiment or dataset."),
+            "error_code": 1
+        }
         schema = ErrorRsp()
         schema_dict = schema.dump(schema.load(metadata))
         return make_response(jsonify(schema_dict), 400)
@@ -2057,7 +2233,11 @@ def job_logs(org_name, job_id):
         return make_response(jsonify(schema_dict), 400)
     handler_id, kind = get_handler_id_and_kind(job_id)
     if kind not in ['experiment', 'dataset']:
-        metadata = {"error_desc": "Invalid input", "error_code": 1}
+        metadata = {
+            "error_desc": (f"Invalid job type for job_id {job_id}. "
+                           "Job must be associated with an experiment or dataset."),
+            "error_code": 1
+        }
         schema = ErrorRsp()
         schema_dict = schema.dump(schema.load(metadata))
         return make_response(jsonify(schema_dict), 400)
@@ -2095,7 +2275,11 @@ def job_log_update(org_name, job_id):
         return make_response(jsonify(schema_dict), 400)
     handler_id, kind = get_handler_id_and_kind(job_id)
     if kind not in ['experiment', 'dataset']:
-        metadata = {"error_desc": "Invalid input", "error_code": 1}
+        metadata = {
+            "error_desc": (f"Invalid job type for job_id {job_id}. "
+                           "Job must be associated with an experiment or dataset."),
+            "error_code": 1
+        }
         schema = ErrorRsp()
         schema_dict = schema.dump(schema.load(metadata))
         return make_response(jsonify(schema_dict), 400)
@@ -2132,7 +2316,11 @@ def job_status_update(org_name, job_id):
         return make_response(jsonify(schema_dict), 400)
     handler_id, kind = get_handler_id_and_kind(job_id)
     if kind not in ['experiment', 'dataset']:
-        metadata = {"error_desc": "Invalid input", "error_code": 1}
+        metadata = {
+            "error_desc": (f"Invalid job type for job_id {job_id}. "
+                           "Job must be associated with an experiment or dataset."),
+            "error_code": 1
+        }
         schema = ErrorRsp()
         schema_dict = schema.dump(schema.load(metadata))
         return make_response(jsonify(schema_dict), 400)

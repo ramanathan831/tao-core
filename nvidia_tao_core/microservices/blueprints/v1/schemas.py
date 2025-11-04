@@ -26,6 +26,7 @@ from nvidia_tao_core.microservices.enum_constants import (
     DatasetFormat,
     DatasetType,
     ExperimentNetworkArch,
+    ContainerNetworkArch,
     Metrics,
     BaseExperimentTask,
     BaseExperimentDomain,
@@ -684,7 +685,7 @@ class ContainerJob(Schema):
         """Class enabling sorting field values by the order in which they are declared"""
 
         ordered = True
-    neural_network_name = EnumField(ExperimentNetworkArch)
+    neural_network_name = EnumField(ContainerNetworkArch)
     action_name = EnumField(ActionEnum)
     specs = fields.Raw()
     cloud_metadata = fields.Raw()
@@ -954,7 +955,7 @@ class DatasetReq(Schema):
     status = EnumField(PullStatus)
     use_for = fields.List(EnumField(DatasetIntentEnum), allow_none=True, validate=validate.Length(max=3))
     base_experiment_pull_complete = EnumField(PullStatus)
-    base_experiment = fields.List(
+    base_experiment_ids = fields.List(
         fields.Str(format="uuid", validate=fields.validate.Length(max=36)),
         validate=validate.Length(max=2)
     )
@@ -1045,7 +1046,7 @@ class DatasetRsp(Schema):
     status = EnumField(PullStatus)
     use_for = fields.List(EnumField(DatasetIntentEnum), allow_none=True, validate=validate.Length(max=3))
     base_experiment_pull_complete = EnumField(PullStatus)
-    base_experiment = fields.List(
+    base_experiment_ids = fields.List(
         fields.Str(format="uuid", validate=fields.validate.Length(max=36)),
         validate=validate.Length(max=2)
     )
@@ -1251,7 +1252,7 @@ class ExperimentReq(Schema):
     )
     encryption_key = fields.Str(format="regex", regex=r'.*', validate=fields.validate.Length(max=100))
     network_arch = EnumField(ExperimentNetworkArch)
-    base_experiment = fields.List(
+    base_experiment_ids = fields.List(
         fields.Str(
             format="uuid",
             validate=fields.validate.Length(max=36)
@@ -1403,7 +1404,7 @@ class ExperimentRsp(Schema):
     )
     encryption_key = fields.Str(format="regex", regex=r'.*', validate=fields.validate.Length(max=100))
     network_arch = EnumField(ExperimentNetworkArch)
-    base_experiment = fields.List(
+    base_experiment_ids = fields.List(
         fields.Str(
             format="uuid",
             validate=fields.validate.Length(max=36)
@@ -1579,4 +1580,88 @@ class LoadAirgappedExperimentsRsp(Schema):
     experiments_failed = fields.Int(
         validate=fields.validate.Range(min=0, max=sys.maxsize),
         format=sys_int_format()
+    )
+
+
+class ParameterDetailsReqSchema(Schema):
+    """Class defining request schema for getting parameter details"""
+
+    class Meta:
+        """Class enabling sorting field values by the order in which they are declared"""
+
+        ordered = True
+        unknown = EXCLUDE
+    parameters = fields.List(
+        fields.Str(
+            format="regex",
+            regex=r'.*',
+            validate=fields.validate.Length(max=500)
+        ),
+        validate=validate.Length(min=1, max=sys.maxsize),
+        required=True
+    )
+
+
+class ParameterRangeSchema(Schema):
+    """Schema for parameter attributes (used for both default and custom)"""
+
+    class Meta:
+        """Class enabling sorting field values by the order in which they are declared"""
+
+        ordered = True
+        unknown = EXCLUDE
+
+    parameter = fields.Str(
+        format="regex",
+        regex=r'.*',
+        validate=fields.validate.Length(max=500),
+        required=False  # Not required when used as nested schema
+    )
+    default_value = fields.Raw(allow_none=True)  # Only used for default section
+    valid_min = fields.Raw(allow_none=True)  # Can be float or list of floats
+    valid_max = fields.Raw(allow_none=True)  # Can be float or list of floats
+    valid_options = fields.List(fields.Raw(), allow_none=True)
+    option_weights = fields.List(fields.Float(), allow_none=True)  # Weights for valid_options
+    math_cond = fields.Str(format="regex", regex=r'.*', validate=fields.validate.Length(max=100), allow_none=True)
+    depends_on = fields.Str(format="regex", regex=r'.*', validate=fields.validate.Length(max=500), allow_none=True)
+    parent_param = fields.Str(format="regex", regex=r'.*', validate=fields.validate.Length(max=500), allow_none=True)
+
+
+class AutoMLParameterDetail(Schema):
+    """Class defining individual parameter detail schema"""
+
+    class Meta:
+        """Class enabling sorting field values by the order in which they are declared"""
+
+        ordered = True
+        unknown = EXCLUDE
+    parameter = fields.Str(format="regex", regex=r'.*', validate=fields.validate.Length(max=500))
+    value_type = fields.Str(format="regex", regex=r'.*', validate=fields.validate.Length(max=100))
+    default = fields.Nested(ParameterRangeSchema)
+    custom = fields.Nested(ParameterRangeSchema, allow_none=True)
+
+
+class AutoMLParameterDetailsRsp(Schema):
+    """Class defining response schema for getting parameter details"""
+
+    class Meta:
+        """Class enabling sorting field values by the order in which they are declared"""
+
+        ordered = True
+        unknown = EXCLUDE
+    parameter_details = fields.List(fields.Nested(AutoMLParameterDetail), validate=validate.Length(max=sys.maxsize))
+
+
+class AutoMLUpdateParameterRangesReq(Schema):
+    """Class defining request schema for updating parameter ranges"""
+
+    class Meta:
+        """Class enabling sorting field values by the order in which they are declared"""
+
+        ordered = True
+        unknown = EXCLUDE
+    parameter_ranges = fields.List(
+        fields.Nested(ParameterRangeSchema),
+        validate=validate.Length(min=1, max=sys.maxsize),
+        required=True
     )
