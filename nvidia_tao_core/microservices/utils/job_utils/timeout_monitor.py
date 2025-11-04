@@ -34,6 +34,10 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Track when we first detected jobs with no timestamp (for timeout purposes)
+# Format: {job_id: first_detection_time}
+_no_timestamp_job_tracker = {}
+
 
 def get_last_status_timestamp(job_id, automl=False, experiment_number="0"):
     """Get the timestamp of the last status update for a job"""
@@ -86,7 +90,7 @@ def check_pod_liveness(job_id):
     """
     try:
         import requests
-        from nvidia_tao_core.microservices.handlers.stateless_handlers import BACKEND
+        from nvidia_tao_core.microservices.utils.stateless_handler_utils import BACKEND
 
         port = 8000
 
@@ -97,7 +101,7 @@ def check_pod_liveness(job_id):
             logger.info(f"Checking liveness for Docker container {job_id} at {liveness_url}")
         else:
             # Kubernetes: use service name with namespace
-            from nvidia_tao_core.microservices.handlers.utilities import get_statefulset_service_name
+            from nvidia_tao_core.microservices.utils.handler_utils import get_statefulset_service_name
             service_name = get_statefulset_service_name(job_id)
             namespace = os.getenv('NAMESPACE', 'default')
 
@@ -275,6 +279,10 @@ def check_job_timeout(job_info):
 
         # CASE 1: We have status updates - check if they're recent
         if last_timestamp is not None:
+            # Job is sending status updates - clean up from no-timestamp tracker if present
+            actual_job_id = job_id
+            _no_timestamp_job_tracker.pop(actual_job_id, None)
+
             current_time = datetime.now(tz=timezone.utc)
             time_since_update = current_time - last_timestamp
             is_timed_out = time_since_update.total_seconds() > timeout_seconds
@@ -310,8 +318,10 @@ def check_job_timeout(job_info):
             "Checking if pod is alive via liveness endpoint..."
         )
 
+        # Use actual_job_id for tracking (same as job_id for regular jobs)
+        actual_job_id = job_id
+
         # Check if the pod is responding to liveness checks
-        # Use actual_job_id which includes experiment_number for AutoML
         pod_is_alive = check_pod_liveness(job_id)
 
         if pod_is_alive:
@@ -342,6 +352,9 @@ def check_job_timeout(job_info):
                             continue
 
                 if job_start_time:
+                    # Job has proper metadata - clean up from no-timestamp tracker
+                    _no_timestamp_job_tracker.pop(actual_job_id, None)
+
                     current_time = datetime.now(tz=timezone.utc)
                     time_since_start = current_time - job_start_time
 
@@ -372,10 +385,53 @@ def check_job_timeout(job_info):
                     )
                     return False  # Still within grace period
 
-            # If we can't determine job start time, don't timeout (be conservative)
+            # If we can't determine job start time, track when we first detected this
+            # and apply timeout after grace period
+            current_time = datetime.now(tz=timezone.utc)
+
+            # Check if we've been tracking this job
+            if actual_job_id not in _no_timestamp_job_tracker:
+                # First time detecting this condition - start tracking
+                _no_timestamp_job_tracker[actual_job_id] = current_time
+                logger.info(
+                    f"{job_description} pod is alive but no status updates and no job timestamp. "
+                    f"Starting timeout tracking. Will terminate after {timeout_seconds}s."
+                )
+                return False  # Give it the grace period
+
+            # We've been tracking this job - check how long
+            first_detection_time = _no_timestamp_job_tracker[actual_job_id]
+            time_in_limbo = current_time - first_detection_time
+
+            if time_in_limbo.total_seconds() > timeout_seconds:
+                # Been in this state too long - timeout
+                timeout_message = (
+                    f"Job timed out: pod is alive but has sent no status updates for "
+                    f"{time_in_limbo.total_seconds():.0f}s and job age cannot be determined. "
+                    f"This indicates a stuck or orphaned job. Terminating (timeout: {timeout_seconds}s)."
+                )
+                logger.warning(f"{job_description} {timeout_message}")
+
+                # Clean up tracker
+                _no_timestamp_job_tracker.pop(actual_job_id, None)
+
+                # Update job status before terminating
+                internal_job_status_update(
+                    job_id=lookup_job_id,
+                    automl=is_automl,
+                    automl_experiment_number=experiment_number,
+                    message=timeout_message,
+                    status="FAILURE",
+                    handler_id=job_info.get('handler_id'),
+                    kind=job_info.get('kind')
+                )
+                return True  # Timeout this job
+
+            # Still within grace period
             logger.info(
-                f"{job_description} pod is alive but no status updates and cannot determine job age. "
-                "Not applying timeout to be conservative."
+                f"{job_description} pod is alive but no status updates/timestamp. "
+                f"In limbo for {time_in_limbo.total_seconds():.0f}s. "
+                f"Will timeout after {timeout_seconds}s."
             )
             return False
 
@@ -405,18 +461,28 @@ def terminate_timed_out_job(job_info):
     is_automl_brain = job_info.get('is_automl_brain', False)
     brain_job_id = job_info.get('brain_job_id', None)
     experiment_number = job_info.get('experiment_number', '0')
+    source = job_info.get('source', '')
 
-    if not job_id or not handler_id:
-        logger.error(f"Cannot terminate job: missing job_id or handler_id in {job_info}")
+    if not job_id:
+        logger.error(f"Cannot terminate job: missing job_id in {job_info}")
         return False
+
+    # Check if this is an orphaned job without metadata
+    is_orphaned = not handler_id or source.startswith('orphaned_')
 
     try:
         # Handle AutoML brain jobs differently - they're K8s jobs, not StatefulSets
         if is_automl_brain:
-            logger.info(f"Terminating timed out AutoML brain job {job_id}")
-
-            # Update job status to indicate timeout
-            update_job_status(handler_id, job_id, status="Error", kind=kind)
+            if is_orphaned:
+                logger.warning(
+                    f"Terminating orphaned AutoML brain job {job_id} (source: {source}). "
+                    f"No handler_id available, will only delete K8s Job."
+                )
+            else:
+                logger.info(f"Terminating timed out AutoML brain job {job_id}")
+                # Update job status to indicate timeout (only if we have handler_id)
+                if handler_id:
+                    update_job_status(handler_id, job_id, status="Error", kind=kind)
 
             # Delete the K8s Job (not StatefulSet)
             job_executor = JobExecutor()
@@ -478,19 +544,30 @@ def terminate_timed_out_job(job_info):
                 return False
             logger.error(f"Invalid controller info format for AutoML job {job_id}")
             return False
-        logger.info(f"Terminating timed out job {job_id}")
 
-        # Update job status to indicate timeout
-        update_job_status(handler_id, job_id, status="Error", kind=kind)
+        # Regular job or orphaned job termination
+        if is_orphaned:
+            logger.warning(
+                f"Terminating orphaned job {job_id} (source: {source}). "
+                f"No handler_id available, will only delete K8s/Docker resources."
+            )
+        else:
+            logger.info(f"Terminating timed out job {job_id}")
+            # Update job status to indicate timeout (only if we have handler_id)
+            if handler_id:
+                update_job_status(handler_id, job_id, status="Error", kind=kind)
 
-        # Delete the StatefulSet
+        # Delete the StatefulSet (works for both orphaned and regular jobs)
         statefulset_executor = StatefulSetExecutor()
         success = statefulset_executor.delete_statefulset(job_id, use_ngc=True)
 
         if success:
-            logger.info(f"Successfully terminated timed out job {job_id}")
+            if is_orphaned:
+                logger.info(f"Successfully deleted orphaned job resources for {job_id}")
+            else:
+                logger.info(f"Successfully terminated timed out job {job_id}")
         else:
-            logger.error(f"Failed to terminate timed out job {job_id}")
+            logger.error(f"Failed to terminate job {job_id}")
 
         return success
 

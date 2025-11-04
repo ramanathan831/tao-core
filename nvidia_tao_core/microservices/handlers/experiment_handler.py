@@ -229,7 +229,7 @@ class ExperimentHandler:
         experiment_id = experiment_id or str(uuid.uuid4())
 
         workspace_id = request_dict.get("workspace", None)
-        if not check_read_access(user_id, org_name, workspace_id, kind="workspaces"):
+        if workspace_id and not check_read_access(user_id, org_name, workspace_id, kind="workspaces"):
             return Code(404, None, f"Workspace {workspace_id} not found")
 
         # Gather type,format fields from request
@@ -283,7 +283,7 @@ class ExperimentHandler:
                     "checkpoint_choose_method": request_dict.get("checkpoint_choose_method", "best_model"),
                     "checkpoint_epoch_number": request_dict.get("checkpoint_epoch_number", {}),
                     "calibration_dataset": None,
-                    "base_experiment": [],
+                    "base_experiment_ids": [],
                     "automl_settings": request_dict.get("automl_settings", {}),
                     "metric": request_dict.get("metric", "kpi"),
                     "model_params": request_dict.get("model_params", {}),
@@ -334,7 +334,7 @@ class ExperimentHandler:
                 "eval_dataset",
                 "inference_dataset",
                 "calibration_dataset",
-                "base_experiment"
+                "base_experiment_ids"
             ]
         )
         if error_code:
@@ -618,7 +618,7 @@ class ExperimentHandler:
                     "eval_dataset",
                     "inference_dataset",
                     "calibration_dataset",
-                    "base_experiment",
+                    "base_experiment_ids",
                     "checkpoint_choose_method",
                     "checkpoint_epoch_number"
                 ]
@@ -739,7 +739,7 @@ class ExperimentHandler:
 
         for handler_id in experiments:
             metadata = get_experiment(handler_id)
-            if experiment_id == metadata.get("base_experiment", None):
+            if experiment_id in metadata.get("base_experiment_ids", []):
                 return Code(400, {}, f"Experiment {experiment_id} in use as a base_experiment")
 
         for job in handler_metadata.get("jobs", {}):

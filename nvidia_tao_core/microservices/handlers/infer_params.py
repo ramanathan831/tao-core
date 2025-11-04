@@ -114,8 +114,8 @@ def infer_automl_output_dir(
 def infer_ptm(job_context, handler_metadata):
     """Returns a list of path of the ptm files of a network"""
     network = job_context.network
-    handler_ptms = handler_metadata.get("base_experiment", None)
-    if handler_ptms is None:
+    handler_ptms = handler_metadata.get("base_experiment_ids", [])
+    if not handler_ptms:
         return None
     ptm_file = []
     for handler_ptm in handler_ptms:

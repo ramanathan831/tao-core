@@ -77,8 +77,8 @@ class SpecHandler:
                 return Code(404, {}, "Action not found")
 
         base_experiment_spec = {}
-        if metadata.get("base_experiment", []):
-            for base_experiment_id in metadata["base_experiment"]:
+        if metadata.get("base_experiment_ids", []):
+            for base_experiment_id in metadata["base_experiment_ids"]:
                 base_experiment_metadata = get_base_experiment_metadata(base_experiment_id)
                 base_exp_meta = base_experiment_metadata.get("base_experiment_metadata", {})
                 if base_experiment_metadata and base_exp_meta.get("spec_file_present"):
@@ -318,12 +318,12 @@ class SpecHandler:
         # Read csv from spec_utils/specs/<network_name>/action.csv
         # Convert to json schema
         json_schema = {}
-        if network in TAO_NETWORKS:
-            try:
-                json_schema = generate_schema(network, action)
-            except Exception as e:
-                logger.error("Exception thrown in get_spec_schema_without_handler_id is %s", str(e))
-                logger.error("Unable to fetch schema from tao_core")
+        microservices_network, microservices_action = get_microservices_network_and_action(network, action)
+        try:
+            json_schema = generate_schema(microservices_network, microservices_action)
+        except Exception as e:
+            logger.error("Exception thrown in get_spec_schema_without_handler_id is %s", str(e))
+            logger.error("Unable to fetch schema from tao_core")
 
         if not json_schema:
             DIR_PATH = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))

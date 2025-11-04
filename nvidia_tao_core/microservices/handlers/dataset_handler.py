@@ -203,7 +203,7 @@ class DatasetHandler:
                     "url": request_dict.get("url"),
                     "workspace": request_dict.get("workspace"),
                     "use_for": intention,
-                    "base_experiment": request_dict.get("base_experiment", []),
+                    "base_experiment_ids": request_dict.get("base_experiment_ids", []),
                     }
 
         if not handler_level_access_control(user_id, org_name, dataset_id, "datasets", handler_metadata=metadata):
@@ -319,7 +319,7 @@ class DatasetHandler:
 
             if key in [
                 "name", "description", "version", "logo", "shared",
-                "base_experiment", "authorized_party_nca_id"
+                "base_experiment_ids", "authorized_party_nca_id"
             ]:
                 requested_value = request_dict[key]
                 if requested_value:

@@ -28,8 +28,7 @@ from .schemas import (
     ErrorRsp,
     InferenceReq,
     InferenceMicroserviceReq,
-    InferenceMicroserviceRsp,
-    JobReq
+    InferenceMicroserviceRsp
 )
 
 logger = logging.getLogger(__name__)
@@ -84,26 +83,31 @@ def inference_microservice_start(org_name):
         # Generate unique job_id
         experiment_id = job_id = str(uuid.uuid4())
 
-        # Create an experiment
-        schema = JobReq()
-        request_dict = schema.dump(schema.load(request_data))
+        # Validate request with InferenceMicroserviceReq schema
+        schema = InferenceMicroserviceReq()
+        validated_data = schema.load(request_data)
+        # Create experiment request dict with only the fields needed
+        network_arch = validated_data.get("network_arch")
+        experiment_request = {
+            "network_arch": network_arch.value if hasattr(network_arch, 'value') else network_arch,
+        }
+        if validated_data.get("workspace"):
+            experiment_request["workspace"] = validated_data.get("workspace")
         user_id = authentication.get_user_id(request.headers.get('Authorization', ''), org_name)
         experiment_response = ExperimentHandler.create_experiment(
-            user_id, org_name, request_dict, experiment_id=experiment_id)
+            user_id, org_name, experiment_request, experiment_id=experiment_id)
         if experiment_response.code != 200:
             schema = ErrorRsp()
             metadata = {"error_desc": 'Failed to start Inference Microservice', "error_code": 1}
             schema_dict = schema.dump(schema.load(metadata))
             return make_response(jsonify(schema_dict), 500)
 
-        # Create job configuration
-        schema = InferenceMicroserviceReq()
-        request_dict = schema.dump(schema.load(request_data))
-        success = InferenceMicroserviceHandler.start_inference_microservice(
-            org_name, experiment_id, job_id, request_dict
+        # Pass validated data to inference microservice handler
+        response = InferenceMicroserviceHandler.start_inference_microservice(
+            org_name, experiment_id, job_id, validated_data
         )
 
-        if success:
+        if response.code == 200:
             metadata = {
                 'job_id': job_id,
                 'status': 'starting',
@@ -113,7 +117,7 @@ def inference_microservice_start(org_name):
             schema_dict = schema.dump(schema.load(metadata))
             return make_response(jsonify(schema_dict), 201)
         schema = ErrorRsp()
-        metadata = {"error_desc": 'Failed to start Inference Microservice', "error_code": 2}
+        metadata = {"error_desc": response.data['error_desc'], "error_code": response.data['error_code']}
         schema_dict = schema.dump(schema.load(metadata))
         return make_response(jsonify(schema_dict), 500)
 
