@@ -2513,20 +2513,20 @@ def inference_microservice_start(org_name, experiment_id):
         job_id = str(uuid.uuid4())
 
         # Create job configuration
-        success = InferenceMicroserviceHandler.start_inference_microservice(
+        response = InferenceMicroserviceHandler.start_inference_microservice(
             org_name, experiment_id, job_id, request_data
         )
 
-        if success:
+        if response.code == 200:
             return make_response(jsonify({
                 'job_id': job_id,
                 'status': 'starting',
                 'message': f'Inference Microservice started with job_id: {job_id}'
             }), 200)
-        return make_response(jsonify({
-            'error': 'Failed to start Inference Microservice',
-            'error_code': 1
-        }), 500)
+        schema = ErrorRsp()
+        metadata = {"error_desc": response.data['error_desc'], "error_code": response.data['error_code']}
+        schema_dict = schema.dump(schema.load(metadata))
+        return make_response(jsonify(schema_dict), 500)
 
     except Exception as err:
         logger.error("Error in inference_microservice_start: %s", str(traceback.format_exc()))

@@ -28,6 +28,7 @@ from nvidia_tao_core.microservices.constants import (
 )
 from nvidia_tao_core.microservices.utils.nvcf_utils import get_available_nvcf_instances
 from nvidia_tao_core.microservices.handlers.automl_handler import AutoMLHandler
+from nvidia_tao_core.microservices.utils.automl_utils import apply_automl_custom_param_ranges
 from nvidia_tao_core.microservices.utils.stateless_handler_utils import (
     check_read_access,
     check_write_access,
@@ -98,7 +99,8 @@ class JobHandler:
         from_ui=False,
         retain_checkpoints_for_resume=False,
         early_stop_epoch=None,
-        timeout_minutes=60
+        timeout_minutes=60,
+        automl_settings=None
     ):
         """Runs a job based on the specified parameters.
 
@@ -169,14 +171,6 @@ class JobHandler:
                     parent_handler_id = parent_job_metadata.get("experiment_id")
                 if not parent_handler_id:
                     return Code(404, [], f"Unable to identify {parent_kind} id for parent job {parent_job_id}")
-
-                if parent_kind == "experiment":
-                    if parent_handler_id != handler_id:
-                        return Code(
-                            404, [],
-                            f"Parent job {parent_job_id} trying to assign doesn't belong to current experiment "
-                            f"{handler_id}, it belongs to experiment {parent_handler_id}"
-                        )
 
         if BACKEND == "NVCF":
             available_nvcf_instances = get_available_nvcf_instances(user_id, org_name)
@@ -252,6 +246,17 @@ class JobHandler:
             msg = ""
             if is_request_automl(handler_id, action, kind):
                 logger.info("Creating AutoML job %s", job_id)
+
+                # Apply custom AutoML parameter ranges from automl_settings if provided
+                if automl_settings:
+                    automl_range_override = automl_settings.get("automl_range_override")
+                    if automl_range_override:
+                        success, error_msg = apply_automl_custom_param_ranges(
+                            job_id, network_arch, automl_range_override
+                        )
+                        if not success:
+                            return Code(400, [], f"Failed to apply custom AutoML parameter ranges: {error_msg}")
+
                 AutoMLHandler.start(
                     user_id,
                     org_name,

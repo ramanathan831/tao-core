@@ -388,16 +388,24 @@ class TestTerminateTimedOutJob:
 
     @patch('nvidia_tao_core.microservices.utils.job_utils.executor.statefulset_executor.StatefulSetExecutor')
     def test_terminate_timed_out_job_missing_info(self, mock_executor_class):
-        """Test handling of missing job information"""
+        """Test handling of missing job information - treated as orphaned job"""
         job_info = {
             'job_id': 'test-job-123',
-            # Missing handler_id
+            # Missing handler_id - will be treated as orphaned job
             'is_automl': False
         }
 
+        # Configure mock to return True (orphaned jobs can still be terminated)
+        mock_executor = Mock()
+        mock_executor.delete_statefulset.return_value = True
+        mock_executor_class.return_value = mock_executor
+
         result = terminate_timed_out_job(job_info)
 
-        assert result is False
+        # Orphaned jobs (without handler_id) can still be terminated
+        assert result is True
+        # Verify StatefulSet deletion was attempted
+        mock_executor.delete_statefulset.assert_called_once_with('test-job-123', use_ngc=True)
 
     @patch('nvidia_tao_core.microservices.utils.job_utils.executor.statefulset_executor.StatefulSetExecutor')
     @patch('nvidia_tao_core.microservices.utils.job_utils.timeout_monitor.update_job_status')

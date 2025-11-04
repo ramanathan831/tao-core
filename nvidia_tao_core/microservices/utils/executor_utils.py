@@ -206,6 +206,98 @@ def check_endpoints_ready(service_name, namespace):
         raise e
 
 
+def get_all_k8s_running_resources():
+    """Get all running StatefulSets and Jobs from Kubernetes cluster
+
+    Returns:
+        dict: {'statefulsets': [...], 'jobs': [...]}
+    """
+    backend = os.getenv("BACKEND", "local-k8s")
+    if backend == "local-docker":
+        # For Docker Compose, we'll check containers separately
+        return {'statefulsets': [], 'jobs': []}
+
+    try:
+        # Load kube config
+        try:
+            config.load_incluster_config()
+        except Exception:
+            config.load_kube_config()
+
+        namespace = os.getenv('NAMESPACE', 'default')
+
+        # List all StatefulSets in the namespace
+        apps_api = client.AppsV1Api()
+        statefulsets = []
+        try:
+            # Get all StatefulSets
+            ss_list = apps_api.list_namespaced_stateful_set(namespace=namespace)
+            for ss in ss_list.items:
+                job_id = ''
+
+                # Try to get job-id from selector match labels (multinode uses this)
+                if (ss.spec and ss.spec.selector and ss.spec.selector.match_labels):
+                    job_id = ss.spec.selector.match_labels.get('job-id', '')
+
+                # If not found, try pod template labels (all TAO StatefulSets have this)
+                if not job_id and ss.spec and ss.spec.template and ss.spec.template.metadata:
+                    template_labels = ss.spec.template.metadata.labels
+                    if template_labels:
+                        job_id = template_labels.get('job-id', '')
+
+                # Skip if no job-id found (not a TAO job)
+                if not job_id:
+                    continue
+
+                # Safely get status fields
+                ready_replicas = 0
+                if ss.status and ss.status.ready_replicas is not None:
+                    ready_replicas = ss.status.ready_replicas
+
+                statefulsets.append({
+                    'job_id': job_id,
+                    'name': ss.metadata.name,
+                    'status': 'Running',
+                    'ready_replicas': ready_replicas,
+                    'desired_replicas': ss.spec.replicas or 0,
+                    'creation_timestamp': ss.metadata.creation_timestamp
+                })
+        except Exception as e:
+            logger.error(f"Error listing StatefulSets: {e}")
+
+        # List all Jobs in the namespace
+        batch_api = client.BatchV1Api()
+        jobs = []
+        try:
+            job_list = batch_api.list_namespaced_job(
+                namespace=namespace,
+                label_selector="purpose=tao-toolkit-job"
+            )
+            for job in job_list.items:
+                job_id = ''
+                if job.metadata.labels:
+                    job_id = job.metadata.labels.get('job-id', '')
+                if not job_id:
+                    # Try extracting from name
+                    job_id = job.metadata.name
+
+                if job_id:
+                    jobs.append({
+                        'job_id': job_id,
+                        'name': job.metadata.name,
+                        'status': 'Running',
+                        'creation_timestamp': job.metadata.creation_timestamp
+                    })
+        except Exception as e:
+            logger.error(f"Error listing Jobs: {e}")
+
+        return {'statefulsets': statefulsets, 'jobs': jobs}
+
+    except Exception as e:
+        logger.error(f"Error getting K8s resources: {e}")
+        return {'statefulsets': [], 'jobs': []}
+
+
 # Backward compatibility aliases for utility functions
 
 

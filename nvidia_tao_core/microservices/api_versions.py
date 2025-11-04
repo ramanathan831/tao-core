@@ -94,6 +94,7 @@ def setup_v1_api():
         from .blueprints.v1 import (
             admin_bp_v1,
             auth_bp_v1,
+            automl_params_bp_v1,
             workspaces_bp_v1,
             datasets_bp_v1,
             experiments_bp_v1,
@@ -108,6 +109,9 @@ def setup_v1_api():
             (health_bp_v1, ''),         # /api/v1/health/*
             (internal_bp_v1, ''),       # /api/v1/internal/*, /api/v1/orgs/<org>:gpu_types
             (workspaces_bp_v1, ''),     # /api/v1/orgs/<org>/workspaces/*
+            # /api/v1/orgs/<org>/experiments/*:get_automl_param_details,
+            # /api/v1/orgs/<org>/experiments/*:update_automl_param_ranges
+            (automl_params_bp_v1, ''),
             (datasets_bp_v1, ''),       # /api/v1/orgs/<org>/datasets/*
             (experiments_bp_v1, ''),    # /api/v1/orgs/<org>/experiments/*
         ]
@@ -131,6 +135,7 @@ def setup_v2_api():
         from .blueprints.v2 import (
             admin_bp_v2,
             auth_bp_v2,
+            automl_params_bp_v2,
             workspaces_bp_v2,
             datasets_bp_v2,
             health_bp_v2,
@@ -143,6 +148,7 @@ def setup_v2_api():
             (auth_bp_v2, ''),           # /api/v2/login, /api/v1/auth
             (health_bp_v2, ''),         # /api/v2/health/*
             (workspaces_bp_v2, ''),     # /api/v2/orgs/<org>/workspaces/*
+            (automl_params_bp_v2, ''),  # /api/v2/orgs/<org>/automl:get_param_details
             (datasets_bp_v2, ''),       # /api/v2/orgs/<org>/datasets/*
             (jobs_bp_v2, ''),           # /api/v2/orgs/<org>/jobs/*
             (inference_microservices_bp_v2, ''),  # /api/v2/orgs/<org>/inference_microservices/*

@@ -15,6 +15,7 @@
 """API v1 blueprints for organizing endpoints by version."""
 
 from .auth import auth_bp_v1
+from .automl import automl_params_bp_v1
 from .workspaces import workspaces_bp_v1
 from .datasets import datasets_bp_v1
 from .experiments import experiments_bp_v1
@@ -27,6 +28,8 @@ from .schemas import (
     AWSCloudPull,
     AutoMLResultsDetailed,
     AutoMLResults,
+    AutoMLParameterDetailsRsp,
+    AutoMLUpdateParameterRangesReq,
     AutoML,
     AzureCloudPull,
     BaseExperimentMetadata,
@@ -83,6 +86,8 @@ from .schemas import (
 V1_SCHEMAS = [
     ("AWSCloudPull", AWSCloudPull),
     ("AutoMLResultsDetailed", AutoMLResultsDetailed),
+    ("AutoMLParameterDetailsRsp", AutoMLParameterDetailsRsp),
+    ("AutoMLUpdateParameterRangesReq", AutoMLUpdateParameterRangesReq),
     ("AutoMLResults", AutoMLResults),
     ("AutoML", AutoML),
     ("AzureCloudPull", AzureCloudPull),
@@ -138,6 +143,7 @@ V1_SCHEMAS = [
 
 __all__ = [
     'auth_bp_v1',
+    'automl_params_bp_v1',
     'workspaces_bp_v1',
     'datasets_bp_v1',
     'experiments_bp_v1',

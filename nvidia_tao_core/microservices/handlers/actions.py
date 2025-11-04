@@ -313,19 +313,16 @@ class ActionPipeline:
             if cluster_ip and cluster_port:
                 host_base_url = f"http://{cluster_ip}:{cluster_port}"
 
-        handler_kind = "experiments"
-        if (not self.handler_metadata.get("train_datasets", [])) and self.job_context.network not in (
-            ["auto_label", "image"]
-        ):
-            handler_kind = "datasets"
+        # Pluralize handler_kind for API endpoint (experiment -> experiments, dataset -> datasets)
+        handler_kind_plural = f"{self.handler_kind}s" if not self.handler_kind.endswith('s') else self.handler_kind
 
         status_url = (
-            f"{host_base_url}/api/v1/orgs/{org_name}/{handler_kind}/"
+            f"{host_base_url}/api/v1/orgs/{org_name}/{handler_kind_plural}/"
             f"{self.handler_id}/jobs/{self.job_context.id}"
         )
         if automl_brain_job_id:
             status_url = (
-                f"{host_base_url}/api/v1/orgs/{org_name}/{handler_kind}/"
+                f"{host_base_url}/api/v1/orgs/{org_name}/{handler_kind_plural}/"
                 f"{self.handler_id}/jobs/{automl_brain_job_id}"
             )
             if experiment_number:
@@ -432,7 +429,7 @@ class ActionPipeline:
 
     def handle_ptm_anomalies(self):
         """Remove one of end-end or backbone related PTM field based on the Handler metadata info"""
-        for base_experiment_id in self.handler_metadata.get("base_experiment", []):
+        for base_experiment_id in self.handler_metadata.get("base_experiment_ids", []):
             base_experiment_metadata = get_base_experiment_metadata(base_experiment_id)
             if base_experiment_metadata.get("base_experiment_metadata", {}).get("is_backbone"):
                 # if ptm is a backbone remove end_to_end field from config and spec
@@ -444,7 +441,7 @@ class ActionPipeline:
                 remove_key_by_flattened_string(self.spec, parameter_to_remove)
                 remove_key_by_flattened_string(self.config, parameter_to_remove)
 
-        if not self.handler_metadata.get("base_experiment", []):
+        if not self.handler_metadata.get("base_experiment_ids", []):
             parameters_to_remove = [
                 ptm_mapper.get("end_to_end", {}).get(self.network),
                 ptm_mapper.get("backbone", {}).get(self.network),
@@ -1018,7 +1015,7 @@ class AutoMLPipeline(ActionPipeline):
                     ptm_id = dep.name
                     break
         if ptm_id:
-            recommended_values["base_experiment"] = search_for_base_experiment(
+            recommended_values["base_experiment_ids"] = search_for_base_experiment(
                 get_handler_root(base_exp_uuid, "experiments", base_exp_uuid, ptm_id)
             )
 

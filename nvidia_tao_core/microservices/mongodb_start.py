@@ -208,7 +208,7 @@ if __name__ == "__main__":
     logger.info("Mongo Operator Enabled: %s", mongo_operator_enabled)
     if not mongo_operator_enabled:
         try:
-            from mongo_utils import MongoHandler
+            from .utils.mongo_utils import MongoHandler
             # try to make a test connection to DB replicaset
             mongo_experiments = MongoHandler(
                 "tao",

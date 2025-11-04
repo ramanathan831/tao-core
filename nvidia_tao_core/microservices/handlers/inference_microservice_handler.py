@@ -57,14 +57,11 @@ class InferenceMicroserviceHandler:
 
         The network architecture is automatically determined from the experiment metadata.
         """
-        from nvidia_tao_core.microservices.handlers.stateless_handlers import write_job_metadata
+        from nvidia_tao_core.microservices.utils.stateless_handler_utils import write_job_metadata
         from nvidia_tao_core.microservices.utils import get_admin_key
-        from nvidia_tao_core.microservices.job_utils.executor.utils import get_cluster_ip
+        from nvidia_tao_core.microservices.utils.job_utils.executor.base_executor import get_cluster_ip
 
         logger.info("Starting Inference Microservice %s for experiment %s", job_id, experiment_id)
-        # StatefulSet name
-        statefulset_name = f"ims-{job_id}"
-        logger.info("Using StatefulSet name: %s", statefulset_name)
 
         # Get experiment metadata to determine network architecture
         experiment_metadata = get_handler_metadata(experiment_id, kind="experiments")
@@ -90,11 +87,31 @@ class InferenceMicroserviceHandler:
             image = DOCKER_IMAGE_MAPPER.get(network_arch.upper(), "nvcr.io/nvidia/tao/tao-toolkit:6.0.0-pyt")
             logger.info("Using fallback Docker image: %s", image)
 
-        logger.info("image: %s", image)
-        logger.info("Using folder path function: %s", folder_path_function)
-
         # Build command for Inference Microservice integrated into TAO container
-        parent_id = job_config.get("parent_id", "")
+        parent_id = job_config.get("parent_job_id", job_config.get("parent_id", ""))
+
+        # Check if parent job is in Done state
+        if parent_id:
+            from nvidia_tao_core.microservices.utils.stateless_handler_utils import (
+                get_handler_job_metadata
+            )
+            parent_job_metadata = get_handler_job_metadata(parent_id)
+            if parent_job_metadata:
+                parent_status = parent_job_metadata.get("status", "")
+                if parent_status != "Done":
+                    error_msg = (
+                        f"Cannot start inference microservice: parent job {parent_id} "
+                        f"is not in 'Done' state (current status: {parent_status})"
+                    )
+                    logger.error(error_msg)
+                    return Code(400, {}, error_msg)
+            else:
+                error_msg = (
+                    f"Cannot start inference microservice: parent job {parent_id} not found"
+                )
+                logger.error(error_msg)
+                return Code(400, {}, error_msg)
+
         folder_path = "folder" in folder_path_function
         model_path = job_config.get("model_path", get_model_results_path(experiment_metadata, parent_id, folder_path))
         logger.info("Using model path: %s", model_path)
@@ -181,8 +198,6 @@ umask 0 &&
                     logger.error("Inference Microservice service failed to become ready. Status: %s", service_status)
                     return Code(500, {}, f"Inference Microservice service failed to become ready: {service_status}")
 
-            logger.info("Inference Microservice %s is ready", statefulset_name)
-
             # For Kubernetes services, we typically use cluster IP for internal communication
             service_url = f"http://{service_id}:{api_port}"
 
@@ -260,7 +275,7 @@ umask 0 &&
                 )
 
                 # Update job status to Done in database
-                from nvidia_tao_core.microservices.handlers.stateless_handlers import (
+                from nvidia_tao_core.microservices.utils.stateless_handler_utils import (
                     update_job_status, get_handler_job_metadata
                 )
                 job_metadata = get_handler_job_metadata(job_id)
