@@ -1227,6 +1227,15 @@ class InferenceMicroserviceReq(Schema):
         allow_none=True,
         required=False
     )
+    enable_lora = fields.Bool(
+        description="Enable LoRA for inference",
+        default=False
+    )
+    base_model_path = fields.Str(
+        description="Base model path (e.g., hf_model://nvidia/Cosmos-Reason1-7B)",
+        required=False,
+        allow_none=True
+    )
     docker_image = fields.Str(
         validate=fields.validate.Length(max=2048),
         description="Docker image for inference",
