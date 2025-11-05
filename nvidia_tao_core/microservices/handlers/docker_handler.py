@@ -112,6 +112,7 @@ class DockerHandler:
     @staticmethod
     def get_handler_for_container(container_name=None):
         """Initialize a docker handler from a container."""
+        logger.info(f"Getting handler for container: {container_name}")
         if not docker_client:
             raise ValueError("Docker client not initialized")
         if not container_name:
@@ -121,6 +122,7 @@ class DockerHandler:
             logger.info(f"Found container image {container.image.tags[0]} for {container_name}")
             return DockerHandler(container.image.tags[0], container=container)
         except Exception as e:
+            logger.error(traceback.format_exc())
             logger.error(f"Error getting handler for container {container_name}: {e}")
             return None
 

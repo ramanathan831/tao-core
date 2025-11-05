@@ -208,7 +208,7 @@ class LoraConfig:
     )
 
     r_pattern: Optional[Dict[str, int]] = DICT_FIELD(
-        hashMap=None,
+        hashMap={},
         display_name="LoRA rank pattern",
         description="Per-module overrides for LoRA rank r. Keys are regex patterns; "
                     "evaluated in insertion order, first match wins. Example: "
@@ -228,7 +228,7 @@ class LoraConfig:
     )
 
     alpha_pattern: Optional[Dict[str, float]] = DICT_FIELD(
-        hashMap=None,
+        hashMap={},
         display_name="LoRA alpha pattern",
         description="Per-module overrides for lora_alpha. Keys are regex patterns; "
                     "evaluated in insertion order, first match wins. Example: "

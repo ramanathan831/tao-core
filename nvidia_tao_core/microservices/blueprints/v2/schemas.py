@@ -1148,7 +1148,7 @@ class AutoML(Schema):
     )
     automl_delete_intermediate_ckpt = fields.Bool(allow_none=True)
     override_automl_disabled_params = fields.Bool(allow_none=True)
-    automl_r = fields.Int(format="int64", validate=validate.Range(min=0, max=sys.maxsize), allow_none=True)
+    automl_R = fields.Int(format="int64", validate=validate.Range(min=0, max=sys.maxsize), allow_none=True)
     automl_nu = fields.Int(format="int64", validate=validate.Range(min=0, max=sys.maxsize), allow_none=True)
     epoch_multiplier = fields.Int(format="int64", validate=validate.Range(min=0, max=sys.maxsize), allow_none=True)
     automl_hyperparameters = fields.Str(
@@ -1226,6 +1226,15 @@ class InferenceMicroserviceReq(Schema):
         example="/workspace/model",
         allow_none=True,
         required=False
+    )
+    enable_lora = fields.Bool(
+        description="Enable LoRA for inference",
+        default=False
+    )
+    base_model_path = fields.Str(
+        description="Base model path (e.g., hf_model://nvidia/Cosmos-Reason1-7B)",
+        required=False,
+        allow_none=True
     )
     docker_image = fields.Str(
         validate=fields.validate.Length(max=2048),

@@ -67,6 +67,7 @@ class HyperBand(AutoMLAlgorithmBase):
         self.expt_iter = 0  # Recommendations within the SH
         self.complete = False
         self.reverse_sort = True
+        logger.info(f"Hyperband initialized with R={R}, nu={nu}, epoch_multiplier={self.epoch_multiplier}")
 
     def brackets_and_sh_sequence(self, R, nu):
         """Generate ni,ri arrays based on R and nu values"""

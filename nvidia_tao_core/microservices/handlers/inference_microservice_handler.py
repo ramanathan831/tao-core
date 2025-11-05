@@ -150,6 +150,14 @@ class InferenceMicroserviceHandler:
             "model_path": model_path,
             "results_dir": f"{cloud_type}://{bucket_name}/results/{job_id}",
         }
+
+        # Propagate additional parameters from job_config to specs
+        # These include enable_lora, base_model_path, and any other user-provided configs
+        for key, value in job_config.items():
+            if key not in ["parent_id", "parent_job_id", "model_path"]:
+                specs[key] = value
+                logger.info(f"Propagating parameter to specs: {key} = {value}")
+
         job_metadata = {
             "job_id": job_id,
             "specs": specs,

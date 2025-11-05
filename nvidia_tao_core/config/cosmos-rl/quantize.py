@@ -127,6 +127,20 @@ class ModelConfig:
         description="Path or HuggingFace model ID to quantize (e.g., nvidia/Cosmos-Reason1-7B)"
     )
 
+    # LoRA configuration
+    enable_lora: bool = BOOL_FIELD(
+        default_value=False,
+        value=False,
+        display_name="Enable LoRA",
+        description="Enable LoRA model merging (required if model_path is a LoRA checkpoint)"
+    )
+    base_model_path: Optional[str] = STR_FIELD(
+        default_value="",
+        value="",
+        display_name="Base model path",
+        description="Base model path for LoRA merging (required if enable_lora is True)"
+    )
+
 
 @dataclass
 class QuantizeConfig:
