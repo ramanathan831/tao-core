@@ -451,6 +451,8 @@ class JobExecutor(BaseExecutor):
                 if response and response.ok:
                     job_status = response.json()
                     status = job_status.get("status")
+                    if status == "Error":
+                        self.logger.error(f"Error when sending microservice request {response.text}")
                     return status
                 self.logger.error(f"Error when sending microservice request {response.text}")
             return "Error"
