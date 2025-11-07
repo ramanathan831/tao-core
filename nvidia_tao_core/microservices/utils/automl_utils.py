@@ -250,6 +250,11 @@ class Recommendation:
         self.best_epoch_number = ""
         self.metric = metric
 
+        # Add timestamps for timeout tracking
+        current_time = datetime.datetime.now(tz=datetime.timezone.utc).isoformat()
+        self.created_on = current_time
+        self.last_modified = current_time
+
     def items(self):
         """Returns specs.items"""
         return self.specs.items()
@@ -263,6 +268,9 @@ class Recommendation:
         assert type(job_id) is str, f"Job ID must be a string, got {type(job_id)}"
         self.job_id = job_id
 
+        # Update last_modified timestamp when job is assigned
+        self.last_modified = datetime.datetime.now(tz=datetime.timezone.utc).isoformat()
+
     def update_result(self, result):
         """Update the result value"""
         result = float(result)
@@ -273,6 +281,9 @@ class Recommendation:
         """Update the status value"""
         assert type(status) is str, f"Status must be a string, got {type(status)}"
         self.status = status
+
+        # Update last_modified timestamp when status changes
+        self.last_modified = datetime.datetime.now(tz=datetime.timezone.utc).isoformat()
 
     def __repr__(self):
         """Constructs a dictionary with the class members and returns them"""
