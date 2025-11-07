@@ -590,11 +590,13 @@ class Controller:
             results = metadata.get("job_details", {})
             brain_dict = get_automl_brain_info(self.automl_context.id)
             self.brain_epoch_number = float(brain_dict.get("epoch_number", float('inf')))
+            # Calculate last_seen_epoch and ensure it's non-negative
+            last_seen_epoch_value = max(0, self.total_epochs - self.remaining_epochs_in_experiment)
             new_results = status_parser.update_results(
                 experiment_number=str(rec.id),
                 total_epochs=self.total_epochs,
                 eta=self.eta,
-                last_seen_epoch=self.total_epochs - self.remaining_epochs_in_experiment,
+                last_seen_epoch=last_seen_epoch_value,
                 automl=True,
                 job_id=self.automl_context.id,
                 previous_result_metadata=results,
@@ -603,7 +605,7 @@ class Controller:
             new_results = status_parser.update_results(
                 experiment_number=str(rec.id),
                 total_epochs=self.total_epochs,
-                last_seen_epoch=self.total_epochs - self.remaining_epochs_in_experiment,
+                last_seen_epoch=last_seen_epoch_value,
                 automl=True,
                 job_id=self.automl_context.id,
                 rec_job_id=rec.job_id,

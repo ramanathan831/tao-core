@@ -535,9 +535,9 @@ class JobSubset(Schema):
     eta = fields.Str(allow_none=True, format="regex", regex=r'.*', validate=fields.validate.Length(max=sys.maxsize))
     epoch = fields.Int(
         allow_none=True,
-        validate=fields.validate.Range(min=-1, max=sys.maxsize),
+        validate=fields.validate.Range(min=0, max=sys.maxsize),
         format=sys_int_format(),
-        error="Epoch should be larger than -1. With -1 meaning non-valid."
+        error="Epoch must be non-negative."
     )
     max_epoch = fields.Int(
         allow_none=True,
@@ -574,9 +574,9 @@ class JobResult(Schema):
     # AutoML
     epoch = fields.Int(
         allow_none=True,
-        validate=fields.validate.Range(min=-1, max=sys.maxsize),
+        validate=fields.validate.Range(min=0, max=sys.maxsize),
         format=sys_int_format(),
-        error="Epoch should be larger than -1. With -1 meaning non-valid."
+        error="Epoch must be non-negative."
     )
     max_epoch = fields.Int(
         allow_none=True,
