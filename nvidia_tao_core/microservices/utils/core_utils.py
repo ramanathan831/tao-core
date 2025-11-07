@@ -392,7 +392,7 @@ def check_and_convert(user_spec, schema_spec):
                             # Recursively check nested dictionaries
                             if i < len(user_spec[key]):
                                 check_and_convert(user_spec[key][i], item)
-                        elif not isinstance(user_spec[key][i], type(item)):
+                        elif i < len(user_spec[key]) and not isinstance(user_spec[key][i], type(item)):
                             # Convert type if necessary
                             try:
                                 user_spec[key][i] = type(item)(user_spec[key][i])
