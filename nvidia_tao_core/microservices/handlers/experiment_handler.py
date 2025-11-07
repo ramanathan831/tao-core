@@ -940,6 +940,7 @@ class ExperimentHandler:
                 automl_interpretable_result["experiments"][exp_id]["result"] = experiment_details.get("result")
                 automl_interpretable_result["experiments"][exp_id]["status"] = experiment_details.get("status")
                 automl_interpretable_result["experiments"][exp_id]["specs"] = experiment_details.get("specs", {})
+                automl_interpretable_result["experiments"][exp_id]["job_id"] = experiment_details.get("job_id", "")
 
             # Get the best experiment id from the automl_jobs table
             best_rec_number, _ = get_automl_best_rec_info(job_id)
