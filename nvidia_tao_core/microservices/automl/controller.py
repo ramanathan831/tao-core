@@ -668,7 +668,21 @@ class Controller:
                 if validation_map != 0.0:
                     rec.update_result(validation_map)
                 self.save_state()
-                logger.info("Cancelling automl job with status %s and job id %s", status, rec.job_id)
+
+                # Enhanced logging for job cancellation with full context
+                logger.debug(
+                    f"{'-' * 80}\n"
+                    f"AUTOML CONTROLLER: CANCELLING EXPERIMENT JOB\n"
+                    f"Brain Job ID: {self.automl_context.id}\n"
+                    f"Experiment ID: {rec.id}\n"
+                    f"Experiment Job ID: {rec.job_id}\n"
+                    f"Final Status: {status}\n"
+                    f"Final Result: {validation_map}\n"
+                    f"Reason: Experiment completed with status={status}\n"
+                    f"Action: Calling on_cancel_automl_job to delete StatefulSet\n"
+                    f"{'-' * 80}"
+                )
+
                 report_health_beat(
                     self.automl_context.id,
                     f"Cancelling completed job {rec.job_id} (experiment {rec.id})"
