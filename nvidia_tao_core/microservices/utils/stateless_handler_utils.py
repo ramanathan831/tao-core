@@ -598,6 +598,16 @@ def save_dnn_status(job_id, automl=False, callback_data={}, experiment_number="0
         experiment_number=experiment_number
     )
     automl_expt_job_id = get_automl_experiment_job_id(job_id, experiment_number)
+
+    # If automl_expt_job_id is empty (controller hasn't saved yet), skip updating job_details
+    # The status will still be saved correctly to job_statuses table via lookup_job_id
+    # Handler job metadata will be updated later when controller processes results
+    if automl and not automl_expt_job_id:
+        logger.warning(
+            f"AutoML experiment job_id not found for brain job {job_id}, experiment {experiment_number}. "
+            "Controller may not have saved state yet. Skipping handler_job_metadata update."
+        )
+
     mongo_status_table_handler = MongoHandler("tao", "job_statuses")
     job_query = {'id': lookup_job_id}
     callback_data_dict = json.loads(callback_data["status"])
@@ -606,13 +616,15 @@ def save_dnn_status(job_id, automl=False, callback_data={}, experiment_number="0
     if 'timestamp' not in callback_data_dict:
         callback_data_dict['timestamp'] = datetime.now(tz=timezone.utc).isoformat()
 
-    update_job_message(
-        handler_id,
-        job_id,
-        kind,
-        callback_data_dict,
-        automl_expt_job_id=automl_expt_job_id,
-        update_automl_expt=automl)
+    # Only update job message if we have a valid experiment job_id or if not automl
+    if not automl or automl_expt_job_id:
+        update_job_message(
+            handler_id,
+            job_id,
+            kind,
+            callback_data_dict,
+            automl_expt_job_id=automl_expt_job_id,
+            update_automl_expt=automl)
     mongo_status_table_handler.upsert_append(job_query, callback_data_dict)
 
 
