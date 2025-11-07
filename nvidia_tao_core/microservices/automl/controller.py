@@ -658,7 +658,11 @@ class Controller:
                     if self.brain.reverse_sort:
                         validation_map = 1e-7
                     else:
-                        validation_map = float('inf')
+                        validation_map = 1e7
+                    logger.warning(
+                        f"AutoML experiment {rec.id} (job {rec.job_id}) failed. "
+                        f"Assigning penalty value {validation_map} to enable Bayesian optimization to continue."
+                    )
                 if validation_map != 0.0:
                     rec.update_result(validation_map)
                 self.save_state()
