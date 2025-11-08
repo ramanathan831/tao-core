@@ -26,7 +26,6 @@ from .admin import admin_bp_v1
 # Import all schemas from v1 schemas module
 from .schemas import (
     AWSCloudPull,
-    AutoMLResultsDetailed,
     AutoMLResults,
     AutoMLParameterDetailsRsp,
     AutoMLUpdateParameterRangesReq,
@@ -85,7 +84,6 @@ from .schemas import (
 # V1 Blueprint Schemas - List of tuples with (name, schema_class)
 V1_SCHEMAS = [
     ("AWSCloudPull", AWSCloudPull),
-    ("AutoMLResultsDetailed", AutoMLResultsDetailed),
     ("AutoMLParameterDetailsRsp", AutoMLParameterDetailsRsp),
     ("AutoMLUpdateParameterRangesReq", AutoMLUpdateParameterRangesReq),
     ("AutoMLResults", AutoMLResults),

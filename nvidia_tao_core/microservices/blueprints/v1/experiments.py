@@ -49,7 +49,6 @@ from .schemas import (
     JobResume,
     ExperimentDownload,
     ExperimentExportTypeEnum,
-    AutoMLResultsDetailed,
     LstInt,
     PublishModel,
     BulkOpsRsp,
@@ -2970,106 +2969,6 @@ def experiment_job_schema(org_name, experiment_id, job_id):
     schema = None
     if response.code == 200:
         return make_response(jsonify(response.data), response.code)
-    schema = ErrorRsp()
-    # Load metadata in schema and return
-    schema_dict = schema.dump(schema.load(response.data))
-    return make_response(jsonify(schema_dict), response.code)
-
-
-@experiments_bp_v1.route('/orgs/<org_name>/experiments/<experiment_id>/jobs/<job_id>:automl_details', methods=['GET'])
-@disk_space_check
-def experiment_job_automl_details(org_name, experiment_id, job_id):
-    """Retrieve AutoML details.
-
-    ---
-    get:
-      tags:
-      - EXPERIMENT
-      summary: Retrieve usable AutoML details
-      description: |
-        Retrieves usable AutoML details for a given experiment and job ID. This endpoint:
-        - Validates the experiment exists and user has access
-        - Validates the job exists
-        - Retrieves the AutoML details from storage
-        - Returns the AutoML details
-      parameters:
-      - name: org_name
-        in: path
-        description: Org Name
-        required: true
-        schema:
-          type: string
-          maxLength: 255
-          pattern: '^[a-zA-Z0-9_-]+$'
-      - name: experiment_id
-        in: path
-        description: ID of Experiment
-        required: true
-        schema:
-          type: string
-          format: uuid
-          maxLength: 36
-      - name: job_id
-        in: path
-        description: Job ID
-        required: true
-        schema:
-          type: string
-          format: uuid
-          maxLength: 36
-      responses:
-        200:
-          description: Returned Job Artifacts
-          content:
-            application/octet-stream:
-              schema:
-                type: string
-                format: binary
-                maxLength: 1000
-                maxLength: 1000
-          headers:
-            Access-Control-Allow-Origin:
-              $ref: '#/components/headers/Access-Control-Allow-Origin'
-            X-RateLimit-Limit:
-              $ref: '#/components/headers/X-RateLimit-Limit'
-        400:
-          description: Invalid request (e.g. invalid experiment ID, job ID)
-          content:
-            application/json:
-              schema: ErrorRsp
-          headers:
-            Access-Control-Allow-Origin:
-              $ref: '#/components/headers/Access-Control-Allow-Origin'
-            X-RateLimit-Limit:
-              $ref: '#/components/headers/X-RateLimit-Limit'
-        404:
-          description: User, Experiment or Job not found
-          content:
-            application/json:
-              schema: ErrorRsp
-          headers:
-            Access-Control-Allow-Origin:
-              $ref: '#/components/headers/Access-Control-Allow-Origin'
-            X-RateLimit-Limit:
-              $ref: '#/components/headers/X-RateLimit-Limit'
-    """
-    message = validate_uuid(experiment_id=experiment_id, job_id=job_id)
-    if message:
-        metadata = {"error_desc": message, "error_code": 1}
-        schema = ErrorRsp()
-        response = make_response(jsonify(schema.dump(schema.load(metadata))), 400)
-        return response
-    response = ExperimentHandler.automl_details(org_name, experiment_id, job_id)
-    # Get schema
-    schema = AutoMLResultsDetailed()
-    if response.code == 200:
-        if isinstance(response.data, dict) or response.data == []:
-            response = make_response(jsonify(schema.dump(schema.load(response.data))), response.code)
-            return response
-        metadata = {"error_desc": "internal error: file list invalid", "error_code": 2}
-        schema = ErrorRsp()
-        response = make_response(jsonify(schema.dump(schema.load(metadata))), 500)
-        return response
     schema = ErrorRsp()
     # Load metadata in schema and return
     schema_dict = schema.dump(schema.load(response.data))

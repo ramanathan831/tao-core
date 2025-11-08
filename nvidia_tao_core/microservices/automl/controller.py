@@ -821,7 +821,7 @@ class Controller:
         if type(self.eta) is float:
             self.eta = str(timedelta(seconds=self.eta))
         result_dict["Estimated time for automl completion"] = str(self.eta)
-        result_dict["Current experiment number"] = len(self.recommendations)
+        result_dict["Current experiment id"] = len(self.recommendations)
 
         if self.network in _ITER_MODELS:
             result_dict["Number of iters yet to start"] = self.remaining_epochs_in_experiment
@@ -830,8 +830,26 @@ class Controller:
             result_dict["Number of epochs yet to start"] = self.remaining_epochs_in_experiment
             result_dict["Time per epoch in seconds"] = round(self.average_time_per_epoch, 2)
 
-        if final and self.best_rec_id != -1:
-            result_dict["Best experiment number"] = self.best_rec_id + 1
+        # Update best_rec_id continuously by finding the best completed recommendation
+        # Only consider recommendations with non-zero results and success status
+        completed_recs = [
+            rec for rec in self.recommendations
+            if rec.result != 0.0 and rec.status == JobStates.success
+        ]
+        if completed_recs:
+            try:
+                best_rec = self.min_max(completed_recs, key=lambda rec: rec.result)
+                self.best_rec_id = best_rec.id
+                logger.debug(
+                    f"Updated best_rec_id to {self.best_rec_id} with "
+                    f"{self.metric_key}={best_rec.result}"
+                )
+            except Exception as e:
+                logger.error("Exception while updating best_rec_id: %s", str(e))
+
+        # Add best experiment id (always, not just at the end)
+        if self.best_rec_id != -1:
+            result_dict["Best experiment id"] = self.best_rec_id
 
         update_automl_stats(self.automl_context.id, result_dict)
 
