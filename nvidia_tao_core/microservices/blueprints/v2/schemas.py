@@ -138,6 +138,13 @@ class EnumFieldPrefix(fields.Field):
 # ============================================================================
 
 
+class JobKindEnum(Enum):
+    """Class defining job kind enum"""
+
+    dataset = 'dataset'
+    experiment = 'experiment'
+
+
 class JobStatusEnum(Enum):
     """Class defining job status enum"""
 
@@ -712,6 +719,13 @@ class AWSCloudPull(Schema):
     cloud_region = fields.Str(validate=validate.Length(max=2048), allow_none=True)
     endpoint_url = fields.Str(validate=[validate_endpoint_url, validate.Length(max=2048)], allow_none=True)
     cloud_bucket_name = fields.Str(validate=validate.Length(min=1, max=2048), allow_none=True)
+    cloud_type = fields.Constant(CloudPullTypesEnum.aws.value)
+
+
+class SeaweedfsCloudPull(AWSCloudPull):
+    """Class defining Seaweed Cloud pull schema"""
+
+    cloud_type = fields.Constant(CloudPullTypesEnum.seaweedfs.value)
 
 
 class AzureCloudPull(Schema):
@@ -722,12 +736,33 @@ class AzureCloudPull(Schema):
     cloud_region = fields.Str(validate=validate.Length(max=2048), allow_none=True)
     endpoint_url = fields.Str(validate=[validate_endpoint_url, validate.Length(max=2048)], allow_none=True)
     cloud_bucket_name = fields.Str(validate=validate.Length(min=1, max=2048), allow_none=True)
+    cloud_type = fields.Constant(CloudPullTypesEnum.azure.value)
 
 
 class HuggingFaceCloudPull(Schema):
     """Class defining Hugging Face Cloud pull schema"""
 
     token = fields.Str(validate=validate.Length(max=2048))
+    cloud_type = fields.Constant(CloudPullTypesEnum.huggingface.value)
+
+
+class CloudSpecificDetails(OneOfSchema):
+    """Class defining a polymorphic cloud specific details schema"""
+
+    type_schemas = {
+        "aws": AWSCloudPull,
+        "azure": AzureCloudPull,
+        "huggingface": HuggingFaceCloudPull,
+        "seaweedfs": SeaweedfsCloudPull,
+    }
+    type_field = "cloud_type"
+
+    def get_obj_type(self, obj):
+        """Determine the schema to use based on the properties of the Python object"""
+        cloud_type = obj.get("cloud_type")
+        if cloud_type in [e.value for e in CloudPullTypesEnum]:
+            return cloud_type
+        raise fields.ValidationError(f"Invalid cloud type: {cloud_type}")
 
 
 class WorkspaceReq(Schema):
@@ -742,7 +777,7 @@ class WorkspaceReq(Schema):
     shared = fields.Bool(allow_none=False)
     version = fields.Str(format="regex", regex=r'^\d+\.\d+\.\d+$', validate=fields.validate.Length(max=10))
     cloud_type = EnumField(CloudPullTypesEnum, allow_none=False)
-    cloud_specific_details = fields.Field(allow_none=False)
+    cloud_specific_details = fields.Nested(CloudSpecificDetails, allow_none=False)
 
     @validates_schema
     def validate_cloud_specific_details(self, data, **kwargs):
@@ -781,6 +816,7 @@ class WorkspaceBackupReq(Schema):
         ordered = True
         unknown = EXCLUDE
     backup_file_name = fields.Str(validate=validate.Length(max=2048), allow_none=True)
+    workspace_metadata = fields.Nested(WorkspaceReq, allow_none=False)
 
 
 class WorkspaceRsp(Schema):
@@ -1213,8 +1249,8 @@ class InferenceMicroserviceReq(Schema):
         allow_none=True,
         required=False
     )
-    kind = fields.Str(
-        validate=fields.validate.OneOf(["experiment", "dataset"]),
+    kind = EnumField(
+        JobKindEnum,
         description="Job kind",
         example="experiment",
         allow_none=True,
@@ -1404,6 +1440,12 @@ class DatasetJobReq(Schema):
         validate=validate.Length(max=sys.maxsize),
         allow_none=True
     )
+    kind = fields.Constant(JobKindEnum.dataset.value)
+    base_experiment_pull_complete = EnumField(PullStatus)
+    base_experiment_ids = fields.List(
+        fields.Str(format="uuid", validate=fields.validate.Length(max=36)),
+        validate=validate.Length(max=2)
+    )
 
 
 class ExperimentJobReq(Schema):
@@ -1531,6 +1573,7 @@ class ExperimentJobReq(Schema):
         validate=validate.Length(max=sys.maxsize),
         allow_none=True
     )
+    kind = fields.Constant(JobKindEnum.experiment.value)
 
 
 class JobReq(OneOfSchema):
@@ -1541,6 +1584,13 @@ class JobReq(OneOfSchema):
         "experiment": ExperimentJobReq
     }
     type_field = "kind"
+
+    def get_obj_type(self, obj):
+        """Determine the schema to use based on the properties of the Python object"""
+        kind = obj.get("kind")
+        if kind in JobKindEnum:
+            return kind
+        raise fields.ValidationError(f"Invalid job kind: {kind}")
 
 
 class DatasetJobRsp(Schema):
@@ -1573,6 +1623,12 @@ class DatasetJobRsp(Schema):
         fields.Int(format="int64", validate=validate.Range(min=0, max=sys.maxsize)),
         validate=validate.Length(max=sys.maxsize),
         allow_none=True
+    )
+    kind = fields.Constant(JobKindEnum.dataset.value)
+    base_experiment_pull_complete = EnumField(PullStatus)
+    base_experiment_ids = fields.List(
+        fields.Str(format="uuid", validate=fields.validate.Length(max=36)),
+        validate=validate.Length(max=2)
     )
 
 
@@ -1770,6 +1826,7 @@ class ExperimentJobRsp(Schema):
         allow_none=True
     )
     automl_details = fields.Nested(AutoMLResultsDetailedSchema, allow_none=True)
+    kind = fields.Constant(JobKindEnum.experiment.value)
 
 
 class JobRsp(OneOfSchema):
@@ -1780,6 +1837,13 @@ class JobRsp(OneOfSchema):
         "experiment": ExperimentJobRsp
     }
     type_field = "kind"
+
+    def get_obj_type(self, obj):
+        """Determine the schema to use based on the properties of the Python object"""
+        kind = obj.get("kind")
+        if kind in JobKindEnum:
+            return kind
+        raise fields.ValidationError(f"Invalid job kind: {kind}")
 
 
 class JobListRsp(Schema):

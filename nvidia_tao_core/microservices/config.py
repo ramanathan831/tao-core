@@ -18,9 +18,8 @@ import os
 import sys
 import pkg_resources
 from apispec import APISpec
-from apispec.ext.marshmallow import MarshmallowPlugin
-from apispec_oneofschema import MarshmallowPlugin as OneOfPlugin
 from apispec_webframeworks.flask import FlaskPlugin
+from apispec_oneofschema import MarshmallowPlugin
 
 # Configuration constants
 TIMEOUT = 240
@@ -35,7 +34,6 @@ def inline_resolver(schema_class):
 # API Spec configuration
 flask_plugin = FlaskPlugin()
 marshmallow_plugin = MarshmallowPlugin(schema_name_resolver=inline_resolver)
-oneof_plugin = OneOfPlugin(schema_name_resolver=inline_resolver)
 
 
 def sys_int_format():
@@ -113,7 +111,7 @@ def create_api_spec_v1():
                  "url": "https://nspect.nvidia.com/review?id=NSPECT-1T59-RTYH"
              }}
         ],
-        plugins=[flask_plugin, marshmallow_plugin, oneof_plugin],
+        plugins=[flask_plugin, marshmallow_plugin],
         security=[{"bearer-token": []}],
     )
 

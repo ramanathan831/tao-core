@@ -796,10 +796,11 @@ def workspace_backup(org_name):
     """
     try:
         request_data = request.get_json(force=True)
-        workspace_metadata = request_data.get("workspace_metadata")
-        backup_file_name = request_data.get("backup_file_name", "mongodb_backup.tar.gz")
         schema = WorkspaceBackupReq()
-        workspace_metadata = schema.dump(schema.load(workspace_metadata))
+        validated_request = schema.dump(schema.load(request_data))
+
+        workspace_metadata = validated_request.get("workspace_metadata")
+        backup_file_name = validated_request.get("backup_file_name", "mongodb_backup.tar.gz")
 
         if not workspace_metadata:
             metadata = {"error_desc": "workspace_metadata is required", "error_code": 1}
@@ -885,10 +886,11 @@ def workspace_restore(org_name):
     """
     try:
         request_data = request.get_json(force=True)
-        workspace_metadata = request_data.get("workspace_metadata")
         schema = WorkspaceBackupReq()
-        workspace_metadata = schema.dump(schema.load(workspace_metadata))
-        backup_file_name = request_data.get("backup_file_name", "mongodb_backup.tar.gz")
+        validated_request = schema.dump(schema.load(request_data))
+
+        workspace_metadata = validated_request.get("workspace_metadata")
+        backup_file_name = validated_request.get("backup_file_name", "mongodb_backup.tar.gz")
 
         if not workspace_metadata:
             metadata = {"error_desc": "workspace_metadata is required", "error_code": 1}

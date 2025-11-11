@@ -116,14 +116,13 @@ class TestVersionedAPI(unittest.TestCase):
 
     def test_version_discovery_endpoint(self):
         """Test the version discovery endpoint."""
-        response = self.client.get('/api/versions')
+        response = self.client.get('/api/')
         self.assertEqual(response.status_code, 200)
 
         data = json.loads(response.data)
-        self.assertIn('available_versions', data)
-        self.assertIn('versions', data)
-        self.assertIsInstance(data['available_versions'], list)
-        self.assertIn('v1', data['available_versions'])
+        self.assertIsInstance(data, list)
+        self.assertIn('v1', data)
+        self.assertIn('v2', data)
 
     def test_version_manager(self):
         """Test the API version manager functionality."""
@@ -173,13 +172,16 @@ class TestVersionedAPI(unittest.TestCase):
         response = self.make_request_with_timeout('get', '/', timeout=5)
         self.assertEqual(response.status_code, 200)
 
-        # Test version endpoint
-        response = self.make_request_with_timeout('get', '/version', timeout=5)
+        # Test api versions endpoint
+        response = self.make_request_with_timeout('get', '/api/', timeout=5)
         self.assertEqual(response.status_code, 200)
 
+        versions = json.loads(response.data)
+
         # Test OpenAPI endpoints
-        response = self.make_request_with_timeout('get', '/openapi.json', timeout=5)
-        self.assertEqual(response.status_code, 200)
+        for version in versions:
+            response = self.make_request_with_timeout('get', f"/api/{version}/openapi.json", timeout=5)
+            self.assertEqual(response.status_code, 200)
 
     def test_v2_example_endpoints(self):
         """Test that v2 example endpoints are accessible (if available)."""

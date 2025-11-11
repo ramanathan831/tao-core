@@ -136,24 +136,7 @@ def download_folder():
 
 @admin_bp_v2.route('/metrics', methods=['POST'])
 def metrics_upsert():
-    """Report execution of new action.
-
-    ---
-    post:
-        tags:
-        - TELEMETRY
-        summary: Report execution of new action
-        description: Post anonymous metrics to NVIDIA Kratos
-        requestBody:
-            content:
-                application/json:
-                    schema: TelemetryReq
-                    description: Report new action, network and gpu list
-                    required: true
-        responses:
-            201:
-                description: Sucessfully reported execution of new action
-    """
+    """Report execution of new action."""
     # Validate and load telemetry data
     try:
         raw_data = TelemetryReq().load(request.get_json(force=True))
