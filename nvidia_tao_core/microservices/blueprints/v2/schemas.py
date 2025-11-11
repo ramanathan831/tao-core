@@ -489,27 +489,6 @@ class AutoMLResults(Schema):
     value = CustomFloatField(allow_none=True)
 
 
-class AutoMLResultsDetailed(Schema):
-    """Class defining AutoML detailed results schema"""
-
-    class Meta:
-        """Class enabling sorting field values by the order in which they are declared"""
-
-        ordered = True
-    current_experiment_id = fields.Int(
-        allow_none=True,
-        validate=fields.validate.Range(min=0, max=sys.maxsize),
-        format=sys_int_format()
-    )
-    best_experiment_id = fields.Int(
-        allow_none=True,
-        validate=fields.validate.Range(min=0, max=sys.maxsize),
-        format=sys_int_format()
-    )
-    metric = EnumFieldPrefix(Metrics)
-    experiments = fields.Raw()
-
-
 class Stats(Schema):
     """Class defining results stats schema"""
 
@@ -615,6 +594,8 @@ class JobResult(Schema):
     detailed_status = fields.Nested(DetailedStatus, allow_none=True)
     key_metric = fields.Float(allow_none=True)
     message = fields.Str(allow_none=True, format="regex", regex=r'.*', validate=fields.validate.Length(max=sys.maxsize))
+    # Specs (only populated for AutoML experiments)
+    specs = fields.Raw(allow_none=True)
 
 
 class LoginReq(Schema):
@@ -1585,27 +1566,6 @@ class DatasetJobRsp(Schema):
     )
 
 
-class AutoMLResultsDetailedSchema(Schema):
-    """Class defining AutoML detailed results schema"""
-
-    class Meta:
-        """Class enabling sorting field values by the order in which they are declared"""
-
-        ordered = True
-    current_experiment_id = fields.Int(
-        allow_none=True,
-        validate=fields.validate.Range(min=0, max=sys.maxsize),
-        format=sys_int_format()
-    )
-    best_experiment_id = fields.Int(
-        allow_none=True,
-        validate=fields.validate.Range(min=0, max=sys.maxsize),
-        format=sys_int_format()
-    )
-    metric = EnumFieldPrefix(Metrics)
-    experiments = fields.Raw()
-
-
 class ExperimentJobRsp(Schema):
     """Class defining experiment job response schema"""
 
@@ -1778,7 +1738,6 @@ class ExperimentJobRsp(Schema):
         validate=validate.Length(max=sys.maxsize),
         allow_none=True
     )
-    automl_details = fields.Nested(AutoMLResultsDetailedSchema, allow_none=True)
 
 
 class JobRsp(OneOfSchema):
