@@ -45,12 +45,17 @@ def apply_lora_constraints(parent_params: dict, selected_items: list):
         selected_items: List of selected LoRA target modules
 
     Returns:
-        List of modules after applying constraints
+        List of modules after applying constraints, or "all-linear" if list becomes empty
     """
     modules_to_save = parent_params.get("modules_to_save")
     if modules_to_save and "visual" in modules_to_save:
         # Remove vision modules from valid options
         selected_items = [opt for opt in selected_items if opt not in VISION_MODEL_LORA_MODULES]
+
+    # If list becomes empty after filtering, return "all-linear" as a safe fallback
+    if selected_items == []:
+        logger.info("All target_modules filtered out by constraints. Returning 'all-linear' as fallback.")
+        return "all-linear"
 
     return selected_items
 

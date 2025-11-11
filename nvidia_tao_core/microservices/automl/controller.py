@@ -590,11 +590,13 @@ class Controller:
             results = metadata.get("job_details", {})
             brain_dict = get_automl_brain_info(self.automl_context.id)
             self.brain_epoch_number = float(brain_dict.get("epoch_number", float('inf')))
+            # Calculate last_seen_epoch and ensure it's non-negative
+            last_seen_epoch_value = max(0, self.total_epochs - self.remaining_epochs_in_experiment)
             new_results = status_parser.update_results(
                 experiment_number=str(rec.id),
                 total_epochs=self.total_epochs,
                 eta=self.eta,
-                last_seen_epoch=self.total_epochs - self.remaining_epochs_in_experiment,
+                last_seen_epoch=last_seen_epoch_value,
                 automl=True,
                 job_id=self.automl_context.id,
                 previous_result_metadata=results,
@@ -603,7 +605,7 @@ class Controller:
             new_results = status_parser.update_results(
                 experiment_number=str(rec.id),
                 total_epochs=self.total_epochs,
-                last_seen_epoch=self.total_epochs - self.remaining_epochs_in_experiment,
+                last_seen_epoch=last_seen_epoch_value,
                 automl=True,
                 job_id=self.automl_context.id,
                 rec_job_id=rec.job_id,
@@ -658,11 +660,29 @@ class Controller:
                     if self.brain.reverse_sort:
                         validation_map = 1e-7
                     else:
-                        validation_map = float('inf')
+                        validation_map = 1e7
+                    logger.warning(
+                        f"AutoML experiment {rec.id} (job {rec.job_id}) failed. "
+                        f"Assigning penalty value {validation_map} to enable Bayesian optimization to continue."
+                    )
                 if validation_map != 0.0:
                     rec.update_result(validation_map)
                 self.save_state()
-                logger.info("Cancelling automl job with status %s and job id %s", status, rec.job_id)
+
+                # Enhanced logging for job cancellation with full context
+                logger.debug(
+                    f"{'-' * 80}\n"
+                    f"AUTOML CONTROLLER: CANCELLING EXPERIMENT JOB\n"
+                    f"Brain Job ID: {self.automl_context.id}\n"
+                    f"Experiment ID: {rec.id}\n"
+                    f"Experiment Job ID: {rec.job_id}\n"
+                    f"Final Status: {status}\n"
+                    f"Final Result: {validation_map}\n"
+                    f"Reason: Experiment completed with status={status}\n"
+                    f"Action: Calling on_cancel_automl_job to delete StatefulSet\n"
+                    f"{'-' * 80}"
+                )
+
                 report_health_beat(
                     self.automl_context.id,
                     f"Cancelling completed job {rec.job_id} (experiment {rec.id})"

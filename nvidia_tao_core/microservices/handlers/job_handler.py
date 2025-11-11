@@ -405,9 +405,14 @@ class JobHandler:
             return Code(404, [], "job trying to update not found")
 
         automl = False
+        experiment_number = "0"
         if is_request_automl(handler_id, action, kind) and action == "train":
             automl = True
-        save_dnn_status(job_id, automl, callback_data, handler_id=handler_id, kind=kind)
+            # Extract experiment_number from callback_data for automl jobs
+            experiment_number = callback_data.get("experiment_number", "0")
+        save_dnn_status(
+            job_id, automl, callback_data, experiment_number=experiment_number, handler_id=handler_id, kind=kind
+        )
         return Code(200, [], "Job status updated")
 
     @staticmethod

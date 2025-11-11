@@ -157,7 +157,20 @@ class Bayesian(AutoMLAlgorithmBase):
 
         len_y = len(ys)
         if Xs and ys:
-            bayesian.gp.fit(np.array(Xs[:len_y]), np.array(ys))
+            Xs_npy = np.array(Xs[:len_y])
+            ys_npy = np.array(ys)
+
+            # Validate data before fitting - check for inf/nan values
+            if np.any(np.isinf(ys_npy)) or np.any(np.isnan(ys_npy)):
+                logger.warning(
+                    "Detected inf/nan values in loaded training data. "
+                    "Replacing inf with large finite values and nan with 0."
+                )
+                ys_npy = np.nan_to_num(ys_npy, nan=0.0, posinf=1e7, neginf=-1e7)
+                # Update the loaded ys with cleaned values
+                bayesian.ys = ys_npy.tolist()
+
+            bayesian.gp.fit(Xs_npy, ys_npy)
 
         return bayesian
 
@@ -204,10 +217,25 @@ class Bayesian(AutoMLAlgorithmBase):
         return [dict(zip([param["parameter"] for param in self.parameters], recommendations))]
 
     def update_gp(self):
-        """Update gausian regressor parameters"""
+        """Update gaussian regressor parameters"""
         Xs_npy = np.array(self.Xs)
         ys_npy = np.array(self.ys)
-        self.gp.fit(Xs_npy, ys_npy)
+
+        # Validate data before fitting - check for inf/nan values
+        if np.any(np.isinf(ys_npy)) or np.any(np.isnan(ys_npy)):
+            logger.warning(
+                f"Detected inf/nan values in training data. "
+                f"ys_npy: {ys_npy}. "
+                f"Replacing inf with large finite values and nan with 0."
+            )
+            # Replace inf with large finite value (1e7) and nan with 0
+            ys_npy = np.nan_to_num(ys_npy, nan=0.0, posinf=1e7, neginf=-1e7)
+            logger.info(f"Cleaned ys_npy: {ys_npy}")
+
+        if len(Xs_npy) > 0 and len(ys_npy) > 0:
+            self.gp.fit(Xs_npy, ys_npy)
+        else:
+            logger.warning("No valid training data available for Gaussian Process")
 
     def optimize_ei(self):
         """Optmize expected improvement functions"""

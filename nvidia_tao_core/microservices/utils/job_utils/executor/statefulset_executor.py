@@ -16,6 +16,7 @@
 import os
 import time
 import traceback
+import inspect
 from kubernetes import client, config
 from kubernetes.client.rest import ApiException
 
@@ -378,14 +379,41 @@ echo "Starting Inference Microservice..." &&
 
     def delete_statefulset(self, job_name, use_ngc=True, resource_type="multinode"):
         """Deletes a Job or StatefulSet"""
+        # Enhanced logging with call stack to understand WHY deletion was triggered
+        caller_frame = inspect.currentframe().f_back
+        caller_info = inspect.getframeinfo(caller_frame) if caller_frame else None
+        caller_location = f"{caller_info.filename}:{caller_info.lineno}" if caller_info else "unknown"
+
+        self.logger.debug(
+            f"{'-' * 80}\n"
+            f"DELETE_STATEFULSET CALLED\n"
+            f"Job Name: {job_name}\n"
+            f"Backend: {BACKEND}\n"
+            f"Use NGC: {use_ngc}\n"
+            f"Resource Type: {resource_type}\n"
+            f"Called From: {caller_location}\n"
+            f"Call Stack (top 5):\n"
+        )
+
+        # Log call stack to understand the termination trigger
+        stack_lines = traceback.format_stack(limit=6)
+        for line in stack_lines[-5:]:  # Last 5 frames
+            self.logger.warning(f"  {line.strip()}")
+
+        self.logger.debug(f"{'-' * 80}")
+
         if BACKEND == "local-docker":
             from nvidia_tao_core.microservices.handlers.docker_handler import DockerHandler
+            self.logger.debug(f"Docker backend: Looking for container {job_name}")
             docker_handler = DockerHandler.get_handler_for_container(job_name)
             if docker_handler:
+                self.logger.debug(f"Docker container found for {job_name}, stopping it now")
                 docker_handler.stop_container()
+                self.logger.debug(f"Successfully stopped Docker container for {job_name}")
             else:
                 self.logger.error(f"Docker container not found for job {job_name}")
             gpu_manager.release_gpus(job_name)
+            self.logger.debug(f"Released GPUs for job {job_name}")
             return True
 
         name_space = self.get_namespace()

@@ -246,14 +246,14 @@ class LoraConfig:
         automl_enabled="TRUE"
     )
 
-    target_modules: Optional[List[str]] = SUBSET_LIST_FIELD(
+    target_modules: Union[List[str], str] = SUBSET_LIST_FIELD(
         arrList=["q_proj", "v_proj"],
         valid_options=["q_proj", "k_proj", "v_proj", "o_proj", "up_proj", "gate_proj",
                        "down_proj", "attn.qkv", "attn.proj", "all-linear"],
         default_value=["q_proj", "v_proj"],
         display_name="LoRA target modules",
-        description="LoRA target modules, subset of valid options. Cannot include "
-                    "attn.qkv or attn.proj if modules_to_save contains 'visual'",
+        description="LoRA target modules, subset of valid options. Can be a list of strings or 'all-linear'. "
+                    "Cannot include attn.qkv or attn.proj if modules_to_save contains 'visual'",
         automl_enabled="TRUE",
         depends_on="policy.lora.modules_to_save"
     )

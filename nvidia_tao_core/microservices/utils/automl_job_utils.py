@@ -133,5 +133,21 @@ def on_delete_automl_job(job_id):
 
 def on_cancel_automl_job(job_id):
     """Delete the job from k8's jobs"""
+    logger.debug(
+        f"{'-' * 80}\n"
+        f"CANCELLING AUTOML EXPERIMENT JOB\n"
+        f"Job ID: {job_id}\n"
+        f"Reason: Explicit cancellation via on_cancel_automl_job\n"
+        f"Action: Deleting StatefulSet\n"
+        f"{'-' * 80}"
+    )
+
     from .job_utils.executor import StatefulSetExecutor
-    StatefulSetExecutor().delete_statefulset(job_id)
+    result = StatefulSetExecutor().delete_statefulset(job_id)
+
+    if result:
+        logger.info(f"Successfully deleted StatefulSet for AutoML job {job_id}")
+    else:
+        logger.error(f"Failed to delete StatefulSet for AutoML job {job_id}")
+
+    return result
