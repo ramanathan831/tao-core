@@ -51,7 +51,6 @@ if os.getenv("BACKEND"):
 from ..utils.basic_utils import (
     get_org_datasets,
     get_user_datasets,
-    get_user_experiments,
     get_dataset_actions,
     handler_level_access_control
 )
@@ -408,23 +407,11 @@ class DatasetHandler:
         """
         handler_metadata = resolve_metadata("dataset", dataset_id)
         if not handler_metadata:
-            return Code(200, {}, f"Dataset {dataset_id} deleted")
+            return Code(200, {}, f"Dataset {dataset_id} not exists, should have been deleted already")
 
         user_id = handler_metadata.get("user_id")
         if not check_write_access(user_id, org_name, dataset_id, kind="datasets"):
-            return Code(404, {}, f"Dataset {dataset_id} not available")
-
-        # If dataset is being used by user's experiments.
-        experiments = get_user_experiments(user_id)
-        for experiment_id in experiments:
-            metadata = get_handler_metadata(experiment_id, "experiment")
-            datasets_in_use = set(metadata.get("train_datasets", []))
-            for key in ["eval_dataset", "inference_dataset", "calibration_dataset"]:
-                additional_dataset_id = metadata.get(key)
-                if additional_dataset_id:
-                    datasets_in_use.add(additional_dataset_id)
-            if dataset_id in datasets_in_use:
-                return Code(400, {}, f"Dataset {dataset_id} in use by {experiment_id}")
+            return Code(404, {}, f"Dataset {dataset_id} is not owned by you")
 
         # Check if any job running
         for job in handler_metadata.get("jobs", {}):

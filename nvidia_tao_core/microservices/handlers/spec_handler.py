@@ -16,7 +16,6 @@
 import os
 import logging
 
-from nvidia_tao_core.microservices.constants import TAO_NETWORKS
 from nvidia_tao_core.microservices.utils.stateless_handler_utils import (
     check_read_access,
     get_base_experiment_metadata,
@@ -86,7 +85,7 @@ class SpecHandler:
                     if not base_experiment_spec:
                         return Code(404, {}, "Base specs not present.")
 
-        # Read csv from spec_utils/specs/<network_name>/action.csv
+        # Read csv from utils/spec_utils/specs/<network_name>/action.csv
         # Convert to json schema
         json_schema = {}
 
@@ -106,19 +105,20 @@ class SpecHandler:
         if not json_schema:
             DIR_PATH = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
             # Try regular format for CSV_PATH => "<network> - <action>.csv"
-            CSV_PATH = os.path.join(DIR_PATH, "specs_utils", "specs", network, f"{network} - {action}.csv")
+            CSV_PATH = os.path.join(DIR_PATH, "utils", "specs_utils", "specs", network, f"{network} - {action}.csv")
             if not os.path.exists(CSV_PATH):
                 # Try secondary format for CSV_PATH => "<network> - <action>__<dataset-format>.csv"
                 fmt = metadata.get("format", "_")
                 CSV_PATH = os.path.join(
                     DIR_PATH,
+                    "utils",
                     "specs_utils",
                     "specs",
                     network,
                     f"{network} - {action}__{fmt}.csv"
                 )
                 if not os.path.exists(CSV_PATH):
-                    Code(404, {}, "Default specs do not exist for action")
+                    return Code(404, {}, "Default specs do not exist for action")
             json_schema = csv_to_json_schema.convert(CSV_PATH)
 
         if "default" in json_schema and base_experiment_spec:
@@ -177,19 +177,20 @@ class SpecHandler:
         if not json_schema:
             DIR_PATH = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
             # Try regular format for CSV_PATH => "<network> - <action>.csv"
-            CSV_PATH = os.path.join(DIR_PATH, "specs_utils", "specs", network, f"{network} - {action}.csv")
+            CSV_PATH = os.path.join(DIR_PATH, "utils", "specs_utils", "specs", network, f"{network} - {action}.csv")
             if not os.path.exists(CSV_PATH):
                 # Try secondary format for CSV_PATH => "<network> - <action>__<dataset-format>.csv"
                 fmt = metadata.get("format", "_")
                 CSV_PATH = os.path.join(
                     DIR_PATH,
+                    "utils",
                     "specs_utils",
                     "specs",
                     network,
                     f"{network} - {action}__{fmt}.csv"
                 )
                 if not os.path.exists(CSV_PATH):
-                    Code(404, {}, "Default specs do not exist for action")
+                    return Code(404, {}, "Default specs do not exist for action")
             json_schema = csv_to_json_schema.convert(CSV_PATH)
 
         json_schema["default"] = job_specs
@@ -248,24 +249,23 @@ class SpecHandler:
             if not base_experiment_spec:
                 return Code(404, {}, "Base specs not present.")
 
-        # Read csv from spec_utils/specs/<network_name>/action.csv
+        # Read csv from utils/spec_utils/specs/<network_name>/action.csv
         # Convert to json schema
         json_schema = {}
-        if base_experiment_network in TAO_NETWORKS:
-            try:
-                json_schema = generate_schema(base_experiment_network, action)
-            except Exception as e:
-                logger.error("Exception thrown in get_base_experiment_spec_schema is %s", str(e))
-                logger.error("Unable to fetch schema from tao_core")
+        try:
+            json_schema = generate_schema(base_experiment_network, action)
+        except Exception as e:
+            logger.error("Exception thrown in get_base_experiment_spec_schema is %s", str(e))
+            logger.error("Unable to fetch schema from tao_core")
 
         if not json_schema:
             DIR_PATH = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 
             # Try regular format for CSV_PATH => "<network> - <action>.csv"
-            CSV_PATH = os.path.join(DIR_PATH, "specs_utils", "specs", base_experiment_network,
+            CSV_PATH = os.path.join(DIR_PATH, "utils", "specs_utils", "specs", base_experiment_network,
                                     f"{base_experiment_network} - {action}.csv")
             if not os.path.exists(CSV_PATH):
-                Code(404, {}, "Default specs do not exist for action")
+                return Code(404, {}, "Default specs do not exist for action")
             json_schema = csv_to_json_schema.convert(CSV_PATH)
         if "default" in json_schema and base_experiment_spec:
             # Merge the base experiment spec with the default schema
@@ -315,7 +315,7 @@ class SpecHandler:
         if not action:
             return Code(404, {}, "Pass action name to the request")
 
-        # Read csv from spec_utils/specs/<network_name>/action.csv
+        # Read csv from utils/spec_utils/specs/<network_name>/action.csv
         # Convert to json schema
         json_schema = {}
         microservices_network, microservices_action = get_microservices_network_and_action(network, action)
@@ -329,11 +329,12 @@ class SpecHandler:
             DIR_PATH = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
 
             # Try regular format for CSV_PATH => "<network> - <action>.csv"
-            CSV_PATH = os.path.join(DIR_PATH, "specs_utils", "specs", network, f"{network} - {action}.csv")
+            CSV_PATH = os.path.join(DIR_PATH, "utils", "specs_utils", "specs", network, f"{network} - {action}.csv")
             if not os.path.exists(CSV_PATH):
                 # Try secondary format for CSV_PATH => "<network> - <action>__<dataset-format>.csv"
                 CSV_PATH = os.path.join(
                     DIR_PATH,
+                    "utils",
                     "specs_utils",
                     "specs",
                     network,

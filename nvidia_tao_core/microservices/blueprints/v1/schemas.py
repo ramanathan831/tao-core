@@ -835,6 +835,7 @@ class WorkspaceBackupReq(Schema):
         ordered = True
         unknown = EXCLUDE
     backup_file_name = fields.Str(validate=validate.Length(max=2048), allow_none=True)
+    workspace_metadata = fields.Nested(WorkspaceReq, allow_none=False)
 
 
 class WorkspaceRsp(Schema):

@@ -94,17 +94,25 @@ def get_owner_reference():
 
 
 def dependency_check(num_gpu=-1, accelerator=None):
-    """Checks for GPU dependency"""
+    """Checks for GPU dependency
+
+    Returns:
+        tuple: (is_available, gpu_count) where:
+            - is_available (bool): True if requested GPUs are available
+            - gpu_count (int): Maximum number of available GPUs on any single node
+                              (-1 for non-local backends where count is unknown)
+    """
     from .stateless_handler_utils import BACKEND
 
     if os.getenv("BACKEND", "") not in ("local-k8s", "local-docker"):
-        return True
+        return True, -1
     if num_gpu == -1:
         num_gpu = int(os.getenv('NUM_GPU_PER_NODE', default='1'))
     if BACKEND == "local-docker":
         from .job_utils.gpu_manager import gpu_manager
         available_gpus = gpu_manager.get_available_gpus()
-        return bool(available_gpus)
+        gpu_count = len(available_gpus) if available_gpus else 0
+        return bool(available_gpus), gpu_count
     label_selector = 'accelerator=' + str(accelerator)
     if not accelerator:
         label_selector = None
@@ -136,10 +144,9 @@ def dependency_check(num_gpu=-1, accelerator=None):
                                     current = nodes.get(i.spec.node_name, 0)
                                     nodes[i.spec.node_name] = max(0, current - int(v))
     # do I have enough GPUs on one of the nodes
-    for k, v in nodes.items():
-        if v >= num_gpu:
-            return True
-    return False
+    max_available_gpus = max(nodes.values()) if nodes else 0
+    is_available = max_available_gpus >= num_gpu
+    return is_available, max_available_gpus
 
 
 def get_cluster_ip(namespace='default'):
