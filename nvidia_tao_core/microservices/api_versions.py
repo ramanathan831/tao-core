@@ -181,37 +181,7 @@ def register_all_api_versions(app: Flask):
     def api_root():
         """Get available API versions."""
         from flask import jsonify
-        return jsonify({
-            "available_versions": api_version_manager.get_available_versions(),
-            "versions": {
-                "v1": {
-                    "description": "TAO Core API version 1",
-                    "status": "stable"
-                },
-                "v2": {
-                    "description": "TAO Core API version 2",
-                    "status": "stable"
-                }
-            }
-        })
-
-    @app.route('/api/versions', methods=['GET'])
-    def api_versions():
-        """Get available API versions (alternative endpoint)."""
-        from flask import jsonify
-        return jsonify({
-            "available_versions": api_version_manager.get_available_versions(),
-            "versions": {
-                "v1": {
-                    "description": "TAO Core API version 1",
-                    "status": "stable"
-                },
-                "v2": {
-                    "description": "TAO Core API version 2",
-                    "status": "stable"
-                }
-            }
-        })
+        return jsonify(api_version_manager.get_available_versions())
 
     logger.info(f"API versioning setup complete. Available versions: {api_version_manager.get_available_versions()}")
 
