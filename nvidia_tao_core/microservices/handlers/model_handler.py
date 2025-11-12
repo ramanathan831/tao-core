@@ -55,26 +55,25 @@ class ModelHandler:
         """
         handler_metadata = resolve_metadata("experiment", experiment_id)
         if not handler_metadata:
-            return Code(404, {}, "Experiment not found")
+            return Code(404, {"message": "Experiment not found"})
 
         user_id = handler_metadata.get("user_id")
         if not check_read_access(user_id, org_name, experiment_id, kind="experiments"):
-            return Code(404, {}, "Experiment cant be read")
+            return Code(404, {"message": "Experiment cant be read"})
 
         job_metadata = get_handler_job_metadata(job_id)
         if not job_metadata:
-            return Code(404, {}, "Job trying to retrieve not found")
+            return Code(404, {"message": "Job trying to retrieve not found"})
 
         job_status = job_metadata.get("status", "Error")
         if job_status not in ("Success", "Done"):
-            return Code(404, {}, "Job is not in success or Done state")
+            return Code(404, {"message": "Job is not in success or Done state"})
         job_action = job_metadata.get("action", "")
         if job_action not in ("train", "distill", "quantize", "prune", "retrain", "export", "gen_trt_engine"):
             return Code(
                 404,
-                {},
-                "Publish model is available only for train, distill, quantize, prune, retrain, export, "
-                "gen_trt_engine actions"
+                {"message": "Publish model is available only for train, distill, quantize, prune, retrain, export, "
+                 "gen_trt_engine actions"}
             )
 
         try:
@@ -93,19 +92,19 @@ class ModelHandler:
                 source_file = resolve_checkpoint_root_and_search(handler_metadata, job_id)
                 source_files.append(source_file)
             if not source_files:
-                return Code(404, [], "Unable to find a model for the given job")
+                return Code(404, {"message": "Unable to find a model for the given job"})
 
             # Create NGC model
             ngc_key = ngc_utils.get_user_key(user_id, org_name)
             if not ngc_key:
-                return Code(403, {}, "User does not have access to publish model")
+                return Code(403, {"message": "User does not have access to publish model"})
 
             code, message = ngc_utils.create_model(
                 org_name, team_name, handler_metadata, source_files[0], ngc_key, display_name, description
             )
             if code not in [200, 201]:
                 logger.error("Error while creating NGC model")
-                return Code(code, {}, message)
+                return Code(code, {"message": message})
 
             # Upload model version
             response_code, response_message = ngc_utils.upload_model(
@@ -115,11 +114,11 @@ class ModelHandler:
                 response_message = (
                     "Version trying to upload already exists, use remove_published_model endpoint to reupload the model"
                 )
-            return Code(response_code, {}, response_message)
+            return Code(response_code, {"message": response_message})
         except Exception as e:
             logger.error("Exception thrown in publish_model is %s", str(e))
             logger.error(traceback.format_exc())
-            return Code(404, {}, "Unable to publish model")
+            return Code(404, {"message": "Unable to publish model"})
 
     @staticmethod
     def remove_published_model(org_name, team_name, experiment_id, job_id):
@@ -138,19 +137,19 @@ class ModelHandler:
         """
         handler_metadata = resolve_metadata("experiment", experiment_id)
         if not handler_metadata:
-            return Code(404, {}, "Experiment not found")
+            return Code(404, {"message": "Experiment not found"})
 
         user_id = handler_metadata.get("user_id")
         if not check_read_access(user_id, org_name, experiment_id, kind="experiments"):
-            return Code(404, {}, "Experiment cant be read")
+            return Code(404, {"message": "Experiment cant be read"})
 
         job_metadata = get_handler_job_metadata(job_id)
         if not job_metadata:
-            return Code(404, {}, "Job trying to retrieve not found")
+            return Code(404, {"message": "Job trying to retrieve not found"})
 
         job_status = job_metadata.get("status", "Error")
         if job_status not in ("Success", "Done"):
-            return Code(404, {}, "Job is not in success or Done state")
+            return Code(404, {"message": "Job is not in success or Done state"})
         job_action = job_metadata.get("action", "")
         if job_action not in ("train", "distill", "quantize", "prune", "retrain", "export", "gen_trt_engine"):
             return Code(
@@ -163,15 +162,15 @@ class ModelHandler:
         try:
             ngc_key = ngc_utils.get_user_key(user_id, org_name)
             if not ngc_key:
-                return Code(403, {}, "User does not have access to remove published model")
+                return Code(403, {"message": "User does not have access to remove published model"})
 
             response = ngc_utils.delete_model(
                 org_name, team_name, handler_metadata, ngc_key, job_id, job_action
             )
             if response.ok:
-                return Code(response.status_code, {}, "Sucessfully deleted model")
-            return Code(response.status_code, {}, "Unable to delete published model")
+                return Code(response.status_code, {"message": "Successfully deleted model"})
+            return Code(response.status_code, {"message": "Unable to delete published model"})
         except Exception as e:
             logger.error("Exception thrown in remove_published_model is %s", str(e))
             logger.error(traceback.format_exc())
-            return Code(404, {}, "Unable to delete published model")
+            return Code(404, {"message": "Unable to delete published model"})

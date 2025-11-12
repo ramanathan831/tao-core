@@ -196,10 +196,19 @@ def dependency_check_gpu(job_context, dependency):
         logger.error(f"GPU dependency check failed for job {job_context.id}: {error_message}")
         return False, error_message
 
-    gpu_available = dependency_check(num_gpu=num_gpu, accelerator=dependency.name)
+    gpu_available, available_gpu_count = dependency_check(num_gpu=num_gpu, accelerator=dependency.name)
     message = ""
     if not gpu_available:
-        message = "GPU's needed to run this job is not available yet, please wait for other jobs to complete"
+        if available_gpu_count >= 0:
+            message = (
+                f"{num_gpu} GPU's needed to run this job is not available yet "
+                f"(currently {available_gpu_count} GPU's available), please wait for other jobs to complete"
+            )
+        else:
+            message = (
+                f"{num_gpu} GPU's needed to run this job is not available yet, "
+                f"please wait for other jobs to complete"
+            )
     return gpu_available, message
 
 

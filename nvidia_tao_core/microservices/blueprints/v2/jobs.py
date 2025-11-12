@@ -40,6 +40,7 @@ from nvidia_tao_core.microservices.utils.basic_utils import (
 from .schemas import (
     ErrorRsp,
     GpuDetails,
+    JobReq,
     DatasetJobReq,
     ExperimentJobReq,
     DatasetJobRsp,
@@ -118,39 +119,15 @@ def job_create(org_name):
     """
     request_data = request.get_json(force=True)
 
-    # First check if 'kind' field exists in raw request
-    kind = request_data.get('kind')
-    if not kind:
-        available_fields = list(request_data.keys())
-        metadata = {
-            "error_desc": (
-                f"Missing required field 'kind'. Must be either 'experiment' or 'dataset'. "
-                f"Received fields: {available_fields}"
-            ),
-            "error_code": 1
-        }
-        schema = ErrorRsp()
-        schema_dict = schema.dump(schema.load(metadata))
-        return make_response(jsonify(schema_dict), 400)
-
-    if kind not in ['experiment', 'dataset']:
-        metadata = {
-            "error_desc": f"Invalid 'kind' field: must be 'experiment' or 'dataset', got '{kind}'",
-            "error_code": 1
-        }
-        schema = ErrorRsp()
-        schema_dict = schema.dump(schema.load(metadata))
-        return make_response(jsonify(schema_dict), 400)
-
-    # Validate with specific schema based on kind
     try:
-        schema = ExperimentJobReq() if kind == 'experiment' else DatasetJobReq()
+        schema = JobReq()
         request_dict = schema.dump(schema.load(request_data))
     except Exception as e:
-        metadata = {"error_desc": f"Validation error for {kind} job: {str(e)}", "error_code": 1}
+        metadata = {"error_desc": f"Validation error for job: {str(e)}", "error_code": 1}
         schema = ErrorRsp()
         schema_dict = schema.dump(schema.load(metadata))
         return make_response(jsonify(schema_dict), 400)
+    kind = request_dict.get('kind')  # Already validated by schema deserialization and serialization
     user_id = authentication.get_user_id(request.headers.get('Authorization', ''), org_name)
     dataset_id = None
     if kind == 'dataset':
@@ -491,7 +468,7 @@ def job_delete(org_name, job_id):
         schema = ErrorRsp()
         schema_dict = schema.dump(schema.load(job_response.data))
         return make_response(jsonify(schema_dict), job_response.code)
-    job = job_response.data
+    job = get_job(job_id)
     if kind == 'experiment':
         exp = get_experiment(experiment_id)
         # Delete experiment if no more jobs
@@ -643,7 +620,7 @@ def job_list(org_name):
 
     # Process dataset jobs
     ds_schema = DatasetJobRsp()
-    datasets = DatasetHandler.list_datasets(user_id, org_name, user_only)
+    datasets = DatasetHandler.list_datasets(user_id, org_name)
     for dataset in datasets:
         dataset_id = dataset.get('id')
         tags = dataset.get('tags', [])
@@ -943,7 +920,7 @@ def job_partial_update(org_name, job_id):
       requestBody:
         content:
           application/json:
-            schema: ExperimentJobReq
+            schema: JobReq
         description: Updated tags for Job
         required: true
       responses:
@@ -951,7 +928,7 @@ def job_partial_update(org_name, job_id):
           description: Returned the updated Job
           content:
             application/json:
-              schema: ExperimentJobRsp
+              schema: JobRsp
           headers:
             Access-Control-Allow-Origin:
               $ref: '#/components/headers/Access-Control-Allow-Origin'

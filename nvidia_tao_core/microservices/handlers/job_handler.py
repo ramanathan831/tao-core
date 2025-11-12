@@ -958,7 +958,7 @@ class JobHandler:
             )
             if os.path.exists(job_log_path):
                 os.remove(job_log_path)
-            return Code(200, [job_id], "job deleted")
+            return Code(200, job_metadata, "job deleted")
         except Exception as e:
             logger.error("Exception thrown in job_delete is %s", str(e))
             logger.error(traceback.format_exc())

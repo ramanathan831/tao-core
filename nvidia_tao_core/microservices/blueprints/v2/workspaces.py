@@ -199,7 +199,7 @@ def workspace_retrieve(org_name, workspace_id):
     if message:
         metadata = {"error_desc": message, "error_code": 1}
         schema = ErrorRsp()
-        response = make_response(jsonify(schema.dump(schema.load(metadata))), 400)
+        response = make_response(jsonify(schema.dump(schema.load(metadata))), 404)
         return response
     # Get response
     user_id = authentication.get_user_id(request.headers.get('Authorization', ''), org_name)
@@ -269,7 +269,7 @@ def workspace_retrieve_datasets(org_name, workspace_id):
     if message:
         metadata = {"error_desc": message, "error_code": 1}
         schema = ErrorRsp()
-        response = make_response(jsonify(schema.dump(schema.load(metadata))), 400)
+        response = make_response(jsonify(schema.dump(schema.load(metadata))), 404)
         return response
     dataset_type = request.args.get("dataset_type", None)
     dataset_format = request.args.get("dataset_format", None)
@@ -359,7 +359,7 @@ def workspace_delete(org_name, workspace_id):
     if message:
         metadata = {"error_desc": message, "error_code": 1}
         schema = ErrorRsp()
-        response = make_response(jsonify(schema.dump(schema.load(metadata))), 400)
+        response = make_response(jsonify(schema.dump(schema.load(metadata))), 404)
         return response
     # Get response
     response = WorkspaceHandler.delete_workspace(org_name, workspace_id)
@@ -497,29 +497,26 @@ def workspace_create(org_name):
               aws_example:
                 summary: Example with AWS cloud details
                 value:
-                  cloud_details:
-                    cloud_type: aws
-                    cloud_specific_details:
-                      access_key: my_access_key
-                      secret_key: my_secret_key
-                      cloud_region: us-west-1
-                      cloud_bucket_name: my_bucket_name
+                  cloud_type: aws
+                  cloud_specific_details:
+                    access_key: my_access_key
+                    secret_key: my_secret_key
+                    cloud_region: us-west-1
+                    cloud_bucket_name: my_bucket_name
               azure_example:
                 summary: Example with Azure cloud details
                 value:
-                  cloud_details:
-                    cloud_type: azure
-                    cloud_specific_details:
-                      access_key: my_access_key
-                      account_name: my_account_name
-                      cloud_bucket_name: my_container_name
+                  cloud_type: azure
+                  cloud_specific_details:
+                    access_key: my_access_key
+                    account_name: my_account_name
+                    cloud_bucket_name: my_container_name
               huggingface_example:
                 summary: Example with Hugging Face cloud details
                 value:
-                  cloud_details:
-                    cloud_type: huggingface
-                    cloud_specific_details:
-                      token: my_token
+                  cloud_type: huggingface
+                  cloud_specific_details:
+                    token: my_token
         description: Initial metadata for new Workspace (type and format required)
         required: true
       responses:
@@ -633,7 +630,7 @@ def workspace_update(org_name, workspace_id):
     if message:
         metadata = {"error_desc": message, "error_code": 1}
         schema = ErrorRsp()
-        response = make_response(jsonify(schema.dump(schema.load(metadata))), 400)
+        response = make_response(jsonify(schema.dump(schema.load(metadata))), 404)
         return response
     schema = WorkspaceReq()
     request_dict = schema.dump(schema.load(request.get_json(force=True)))
@@ -721,9 +718,9 @@ def workspace_partial_update(org_name, workspace_id):
     if message:
         metadata = {"error_desc": message, "error_code": 1}
         schema = ErrorRsp()
-        response = make_response(jsonify(schema.dump(schema.load(metadata))), 400)
+        response = make_response(jsonify(schema.dump(schema.load(metadata))), 404)
         return response
-    schema = WorkspaceRsp()
+    schema = WorkspaceReq()
     request_dict = schema.dump(schema.load(request.get_json(force=True)))
     # Get response
     user_id = authentication.get_user_id(request.headers.get('Authorization', ''), org_name)
@@ -742,14 +739,14 @@ def workspace_partial_update(org_name, workspace_id):
 @workspaces_bp_v2.route('/orgs/<org_name>/workspaces:backup', methods=['POST'])
 @disk_space_check
 def workspace_backup(org_name):
-    """Backup MongoDB data using workspace metadata.
+    """Backup MongoDB data in workspace.
 
     ---
     post:
       tags:
       - WORKSPACES
-      summary: Backup MongoDB data using workspace metadata
-      description: Backs up all MongoDB databases using provided workspace cloud credentials
+      summary: Backup MongoDB data using workspace
+      description: Backs up all MongoDB databases using provided workspace
       parameters:
       - name: org_name
         in: path
@@ -762,18 +759,7 @@ def workspace_backup(org_name):
       requestBody:
         content:
           application/json:
-            schema:
-              type: object
-              properties:
-                workspace_metadata:
-                  type: object
-                  description: Workspace metadata containing cloud credentials
-                  required: true
-                backup_file_name:
-                  type: string
-                  description: Optional backup file name
-              required:
-                - workspace_metadata
+            schema: WorkspaceBackupReq
       responses:
         200:
           description: Backup successful
@@ -798,10 +784,11 @@ def workspace_backup(org_name):
     """
     try:
         request_data = request.get_json(force=True)
-        workspace_metadata = request_data.get("workspace_metadata")
-        backup_file_name = request_data.get("backup_file_name", "mongodb_backup.tar.gz")
         schema = WorkspaceBackupReq()
-        workspace_metadata = schema.dump(schema.load(workspace_metadata))
+        validated_request = schema.dump(schema.load(request_data))
+
+        workspace_metadata = validated_request.get("workspace_metadata")
+        backup_file_name = validated_request.get("backup_file_name", "mongodb_backup.tar.gz")
 
         if not workspace_metadata:
             metadata = {"error_desc": "workspace_metadata is required", "error_code": 1}
@@ -831,14 +818,14 @@ def workspace_backup(org_name):
 @workspaces_bp_v2.route('/orgs/<org_name>/workspaces:restore', methods=['POST'])
 @disk_space_check
 def workspace_restore(org_name):
-    """Restore MongoDB data using workspace metadata.
+    """Restore MongoDB data using workspace.
 
     ---
     post:
       tags:
       - WORKSPACES
-      summary: Restore MongoDB data using workspace metadata
-      description: Restores all MongoDB databases using provided workspace cloud credentials
+      summary: Restore MongoDB data using workspace
+      description: Restores all MongoDB databases using provided workspace
       parameters:
       - name: org_name
         in: path
@@ -851,18 +838,7 @@ def workspace_restore(org_name):
       requestBody:
         content:
           application/json:
-            schema:
-              type: object
-              properties:
-                workspace_metadata:
-                  type: object
-                  description: Workspace metadata containing cloud credentials
-                  required: true
-                backup_file_name:
-                  type: string
-                  description: Optional backup file name to restore from
-              required:
-                - workspace_metadata
+            schema: WorkspaceBackupReq
       responses:
         200:
           description: Restore successful
@@ -887,10 +863,11 @@ def workspace_restore(org_name):
     """
     try:
         request_data = request.get_json(force=True)
-        workspace_metadata = request_data.get("workspace_metadata")
         schema = WorkspaceBackupReq()
-        workspace_metadata = schema.dump(schema.load(workspace_metadata))
-        backup_file_name = request_data.get("backup_file_name", "mongodb_backup.tar.gz")
+        validated_request = schema.dump(schema.load(request_data))
+
+        workspace_metadata = validated_request.get("workspace_metadata")
+        backup_file_name = validated_request.get("backup_file_name", "mongodb_backup.tar.gz")
 
         if not workspace_metadata:
             metadata = {"error_desc": "workspace_metadata is required", "error_code": 1}

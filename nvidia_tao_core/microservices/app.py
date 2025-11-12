@@ -98,35 +98,10 @@ def create_app():
         response = make_response(jsonify(schema.dump(schema.load(metadata))), 400)
         return response
 
-    # Register root-level endpoints
     @app.route('/')
     def root():
         """Root endpoint."""
-        return jsonify({
-            "message": "TAO Core API",
-            "version": "1.0.0",
-            "available_versions": ["v1", "v2"]
-        })
-
-    @app.route('/version')
-    def version():
-        """Version endpoint."""
-        return jsonify({
-            "version": "1.0.0",
-            "api_versions": ["v1", "v2"]
-        })
-
-    @app.route('/openapi.json')
-    def openapi_json():
-        """OpenAPI JSON endpoint."""
-        return jsonify({
-            "openapi": "3.0.0",
-            "info": {
-                "title": "TAO Core API",
-                "version": "1.0.0"
-            },
-            "paths": {}
-        })
+        return jsonify(["api"])
 
     # Register all versioned API blueprints
     logger.info("Register all versioned API blueprints")
