@@ -756,14 +756,6 @@ def workspace_backup(org_name):
           type: string
           maxLength: 255
           pattern: '^[a-zA-Z0-9_-]+$'
-      - name: workspace_id
-        in: path
-        description: ID of Workspace to update
-        required: true
-        schema:
-          type: string
-          format: uuid
-          maxLength: 36
       requestBody:
         content:
           application/json:
@@ -843,14 +835,6 @@ def workspace_restore(org_name):
           type: string
           maxLength: 255
           pattern: '^[a-zA-Z0-9_-]+$'
-      - name: workspace_id
-        in: path
-        description: ID of Workspace to update
-        required: true
-        schema:
-          type: string
-          format: uuid
-          maxLength: 36
       requestBody:
         content:
           application/json:
