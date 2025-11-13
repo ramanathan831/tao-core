@@ -13,6 +13,7 @@
 # limitations under the License.
 
 """AutoML handler modules"""
+import ast
 import os
 import json
 import time
@@ -44,6 +45,28 @@ from nvidia_tao_core.microservices.utils.job_utils.executor import (
 image = DOCKER_IMAGE_MAPPER["API"]
 
 logger = logging.getLogger(__name__)
+
+
+def _normalize_automl_hyperparameters(automl_hyperparameters):
+    """Normalize automl_hyperparameters to JSON format for shell-safe passing.
+
+    Handles both SDK format "['param1', 'param2']" and CLI format "[param1, param2]".
+    Returns a JSON string that can be safely passed through shell and parsed with json.loads().
+    """
+    if not isinstance(automl_hyperparameters, str):
+        return json.dumps(automl_hyperparameters)
+
+    try:
+        # Try ast.literal_eval first (works for SDK format with quoted elements)
+        params_list = ast.literal_eval(automl_hyperparameters)
+        return json.dumps(params_list)
+    except (ValueError, SyntaxError):
+        # Fallback for CLI format (unquoted elements due to shell processing)
+        params_str = automl_hyperparameters.strip('[]').strip()
+        if params_str:
+            params_list = [p.strip() for p in params_str.split(',')]
+            return json.dumps(params_list)
+        return "[]"
 
 
 class AutoMLHandler:
@@ -139,7 +162,7 @@ class AutoMLHandler:
             f'--automl_nu={automl_nu} '
             f'--metric={metric} '
             f'--epoch_multiplier={epoch_multiplier} '
-            f'--automl_hyperparameters="{automl_hyperparameters}" '
+            f"--automl_hyperparameters='{_normalize_automl_hyperparameters(automl_hyperparameters)}' "
             f'--override_automl_disabled_params={override_automl_disabled_params} '
             f'--retain_checkpoints_for_resume={retain_checkpoints_for_resume} '
             f'--timeout_minutes={timeout_minutes} '
@@ -298,7 +321,7 @@ class AutoMLHandler:
             f'--automl_nu={automl_nu} '
             f'--metric={metric} '
             f'--epoch_multiplier={epoch_multiplier} '
-            f'--automl_hyperparameters="{automl_hyperparameters}" '
+            f"--automl_hyperparameters='{_normalize_automl_hyperparameters(automl_hyperparameters)}' "
             f'--override_automl_disabled_params={override_automl_disabled_params} '
             f'--retain_checkpoints_for_resume={retain_checkpoints_for_resume} '
             f'--timeout_minutes={timeout_minutes} '
