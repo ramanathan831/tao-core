@@ -13,7 +13,6 @@
 # limitations under the License.
 
 """AutoML main handler"""
-import ast
 import argparse
 import traceback
 import json
@@ -258,7 +257,8 @@ if __name__ == "__main__":
         automl_nu = args.automl_nu
         metric = args.metric
         epoch_multiplier = args.epoch_multiplier
-        automl_hyperparameters = ast.literal_eval(args.automl_hyperparameters)
+        # Parse automl_hyperparameters - normalized to JSON by handler
+        automl_hyperparameters = json.loads(args.automl_hyperparameters)
         override_automl_disabled_params = args.override_automl_disabled_params == "True"
         decrypted_workspace_metadata = args.decrypted_workspace_metadata
         automl_start(
