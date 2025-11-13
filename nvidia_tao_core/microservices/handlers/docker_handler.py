@@ -17,12 +17,13 @@
 """Docker handler."""
 
 import json
+import logging
+import os
+import requests
+import subprocess
 import traceback
 # pylint: disable=c-extension-no-member
 import docker
-import os
-import logging
-import requests
 from nvidia_tao_core.microservices.utils.core_utils import get_admin_key
 if os.getenv("BACKEND") == "local-docker":
     from nvidia_tao_core.microservices.utils.job_utils.gpu_manager import gpu_manager
@@ -38,6 +39,52 @@ DOCKER_NETWORK = os.getenv("DOCKER_NETWORK", "tao_default")
 DOCKER_USERNAME = os.getenv("DOCKER_USERNAME", "$oauthtoken")
 docker_client = docker.from_env() if os.getenv("DOCKER_HOST") else None
 DEBUG_MODE = os.getenv("DEBUG_MODE", "false").lower() in ("true", "1")
+
+
+def is_tegra_platform():
+    """Detect if running on NVIDIA Tegra/Jetson platform.
+
+    This follows the same detection logic as tao_pt.py runner.
+    Checks the uname output for 'tegra' string, which indicates
+    Tegra/Jetson platforms like Thor.
+
+    Returns:
+        bool: True if Tegra/Jetson platform detected, False otherwise.
+    """
+    try:
+        # Check if running on a tegra system like thor or jetson
+        uname_output = subprocess.check_output(["uname", "-a"]).decode().strip()
+        is_tegra = "tegra" in uname_output.lower()
+
+        if is_tegra:
+            logger.info(f"Tegra platform detected via uname: {uname_output}")
+        else:
+            logger.debug("Non-Tegra platform detected")
+
+        return is_tegra
+    except Exception as e:
+        logger.warning(f"Error detecting platform type: {e}. Assuming non-Tegra platform.")
+        return False
+
+
+def should_use_nvidia_runtime():
+    """Determine whether to use runtime="nvidia" or device_requests for GPU access.
+
+    This follows the same logic as tao_pt.py runner:
+    - Use runtime="nvidia" for Tegra/Jetson platforms (requires nvidia-docker2)
+    - Use device_requests for standard x86 systems (requires nvidia-container-toolkit)
+
+    Auto-detects the platform via uname and returns the appropriate runtime method.
+
+    Returns:
+        bool: True if runtime="nvidia" should be used, False for device_requests.
+    """
+    # Auto-detect platform (same logic as tao_pt.py)
+    if is_tegra_platform():
+        logger.info("Using runtime='nvidia' for Tegra/Jetson platform")
+        return True
+    logger.debug("Using device_requests for standard platform")
+    return False
 
 
 def docker_pull_progress(line):
@@ -236,7 +283,19 @@ class DockerHandler:
         return device_requests
 
     def start_container(self, container_name="", docker_env_vars={}, command=[], num_gpus=-1, volumes=None):
-        """Start a container."""
+        """Start a container with GPU access.
+
+        Automatically detects the platform and uses the appropriate GPU access method:
+        - Tegra/Jetson: Uses runtime="nvidia" with NVIDIA_VISIBLE_DEVICES
+        - Standard x86: Uses device_requests
+
+        Args:
+            container_name: Name for the container
+            docker_env_vars: Dictionary of environment variables
+            command: Command to run in the container
+            num_gpus: Number of GPUs to assign (-1 for all)
+            volumes: Volume mounts for the container
+        """
         try:
             # Check if the image exists locally. If not, pull it.
             if not self._check_image_exists():
@@ -244,21 +303,56 @@ class DockerHandler:
                     "The required docker doesn't exist locally/the manifest has changed. "
                     "Pulling a new docker.")
                 self.pull()
+
             gpu_ids = gpu_manager.assign_gpus(container_name, num_gpus)
             logger.info(f"Starting Container: {self._docker_image}")
-            self._container = self._docker_client.containers.run(
-                self._docker_image,
-                command=command,
-                name=container_name,
-                device_requests=self.get_device_requests(gpu_ids),
-                network=DOCKER_NETWORK,
-                tmpfs={"/dev/shm": ""},
-                detach=True,
-                remove=True,
-                environment=docker_env_vars,
-                volumes=volumes,
-            )
+
+            # Determine GPU access method based on platform
+            use_runtime = should_use_nvidia_runtime()
+
+            # Prepare container run parameters
+            run_kwargs = {
+                "image": self._docker_image,
+                "command": command,
+                "name": container_name,
+                "network": DOCKER_NETWORK,
+                "tmpfs": {"/dev/shm": ""},
+                "detach": True,
+                "remove": True,
+                "environment": docker_env_vars,
+                "volumes": volumes,
+            }
+
+            if use_runtime:
+                # Method 1: Use runtime="nvidia" (for Tegra/Jetson and nvidia-docker2)
+                # This matches the tao_pt.py runner behavior:
+                # --runtime=nvidia -e NVIDIA_DRIVER_CAPABILITIES=all -e NVIDIA_VISIBLE_DEVICES=<gpus>
+                docker_env_vars = docker_env_vars.copy()
+                docker_env_vars["NVIDIA_DRIVER_CAPABILITIES"] = "all"
+                if gpu_ids:
+                    docker_env_vars["NVIDIA_VISIBLE_DEVICES"] = ",".join(gpu_ids)
+                    logger.info(f"Using runtime='nvidia' with GPUs: {','.join(gpu_ids)}")
+                else:
+                    docker_env_vars["NVIDIA_VISIBLE_DEVICES"] = "all"
+                    logger.info("Using runtime='nvidia' with all available GPUs")
+
+                run_kwargs["runtime"] = "nvidia"
+                docker_env_vars = docker_env_vars.copy()
+                docker_env_vars["NVIDIA_DRIVER_CAPABILITIES"] = "all"
+            else:
+                # Method 2: Use device_requests (for standard Docker with nvidia-container-toolkit)
+                device_requests = self.get_device_requests(gpu_ids)
+                if gpu_ids:
+                    logger.info(f"Using device_requests with GPUs: {','.join(gpu_ids)}")
+                else:
+                    logger.info("Using device_requests with all available GPUs")
+
+                run_kwargs["device_requests"] = device_requests
+
+            # Start the container
+            self._container = self._docker_client.containers.run(**run_kwargs)
             logger.info(f"Container {container_name} started successfully")
+
         except Exception as e:
             logger.error(f"Exception thrown in start_container is {str(e)}")
             logger.error(traceback.format_exc())
