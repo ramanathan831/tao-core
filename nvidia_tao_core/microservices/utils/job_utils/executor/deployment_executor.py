@@ -25,6 +25,10 @@ if os.getenv("BACKEND"):  # To see if the container is going to be used for Serv
         mongo_operator_enabled,
         mongo_namespace
     )
+else:
+    mongo_secret = None  # type: ignore
+    mongo_operator_enabled = None  # type: ignore
+    mongo_namespace = None  # type: ignore
 
 
 class DeploymentExecutor(BaseExecutor):

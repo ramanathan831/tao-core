@@ -107,6 +107,10 @@ class Bayesian(AutoMLAlgorithmBase):
                         # Regular sampling for non-power constraints
                         normalized = suggestion * (v_max - v_min) + v_min
                         quantized = clamp_value(normalized, v_min, v_max)
+                else:
+                    # Invalid math condition format, fall back to regular sampling
+                    normalized = suggestion * (v_max - v_min) + v_min
+                    quantized = clamp_value(normalized, v_min, v_max)
             else:
                 # No math condition, regular sampling
                 normalized = suggestion * (v_max - v_min) + v_min

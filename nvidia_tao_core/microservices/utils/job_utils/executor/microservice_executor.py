@@ -33,6 +33,8 @@ from nvidia_tao_core.microservices.utils.handler_utils import (
 
 if os.getenv("BACKEND") == "local-docker":
     from ..gpu_manager import gpu_manager
+else:
+    gpu_manager = None  # type: ignore
 
 from .base_executor import BaseExecutor
 

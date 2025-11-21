@@ -20,6 +20,8 @@ logger = logging.getLogger(__name__)
 
 if os.getenv("BACKEND") in ("local-k8s", "local-docker"):
     from nvidia_tao_core.microservices.utils.mongo_utils import MongoHandler
+else:
+    MongoHandler = None  # type: ignore
 
 
 class GPUManager:
@@ -73,3 +75,5 @@ class GPUManager:
 
 if os.getenv("BACKEND") == "local-docker":
     gpu_manager = GPUManager()
+else:
+    gpu_manager = None  # type: ignore

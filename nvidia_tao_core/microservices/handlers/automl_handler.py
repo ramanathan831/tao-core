@@ -155,7 +155,8 @@ class AutoMLHandler:
             run_command,
             num_gpu=0,
             automl_brain=True,
-            automl_exp_job=False
+            automl_exp_job=False,
+            docker_env_vars=handler_metadata.get("docker_env_vars", {})
         )
 
     @staticmethod
@@ -307,6 +308,12 @@ class AutoMLHandler:
         if platform_id:
             run_command = f"{run_command} --platform_id={platform_id}"
         JobExecutor().create_job(
-            org_name, job_id, image, run_command, num_gpu=0,
-            automl_brain=True, automl_exp_job=False
+            org_name,
+            job_id,
+            image,
+            run_command,
+            num_gpu=0,
+            automl_brain=True,
+            automl_exp_job=False,
+            docker_env_vars=handler_metadata.get("docker_env_vars", {})
         )
