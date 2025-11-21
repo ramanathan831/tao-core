@@ -96,10 +96,14 @@ class Controller:
         brain,
         automl_context,
         max_recommendations,
+        automl_R,
+        automl_nu,
+        epoch_multiplier,
         delete_intermediate_ckpt,
         metric,
         automl_algorithm,
-        decrypted_workspace_metadata
+        decrypted_workspace_metadata,
+        parameter_names=None
     ):
         """Initialize the Automl Controller class
 
@@ -109,10 +113,15 @@ class Controller:
             brain: Bayesian/Hyperband class object
             automl_context: job context with regards to automl
             max_recommendations: max_recommendation parameter value (for Bayesian)
+            automl_R: R parameter value (for Hyperband)
+            automl_nu: nu parameter value (for Hyperband)
+            epoch_multiplier: epoch multiplier parameter value (for Hyperband)
             delete_intermediate_ckpt: boolean value to delete/not-delete checkpoints which don't correspond to the
             best model
             metric: metric name which will be used to choose best models
             automl_algorithm: automl algorithm name
+            decrypted_workspace_metadata: decrypted workspace metadata
+            parameter_names: list of parameter names being varied by AutoML
         """
         self.brain = brain
 
@@ -126,6 +135,9 @@ class Controller:
             self.checkpoint_delimiter = "_"
         self.completed_recommendations = 0
         self.max_recommendations = int(max_recommendations)
+        self.automl_R = int(automl_R)
+        self.automl_nu = int(automl_nu)
+        self.epoch_multiplier = int(epoch_multiplier)
         self.delete_intermediate_ckpt = bool(delete_intermediate_ckpt.lower() == "true")
         self.automl_algorithm = automl_algorithm
         self.decrypted_workspace_metadata = decrypted_workspace_metadata
@@ -154,6 +166,11 @@ class Controller:
 
         self.old_bracket = "0"
         self.hyperband_cancel_condition_seen = False
+
+        self.wandb_group_name = f"automl_{self.automl_context.id}"
+        self.parameter_names = list(parameter_names) if parameter_names else []
+        self.wandb_initialized = False
+        self.wandb_table = None
 
         self.eta = "Will be updated after completing one epoch"
         self.remaining_epochs_in_experiment = float("inf")
@@ -195,6 +212,155 @@ class Controller:
             "Injected TAO_AUTOML_TRIGGERED=true for experiment %s",
             self.automl_context.handler_id
         )
+
+    def _initialize_wandb_for_automl(self):
+        """Initialize WandB for AutoML tracking using API key from experiment metadata.
+
+        This method:
+        1. Retrieves WANDB_API_KEY from experiment metadata's docker_env_vars
+        2. Logs into WandB using the API key
+        3. Initializes a WandB run for the AutoML controller
+        4. Creates a table to track all AutoML experiments with their hyperparameters and results
+        5. Groups all child experiment runs under self.wandb_group_name for easy visualization
+
+        The WandB table contains:
+        - experiment_id: Sequential ID of the recommendation
+        - job_id: Unique job identifier
+        - status: Current status (pending/running/success/failure)
+        - metric_key: The optimization metric value (e.g., mAP, loss)
+        - best_epoch_number: The epoch number with the best metric
+        - All varying hyperparameters from automl_hyperparameters (parameter_names)
+        """
+        if self.wandb_initialized:
+            return
+
+        try:
+            # Get experiment metadata to access docker_env_vars
+            experiment_metadata = get_handler_metadata(self.automl_context.handler_id, "experiments")
+            docker_env_vars = experiment_metadata.get("docker_env_vars", {})
+            wandb_api_key = docker_env_vars.get("WANDB_API_KEY")
+
+            if not wandb_api_key:
+                logger.info("WANDB_API_KEY not found in experiment metadata, skipping WandB initialization")
+                return
+
+            # Check if wandb is logged in
+            try:
+                import wandb
+                wandb_logged_in = wandb.login(key=wandb_api_key)
+                if not wandb_logged_in:
+                    logger.warning("Failed to login to WandB, skipping table logging")
+                    return
+            except Exception as e:
+                logger.warning("WandB login failed: %s", str(e))
+                return
+
+            # Initialize wandb run for AutoML controller
+            specs = get_job_specs(self.automl_context.id)
+            wandb_config = specs.get("wandb", {})
+
+            config = {
+                "network": self.network,
+                "metric": self.metric,
+                "algorithm": self.automl_algorithm,
+            }
+            if self.automl_algorithm in ("hyperband", "h"):
+                config["automl_R"] = self.automl_R
+                config["automl_nu"] = self.automl_nu
+                config["epoch_multiplier"] = self.epoch_multiplier
+            elif self.automl_algorithm in ("bayesian", "b"):
+                config["max_recommendations"] = self.max_recommendations
+            else:
+                raise ValueError(f"AutoML Algorithm {self.automl_algorithm} is not valid")
+
+            wandb.init(
+                project=wandb_config.get("project", "TAO Toolkit"),
+                entity=wandb_config.get("entity"),
+                name="automl_brain",
+                group=self.wandb_group_name,
+                config=config,
+                dir=os.path.join(self.root, "wandb"),
+                reinit=True
+            )
+
+            self.wandb_initialized = True
+            logger.info("WandB initialized for AutoML controller with group: %s", self.wandb_group_name)
+
+            # Create the table
+            self._create_wandb_table()
+
+        except Exception as e:
+            logger.warning("Failed to initialize WandB for AutoML: %s", str(e))
+            self.wandb_initialized = False
+
+    def _create_wandb_table(self):
+        """Create WandB table with columns for hyperparameters and metrics."""
+        if not self.wandb_initialized:
+            return
+
+        try:
+            import wandb
+
+            # Define table columns: experiment_id, job_id, status, result, best_epoch_number,
+            # plus all varying hyperparameters
+            columns = ["experiment_id", "job_id", "status", self.metric_key, "best_epoch_number"]
+            columns.extend(self.parameter_names)
+
+            self.wandb_table = wandb.Table(columns=columns)
+            logger.info("Created WandB table with columns: %s", columns)
+
+        except Exception as e:
+            logger.warning("Failed to create WandB table: %s", str(e))
+            self.wandb_table = None
+
+    def _update_wandb_table(self):
+        """Update WandB table with current state of all recommendations."""
+        if not self.wandb_initialized or self.wandb_table is None:
+            return
+
+        try:
+            import wandb
+
+            # Recreate the table with all current recommendations
+            columns = ["experiment_id", "job_id", "status", self.metric_key, "best_epoch_number"]
+            columns.extend(self.parameter_names)
+            self.wandb_table = wandb.Table(columns=columns)
+
+            # Add all recommendations as rows
+            for rec in self.recommendations:
+                # Format result with higher precision to preserve decimal places in WandB display
+                # WandB defaults to 4 decimal places, so format as string with more precision
+                result_value = rec.result
+                if isinstance(result_value, float):
+                    # Format with 10 decimal places to preserve precision in WandB display
+                    # Preserve at least one decimal place to avoid removing all digits
+                    formatted = f"{result_value:.10f}".rstrip('0')
+                    if formatted.endswith('.'):
+                        formatted = formatted[:-1] + '.0'
+                    result_value = formatted
+
+                row_data = [
+                    rec.id,
+                    rec.job_id or "pending",
+                    rec.status,
+                    result_value,
+                    self.best_epoch_number.get(rec.id, "")
+                ]
+
+                # Add hyperparameter values (formatted, e.g., "train.optim.lr")
+                # Note: rec.specs is a flat dict with keys like "train.optim.lr", not nested
+                for param_name in self.parameter_names:
+                    value = rec.specs.get(param_name, "N/A")
+                    row_data.append(value)
+
+                self.wandb_table.add_data(*row_data)
+
+            # Log the updated table
+            wandb.log({"automl_experiments": self.wandb_table})
+            logger.debug("Updated WandB table with %d recommendations", len(self.recommendations))
+
+        except Exception as e:
+            logger.warning("Failed to update WandB table: %s", str(e))
 
     def _get_checkpoint_format(self):
         """Get checkpoint format from network config"""
@@ -260,6 +426,16 @@ class Controller:
             # Report initial health beat
             report_health_beat(self.automl_context.id, "AutoML controller starting")
 
+            # Set WandB group in specs for trial linking so all trials in dashboard are grouped together
+            specs = get_job_specs(self.automl_context.id)
+            if "wandb" in specs and specs["wandb"]:
+                specs["wandb"]["group"] = self.wandb_group_name
+                save_job_specs(self.automl_context.id, specs)
+                logger.info("Updated WandB group in automl job specs: %s", self.wandb_group_name)
+
+            # Initialize WandB for AutoML controller
+            self._initialize_wandb_for_automl()
+
             update_job_message(
                 self.automl_context.handler_id,
                 self.automl_context.id,
@@ -290,6 +466,16 @@ class Controller:
             update_job_status(self.automl_context.handler_id, self.automl_context.id, status=status, kind="experiments")
             self.cancel_recommendation_jobs()
 
+            # Final WandB table update
+            if self.wandb_initialized:
+                self._update_wandb_table()
+                try:
+                    import wandb
+                    wandb.finish()
+                    logger.info("Closed WandB run for AutoML controller")
+                except Exception as e:
+                    logger.warning("Failed to close WandB run: %s", str(e))
+
             # Clean up health beat on completion
             delete_health_beat(self.automl_context.id)
 
@@ -313,6 +499,14 @@ class Controller:
                 status="Error",
                 kind="experiments"
             )
+
+            # Clean up WandB on error
+            if self.wandb_initialized:
+                try:
+                    import wandb
+                    wandb.finish()
+                except Exception as e:
+                    logger.warning("Failed to close WandB run: %s", str(e))
 
             # Clean up health beat on error
             delete_health_beat(self.automl_context.id)
@@ -343,10 +537,14 @@ class Controller:
         brain,
         automl_context,
         max_recommendations,
+        automl_R,
+        automl_nu,
+        epoch_multiplier,
         delete_intermediate_ckpt,
         metric,
         automl_algorithm,
-        decrypted_workspace_metadata
+        decrypted_workspace_metadata,
+        parameter_names=None
     ):
         """Loads a Controller object from pre-existing root"""
         ctrl = Controller(
@@ -355,10 +553,14 @@ class Controller:
             brain,
             automl_context,
             max_recommendations,
+            automl_R,
+            automl_nu,
+            epoch_multiplier,
             delete_intermediate_ckpt,
             metric,
             automl_algorithm,
-            decrypted_workspace_metadata
+            decrypted_workspace_metadata,
+            parameter_names
         )
         ctrl.recommendations = []
         # Restore the recommendations
@@ -814,6 +1016,9 @@ class Controller:
             result_dict["Best experiment number"] = self.best_rec_id + 1
 
         update_automl_stats(self.automl_context.id, result_dict)
+
+        # Update WandB table with current state
+        self._update_wandb_table()
 
     def find_best_model(self):
         """Find best model based on metric value chosen and move those artifacts to best_model folder"""

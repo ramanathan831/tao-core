@@ -94,10 +94,14 @@ def automl_start(
             brain,
             jc,
             automl_max_recommendations,
+            automl_R,
+            automl_nu,
+            epoch_multiplier,
             automl_delete_intermediate_ckpt,
             metric,
             automl_algorithm.lower(),
-            decrypted_workspace_metadata
+            decrypted_workspace_metadata,
+            parameter_names
         )
         controller.start()
 
@@ -122,10 +126,14 @@ def automl_start(
             brain,
             jc,
             automl_max_recommendations,
+            automl_R,
+            automl_nu,
+            epoch_multiplier,
             automl_delete_intermediate_ckpt,
             metric,
             automl_algorithm.lower(),
-            decrypted_workspace_metadata
+            decrypted_workspace_metadata,
+            parameter_names
         )
         controller.start()
 

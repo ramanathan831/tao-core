@@ -62,6 +62,8 @@ from nvidia_tao_core.microservices.utils.core_utils import (
 
 if os.getenv("BACKEND"):
     from nvidia_tao_core.microservices.utils.mongo_utils import MongoHandler
+else:
+    MongoHandler = None  # type: ignore
 
 from ..utils.basic_utils import (
     get_org_experiments,

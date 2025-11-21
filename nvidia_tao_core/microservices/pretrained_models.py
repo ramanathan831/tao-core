@@ -33,6 +33,8 @@ import logging
 
 if os.getenv("AIRGAPPED_MODE", "False").lower() == "false":
     from nvidia_tao_core.microservices.utils.mongo_utils import MongoHandler
+else:
+    MongoHandler = None  # type: ignore
 from nvidia_tao_core.microservices.utils.ngc_utils import get_ngc_token_from_api_key
 from nvidia_tao_core.microservices.utils.core_utils import read_network_config, get_admin_key, safe_load_file
 from nvidia_tao_core.microservices.handlers.cloud_handlers.huggingface import (

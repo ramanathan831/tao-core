@@ -43,6 +43,10 @@ if os.getenv("BACKEND"):
         mongo_operator_enabled,
         mongo_namespace
     )
+else:
+    mongo_secret = None  # type: ignore
+    mongo_operator_enabled = None  # type: ignore
+    mongo_namespace = None  # type: ignore
 
 from .base_executor import BaseExecutor
 from nvidia_tao_core.microservices.utils.executor_utils import override_k8_status
