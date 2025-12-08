@@ -41,6 +41,9 @@ from nvidia_tao_core.microservices.utils.handler_utils import (
     format_epoch,
     get_network_config
 )
+from nvidia_tao_core.microservices.handlers.execution_handlers.slurm_handler import (
+    get_results_dir_for_workspace
+)
 from nvidia_tao_core.microservices.utils.stateless_handler_utils import (
     update_job_status,
     get_handler_metadata,
@@ -367,6 +370,31 @@ class Controller:
         checkpoint_config = self._get_checkpoint_config()
         return checkpoint_config.get("format", "")
 
+    def _get_experiment_results_path(self, job_id):
+        """Get the results path for an experiment based on workspace type.
+
+        For SLURM workspaces, returns the actual Lustre path.
+        For non-SLURM workspaces, returns the local container path.
+
+        Args:
+            job_id: The job ID of the experiment
+
+        Returns:
+            str: The full path to the experiment results directory
+        """
+        cloud_type = ''
+        if self.decrypted_workspace_metadata:
+            cloud_type = self.decrypted_workspace_metadata.get('cloud_type', '')
+
+        if cloud_type == 'slurm':
+            return get_results_dir_for_workspace(
+                workspace_metadata=self.decrypted_workspace_metadata,
+                job_id=job_id
+            )
+
+        results_base = os.getenv('TAO_API_RESULTS_DIR', '/results')
+        return os.path.join(results_base, job_id)
+
     def _select_best_epoch_folder(self, epoch_folder_files, all_files, specific_format=None):
         """Select the best epoch folder that contains the required checkpoint format
 
@@ -445,9 +473,10 @@ class Controller:
             self._execute_loop()
             status = "Error"
             result_metadata = get_handler_job_metadata(self.automl_context.id)
+            best_model_path = self._get_experiment_results_path(self.automl_context.id)
             result_metadata["job_details"][self.automl_context.id] = {
                 "detailed_status": {
-                    "message": f"Checkpoint file doesn't exist in best model folder /results/{self.automl_context.id}",
+                    "message": f"Checkpoint file doesn't exist in best model folder {best_model_path}",
                     "status": "FAILURE"
                 }
             }
@@ -456,7 +485,7 @@ class Controller:
                 result_metadata["job_details"][self.automl_context.id] = {
                     "detailed_status": {
                         "message": (
-                            f"AutoML run is successful with best checkpoints under /results/{self.automl_context.id}"
+                            f"AutoML run is successful with best checkpoints under {best_model_path}"
                         ),
                         "status": "SUCCESS"
                     }
@@ -480,6 +509,10 @@ class Controller:
             delete_health_beat(self.automl_context.id)
 
         except Exception:
+            logger.error(
+                "AutoMLpipeline loop for network %s with job id %s failed due to exception %s",
+                self.network, self.automl_context.id, traceback.format_exc()
+            )
             result_metadata = get_handler_job_metadata(self.automl_context.id)
             result_metadata["job_details"][self.automl_context.id] = {
                 "detailed_status": {
@@ -489,10 +522,6 @@ class Controller:
             }
             write_job_metadata(self.automl_context.id, result_metadata)
             self.cancel_recommendation_jobs()
-            logger.error(
-                "AutoMLpipeline loop for network %s failed due to exception %s",
-                self.network, traceback.format_exc()
-            )
             update_job_status(
                 self.automl_context.handler_id,
                 self.automl_context.id,
@@ -633,7 +662,7 @@ class Controller:
                     if self.best_model_copied:
                         # Delete final extra checkpoints after finish training
                         for rec in self.recommendations:
-                            expt_root = os.path.join("/results", rec.job_id)
+                            expt_root = self._get_experiment_results_path(rec.job_id)
                             self.get_best_checkpoint_path(expt_root, rec)
                             if self.delete_intermediate_ckpt:
                                 self.delete_not_best_model_checkpoints(expt_root, rec, True)
@@ -728,9 +757,10 @@ class Controller:
                                 os.remove(file_name)
                     delete_dnn_status(self.automl_context.id, automl=True, experiment_number=str(rec_id))
                 expt_name = "experiment_" + str(rec_id)
+                cloud_expt_path = self._get_experiment_results_path(self.recommendations[rec_id].job_id)
                 remove_files(
                     os.path.join(self.root, expt_name),
-                    os.path.join("/results", self.recommendations[rec_id].job_id),
+                    cloud_expt_path,
                     rec_id
                 )
 
@@ -755,6 +785,8 @@ class Controller:
             )
 
             old_status = rec.status
+            logger.info(f"old_status: {old_status}")
+            logger.info(f"rec: {rec.status}")
 
             job_name = rec.job_id
             if not job_name:
@@ -762,10 +794,24 @@ class Controller:
 
             expt_name = "experiment_" + str(rec.id)
             local_expt_root = os.path.join(self.root, expt_name)
-            cloud_expt_root = os.path.join("/results", rec.job_id)
+            cloud_expt_root = self._get_experiment_results_path(rec.job_id)
 
             # If rec already changed to Success, no need to check
             if rec.status in [JobStates.success, JobStates.failure]:
+                # Apply penalty for failed experiments if result is still 0.0
+                if rec.status == JobStates.failure and rec.result == 0.0:
+                    if self.brain.reverse_sort:
+                        penalty_value = 1e-7  # Low penalty for metrics where higher is better
+                    else:
+                        penalty_value = 1e7  # High penalty for metrics where lower is better
+                    logger.warning(
+                        f"AutoML experiment {rec.id} (job {rec.job_id}) failed with result 0.0. "
+                        f"Assigning penalty value {penalty_value} based on metric '{self.metric_key}' "
+                        f"(reverse_sort={self.brain.reverse_sort}) to enable AutoML optimization to continue."
+                    )
+                    rec.update_result(penalty_value)
+                    self.save_state()
+
                 if self.delete_intermediate_ckpt:
                     self.delete_checkpoint_files(cloud_expt_root, rec)
                     # Remove the checkpoints from not best model
@@ -780,37 +826,45 @@ class Controller:
 
             status_parser = StatusParser(self.network, local_expt_root, self.first_epoch_number)
 
+            # Pass workspace_metadata and cloud_results_dir so StatusParser can sync SLURM status
             new_results = status_parser.update_results(
                 experiment_number=str(rec.id),
                 automl=True,
                 job_id=self.automl_context.id,
-                rec_job_id=rec.job_id
+                rec_job_id=rec.job_id,
+                workspace_metadata=self.decrypted_workspace_metadata,
+                cloud_results_dir=cloud_expt_root
             )
+            logger.info(f"new_results 0: {new_results}")
             report_health_beat(self.automl_context.id, f"Recieved updated results for experiment {rec.id}")
             self.calculate_eta(new_results, rec.job_id, rec.id)
             metadata = get_handler_job_metadata(self.automl_context.id)
             results = metadata.get("job_details", {})
             brain_dict = get_automl_brain_info(self.automl_context.id)
             self.brain_epoch_number = float(brain_dict.get("epoch_number", float('inf')))
+            # Calculate last_seen_epoch and ensure it's non-negative
+            last_seen_epoch_value = max(0, self.total_epochs - self.remaining_epochs_in_experiment)
             new_results = status_parser.update_results(
                 experiment_number=str(rec.id),
                 total_epochs=self.total_epochs,
                 eta=self.eta,
-                last_seen_epoch=self.total_epochs - self.remaining_epochs_in_experiment,
+                last_seen_epoch=last_seen_epoch_value,
                 automl=True,
                 job_id=self.automl_context.id,
                 previous_result_metadata=results,
                 automl_brain=True
             )
+            logger.info(f"new_results 1: {new_results}")
             new_results = status_parser.update_results(
                 experiment_number=str(rec.id),
                 total_epochs=self.total_epochs,
-                last_seen_epoch=self.total_epochs - self.remaining_epochs_in_experiment,
+                last_seen_epoch=last_seen_epoch_value,
                 automl=True,
                 job_id=self.automl_context.id,
                 rec_job_id=rec.job_id,
                 previous_result_metadata=results
             )
+            logger.info(f"new_results 2: {new_results}")
             if status_parser.first_epoch_number != -1:
                 self.first_epoch_number = status_parser.first_epoch_number
             detailed_status_message = (
@@ -834,6 +888,7 @@ class Controller:
                 status = JobStates.success
             elif new_results[rec.job_id].get("detailed_status"):
                 status = new_results[rec.job_id]["detailed_status"].get("status", JobStates.pending).lower()
+                logger.info(f"status updated from new_results: {status}")
             if not status:
                 status = JobStates.pending
             if status in [JobStates.success, JobStates.failure]:
@@ -860,11 +915,28 @@ class Controller:
                     if self.brain.reverse_sort:
                         validation_map = 1e-7
                     else:
-                        validation_map = float('inf')
-                if validation_map != 0.0:
+                        validation_map = 1e7
+                    logger.warning(
+                        f"AutoML experiment {rec.id} (job {rec.job_id}) failed. "
+                        f"Assigning penalty value {validation_map} to enable Bayesian optimization to continue."
+                    )
                     rec.update_result(validation_map)
                 self.save_state()
-                logger.info("Cancelling automl job with status %s and job id %s", status, rec.job_id)
+
+                # Enhanced logging for job cancellation with full context
+                logger.debug(
+                    f"{'-' * 80}\n"
+                    f"AUTOML CONTROLLER: CANCELLING EXPERIMENT JOB\n"
+                    f"Brain Job ID: {self.automl_context.id}\n"
+                    f"Experiment ID: {rec.id}\n"
+                    f"Experiment Job ID: {rec.job_id}\n"
+                    f"Final Status: {status}\n"
+                    f"Final Result: {validation_map}\n"
+                    f"Reason: Experiment completed with status={status}\n"
+                    f"Action: Calling on_cancel_automl_job to delete StatefulSet\n"
+                    f"{'-' * 80}"
+                )
+
                 report_health_beat(
                     self.automl_context.id,
                     f"Cancelling completed job {rec.job_id} (experiment {rec.id})"
@@ -986,15 +1058,15 @@ class Controller:
         # Best mAP seen till now
         result_dict = {}
         try:
-            if self.recommendations[-1].result == 0.0:
-                best_metric_value = 0.0
-                if self.recommendations[:-1]:
-                    best_metric_value = self.min_max(self.recommendations[:-1], key=lambda rec: rec.result).result
-                result_dict[f"best_{self.metric_key}"] = best_metric_value
+            # Filter recommendations to only those with completed status
+            valid_recs = [r for r in self.recommendations
+                          if r.status in (JobStates.success, JobStates.failure)]
+
+            if valid_recs:
+                best_metric_value = self.min_max(valid_recs, key=lambda rec: rec.result).result
             else:
                 best_metric_value = 0.0
-                if self.recommendations:
-                    best_metric_value = self.min_max(self.recommendations, key=lambda rec: rec.result).result
+
                 result_dict[f"best_{self.metric_key}"] = best_metric_value
         except Exception as e:
             logger.error("Exception thrown in write_results is %s", str(e))
@@ -1003,7 +1075,7 @@ class Controller:
         if type(self.eta) is float:
             self.eta = str(timedelta(seconds=self.eta))
         result_dict["Estimated time for automl completion"] = str(self.eta)
-        result_dict["Current experiment number"] = len(self.recommendations)
+        result_dict["Current experiment id"] = len(self.recommendations)
 
         if self.network in _ITER_MODELS:
             result_dict["Number of iters yet to start"] = self.remaining_epochs_in_experiment
@@ -1012,8 +1084,26 @@ class Controller:
             result_dict["Number of epochs yet to start"] = self.remaining_epochs_in_experiment
             result_dict["Time per epoch in seconds"] = round(self.average_time_per_epoch, 2)
 
-        if final and self.best_rec_id != -1:
-            result_dict["Best experiment number"] = self.best_rec_id + 1
+        # Update best_rec_id continuously by finding the best completed recommendation
+        # Only consider successful recommendations (not failures with penalties)
+        completed_recs = [
+            rec for rec in self.recommendations
+            if rec.status == JobStates.success
+        ]
+        if completed_recs:
+            try:
+                best_rec = self.min_max(completed_recs, key=lambda rec: rec.result)
+                self.best_rec_id = best_rec.id
+                logger.debug(
+                    f"Updated best_rec_id to {self.best_rec_id} with "
+                    f"{self.metric_key}={best_rec.result}"
+                )
+            except Exception as e:
+                logger.error("Exception while updating best_rec_id: %s", str(e))
+
+        # Add best experiment id (always, not just at the end)
+        if self.best_rec_id != -1:
+            result_dict["Best experiment id"] = self.best_rec_id
 
         update_automl_stats(self.automl_context.id, result_dict)
 
@@ -1040,7 +1130,7 @@ class Controller:
             job_name = rec.job_id
             if not job_name:
                 continue
-            expt_folder = os.path.join("/results", rec.job_id)
+            expt_folder = self._get_experiment_results_path(rec.job_id)
             checkpoint_files = get_file_list_from_cloud_storage(self.decrypted_workspace_metadata, expt_folder)
 
             # Use network config for filtering if available
@@ -1058,7 +1148,7 @@ class Controller:
             logger.info("Checkpoints in find best_model %s", checkpoint_files)
 
             if checkpoint_files and (rec.status == JobStates.success and rec.result == best_mAP):
-                cloud_best_model_folder = f"/results/{self.automl_context.id}"
+                cloud_best_model_folder = self._get_experiment_results_path(self.automl_context.id)
                 logger.info("cloud_best_model_folder %s chosen for rec %s", cloud_best_model_folder, rec.id)
 
                 # Clean up invalid checkpoint folders before moving
@@ -1069,7 +1159,7 @@ class Controller:
                     f"Moving best model folder for experiment {rec.id} to {cloud_best_model_folder}"
                 )
                 # Pass job_id to move_folder so it can report health beats during the long operation
-                self.cs_instance.move_folder(expt_folder[1:], cloud_best_model_folder, job_id=self.automl_context.id)
+                self.cs_instance.move_folder(expt_folder, cloud_best_model_folder, job_id=self.automl_context.id)
                 report_health_beat(
                     self.automl_context.id,
                     f"Completed moving best model folder for experiment {rec.id}"
@@ -1267,10 +1357,19 @@ class Controller:
     def delete_not_best_model_checkpoints(self, path, rec, flag):
         """Remove the checkpoints which don't correspond to the best result"""
         try:
-            if self.recommendations[-1].result == 0.0:
-                best_mAP = self.min_max(self.recommendations[:-1], key=lambda rec: rec.result).result
+            valid_recs = [r for r in self.recommendations
+                          if r.status in (JobStates.success, JobStates.failure)]
+
+            if not valid_recs:
+                # No completed experiments yet
+                logger.warning(
+                    "No completed experiment results available yet for best model selection. "
+                    "All experiments are still pending or running."
+                )
+                best_mAP = 0.0
             else:
-                best_mAP = self.min_max(self.recommendations, key=lambda rec: rec.result).result
+                # Find the best result from completed recommendations
+                best_mAP = self.min_max(valid_recs, key=lambda rec: rec.result).result
         except Exception as e:
             logger.error("Exception thrown in delete_not_best_model_checkpoints is %s", str(e))
             best_mAP = 0.0

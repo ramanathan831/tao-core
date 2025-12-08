@@ -149,7 +149,7 @@
             "^(correct_samples|total_samples)$",
             "^(evaluation_phase|evaluation_status)$",
             "^(validation_phase|dataset_size|total_batches|batches_processed|progress_percent)$",
-            "^(inference_time_seconds|model_name|prepared_inputs)$",
+            "^(inference_time_seconds|total_inference_time_seconds|model_name|prepared_inputs)$",
             "^(results_dir|results_path)$",
             "^(shard_id|total_shards|total_tasks|tasks_processed)$",
             "^lora_(enabled|merge_status|merge_error)$",

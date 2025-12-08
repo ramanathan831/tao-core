@@ -28,8 +28,10 @@ from nvidia_tao_core.microservices.utils.stateless_handler_utils import (
 )
 from nvidia_tao_core.microservices.utils.handler_utils import (
     get_statefulset_service_name,
-    send_microservice_request
+    send_statefulset_request
 )
+from nvidia_tao_core.microservices.handlers.lepton_handler import LeptonHandler
+from nvidia_tao_core.microservices.handlers.execution_handlers.slurm_handler import SlurmHandler
 
 if os.getenv("BACKEND") == "local-docker":
     from ..gpu_manager import gpu_manager
@@ -189,7 +191,8 @@ class MicroserviceExecutor(BaseExecutor):
             self, api_endpoint, network, action, cloud_metadata={}, specs={},
             microservice_pod_id="", nvcf_helm="", num_gpu=-1,
             microservice_container="", org_name="", handler_id="",
-            handler_kind="", accelerator=None, docker_env_vars={}, num_nodes=1):
+            handler_kind="", accelerator=None, docker_env_vars={}, num_nodes=1,
+            resource_shape=None, dedicated_node_group=None, backend_details=None):
         """Create a DNN container microservice pod and send request to the POD IP"""
         try:
             if not microservice_pod_id:
@@ -200,9 +203,50 @@ class MicroserviceExecutor(BaseExecutor):
                 microservice_container = os.getenv(f'IMAGE_{NETWORK_CONTAINER_MAPPING[network]}')
                 if action == "gen_trt_engine":
                     microservice_container = os.getenv('IMAGE_TAO_DEPLOY')
-
-            if BACKEND == "local-docker":
-                port = 8000
+            if action == "retrain":
+                action = "train"
+            response = None
+            port = 8000
+            lepton_workspace_id = cloud_metadata.get('lepton_workspace_id')
+            lepton_auth_token = cloud_metadata.get('lepton_auth_token')
+            slurm_hostname = cloud_metadata.get('slurm_hostname')  # List of hostnames for failover
+            slurm_user = cloud_metadata.get('slurm_user')
+            if slurm_hostname and slurm_user:
+                ssh_key_path = os.getenv('SSH_KEY_PATH', '/root/.ssh/id_ed25519')
+                docker_env_vars["CLOUD_BASED"] = "False"
+                slurm_handler = SlurmHandler(slurm_user, slurm_hostname, ssh_key_path)
+                # Get partition from backend_details (job-level only)
+                partition = "polar,polar3,polar4,grizzly"  # Default
+                if backend_details and backend_details.get('backend_type') == 'slurm':
+                    partition = backend_details.get('partition', partition)
+                slurm_handler.create_job(
+                    image=microservice_container,
+                    network=network,
+                    action=action,
+                    cloud_metadata=cloud_metadata,
+                    specs=specs,
+                    job_id=microservice_pod_id,
+                    docker_env_vars=docker_env_vars,
+                    num_gpus=num_gpu,
+                    num_nodes=num_nodes,
+                    partition=partition
+                )
+            elif lepton_workspace_id and lepton_auth_token:
+                lepton_handler = LeptonHandler(lepton_workspace_id, lepton_auth_token)
+                docker_env_vars["CLOUD_BASED"] = "False"
+                lepton_handler.create_job(
+                    image=microservice_container,
+                    network=network,
+                    action=action,
+                    cloud_metadata=cloud_metadata,
+                    specs=specs,
+                    job_id=microservice_pod_id,
+                    docker_env_vars=docker_env_vars,
+                    resource_shape=resource_shape,
+                    dedicated_node_group=dedicated_node_group,
+                    num_nodes=num_nodes
+                )
+            elif BACKEND == "local-docker":
                 # Use the reusable docker creation function
                 if self.create_docker_inference_microservice(
                     job_id=microservice_pod_id,
@@ -256,7 +300,7 @@ class MicroserviceExecutor(BaseExecutor):
                 from .service_executor import ServiceExecutor
                 service_executor = ServiceExecutor()
                 if service_executor.wait_for_service(microservice_pod_id, service_name=service_name):
-                    response = send_microservice_request(
+                    response = send_statefulset_request(
                         api_endpoint,
                         network,
                         action,

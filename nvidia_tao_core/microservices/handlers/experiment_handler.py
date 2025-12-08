@@ -521,7 +521,7 @@ class ExperimentHandler:
                     name = lookup_data.get('name')
                     description = lookup_data.get('description')
                     num_gpu = lookup_data.get('num_gpu', -1)
-                    platform_id = lookup_data.get('platform_id', None)
+                    backend_details = lookup_data.get('backend_details', None)
                     parent_job_id = job_action_to_id.get(parent_action, None)
                     response = JobHandler.job_run(
                         org_name=org_name,
@@ -533,7 +533,7 @@ class ExperimentHandler:
                         name=name,
                         description=description,
                         num_gpu=num_gpu,
-                        platform_id=platform_id,
+                        backend_details=backend_details,
                         from_ui=from_ui
                     )
                     if response.code == 200:
@@ -783,8 +783,8 @@ class ExperimentHandler:
         name=None,
         description=None,
         num_gpu=-1,
-        platform_id=None,
-        timeout_minutes=None
+        timeout_minutes=None,
+        backend_details=None
     ):
         """Resumes a paused experiment job, adding it back to the queue for processing.
 
@@ -846,9 +846,9 @@ class ExperimentHandler:
             logger.info(f"Cleared status history for resumed job {job_id} to reset timeout timer")
             if not name:
                 name = job_metadata.get("name", "")
-            if not platform_id:
-                logger.info("Loading existing platform_id from paused job")
-                platform_id = job_metadata.get("platform_id", "")
+            if not backend_details:
+                logger.info("Loading existing backend_details from paused job")
+                backend_details = job_metadata.get("backend_details", None)
             if is_request_automl(experiment_id, action, kind):
                 msg = "AutoML "
                 AutoMLHandler.resume(
@@ -858,7 +858,7 @@ class ExperimentHandler:
                     job_id,
                     handler_metadata,
                     name=name,
-                    platform_id=platform_id,
+                    backend_details=backend_details,
                     timeout_minutes=timeout_minutes
                 )
             else:
@@ -889,10 +889,10 @@ class ExperimentHandler:
                     name=name,
                     description=description,
                     num_gpu=num_gpu,
-                    platform_id=platform_id,
                     retain_checkpoints_for_resume=retain_checkpoints_for_resume,
                     early_stop_epoch=early_stop_epoch,
-                    timeout_minutes=timeout_minutes
+                    timeout_minutes=timeout_minutes,
+                    backend_details=backend_details
                 )
                 on_new_job(job_context)
             return Code(200, {"message": f"{msg}Action for job {job_id} resumed"})
@@ -942,6 +942,7 @@ class ExperimentHandler:
                 automl_interpretable_result["experiments"][exp_id]["result"] = experiment_details.get("result")
                 automl_interpretable_result["experiments"][exp_id]["status"] = experiment_details.get("status")
                 automl_interpretable_result["experiments"][exp_id]["specs"] = experiment_details.get("specs", {})
+                automl_interpretable_result["experiments"][exp_id]["job_id"] = experiment_details.get("job_id", "")
 
             # Get the best experiment id from the automl_jobs table
             best_rec_number, _ = get_automl_best_rec_info(job_id)

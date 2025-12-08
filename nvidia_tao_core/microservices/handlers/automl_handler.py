@@ -13,6 +13,7 @@
 # limitations under the License.
 
 """AutoML handler modules"""
+import ast
 import os
 import json
 import time
@@ -46,6 +47,28 @@ image = DOCKER_IMAGE_MAPPER["API"]
 logger = logging.getLogger(__name__)
 
 
+def _normalize_automl_hyperparameters(automl_hyperparameters):
+    """Normalize automl_hyperparameters to JSON format for shell-safe passing.
+
+    Handles both SDK format "['param1', 'param2']" and CLI format "[param1, param2]".
+    Returns a JSON string that can be safely passed through shell and parsed with json.loads().
+    """
+    if not isinstance(automl_hyperparameters, str):
+        return json.dumps(automl_hyperparameters)
+
+    try:
+        # Try ast.literal_eval first (works for SDK format with quoted elements)
+        params_list = ast.literal_eval(automl_hyperparameters)
+        return json.dumps(params_list)
+    except (ValueError, SyntaxError):
+        # Fallback for CLI format (unquoted elements due to shell processing)
+        params_str = automl_hyperparameters.strip('[]').strip()
+        if params_str:
+            params_list = [p.strip() for p in params_str.split(',')]
+            return json.dumps(params_list)
+        return "[]"
+
+
 class AutoMLHandler:
     """Handles AutoML job operations including starting, stopping, resuming, deleting, and retrieving job metadata.
 
@@ -59,7 +82,7 @@ class AutoMLHandler:
 
     @staticmethod
     def start(user_id, org_name, experiment_id, job_id, handler_metadata, name="",
-              platform_id="", retain_checkpoints_for_resume=False, timeout_minutes=60):
+              backend_details=None, retain_checkpoints_for_resume=False, timeout_minutes=60):
         """Starts an AutoML job by executing `automl_start.py` with the provided parameters.
 
         Args:
@@ -69,7 +92,7 @@ class AutoMLHandler:
             job_id (str): Unique identifier for the AutoML job.
             handler_metadata (dict): Metadata containing AutoML configuration settings.
             name (str, optional): Name of the job. Defaults to "automl train job".
-            platform_id (str, optional): Platform identifier for execution. Defaults to "".
+            backend_details (dict, optional): Backend-specific execution details. Defaults to None.
             retain_checkpoints_for_resume (bool, optional): Whether to retain .pth
                 checkpoints for training resume. Defaults to False.
             timeout_minutes (int, optional): The job-specific timeout in minutes. If not specified, uses global timeout.
@@ -80,12 +103,13 @@ class AutoMLHandler:
         automl_algorithm = automl_settings.get("automl_algorithm", "Bayesian")
         if automl_algorithm.lower() == "hyperband":
             retain_checkpoints_for_resume = True
+
         job_metadata = {
             "name": name,
             "id": job_id,
             "org_name": org_name,
             "parent_id": None,
-            "platform_id": platform_id,
+            "backend_details": backend_details,
             "action": "train",
             "created_on": datetime.now(tz=timezone.utc),
             "experiment_id": experiment_id,
@@ -139,14 +163,14 @@ class AutoMLHandler:
             f'--automl_nu={automl_nu} '
             f'--metric={metric} '
             f'--epoch_multiplier={epoch_multiplier} '
-            f'--automl_hyperparameters="{automl_hyperparameters}" '
+            f"--automl_hyperparameters='{_normalize_automl_hyperparameters(automl_hyperparameters)}' "
             f'--override_automl_disabled_params={override_automl_disabled_params} '
             f'--retain_checkpoints_for_resume={retain_checkpoints_for_resume} '
             f'--timeout_minutes={timeout_minutes} '
             f"--decrypted_workspace_metadata='{json.dumps(decrypted_workspace_metadata, default=str)}'"
         )
-        if platform_id:
-            run_command = f"{run_command} --platform_id={platform_id}"
+        if backend_details:
+            run_command = f"{run_command} --backend_details='{json.dumps(backend_details)}'"
 
         JobExecutor().create_job(
             org_name,
@@ -234,7 +258,8 @@ class AutoMLHandler:
         return Code(200, {"message": f"job {job_id} cancelled"})
 
     @staticmethod
-    def resume(user_id, org_name, experiment_id, job_id, handler_metadata, name="", platform_id="", timeout_minutes=60):
+    def resume(user_id, org_name, experiment_id, job_id, handler_metadata, name="",
+               backend_details=None, timeout_minutes=60):
         """Resumes a previously stopped AutoML job by re-running `automl_start.py` with the resume flag.
 
         Args:
@@ -244,7 +269,7 @@ class AutoMLHandler:
             job_id (str): Unique identifier for the AutoML job.
             handler_metadata (dict): Metadata containing AutoML configuration settings.
             name (str, optional): Name of the job. Defaults to "automl train job".
-            platform_id (str, optional): Platform identifier for execution. Defaults to "".
+            backend_details (dict, optional): Backend-specific execution details. Defaults to None.
         """
         logger.info("Resuming automl %s", job_id)
 
@@ -299,14 +324,14 @@ class AutoMLHandler:
             f'--automl_nu={automl_nu} '
             f'--metric={metric} '
             f'--epoch_multiplier={epoch_multiplier} '
-            f'--automl_hyperparameters="{automl_hyperparameters}" '
+            f"--automl_hyperparameters='{_normalize_automl_hyperparameters(automl_hyperparameters)}' "
             f'--override_automl_disabled_params={override_automl_disabled_params} '
             f'--retain_checkpoints_for_resume={retain_checkpoints_for_resume} '
             f'--timeout_minutes={timeout_minutes} '
             f"--decrypted_workspace_metadata='{json.dumps(decrypted_workspace_metadata, default=serialize_object)}'"
         )
-        if platform_id:
-            run_command = f"{run_command} --platform_id={platform_id}"
+        if backend_details:
+            run_command = f"{run_command} --backend_details='{json.dumps(backend_details)}'"
         JobExecutor().create_job(
             org_name,
             job_id,

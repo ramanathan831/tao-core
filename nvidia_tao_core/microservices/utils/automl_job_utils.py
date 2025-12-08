@@ -75,7 +75,7 @@ def on_new_automl_job(automl_context, recommendation):
         'user_id': automl_context.user_id,
         'org_name': automl_context.org_name,
         'num_gpu': automl_context.num_gpu,
-        'platform_id': automl_context.platform_id,
+        'backend_details': automl_context.backend_details,
         'kind': "experiment",
         'id': automl_context.id,
         'parent_id': None,
@@ -110,7 +110,7 @@ def on_delete_automl_job(job_id):
         'user_id': job_metadata["user_id"],
         'org_name': job_metadata["org_name"],
         'num_gpu': job_metadata["num_gpu"],
-        'platform_id': job_metadata["platform_id"],
+        'backend_details': job_metadata["backend_details"],
         'kind': "experiment",
         'id': job_metadata["id"],
         'parent_id': None,
@@ -133,5 +133,34 @@ def on_delete_automl_job(job_id):
 
 def on_cancel_automl_job(job_id):
     """Delete the job from k8's jobs"""
+    logger.debug(
+        f"{'-' * 80}\n"
+        f"CANCELLING AUTOML EXPERIMENT JOB\n"
+        f"Job ID: {job_id}\n"
+        f"Reason: Explicit cancellation via on_cancel_automl_job\n"
+        f"Action: Deleting StatefulSet\n"
+        f"{'-' * 80}"
+    )
+
+    # Get workspace metadata to enable SLURM/Lepton job cancellation
+    from .stateless_handler_utils import get_handler_job_metadata, get_handler_metadata
+    job_metadata = get_handler_job_metadata(job_id)
+    workspace_metadata = {}
+    if job_metadata:
+        handler_id = job_metadata.get('parent_id')  # AutoML brain job ID
+        if handler_id:
+            handler_metadata = get_handler_metadata(handler_id, kind='experiments')
+            if handler_metadata:
+                workspace_id = handler_metadata.get('workspace')
+                if workspace_id:
+                    workspace_metadata = get_handler_metadata(workspace_id, kind='workspaces')
+
     from .job_utils.executor import StatefulSetExecutor
-    StatefulSetExecutor().delete_statefulset(job_id)
+    result = StatefulSetExecutor().delete_statefulset(job_id, workspace_metadata=workspace_metadata)
+
+    if result:
+        logger.info(f"Successfully deleted StatefulSet for AutoML job {job_id}")
+    else:
+        logger.error(f"Failed to delete StatefulSet for AutoML job {job_id}")
+
+    return result

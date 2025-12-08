@@ -168,7 +168,7 @@ class ModelHandler:
                 org_name, team_name, handler_metadata, ngc_key, job_id, job_action
             )
             if response.ok:
-                return Code(response.status_code, {"message": "Sucessfully deleted model"})
+                return Code(response.status_code, {"message": "Successfully deleted model"})
             return Code(response.status_code, {"message": "Unable to delete published model"})
         except Exception as e:
             logger.error("Exception thrown in remove_published_model is %s", str(e))

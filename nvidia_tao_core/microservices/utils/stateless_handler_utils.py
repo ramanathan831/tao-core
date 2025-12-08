@@ -235,9 +235,13 @@ def update_base_experiment_metadata(base_experiment_id, base_experiment_metadata
     mongo_jobs.upsert({'id': base_experiment_id}, base_experiment_metadata_update)
 
 
-def get_handler_metadata(handler_id, kind):
+def get_handler_metadata(handler_id, kind=None):
     """Return metadata info present in DB"""
     if not kind:
+        for kind_type in ["experiments", "datasets", "workspaces"]:
+            metadata = get_handler_metadata(handler_id, kind_type)
+            if metadata:
+                return metadata
         return {}
     if kind[-1] != 's':
         kind += 's'
@@ -389,10 +393,51 @@ def update_job_message(handler_id, job_id, kind, message, automl_expt_job_id=Non
 
         # Handle both string message and dict with multiple fields
         if isinstance(message, dict):
-            # Update all fields from the dict
-            for key in ['date', 'time', 'status', 'message']:
-                if key in message:
-                    metadata["job_details"][update_job_id]["detailed_status"][key] = message[key]
+            # Check if we should update based on timestamp (only update if newer)
+            current_detailed_status = metadata["job_details"][update_job_id]["detailed_status"]
+
+            # Get timestamps for comparison
+            # If timestamp field exists, use it; otherwise construct from date+time
+            def get_timestamp_from_status(status_dict):
+                if 'timestamp' in status_dict:
+                    return status_dict['timestamp']
+                if 'date' in status_dict and 'time' in status_dict:
+                    # Construct ISO timestamp from date and time
+                    # Format: "MM/DD/YYYY" and "HH:MM:SS"
+                    try:
+                        date_str = status_dict['date']
+                        time_str = status_dict['time']
+                        dt = datetime.strptime(f"{date_str} {time_str}", "%m/%d/%Y %H:%M:%S")
+                        return dt.isoformat()
+                    except Exception:
+                        return None
+                return None
+
+            new_timestamp = get_timestamp_from_status(message)
+            current_timestamp = get_timestamp_from_status(current_detailed_status)
+
+            # Determine if we should update
+            should_update = True
+            if current_timestamp and new_timestamp:
+                try:
+                    from dateutil import parser
+                    new_ts = parser.parse(new_timestamp) if isinstance(new_timestamp, str) else new_timestamp
+                    current_ts = (
+                        parser.parse(current_timestamp)
+                        if isinstance(current_timestamp, str)
+                        else current_timestamp
+                    )
+                    # Only update if new status is newer or equal (to handle concurrent updates)
+                    should_update = new_ts >= current_ts
+                except Exception:
+                    # If timestamp parsing fails, allow the update
+                    should_update = True
+
+            if should_update:
+                # Update all fields from the dict
+                for key in ['date', 'time', 'status', 'message', 'timestamp']:
+                    if key in message:
+                        metadata["job_details"][update_job_id]["detailed_status"][key] = message[key]
         else:
             # Backwards compatibility: just update message if it's a string
             metadata["job_details"][update_job_id]["detailed_status"]["message"] = message
@@ -598,6 +643,16 @@ def save_dnn_status(job_id, automl=False, callback_data={}, experiment_number="0
         experiment_number=experiment_number
     )
     automl_expt_job_id = get_automl_experiment_job_id(job_id, experiment_number)
+
+    # If automl_expt_job_id is empty (controller hasn't saved yet), skip updating job_details
+    # The status will still be saved correctly to job_statuses table via lookup_job_id
+    # Handler job metadata will be updated later when controller processes results
+    if automl and not automl_expt_job_id:
+        logger.warning(
+            f"AutoML experiment job_id not found for brain job {job_id}, experiment {experiment_number}. "
+            "Controller may not have saved state yet. Skipping handler_job_metadata update."
+        )
+
     mongo_status_table_handler = MongoHandler("tao", "job_statuses")
     job_query = {'id': lookup_job_id}
     callback_data_dict = json.loads(callback_data["status"])
@@ -606,13 +661,15 @@ def save_dnn_status(job_id, automl=False, callback_data={}, experiment_number="0
     if 'timestamp' not in callback_data_dict:
         callback_data_dict['timestamp'] = datetime.now(tz=timezone.utc).isoformat()
 
-    update_job_message(
-        handler_id,
-        job_id,
-        kind,
-        callback_data_dict,
-        automl_expt_job_id=automl_expt_job_id,
-        update_automl_expt=automl)
+    # Only update job message if we have a valid experiment job_id or if not automl
+    if not automl or automl_expt_job_id:
+        update_job_message(
+            handler_id,
+            job_id,
+            kind,
+            callback_data_dict,
+            automl_expt_job_id=automl_expt_job_id,
+            update_automl_expt=automl)
     mongo_status_table_handler.upsert_append(job_query, callback_data_dict)
 
 
@@ -844,7 +901,11 @@ def decrypt_handler_metadata(workspace_metadata):
 
 
 def get_workspace_string_identifier(workspace_id, workspace_cache):
-    """For the given workspace ID, constuct a unique string which can identify this workspace"""
+    """For the given workspace ID, constuct a unique string which can identify this workspace
+
+    For SLURM, uses slurm://base_results_dir/ format which gets converted to actual paths later.
+    For cloud workspaces, uses protocol://bucket/ format.
+    """
     if workspace_id in workspace_cache:
         workspace_metadata = workspace_cache[workspace_id]
     else:
@@ -854,8 +915,20 @@ def get_workspace_string_identifier(workspace_id, workspace_cache):
     workspace_identifier = ""
     if workspace_metadata:
         cloud_type = workspace_metadata.get('cloud_type')
-        bucket_name = workspace_metadata.get('cloud_specific_details', {}).get('cloud_bucket_name')
-        workspace_identifier = f"{cloud_type}://{bucket_name}/"
+
+        # For SLURM, use base_results_dir as the "bucket" to maintain consistency
+        if cloud_type == 'slurm':
+            base_results_dir = workspace_metadata.get('cloud_specific_details', {}).get('base_results_dir', '')
+            # Use the base directory (without /results suffix) as identifier
+            bucket_name = base_results_dir.rstrip('/results').rstrip('/')
+            if not bucket_name:
+                # Fallback if no base_results_dir specified
+                slurm_user = workspace_metadata.get('cloud_specific_details', {}).get('slurm_user', 'unknown')
+                bucket_name = f"/lustre/fsw/portfolios/edgeai/users/{slurm_user}"
+            workspace_identifier = f"{cloud_type}://{bucket_name}/"
+        else:
+            bucket_name = workspace_metadata.get('cloud_specific_details', {}).get('cloud_bucket_name')
+            workspace_identifier = f"{cloud_type}://{bucket_name}/"
     return workspace_identifier
 
 

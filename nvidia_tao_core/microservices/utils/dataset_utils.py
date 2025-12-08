@@ -52,10 +52,16 @@ class SimpleHandler:
         """Check for existence of file"""
         if self.cloud_instance:
             # Use cloud_file_path for cloud operations, not local temp path
+            # For SLURM, keep absolute paths; for other clouds, strip leading /
+            base_path = self.cloud_file_path
+            if self.cloud_instance.cloud_type != "slurm":
+                base_path = base_path.strip("/")
+
             if path in [".", ""]:
-                cloud_path = self.cloud_file_path.strip("/")
+                cloud_path = base_path
             else:
-                cloud_path = f"{self.cloud_file_path.strip('/')}/{path}"
+                # Normalize the joining - remove trailing / from base, leading / from path
+                cloud_path = f"{base_path.rstrip('/')}/{path.lstrip('/')}"
 
             if file_type == "file":
                 return self.cloud_instance.is_file(cloud_path)
@@ -64,7 +70,7 @@ class SimpleHandler:
             if file_type == "regex":
                 # file_extension contains the full regex pattern, not just extension
                 if path in [".", ""]:
-                    pattern = f"{self.cloud_file_path.strip('/')}/{file_extension}"
+                    pattern = f"{base_path.rstrip('/')}/{file_extension}"
                 else:
                     pattern = f"{cloud_path}/{file_extension}"
                 return any(self.cloud_instance.glob_files(pattern))
@@ -125,21 +131,30 @@ def _get_actual_files_in_dataset(handler):
     files = []
     try:
         if handler.cloud_instance:
-            # For cloud storage, list files in the cloud_file_path
-            folder_path = handler.cloud_file_path.strip("/")
+            # For cloud storage (including SLURM via SSH), list files in the cloud_file_path
+            # For SLURM, keep absolute paths (starts with /); for other clouds, strip leading /
+            folder_path = handler.cloud_file_path
             if folder_path:
+                # For non-SLURM cloud types, strip leading slash as paths are relative to bucket
+                if handler.cloud_instance.cloud_type != "slurm":
+                    folder_path = folder_path.strip("/")
+
                 cloud_files, _ = handler.cloud_instance.list_files_in_folder(folder_path)
                 files = cloud_files
             else:
                 files = []
+            logger.debug(f"Listed {len(files)} files from {handler.cloud_instance.cloud_type} storage at {folder_path}")
         else:
-            # For local storage, use glob to find files
-            if os.path.exists(handler.root):
+            # For local storage only, use glob to find files
+            if handler.root and os.path.exists(handler.root):
                 files = [
                     os.path.relpath(f, handler.root)
                     for f in glob.glob(os.path.join(handler.root, "**", "*"), recursive=True)
                     if os.path.isfile(f)
                 ]
+                logger.debug(f"Listed {len(files)} files from local storage")
+            else:
+                logger.warning(f"Local root path does not exist: {handler.root}")
     except Exception as e:
         logger.warning("Could not list files in dataset: %s", str(e))
         files = []

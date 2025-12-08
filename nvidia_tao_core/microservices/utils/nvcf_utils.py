@@ -98,7 +98,9 @@ def get_available_nvcf_instances(user_id, org_name):
                         "current_used": current_instances,
                         "current_available": available,
                         "driver_version": instance.get('driverVersion', 'N/A'),
-                        "storage": instance.get('storage', 'N/A')
+                        "storage": instance.get('storage', 'N/A'),
+                        "node_type": instance.get('nodeType', 'SINGLE'),
+                        "backend_type": "nvcf"
                     }
 
     return available_nvcf_instances

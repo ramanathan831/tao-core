@@ -42,6 +42,94 @@ def contains_results_uuid(data_path):
     return bool(match)
 
 
+def is_direct_path(value):
+    """Check if value is a direct path with protocol prefix (e.g., lustre://, aws://, s3://)
+
+    Args:
+        value: Value to check (can be string, list, or other)
+
+    Returns:
+        bool: True if value contains protocol prefix, False otherwise
+    """
+    if not isinstance(value, str):
+        return False
+    return "://" in value
+
+
+def parse_direct_path(value):
+    """Parse a direct path string to extract protocol and path.
+
+    Args:
+        value (str): Direct path string (e.g., "lustre://path/to/data" or "aws://bucket/path")
+
+    Returns:
+        tuple: (protocol, path) where protocol is the storage type and path is the file path
+
+    Example:
+        >>> parse_direct_path("lustre://lustre/fsw/data")
+        ('lustre', '/lustre/fsw/data')
+        >>> parse_direct_path("aws://bucket/key/file.txt")
+        ('aws', 'bucket/key/file.txt')
+    """
+    if not is_direct_path(value):
+        return None, value
+
+    protocol, path = value.split("://", 1)
+    protocol = protocol.lower()
+
+    # Normalize s3:// to aws://
+    if protocol == "s3":
+        protocol = "aws"
+
+    # For local filesystem protocols, ensure path starts with /
+    if protocol in ['lustre', 'file', 'local'] and not path.startswith('/'):
+        path = '/' + path
+
+    return protocol, path
+
+
+def create_storage_handler_for_protocol(protocol, path, workspace_metadata=None):
+    """Create appropriate storage handler for the given protocol.
+
+    Args:
+        protocol (str): Storage protocol (aws, azure, lustre, file, local, etc.)
+        path (str): Path within the storage system
+        workspace_metadata (dict): Workspace metadata for cloud credentials (optional)
+
+    Returns:
+        tuple: (storage_handler, formatted_path) or (None, original_path) if local
+    """
+    # Local filesystem protocols - no handler needed, return path as-is
+    if protocol in ['lustre', 'file', 'local']:
+        # For local paths, ensure they start with /
+        formatted_path = path if path.startswith('/') else '/' + path
+        return None, formatted_path
+
+    # Cloud protocols - create CloudStorage instance
+    if protocol in ['aws', 'azure']:
+        # If workspace_metadata is provided, use existing credentials
+        if workspace_metadata and workspace_metadata.get('cloud_type') == protocol:
+            from nvidia_tao_core.microservices.utils.cloud_utils import create_cs_instance
+            try:
+                storage_handler, _ = create_cs_instance(workspace_metadata)
+                return storage_handler, path
+            except Exception as e:
+                logger.warning(f"Failed to create cloud storage handler: {e}")
+                return None, path
+
+        # Otherwise, extract bucket from path and use it
+        # Format: bucket/key/to/file
+        logger.warning(
+            f"Direct {protocol} path specified without workspace credentials. "
+            f"Path will be used as-is: {path}"
+        )
+        return None, path
+
+    # Unknown protocol - log warning and return path as-is
+    logger.warning(f"Unknown protocol '{protocol}' in direct path. Path will be used as-is: {path}")
+    return None, path
+
+
 def get_datasets_from_metadata(metadata, source_key):
     """Gets a list of datasets from metadata based on source key.
 
@@ -212,8 +300,20 @@ def apply_transforms(
 
 
 def get_source_root(source_ds_metadata, workspace_identifier):
-    """Get the source root path for a dataset."""
-    return f"{workspace_identifier}{source_ds_metadata.get('cloud_file_path')}"
+    """Get the source root path for a dataset.
+
+    For SLURM, if cloud_file_path is already absolute, prepend only the protocol prefix.
+    For cloud storage, concatenate workspace_identifier with relative cloud_file_path.
+    """
+    cloud_file_path = source_ds_metadata.get('cloud_file_path', '')
+
+    # For SLURM with absolute paths, only add protocol prefix (not the full base path)
+    if workspace_identifier.startswith('slurm://') and cloud_file_path.startswith('/'):
+        # Extract just the protocol part: slurm:///lustre/... -> slurm:// + /lustre/...
+        return f"slurm://{cloud_file_path}"
+
+    # For cloud storage or relative paths, concatenate normally
+    return f"{workspace_identifier}{cloud_file_path}"
 
 
 def get_dataset_metadata_and_paths(source_ds, workspace_cache, kind="datasets"):
@@ -228,10 +328,20 @@ def get_dataset_metadata_and_paths(source_ds, workspace_cache, kind="datasets"):
 
 
 def get_source_datasets_from_config(config_source, handler_metadata):
-    """Helper function to get source datasets from config."""
+    """Helper function to get source datasets from config.
+
+    Args:
+        config_source (str): Source key to lookup in handler metadata
+        handler_metadata (dict): Handler metadata containing dataset information
+
+    Returns:
+        list: List of dataset IDs (excludes direct paths)
+    """
     if config_source == "id":
         return [handler_metadata.get("id")]
-    return get_datasets_from_metadata(handler_metadata, config_source)
+    datasets = get_datasets_from_metadata(handler_metadata, config_source)
+    # Filter out any direct paths - they'll be handled separately
+    return [d for d in datasets if not is_direct_path(d)]
 
 
 def process_convert_job_spec_path(spec_config, source_ds, dataset_convert_action):
@@ -617,6 +727,43 @@ def apply_data_source_config(config, job_context, handler_metadata):
         if config_path in already_configured_paths:
             continue
 
+        # Check if user provided direct path in specs (takes precedence)
+        existing_value = get_nested_config_value(config, config_path)
+        if existing_value:
+            # Handle direct paths (e.g., lustre://path, aws://bucket/path)
+            if isinstance(existing_value, str) and is_direct_path(existing_value):
+                protocol, path = parse_direct_path(existing_value)
+                logger.info(f"Direct path detected for {config_path}: {protocol}://{path}")
+
+                # For local filesystems, strip protocol and use absolute path
+                if protocol in ['lustre', 'file', 'local']:
+                    set_nested_config_value(config, config_path, path)
+                    logger.info(f"Stripped local filesystem protocol, using path: {path}")
+
+                # User specified direct path, skip inference
+                already_configured_paths.add(config_path)
+                continue
+            # Handle lists with potential direct paths
+            if isinstance(existing_value, list):
+                has_direct_paths = any(isinstance(v, str) and is_direct_path(v) for v in existing_value)
+                if has_direct_paths:
+                    # Process each item in list
+                    processed_list = []
+                    for item in existing_value:
+                        if isinstance(item, str) and is_direct_path(item):
+                            protocol, path = parse_direct_path(item)
+                            if protocol in ['lustre', 'file', 'local']:
+                                processed_list.append(path)
+                                logger.info(f"Stripped protocol from list item: {protocol}://{path} -> {path}")
+                            else:
+                                processed_list.append(item)  # Keep cloud paths as-is
+                        else:
+                            processed_list.append(item)
+                    set_nested_config_value(config, config_path, processed_list)
+                    logger.info(f"Processed direct paths in list for {config_path}")
+                    already_configured_paths.add(config_path)
+                    continue
+
         # Handle special source: parent_job_specs
         if source_config["source"] == "parent_job_specs":
             if job_context.parent_id and "check_key_exists" in source_config:
@@ -819,26 +966,60 @@ def check_file_exists(root_path, file_path):
 
 
 def check_file_exists_in_cloud(source_ds_metadata, source_root, file_path):
-    """Check if a file exists, supporting both cloud and local storage."""
+    """Check if a file exists, supporting cloud, SLURM, and local storage.
+
+    For tar files (e.g., videos.tar.gz), checks for both the tar file AND the extracted directory (videos/).
+    """
     file_exists = False
 
-    # Try cloud storage check first
+    # Try cloud storage check first (includes SLURM via SSH)
     if source_ds_metadata.get('workspace'):
         try:
             from nvidia_tao_core.microservices.utils.cloud_utils import create_cs_instance
             workspace_metadata = get_handler_metadata(source_ds_metadata.get('workspace'), kind="workspace")
             if workspace_metadata:
+                cloud_type = workspace_metadata.get('cloud_type', '')
                 cloud_instance, _ = create_cs_instance(workspace_metadata)
                 if cloud_instance:
                     cloud_file_path = source_ds_metadata.get('cloud_file_path', '')
-                    cloud_path = f"{cloud_file_path.strip('/')}/{file_path}"
+                    # For SLURM, preserve absolute paths; for cloud storage, strip leading slash
+                    if cloud_type == 'slurm':
+                        # SLURM uses absolute paths - don't strip leading slash
+                        cloud_path = f"{cloud_file_path}/{file_path}" if cloud_file_path else file_path
+                    else:
+                        # Cloud storage (AWS/Azure) needs relative paths
+                        cloud_path = f"{cloud_file_path.strip('/')}/{file_path}" if cloud_file_path else file_path
+
+                    # Check if the tar file exists
                     file_exists = cloud_instance.is_file(cloud_path)
-                    logger.info(f"Cloud check for {cloud_path}: {file_exists}")
+                    logger.info(f"{cloud_type.upper()} check for {cloud_path}: {file_exists}")
+
+                    # If tar file not found, check for extracted directory (e.g., videos.tar.gz -> videos/)
+                    if not file_exists and (file_path.endswith('.tar.gz') or file_path.endswith('.tar')):
+                        extracted_dir = file_path.replace('.tar.gz', '').replace('.tar', '')
+                        extracted_path = f"{cloud_file_path}/{extracted_dir}" if cloud_file_path else extracted_dir
+                        if not cloud_type == 'slurm':
+                            stripped = cloud_file_path.strip('/') if cloud_file_path else ''
+                            extracted_path = f"{stripped}/{extracted_dir}" if stripped else extracted_dir
+
+                        dir_exists = cloud_instance.is_folder(extracted_path)
+                        logger.info(
+                            f"{cloud_type.upper()} check for extracted directory "
+                            f"{extracted_path}: {dir_exists}"
+                        )
+                        if dir_exists:
+                            logger.info(f"Found extracted directory instead of tar file: {extracted_path}")
+                            return True
+
                     return file_exists
         except Exception as e:
             logger.warning(f"Cloud storage check failed: {e}")
+            # For SLURM, don't fallback to local check as paths are on remote cluster
+            if workspace_metadata and workspace_metadata.get('cloud_type') == 'slurm':
+                logger.error(f"SLURM path check failed for {file_path}, cannot fallback to local")
+                return False
 
-    # Fallback to local check
+    # Fallback to local check only if not a SLURM workspace
     file_exists = check_file_exists(source_root, file_path)
     logger.info(f"Local check for {file_path}: {file_exists}")
     return file_exists
