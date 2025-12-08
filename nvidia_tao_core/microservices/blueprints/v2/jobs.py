@@ -362,6 +362,67 @@ def job_retrieve(org_name, job_id):
         schema_dict = schema.dump(schema.load(job_response.data))
         return make_response(jsonify(schema_dict), job_response.code)
     job = job_response.data
+
+    # Truncate detailed_status message if it exceeds the schema limit (6400 chars)
+    max_message_length = 6400
+
+    # Handle top-level detailed_status
+    if 'detailed_status' in job and isinstance(job['detailed_status'], dict):
+        if 'message' in job['detailed_status'] and isinstance(job['detailed_status']['message'], str):
+            msg_len = len(job['detailed_status']['message'])
+            if msg_len > max_message_length:
+                logger.warning(
+                    f"Truncating top-level detailed_status.message for job_id {job_id} "
+                    f"from {msg_len} to {max_message_length} characters."
+                )
+                logger.warning(f"Message preview (first 500 chars): {job['detailed_status']['message'][:500]}")
+                logger.warning(
+                    f"Message preview (last 200 chars): ...{job['detailed_status']['message'][-200:]}"
+                )
+                job['detailed_status']['message'] = job['detailed_status']['message'][:max_message_length - 3] + "..."
+
+    # Handle nested job_details (AutoML jobs with sub-jobs)
+    if 'job_details' in job and isinstance(job['job_details'], dict):
+        logger.info(f"Job retrieve - job_details has {len(job['job_details'])} sub-jobs for job_id {job_id}")
+        for sub_job_id, sub_job_data in job['job_details'].items():
+            if not isinstance(sub_job_data, dict):
+                continue
+
+            if 'value' in sub_job_data:
+                target_dict = sub_job_data['value']
+                path_prefix = f"job_details[{sub_job_id}]['value']"
+            else:
+                target_dict = sub_job_data
+                path_prefix = f"job_details[{sub_job_id}]"
+
+            if isinstance(target_dict, dict) and 'detailed_status' in target_dict:
+                detailed_status = target_dict['detailed_status']
+                if isinstance(detailed_status, dict) and 'message' in detailed_status:
+                    if isinstance(detailed_status['message'], str):
+                        msg_len = len(detailed_status['message'])
+                        logger.info(
+                            f"Job retrieve - Sub-job {sub_job_id} "
+                            f"detailed_status.message length: {msg_len} (path: {path_prefix})"
+                        )
+                        if msg_len > max_message_length:
+                            logger.warning(
+                                f"TRUNCATING {path_prefix}.detailed_status.message for parent job_id {job_id} "
+                                f"from {msg_len} to {max_message_length} chars"
+                            )
+                            logger.warning(
+                                f"Problematic message preview (first 500 chars): {detailed_status['message'][:500]}"
+                            )
+                            logger.warning(
+                                f"Problematic message preview (last 200 chars): "
+                                f"...{detailed_status['message'][-200:]}"
+                            )
+                            # Truncate in place in the actual location
+                            target_dict['detailed_status']['message'] = (
+                                detailed_status['message'][:max_message_length - 3] + "..."
+                            )
+                            truncated_len = len(target_dict['detailed_status']['message'])
+                            logger.warning(f"After truncation, message length is now: {truncated_len}")
+
     if kind == 'experiment':
         schema = ExperimentJobRsp()
         exp = experiment_response.data
@@ -372,8 +433,16 @@ def job_retrieve(org_name, job_id):
         dataset = get_dataset(dataset_id)
         tags = dataset.get('tags', [])
         combined_data = {"tags": tags} | job
-    schema_dict = schema.dump(schema.load(combined_data))
-    return make_response(jsonify(schema_dict), 200)
+    try:
+        schema_dict = schema.dump(schema.load(combined_data))
+        logger.info(f"Job retrieve success for job_id: {job_id}")
+        return make_response(jsonify(schema_dict), 200)
+    except Exception as e:
+        logger.error(f"Error type: {type(e).__name__}")
+        metadata = {"error_desc": str(e), "error_code": 1}
+        schema = ErrorRsp()
+        schema_dict = schema.dump(schema.load(metadata))
+        return make_response(jsonify(schema_dict), 400)
 
 
 @jobs_bp_v2.route('/orgs/<org_name>/jobs/<job_id>', methods=['DELETE'])

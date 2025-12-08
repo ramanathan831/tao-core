@@ -30,10 +30,13 @@ from kubernetes import client, config
 from enum import Enum
 
 # Configure logging
+TAO_LOG_LEVEL = os.getenv('TAO_LOG_LEVEL', 'INFO').upper()
+tao_log_level = getattr(logging, TAO_LOG_LEVEL, logging.INFO)
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.WARNING,  # Root logger: suppress third-party DEBUG logs
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
+logging.getLogger('nvidia_tao_core').setLevel(tao_log_level)
 logger = logging.getLogger(__name__)
 
 NUM_OF_RETRY = 5
@@ -145,6 +148,65 @@ def get_microservices_network_and_action(network, action):
     return microservices_network, microservices_action
 
 
+def get_orchestration_network_from_microservices(microservices_network):
+    """Reverse mapping: finds the orchestration network that maps to a given microservices network.
+
+    This function scans all network config files to find which orchestration network
+    has an actions_mapping that maps to the provided microservices network.
+
+    Args:
+        microservices_network (str): The microservices network name (e.g., "auto_label", "augmentation").
+
+    Returns:
+        str: The orchestration network name (e.g., "object_detection"), or the original
+             microservices_network if no mapping is found.
+
+    Example:
+        >>> get_orchestration_network_from_microservices("auto_label")
+        "object_detection"
+        >>> get_orchestration_network_from_microservices("augmentation")
+        "object_detection"
+    """
+    import pathlib
+
+    # Start with default (no change)
+    orchestration_network = microservices_network
+
+    # Scan all network config files
+    _dir_path = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
+    config_dir = pathlib.Path(_dir_path) / "handlers" / "network_configs"
+
+    if not config_dir.exists():
+        return orchestration_network
+
+    try:
+        for config_file in config_dir.glob("*.config.json"):
+            network_name = config_file.stem.replace(".config", "")
+
+            # Skip non-orchestration networks (dataset types are not orchestration networks)
+            if network_name in ["image_classification", "object_detection", "segmentation", "image"]:
+                # These might be dataset types, but check if they have actions_mapping that reference our network
+                pass
+
+            try:
+                with open(config_file, 'r', encoding='utf-8') as f:
+                    config = json.load(f)
+                    actions_mapping = config.get("actions_mapping", {})
+
+                    # Check if any action maps to our microservices network
+                    for _, mapping in actions_mapping.items():
+                        if isinstance(mapping, dict) and mapping.get("network") == microservices_network:
+                            # Found a mapping to this microservices network
+                            return network_name
+            except (json.JSONDecodeError, IOError):
+                continue
+    except Exception as e:
+        logger.warning(f"Error scanning network configs for reverse mapping: {e}")
+
+    # If no mapping found, return the original network
+    return orchestration_network
+
+
 def get_monitoring_metric(network):
     """Get the monitoring metric for a specific network.
 
@@ -241,10 +303,10 @@ def get_admin_key(legacy_key=False):
                     secrets = json.load(secret_file)
                 if secrets:
                     if legacy_key and "ptm_api_key" in secrets:
-                        logger.info(f"Returning ptm_api_key: {secrets['ptm_api_key']}")
+                        logger.debug(f"Returning ptm_api_key: {secrets['ptm_api_key']}")
                         return secrets["ptm_api_key"]
                     if "ngc_api_key" in secrets:
-                        logger.info(f"Returning ngc_api_key: {secrets['ngc_api_key']}")
+                        logger.debug(f"Returning ngc_api_key: {secrets['ngc_api_key']}")
                         return secrets["ngc_api_key"]
                 logger.error("Failed to obtain ngc_api_key from NVCF secret")
                 return ""

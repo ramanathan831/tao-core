@@ -35,10 +35,13 @@ from nvidia_tao_core.microservices.utils.stateless_handler_utils import (
 )
 
 # Configure logging
+TAO_LOG_LEVEL = os.getenv('TAO_LOG_LEVEL', 'INFO').upper()
+tao_log_level = getattr(logging, TAO_LOG_LEVEL, logging.INFO)
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.WARNING,  # Root logger: suppress third-party DEBUG logs
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
+logging.getLogger('nvidia_tao_core').setLevel(tao_log_level)
 logger = logging.getLogger(__name__)
 
 
@@ -160,7 +163,10 @@ def infer_ptm(job_context, handler_metadata):
 
                 # Check if this is a Hugging Face model or NGC model
                 source_type = base_experiment_metadata.get("source_type", "ngc")
-                if source_type == "huggingface" or (":" not in ngc_path and "/" in ngc_path):
+                is_hf_model = False
+                if ngc_path is not None:
+                    is_hf_model = (isinstance(ngc_path, str) and ":" not in ngc_path and "/" in ngc_path)
+                if source_type == "huggingface" or is_hf_model:
                     # Handle Hugging Face models
                     model_name = ngc_path.replace("/", "_")
                     root_path = f"{model_registry}/huggingface/{model_name}"

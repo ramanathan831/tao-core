@@ -72,10 +72,13 @@ from nvidia_tao_core.microservices.utils.automl_job_utils import (
 )
 
 # Configure logging
+TAO_LOG_LEVEL = os.getenv('TAO_LOG_LEVEL', 'INFO').upper()
+tao_log_level = getattr(logging, TAO_LOG_LEVEL, logging.INFO)
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.WARNING,  # Root logger: suppress third-party DEBUG logs
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
+logging.getLogger('nvidia_tao_core').setLevel(tao_log_level)
 logger = logging.getLogger(__name__)
 
 time_per_epoch = 0
@@ -130,6 +133,7 @@ class Controller:
 
         self.recommendations = []
         self.automl_context = automl_context
+        logger.info("automl_context.id: %s", self.automl_context.id)
 
         self.root = root
         self.network = network
@@ -438,6 +442,7 @@ class Controller:
 
     def cancel_recommendation_jobs(self):
         """Cleanup recommendation jobs"""
+        backend = os.getenv("TAO_EXECUTION_BACKEND", "local-k8s")
         for rec in self.recommendations:
             job_name = rec.job_id
             logger.info("Deleting %s", job_name)
@@ -446,6 +451,18 @@ class Controller:
             if not os.getenv("CI_PROJECT_DIR", None):
                 logger.info("Cancelling automl job at end of controller %s", job_name)
                 on_cancel_automl_job(rec.job_id)
+
+            # Stop log monitoring for this experiment
+            if backend in ("local-k8s", "local-docker"):
+                try:
+                    from nvidia_tao_core.microservices.utils.log_monitor_service import stop_monitoring_job
+                    logger.info(f"[AUTOML-CONTROLLER] Stopping log monitoring for experiment job {job_name}")
+                    stop_monitoring_job(job_name)
+                    logger.info(f"[AUTOML-CONTROLLER] Stopped log monitoring for experiment job {job_name}")
+                except Exception as e:
+                    logger.warning(f"[AUTOML-CONTROLLER] Failed to stop log monitoring for {job_name}: {e}")
+
+        logger.info("Deleting automl job %s", self.automl_context.id)
         on_delete_automl_job(self.automl_context.id)
 
     def start(self):
@@ -556,8 +573,36 @@ class Controller:
         recs_dict = [ele.__dict__ for ele in self.recommendations]
         metadata = get_handler_job_metadata(self.automl_context.id)
         current_status = metadata.get("status", "")
-        if current_status not in ("canceled", "canceling"):
-            save_automl_controller_info(self.automl_context.id, recs_dict)
+        logger.debug(
+            f"[CONTROLLER-SAVE-STATE] About to save state: automl_job_id={self.automl_context.id}, "
+            f"brain_status={current_status}, num_recs={len(recs_dict)}"
+        )
+
+        # Check if brain is being stopped
+        if current_status in ("canceled", "canceling", "pausing", "paused"):
+            logger.debug(
+                f"[CONTROLLER-SAVE-STATE] Skipping save due to brain status: "
+                f"automl_job_id={self.automl_context.id}, status={current_status}"
+            )
+            return
+
+        # Check if any recommendations in MongoDB are already marked as canceled (race condition prevention)
+        existing_recs = get_automl_controller_info(self.automl_context.id)
+        if existing_recs:
+            for existing_rec in existing_recs:
+                if existing_rec.get("status") in ("canceled", "canceling"):
+                    logger.debug(
+                        f"[CONTROLLER-SAVE-STATE] Skipping save due to canceled recommendation in MongoDB: "
+                        f"automl_job_id={self.automl_context.id}, rec_id={existing_rec.get('id')}, "
+                        f"status={existing_rec.get('status')}"
+                    )
+                    return
+
+        save_automl_controller_info(self.automl_context.id, recs_dict)
+        logger.debug(
+            f"[CONTROLLER-SAVE-STATE] Saved state to MongoDB: automl_job_id={self.automl_context.id}, "
+            f"num_recs={len(recs_dict)}"
+        )
 
     @staticmethod
     def load_state(
@@ -576,6 +621,10 @@ class Controller:
         parameter_names=None
     ):
         """Loads a Controller object from pre-existing root"""
+        logger.debug(
+            f"[CONTROLLER-LOAD-STATE] Starting controller load_state: "
+            f"automl_job_id={automl_context.id}, algorithm={automl_algorithm}"
+        )
         ctrl = Controller(
             root,
             network,
@@ -594,15 +643,37 @@ class Controller:
         ctrl.recommendations = []
         # Restore the recommendations
         recs_dict = get_automl_controller_info(automl_context.id)
+        logger.debug(
+            f"[CONTROLLER-LOAD-STATE] Retrieved recommendations from controller info: "
+            f"automl_job_id={automl_context.id}, num_recs={len(recs_dict) if recs_dict else 0}"
+        )
+        if recs_dict:
+            logger.debug(
+                f"[CONTROLLER-LOAD-STATE] Raw recommendations from MongoDB: "
+                f"automl_job_id={automl_context.id}, "
+                f"recs={[{'id': r['id'], 'status': r['status'], 'job_id': r['job_id']} for r in recs_dict]}"
+            )
 
-        for rec_dict in recs_dict:
+        for idx, rec_dict in enumerate(recs_dict):
             rec = Recommendation(rec_dict["id"], rec_dict["specs"], ctrl.metric_key)
             rec.update_result(rec_dict["result"])
+            logger.debug(
+                f"[CONTROLLER-LOAD-STATE] Before update_status: automl_job_id={automl_context.id}, "
+                f"rec_id={rec_dict['id']}, rec.status={rec.status}, db_status={rec_dict['status']}"
+            )
             rec.update_status(rec_dict["status"])
+            logger.debug(
+                f"[CONTROLLER-LOAD-STATE] After update_status: automl_job_id={automl_context.id}, "
+                f"rec_id={rec_dict['id']}, rec.status={rec.status}"
+            )
             rec.assign_job_id(rec_dict["job_id"])
             ctrl.recommendations.append(rec)
             ctrl.best_epoch_number[rec_dict["id"]] = (
                 rec_dict.get("best_epoch_number") if rec_dict.get("best_epoch_number") else 0
+            )
+            logger.debug(
+                f"[CONTROLLER-LOAD-STATE] Restored recommendation {idx}: automl_job_id={automl_context.id}, "
+                f"rec_id={rec_dict['id']}, status={rec_dict['status']}, job_id={rec_dict['job_id']}"
             )
 
         # Handle temp_rec
@@ -610,15 +681,54 @@ class Controller:
         # Usually, if the controller is stopped before a recommendation is done,
         # it might have to be started / resumed again
         temp_rec = get_automl_current_rec(automl_context.id)
+        logger.debug(
+            f"[CONTROLLER-LOAD-STATE] Retrieved current recommendation index: "
+            f"automl_job_id={automl_context.id}, temp_rec={temp_rec}, "
+            f"num_recommendations={len(ctrl.recommendations)}"
+        )
         # if ctrl.recommendations[temp_rec].status != JobStates.canceled:
         #     ctrl.recommendations[temp_rec].update_status(JobStates.success)
         ctrl.save_state()
-        if ctrl.recommendations[temp_rec].status == JobStates.canceled:
-            logger.info("Resuming stopped automl sub-experiment %s", temp_rec)
-            if ctrl.automl_algorithm == "hyperband":
-                ctrl.brain.track_id = temp_rec
-            ctrl.on_new_automl_job(ctrl.recommendations[temp_rec])
 
+        if temp_rec is not None and temp_rec < len(ctrl.recommendations):
+            rec_status = ctrl.recommendations[temp_rec].status
+            logger.debug(
+                f"[CONTROLLER-LOAD-STATE] Checking if should resume recommendation: "
+                f"automl_job_id={automl_context.id}, temp_rec={temp_rec}, status={rec_status}, "
+                f"is_canceled={rec_status == JobStates.canceled}"
+            )
+            if rec_status == JobStates.canceled:
+                logger.debug(
+                    f"[CONTROLLER-LOAD-STATE] Resuming stopped automl sub-experiment: "
+                    f"automl_job_id={automl_context.id}, rec_id={temp_rec}, "
+                    f"job_id={ctrl.recommendations[temp_rec].job_id}"
+                )
+                if ctrl.automl_algorithm == "hyperband":
+                    ctrl.brain.track_id = temp_rec
+                    logger.debug(
+                        f"[CONTROLLER-LOAD-STATE] Set Hyperband brain track_id: "
+                        f"automl_job_id={automl_context.id}, track_id={temp_rec}"
+                    )
+                ctrl.on_new_automl_job(ctrl.recommendations[temp_rec])
+                logger.debug(
+                    f"[CONTROLLER-LOAD-STATE] Queued recommendation for resume: "
+                    f"automl_job_id={automl_context.id}, rec_id={temp_rec}"
+                )
+            else:
+                logger.debug(
+                    f"[CONTROLLER-LOAD-STATE] NOT resuming recommendation (status is not canceled): "
+                    f"automl_job_id={automl_context.id}, temp_rec={temp_rec}, status={rec_status}"
+                )
+        else:
+            logger.warning(
+                f"[CONTROLLER-LOAD-STATE] Invalid temp_rec or no recommendations to resume: "
+                f"automl_job_id={automl_context.id}, temp_rec={temp_rec}, "
+                f"num_recommendations={len(ctrl.recommendations)}"
+            )
+
+        logger.debug(
+            f"[CONTROLLER-LOAD-STATE] Controller load_state completed: automl_job_id={automl_context.id}"
+        )
         return ctrl
 
     def _execute_loop(self):
@@ -666,13 +776,15 @@ class Controller:
                             self.get_best_checkpoint_path(expt_root, rec)
                             if self.delete_intermediate_ckpt:
                                 self.delete_not_best_model_checkpoints(expt_root, rec, True)
-                        handler_metadata = get_handler_metadata(self.automl_context.handler_id, "experiments")
-                        handler_metadata["checkpoint_epoch_number"][f"best_model_{self.automl_context.id}"] = (
-                            self.best_epoch_number[self.best_rec_id]
+                        handler_metadata = get_handler_metadata(
+                            self.automl_context.handler_id, "experiments"
                         )
-                        handler_metadata["checkpoint_epoch_number"][f"latest_model_{self.automl_context.id}"] = (
-                            self.best_epoch_number[self.best_rec_id]
-                        )
+                        handler_metadata["checkpoint_epoch_number"][
+                            f"best_model_{self.automl_context.id}"
+                        ] = self.best_epoch_number[self.best_rec_id]
+                        handler_metadata["checkpoint_epoch_number"][
+                            f"latest_model_{self.automl_context.id}"
+                        ] = self.best_epoch_number[self.best_rec_id]
                         write_handler_metadata(self.automl_context.handler_id, handler_metadata, "experiments")
 
                     self.eta = 0.0
@@ -694,7 +806,8 @@ class Controller:
         """
         report_health_beat(self.automl_context.id, "Running experiments")
 
-        if self.automl_algorithm in ("bayesian", "b") and len(self.recommendations) == self.max_recommendations:
+        if (self.automl_algorithm in ("bayesian", "b") and
+                len(self.recommendations) == self.max_recommendations):
             return
         history = deepcopy(self.recommendations)
         recommended_specs = self.brain.generate_recommendations(history)
@@ -725,37 +838,91 @@ class Controller:
                 self.on_new_automl_job(rec)
 
             elif type(spec) is ResumeRecommendation:
+                logger.debug(
+                    f"[AUTOML-CONTROLLER-RESUME] Resume recommendation received: "
+                    f"automl_job_id={self.automl_context.id}, rec_id={spec.id}"
+                )
                 self.hyperband_cancel_condition_seen = False
                 rec_id = spec.id
                 self.best_epoch_number[rec_id] = 0
+                logger.debug(
+                    f"[AUTOML-CONTROLLER-RESUME] Reset best epoch number for recommendation: "
+                    f"automl_job_id={self.automl_context.id}, rec_id={rec_id}"
+                )
+
                 # Save brain state and update current recommendation
                 self.brain.save_state()
+                logger.debug(
+                    f"[AUTOML-CONTROLLER-RESUME] Saved brain state: "
+                    f"automl_job_id={self.automl_context.id}"
+                )
+
                 if self.automl_algorithm in ("hyperband", "h"):
                     self.automl_context.early_stop_epoch = self.brain.epoch_number
+                    logger.debug(
+                        f"[AUTOML-CONTROLLER-RESUME] Set early_stop_epoch for Hyperband: "
+                        f"automl_job_id={self.automl_context.id}, rec_id={rec_id}, "
+                        f"early_stop_epoch={self.brain.epoch_number}"
+                    )
+
                 # update temp_rec
                 save_automl_current_rec(self.automl_context.id, rec_id)
+                logger.debug(
+                    f"[AUTOML-CONTROLLER-RESUME] Updated current recommendation: "
+                    f"automl_job_id={self.automl_context.id}, rec_id={rec_id}"
+                )
+
                 assert (self.recommendations[rec_id].id == rec_id), (
                     f"Recommendation ID mismatch: expected {rec_id} but got "
                     f"{self.recommendations[rec_id].id}"
                 )
                 self.recommendations[rec_id].specs = spec.specs.copy()
                 self.recommendations[rec_id].update_status(JobStates.pending)
+                logger.debug(
+                    f"[AUTOML-CONTROLLER-RESUME] Updated recommendation specs and status to pending: "
+                    f"automl_job_id={self.automl_context.id}, rec_id={rec_id}"
+                )
 
                 # Remove previous files (except checkpoints) from experiment folder.
                 def remove_files(local_expt_path, cloud_expt_path, rec_id):
+                    logger.debug(
+                        f"[AUTOML-CONTROLLER-RESUME] Cleaning up previous experiment files: "
+                        f"automl_job_id={self.automl_context.id}, rec_id={rec_id}, "
+                        f"local_path={local_expt_path}, cloud_path={cloud_expt_path}"
+                    )
                     expt_file_name = get_file_list_from_cloud_storage(
                         self.decrypted_workspace_metadata, cloud_expt_path)
                     regex_pattern = r'.*(?:lightning_logs|events).*$|.*\.(json)$'
                     expt_file_name = filter_files(expt_file_name, regex_pattern)
+                    logger.debug(
+                        f"[AUTOML-CONTROLLER-RESUME] Found {len(expt_file_name)} files to delete from cloud: "
+                        f"automl_job_id={self.automl_context.id}, rec_id={rec_id}"
+                    )
                     for file_name in expt_file_name:
                         self.cs_instance.delete_file(file_name)
                     if os.path.exists(local_expt_path):
                         expt_file_name = glob.glob(local_expt_path + "/**/*.txt", recursive=True)
-                        logger.info("Removing log files: %s", expt_file_name)
+                        # Filter out microservices_log.txt - we want to keep logs from log streaming
+                        expt_file_name = [f for f in expt_file_name if not f.endswith('microservices_log.txt')]
+                        logger.debug(
+                            f"[AUTOML-CONTROLLER-RESUME] Removing {len(expt_file_name)} log files "
+                            f"(excluding microservices_log.txt): "
+                            f"automl_job_id={self.automl_context.id}, rec_id={rec_id}, files={expt_file_name}"
+                        )
                         for file_name in expt_file_name:
                             if os.path.isfile(file_name):
                                 os.remove(file_name)
+                    else:
+                        logger.debug(
+                            f"[AUTOML-CONTROLLER-RESUME] Local experiment path does not exist: "
+                            f"automl_job_id={self.automl_context.id}, rec_id={rec_id}, path={local_expt_path}"
+                        )
                     delete_dnn_status(self.automl_context.id, automl=True, experiment_number=str(rec_id))
+                    logger.debug(
+                        f"[AUTOML-CONTROLLER-RESUME] Deleted DNN status for experiment: "
+                        f"automl_job_id={self.automl_context.id}, rec_id={rec_id}"
+                    )
+
                 expt_name = "experiment_" + str(rec_id)
                 cloud_expt_path = self._get_experiment_results_path(self.recommendations[rec_id].job_id)
                 remove_files(
@@ -763,13 +930,34 @@ class Controller:
                     cloud_expt_path,
                     rec_id
                 )
+                logger.debug(
+                    f"[AUTOML-CONTROLLER-RESUME] Completed cleanup for resumed experiment: "
+                    f"automl_job_id={self.automl_context.id}, rec_id={rec_id}"
+                )
 
                 self.save_state()
+                logger.debug(
+                    f"[AUTOML-CONTROLLER-RESUME] Saved controller state: "
+                    f"automl_job_id={self.automl_context.id}"
+                )
 
                 # Inject TAO_AUTOML_TRIGGERED flag into experiment docker_env_vars
                 self._inject_automl_env_vars()
+                logger.debug(
+                    f"[AUTOML-CONTROLLER-RESUME] Injected AutoML environment variables: "
+                    f"automl_job_id={self.automl_context.id}"
+                )
 
+                logger.debug(
+                    f"[AUTOML-CONTROLLER-RESUME] Queueing resumed recommendation job: "
+                    f"automl_job_id={self.automl_context.id}, rec_id={rec_id}, "
+                    f"rec_job_id={self.recommendations[rec_id].job_id}"
+                )
                 self.on_new_automl_job(self.recommendations[rec_id])
+                logger.debug(
+                    f"[AUTOML-CONTROLLER-RESUME] Resume recommendation processing completed: "
+                    f"automl_job_id={self.automl_context.id}, rec_id={rec_id}"
+                )
 
     def read_results(self):
         """Update results for each recommendation"""
@@ -920,7 +1108,7 @@ class Controller:
                         f"AutoML experiment {rec.id} (job {rec.job_id}) failed. "
                         f"Assigning penalty value {validation_map} to enable Bayesian optimization to continue."
                     )
-                    rec.update_result(validation_map)
+                rec.update_result(validation_map)
                 self.save_state()
 
                 # Enhanced logging for job cancellation with full context
@@ -946,7 +1134,7 @@ class Controller:
                 rec.update_status(status)
                 self.save_state()
                 if status == JobStates.success:
-                    container_log_file = f"{self.root}/experiment_{rec.id}/log.txt"
+                    container_log_file = f"{self.root}/{rec.job_id}/log.txt"
                     if os.getenv("BACKEND") == "NVCF":
                         overwrite_job_logs_from_bcp(container_log_file, rec.job_id)
                     if os.path.exists(container_log_file):
@@ -1067,7 +1255,7 @@ class Controller:
             else:
                 best_metric_value = 0.0
 
-                result_dict[f"best_{self.metric_key}"] = best_metric_value
+            result_dict[f"best_{self.metric_key}"] = best_metric_value
         except Exception as e:
             logger.error("Exception thrown in write_results is %s", str(e))
             result_dict[f"best_{self.metric_key}"] = 0.0
@@ -1084,7 +1272,6 @@ class Controller:
             result_dict["Number of epochs yet to start"] = self.remaining_epochs_in_experiment
             result_dict["Time per epoch in seconds"] = round(self.average_time_per_epoch, 2)
 
-        # Update best_rec_id continuously by finding the best completed recommendation
         # Only consider successful recommendations (not failures with penalties)
         completed_recs = [
             rec for rec in self.recommendations
@@ -1158,8 +1345,16 @@ class Controller:
                     self.automl_context.id,
                     f"Moving best model folder for experiment {rec.id} to {cloud_best_model_folder}"
                 )
-                # Pass job_id to move_folder so it can report health beats during the long operation
-                self.cs_instance.move_folder(expt_folder, cloud_best_model_folder, job_id=self.automl_context.id)
+                # Move folder but exclude log files - experiment logs should stay in experiment folder
+                # The brain job has its own logs, experiment logs should not be moved to brain folder
+                exclude_log_files = ['microservices_log.txt', 'log.txt']
+                logger.info(f"Moving best experiment folder excluding log files: {exclude_log_files}")
+                self.cs_instance.move_folder(
+                    expt_folder[1:],
+                    cloud_best_model_folder,
+                    job_id=self.automl_context.id,
+                    exclude_files=exclude_log_files
+                )
                 report_health_beat(
                     self.automl_context.id,
                     f"Completed moving best model folder for experiment {rec.id}"

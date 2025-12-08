@@ -38,10 +38,13 @@ from nvidia_tao_core.microservices.utils.stateless_handler_utils import (
 from nvidia_tao_core.microservices.utils.executor_utils import dependency_check
 
 # Configure logging
+TAO_LOG_LEVEL = os.getenv('TAO_LOG_LEVEL', 'INFO').upper()
+tao_log_level = getattr(logging, TAO_LOG_LEVEL, logging.INFO)
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.WARNING,  # Root logger: suppress third-party DEBUG logs
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
+logging.getLogger('nvidia_tao_core').setLevel(tao_log_level)
 logger = logging.getLogger(__name__)
 
 
@@ -94,7 +97,9 @@ def dependency_check_specs(job_context, dependency):
     network = job_context.network
     action = job_context.action
 
-    specs = get_job_specs(job_context.id)
+    # For AutoML experiments, specs are stored under the brain job ID (parent_id)
+    job_id_for_specs = job_context.parent_id if job_context.parent_id else job_context.id
+    specs = get_job_specs(job_id_for_specs)
 
     failure_message = ""
     if not specs:
@@ -180,6 +185,8 @@ def dependency_check_model(job_context, dependency):
 
 def dependency_check_gpu(job_context, dependency):
     """Check if GPU dependency is met"""
+    logger.debug(f"[GPU_DEP_CHECK] Starting GPU dependency check for job {job_context.id}")
+
     # If BACKEND is NVCF, then we don't need to check for GPU availability if it's not a local job
     local_job = (job_context.specs and "cluster" in job_context.specs and job_context.specs["cluster"] == "local")
     if os.getenv("BACKEND") == "NVCF" and not local_job:
@@ -189,12 +196,18 @@ def dependency_check_gpu(job_context, dependency):
         num_gpu = get_num_gpus_from_spec(
             job_context.specs, job_context.action, network=job_context.network, default=dependency.num
         )
+        logger.debug(f"[GPU_DEP_CHECK] Job {job_context.id}: Determined needs {num_gpu} GPU(s) from spec")
     except ValueError as e:
         # GPU validation failed (e.g., requested GPUs > available GPUs)
         # Return False to fail the dependency check with the error message
         error_message = str(e)
-        logger.error(f"GPU dependency check failed for job {job_context.id}: {error_message}")
+        logger.error(f"[GPU_DEP_CHECK] Job {job_context.id}: GPU validation failed: {error_message}")
         return False, error_message
+
+    logger.debug(
+        f"[GPU_DEP_CHECK] Job {job_context.id} ({job_context.network}/{job_context.action}): "
+        f"requires {num_gpu} GPU(s), calling dependency_check()..."
+    )
 
     gpu_available, available_gpu_count = dependency_check(num_gpu=num_gpu, accelerator=dependency.name)
     message = ""
@@ -204,11 +217,20 @@ def dependency_check_gpu(job_context, dependency):
                 f"{num_gpu} GPU's needed to run this job is not available yet "
                 f"(currently {available_gpu_count} GPU's available), please wait for other jobs to complete"
             )
+            logger.debug(
+                f"[GPU_DEP_CHECK] Job {job_context.id}: NOT MET - needs {num_gpu}, "
+                f"only {available_gpu_count} available"
+            )
         else:
             message = (
                 f"{num_gpu} GPU's needed to run this job is not available yet, "
                 f"please wait for other jobs to complete"
             )
+            logger.debug(f"[GPU_DEP_CHECK] Job {job_context.id}: NOT MET - needs {num_gpu} GPU(s)")
+    else:
+        logger.debug(
+            f"[GPU_DEP_CHECK] Job {job_context.id}: MET - {available_gpu_count} available, {num_gpu} requested"
+        )
     return gpu_available, message
 
 
@@ -221,9 +243,11 @@ def dependency_check_automl(job_context, dependency):
     """Makes sure the automl controller has the rec_number requested at the time of creation"""
     rec_number = int(dependency.name)
     # Check if recommendation number is there and can be loaded
-    recs_dict = get_automl_controller_info(job_context.id)
+    # For AutoML experiments, controller info is stored under the brain job ID (parent_id)
+    automl_brain_job_id = job_context.parent_id if job_context.parent_id else job_context.id
+    recs_dict = get_automl_controller_info(automl_brain_job_id)
     if not recs_dict:
-        return False, f"Automl controller for job id {job_context.id} not found yet"
+        return False, f"Automl controller for brain job id {automl_brain_job_id} not found yet"
     try:
         recs_dict[rec_number]
         return True, ""

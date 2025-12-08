@@ -29,6 +29,7 @@ from nvidia_tao_core.microservices.constants import (
 from nvidia_tao_core.microservices.utils.nvcf_utils import get_available_nvcf_instances
 from nvidia_tao_core.microservices.handlers.automl_handler import AutoMLHandler
 from nvidia_tao_core.microservices.utils.automl_utils import apply_automl_custom_param_ranges
+from nvidia_tao_core.microservices.utils.log_streaming_utils import get_job_logs_from_backend
 from nvidia_tao_core.microservices.utils.stateless_handler_utils import (
     check_read_access,
     check_write_access,
@@ -627,38 +628,59 @@ class JobHandler:
                 - 200 if the job was successfully canceled or if the job cannot be canceled due to its current status.
                 - 404 if the job or related resources are not found.
         """
+        logger.debug(
+            f"[CANCEL] Starting cancel operation for job_id={job_id}, handler_id={handler_id}, "
+            f"kind={kind}, org_name={org_name}"
+        )
+
         handler_metadata = resolve_metadata(kind, handler_id)
         if not handler_metadata:
+            logger.debug(f"[CANCEL] Handler not found: handler_id={handler_id}, kind={kind}")
             return Code(404, [], f"{kind} not found")
 
         if job_id not in handler_metadata.get("jobs", {}).keys():
+            logger.debug(f"[CANCEL] Job not found in handler's job list: job_id={job_id}, handler_id={handler_id}")
             return Code(404, [], f"Job to cancel not found in the {kind}.")
 
         user_id = handler_metadata.get("user_id")
         if not check_write_access(user_id, org_name, handler_id, kind=kind + "s"):
+            logger.debug(f"[CANCEL] Write access denied: user_id={user_id}, handler_id={handler_id}")
             return Code(404, [], f"{kind} not found")
 
         job_metadata = get_handler_job_metadata(job_id)
         if not job_metadata:
+            logger.debug(f"[CANCEL] Job metadata not found: job_id={job_id}")
             return Code(404, [], "job trying to cancel not found")
         action = job_metadata.get("action", "")
 
+        logger.debug(
+            f"[CANCEL] Job metadata retrieved: job_id={job_id}, action={action}, "
+            f"status={job_metadata.get('status', 'Unknown')}"
+        )
+
         if is_request_automl(handler_id, action, kind):
+            logger.debug(f"[CANCEL] Processing AutoML cancel: job_id={job_id}, handler_id={handler_id}")
             update_job_status(handler_id, job_id, status="Canceling", kind=kind + "s")
+            logger.debug(f"[CANCEL] Job status updated to Canceling: job_id={job_id}")
             automl_response = AutoMLHandler.stop(user_id, org_name, handler_id, job_id)
             # Remove any pending jobs from Workflow queue
             try:
+                logger.debug(f"[CANCEL] Removing pending AutoML jobs from workflow: job_id={job_id}")
                 on_delete_automl_job(job_id)
+                logger.debug(f"[CANCEL] Successfully removed pending AutoML jobs: job_id={job_id}")
             except Exception as e:
-                logger.error("Exception thrown in automl_job_cancel is %s", str(e))
+                logger.error(f"[CANCEL] Exception thrown in automl_job_cancel: job_id={job_id}, error={str(e)}")
                 return Code(200, {"message": f"job {job_id} cancelled, and no pending recommendations"})
             update_job_status(handler_id, job_id, status="Canceled", kind=kind + "s")
+            logger.debug(f"[CANCEL] Job status updated to Canceled: job_id={job_id}")
             return automl_response
 
         # If job is error / done, then cancel is NoOp
         job_status = job_metadata.get("status", "Error")
+        logger.debug(f"[CANCEL] Processing non-AutoML cancel: job_id={job_id}, current_status={job_status}")
 
         if job_status in ["Error", "Done", "Canceled", "Canceling", "Pausing", "Paused"]:
+            logger.debug(f"[CANCEL] Job cannot be canceled due to status: job_id={job_id}, status={job_status}")
             return Code(
                 200,
                 {
@@ -668,19 +690,32 @@ class JobHandler:
             )
         specs = job_metadata.get("specs", None)
         use_ngc = not (specs and "cluster" in specs and specs["cluster"] == "local")
+        logger.debug(f"[CANCEL] Cluster configuration: job_id={job_id}, use_ngc={use_ngc}")
 
         if job_status == "Pending":
+            logger.debug(f"[CANCEL] Canceling pending job: job_id={job_id}")
             update_job_status(handler_id, job_id, status="Canceling", kind=kind + "s")
+            logger.debug(f"[CANCEL] Deleting job from workflow queue: job_id={job_id}")
             on_delete_job(job_id)
+            logger.debug(f"[CANCEL] Deleting statefulset: job_id={job_id}, use_ngc={use_ngc}")
             StatefulSetExecutor().delete_statefulset(job_id, use_ngc=use_ngc)
             update_job_status(handler_id, job_id, status="Canceled", kind=kind + "s")
+            logger.debug(f"[CANCEL] Pending job successfully canceled: job_id={job_id}")
             return Code(200, {"message": f"Pending job {job_id} cancelled"})
 
         if job_status == "Running":
+            logger.debug(f"[CANCEL] Canceling running job: job_id={job_id}")
             try:
-                # Delete K8s job
+                # Delete job (K8s pod or Docker container)
                 update_job_status(handler_id, job_id, status="Canceling", kind=kind + "s")
+                logger.debug(f"[CANCEL] Job status updated to Canceling: job_id={job_id}")
+                logger.debug(f"[CANCEL] Deleting statefulset for running job: job_id={job_id}, use_ngc={use_ngc}")
                 StatefulSetExecutor().delete_statefulset(job_id, use_ngc=use_ngc)
+
+                # Poll for job termination (works for both K8s and Docker Compose)
+                # For Docker: get_job_status returns "Error" immediately when container not reachable
+                # For K8s: polls until pod terminates
+                logger.debug(f"[CANCEL] Waiting for job termination: job_id={job_id}")
                 k8s_status = JobExecutor().get_job_status(
                     org_name,
                     handler_id,
@@ -689,8 +724,10 @@ class JobHandler:
                     use_ngc=use_ngc,
                     automl_exp_job=False
                 )
+                logger.debug(f"[CANCEL] Initial status after delete: job_id={job_id}, status={k8s_status}")
                 while k8s_status in ("Done", "Error", "Running", "Pending"):
                     if k8s_status in ("Done", "Error"):
+                        logger.debug(f"[CANCEL] Job terminated: job_id={job_id}, final_status={k8s_status}")
                         break
                     k8s_status = JobExecutor().get_job_status(
                         org_name,
@@ -700,14 +737,17 @@ class JobHandler:
                         use_ngc=use_ngc,
                         automl_exp_job=False
                     )
+                    logger.debug(f"[CANCEL] Polling status: job_id={job_id}, status={k8s_status}")
                     time.sleep(5)
                 update_job_status(handler_id, job_id, status="Canceled", kind=kind + "s")
+                logger.debug(f"[CANCEL] Running job successfully canceled: job_id={job_id}")
                 return Code(200, {"message": f"Running job {job_id} cancelled"})
             except Exception as e:
-                logger.error("Exception thrown in job_cancel is %s", str(e))
-                logger.error("Cancel traceback: %s", traceback.format_exc())
+                logger.error(f"[CANCEL] Exception thrown in job_cancel: job_id={job_id}, error={str(e)}")
+                logger.error(f"[CANCEL] Cancel traceback: {traceback.format_exc()}")
                 return Code(404, [], "job not found in platform")
         else:
+            logger.debug(f"[CANCEL] Unexpected job status: job_id={job_id}, status={job_status}")
             return Code(404, [], "job status not found")
 
     @staticmethod
@@ -727,41 +767,62 @@ class JobHandler:
                 - 200 if the job was successfully paused or if the job cannot be paused due to its current status.
                 - 404 if the job or related resources are not found.
         """
+        logger.debug(
+            f"[PAUSE] Starting pause operation: job_id={job_id}, handler_id={handler_id}, "
+            f"kind={kind}, org_name={org_name}, graceful={graceful}"
+        )
+
         handler_metadata = resolve_metadata(kind, handler_id)
         if not handler_metadata:
+            logger.debug(f"[PAUSE] Handler not found: handler_id={handler_id}, kind={kind}")
             return Code(404, [], f"{kind} not found")
 
         user_id = handler_metadata.get("user_id")
         if not check_write_access(user_id, org_name, handler_id, kind=kind + "s"):
+            logger.debug(f"[PAUSE] Write access denied: user_id={user_id}, handler_id={handler_id}")
             return Code(404, [], f"{kind} not found")
 
         job_metadata = get_handler_job_metadata(job_id)
         if not job_metadata:
+            logger.debug(f"[PAUSE] Job metadata not found: job_id={job_id}")
             return Code(404, [], "job trying to pause not found")
         action = job_metadata.get("action", "")
 
+        logger.debug(
+            f"[PAUSE] Job metadata retrieved: job_id={job_id}, action={action}, "
+            f"status={job_metadata.get('status', 'Unknown')}"
+        )
+
         if is_request_automl(handler_id, action, kind):
+            logger.debug(f"[PAUSE] Processing AutoML pause: job_id={job_id}, handler_id={handler_id}")
             update_job_status(handler_id, job_id, status="Pausing", kind=kind + "s")
+            logger.debug(f"[PAUSE] Job status updated to Pausing: job_id={job_id}")
             automl_response = AutoMLHandler.stop(user_id, org_name, handler_id, job_id)
             # Remove any pending jobs from Workflow queue
             try:
+                logger.debug(f"[PAUSE] Removing pending AutoML jobs from workflow: job_id={job_id}")
                 on_delete_automl_job(job_id)
+                logger.debug(f"[PAUSE] Successfully removed pending AutoML jobs: job_id={job_id}")
             except Exception as e:
-                logger.error("Exception thrown in automl job_pause is %s", str(e))
-                return Code(200, {"message": f"job {job_id} cancelled, and no pending recommendations"})
+                logger.error(f"[PAUSE] Exception thrown in automl job_pause: job_id={job_id}, error={str(e)}")
+                return Code(200, {"message": f"job {job_id} paused, and no pending recommendations"})
             update_job_status(handler_id, job_id, status="Paused", kind=kind + "s")
+            logger.debug(f"[PAUSE] Job status updated to Paused: job_id={job_id}")
             return automl_response
 
         job_action = job_metadata.get("action", "")
         if job_action not in ("train", "distill", "quantize", "retrain"):
+            logger.debug(f"[PAUSE] Action not pausable: job_id={job_id}, action={job_action}")
             return Code(
                 404, [],
                 f"Only train, distill, quantize or retrain jobs can be paused. The current action is {job_action}"
             )
         job_status = job_metadata.get("status", "Error")
+        logger.debug(f"[PAUSE] Processing non-AutoML pause: job_id={job_id}, current_status={job_status}")
 
         # If job is error / done, or one of cancel or pause states then pause is NoOp
         if job_status in ["Error", "Done", "Canceled", "Canceling", "Pausing", "Paused"]:
+            logger.debug(f"[PAUSE] Job cannot be paused due to status: job_id={job_id}, status={job_status}")
             return Code(
                 200,
                 {
@@ -773,24 +834,39 @@ class JobHandler:
             )
         specs = job_metadata.get("specs", None)
         use_ngc = not (specs and "cluster" in specs and specs["cluster"] == "local")
+        logger.debug(f"[PAUSE] Cluster configuration: job_id={job_id}, use_ngc={use_ngc}")
 
         if job_status == "Pending":
+            logger.debug(f"[PAUSE] Pausing pending job: job_id={job_id}")
             update_job_status(handler_id, job_id, status="Pausing", kind=kind + "s")
+            logger.debug(f"[PAUSE] Deleting job from workflow queue: job_id={job_id}")
             on_delete_job(job_id)
+            logger.debug(f"[PAUSE] Deleting statefulset: job_id={job_id}, use_ngc={use_ngc}")
             StatefulSetExecutor().delete_statefulset(job_id, use_ngc=use_ngc)
             update_job_status(handler_id, job_id, status="Paused", kind=kind + "s")
+            logger.debug(f"[PAUSE] Pending job successfully paused: job_id={job_id}")
             return Code(200, {"message": f"Pending job {job_id} paused"})
 
         if job_status == "Running":
+            logger.debug(f"[PAUSE] Pausing running job: job_id={job_id}")
             try:
                 update_job_status(handler_id, job_id, status="Pausing", kind=kind + "s")
+                logger.debug(f"[PAUSE] Job status updated to Pausing: job_id={job_id}")
 
                 # Try graceful pause if requested
                 if graceful:
                     network = job_metadata.get("network", "")
                     action = job_metadata.get("action", "")
+                    logger.debug(
+                        f"[PAUSE] Attempting graceful pause: job_id={job_id}, "
+                        f"network={network}, action={action}"
+                    )
                     if network and action:
                         try:
+                            logger.debug(
+                                f"[PAUSE] Sending microservice pause request: job_id={job_id}, "
+                                f"network={network}, action={action}"
+                            )
                             response = send_microservice_request(
                                 api_endpoint="pause_job",
                                 network=network,
@@ -799,17 +875,28 @@ class JobHandler:
                                 job_id=job_id
                             )
                             if response.status_code == 200:
+                                logger.debug(
+                                    f"[PAUSE] Graceful pause request successful: job_id={job_id}, "
+                                    f"status_code={response.status_code}"
+                                )
                                 return Code(200, {
                                     "message": f"Job {job_id} is being paused gracefully. "
                                                f"Checkpoints will be uploaded and pod will terminate automatically."
                                 })
+                            logger.debug(
+                                f"[PAUSE] Graceful pause request failed: job_id={job_id}, "
+                                f"status_code={response.status_code}"
+                            )
                         except Exception as e:
-                            logger.error("Graceful pause failed for job %s: %s", job_id, str(e))
+                            logger.error(f"[PAUSE] Graceful pause failed for job {job_id}: {str(e)}")
 
-                    logger.warning("Graceful pause unavailable for job %s, using abrupt pause", job_id)
+                    logger.warning(f"[PAUSE] Graceful pause unavailable for job {job_id}, using abrupt pause")
 
                 # Abrupt pause (or fallback if graceful pause failed)
+                logger.debug(f"[PAUSE] Performing abrupt pause: job_id={job_id}")
+                logger.debug(f"[PAUSE] Deleting statefulset for running job: job_id={job_id}, use_ngc={use_ngc}")
                 StatefulSetExecutor().delete_statefulset(job_id, use_ngc=use_ngc)
+                logger.debug(f"[PAUSE] Waiting for job termination: job_id={job_id}")
                 k8s_status = JobExecutor().get_job_status(
                     org_name,
                     handler_id,
@@ -818,8 +905,10 @@ class JobHandler:
                     use_ngc=use_ngc,
                     automl_exp_job=False
                 )
+                logger.debug(f"[PAUSE] Initial status after delete: job_id={job_id}, status={k8s_status}")
                 while k8s_status in ("Done", "Error", "Running", "Pending"):
                     if k8s_status in ("Done", "Error"):
+                        logger.debug(f"[PAUSE] Job terminated: job_id={job_id}, final_status={k8s_status}")
                         break
                     k8s_status = JobExecutor().get_job_status(
                         org_name,
@@ -829,16 +918,17 @@ class JobHandler:
                         use_ngc=use_ngc,
                         automl_exp_job=False
                     )
+                    logger.debug(f"[PAUSE] Polling status: job_id={job_id}, status={k8s_status}")
                     time.sleep(5)
                 update_job_status(handler_id, job_id, status="Paused", kind=kind + "s")
                 return Code(200, {"message": f"Running job {job_id} paused"})
             except Exception as e:
-                logger.error("Exception thrown in job_pause is %s", str(e))
-                logger.error("Pause traceback: %s", traceback.format_exc())
+                logger.error(f"[PAUSE] Exception thrown in job_pause: job_id={job_id}, error={str(e)}")
+                logger.error(f"[PAUSE] Pause traceback: {traceback.format_exc()}")
                 return Code(404, [], "job not found in platform")
 
-        else:
-            return Code(404, [], "job status not found")
+        logger.debug(f"[PAUSE] Unexpected job status: job_id={job_id}, status={job_status}")
+        return Code(404, [], "job status not found")
 
     @staticmethod
     def all_job_cancel(user_id, org_name, handler_id, kind):
@@ -1167,20 +1257,189 @@ class JobHandler:
         log_file_path = os.path.join(get_handler_log_root(user_id, org_name, handler_id), str(job_id) + ".txt")
         job_metadata = get_handler_job_metadata(job_id)
         automl_index = None
+        lookup_job_id = job_id
+        is_brain_job = False
+
+        logger.debug(
+            f"[JOB_LOGS] get_job_logs called: org_name={org_name}, handler_id={handler_id}, "
+            f"job_id={job_id}, kind={kind}, automl_experiment_index={automl_experiment_index}"
+        )
         if (handler_metadata.get("automl_settings", {}).get("automl_enabled", False) and
                 job_metadata.get("action", "") == "train"):
-            root = os.path.join(get_jobs_root(user_id, org_name), job_id)
-            automl_index = get_automl_current_rec(job_id)
-            if automl_experiment_index is not None:
-                automl_index = int(automl_experiment_index)
-            log_file_path = os.path.join(root, f"experiment_{automl_index}", "log.txt")
+            logger.debug(f"[JOB_LOGS] AutoML job detected for job_id={job_id}")
 
-        if (job_metadata.get("status", "") not in ("Done", "Error", "Canceled", "Paused") or
-                not os.path.exists(log_file_path)):
+            # Handle experiment_number=-1 for brain job logs
+            if automl_experiment_index is not None and int(automl_experiment_index) == -1:
+                logger.info(f"[JOB_LOGS] Fetching AutoML brain job logs for job_id={job_id}")
+                is_brain_job = True
+                lookup_job_id = job_id  # Brain job uses the main job_id
+                log_file_path = os.path.join(get_handler_log_root(user_id, org_name, handler_id), str(job_id) + ".txt")
+                logger.info(f"[JOB_LOGS] Brain job: lookup_job_id={lookup_job_id}, log_file_path={log_file_path}")
+            else:
+                logger.debug(
+                    f"[JOB_LOGS] Regular AutoML recommendation, "
+                    f"provided experiment_index={automl_experiment_index}"
+                )
+                # Regular AutoML experiment logs
+                automl_index = get_automl_current_rec(job_id)
+                logger.debug(f"[JOB_LOGS] Current recommendation from DB: {automl_index}")
+                if automl_experiment_index is not None:
+                    logger.info(f"[JOB_LOGS] Overriding with provided experiment_index: {automl_experiment_index}")
+                    automl_index = int(automl_experiment_index)
+                logger.info(f"[JOB_LOGS] Using automl_index={automl_index} for log retrieval")
+                logger.debug(f"[JOB_LOGS] Experiment log_file_path: {log_file_path}")
+
+            # For AutoML, need to find the actual job_id for the recommendation
+            if automl_index is not None:
+                logger.debug(f"[JOB_LOGS] Looking up AutoML recommendation job_id for experiment {automl_index}")
+                controller_list = get_automl_controller_info(job_id)
+                logger.debug(f"[JOB_LOGS] Found {len(controller_list)} recommendations in controller list")
+                logger.debug(
+                    f"[JOB_LOGS] Controller list: "
+                    f"{[{k: v for k, v in rec.items() if k in ['id', 'job_id']} for rec in controller_list]}"
+                )
+                # Get list of valid experiment IDs
+                valid_experiment_ids = sorted([rec.get('id') for rec in controller_list if rec.get('id') != ""])
+                logger.debug(f"[JOB_LOGS] Valid experiment IDs: {valid_experiment_ids}")
+                # Search for the requested experiment
+                found = False
+                for rec_info in controller_list:
+                    rec_id = rec_info.get("id", "")
+                    rec_job_id = rec_info.get("job_id", "")
+                    logger.debug(
+                        f"[JOB_LOGS] Checking rec: id={rec_id}, job_id={rec_job_id}, "
+                        f"looking_for={automl_index}"
+                    )
+                    if rec_id != "" and int(rec_id) == int(automl_index):
+                        lookup_job_id = rec_info.get("job_id", job_id)
+                        log_file_path = os.path.join(
+                            get_handler_log_root(user_id, org_name, handler_id),
+                            f"{lookup_job_id}.txt"
+                        )
+                        logger.info(
+                            f"[JOB_LOGS] AutoML: Found match! Using job_id={lookup_job_id} "
+                            f"for experiment {automl_index}"
+                        )
+                        found = True
+                        break
+                # If experiment index was explicitly provided but not found, return error with valid IDs
+                if not found and automl_experiment_index is not None:
+                    logger.error(
+                        f"[JOB_LOGS] AutoML: Experiment index {automl_index} not found. "
+                        f"Available experiments: {valid_experiment_ids}"
+                    )
+
+                    if valid_experiment_ids:
+                        error_msg = (
+                            f"AutoML experiment index '{automl_index}' does not exist. "
+                            f"Available experiment indices: {', '.join(map(str, valid_experiment_ids))}. "
+                            "Use experiment_number=-1 to get AutoML brain job logs."
+                        )
+                    else:
+                        error_msg = (
+                            "No AutoML experiments have been created yet. "
+                            "Use experiment_number=-1 to get AutoML brain job logs."
+                        )
+
+                    return Code(404, {}, error_msg)
+
+                # If not found and using default (current rec), just log warning
+                if not found:
+                    logger.warning(
+                        f"[JOB_LOGS] AutoML: Could not find job_id for experiment {automl_index} "
+                        f"in controller list. Available: {valid_experiment_ids}"
+                    )
+
+        # For K8s and Docker backends, get logs from the most appropriate source
+        job_status = job_metadata.get("status", "")
+        backend = os.getenv("BACKEND", "local-k8s")
+        logger.debug(
+            f"[JOB_LOGS] job_status={job_status}, backend={backend}, "
+            f"log_file_exists={os.path.exists(log_file_path)}, log_file_path={log_file_path}"
+        )
+        # Determine log retrieval strategy based on job status and backend
+        is_completed = job_status in ("Done", "Error", "Canceled", "Paused")
+        is_streaming_backend = backend in ("local-k8s", "local-docker")
+        if is_completed and is_streaming_backend:
+            # For completed jobs with streaming backends:
+            # 1. Try cloud storage first (log monitor uploads complete logs there)
+            # 2. Fall back to cached file if cloud download fails
+            logger.info(
+                f"[JOB_LOGS] Job completed (status={job_status}), attempting to retrieve "
+                f"complete logs from cloud storage for job_id={lookup_job_id}"
+            )
             workspace_id = handler_metadata.get("workspace", "")
-            if not workspace_id:
-                return Code(404, {}, "Handler doesn't have workspace assigned, can't download logs.")
-            download_log_from_cloud(handler_metadata, job_id, log_file_path, automl_index)
+            if workspace_id:
+                try:
+                    download_log_from_cloud(handler_metadata, lookup_job_id, log_file_path, automl_index)
+                    logger.info("[JOB_LOGS] Successfully downloaded logs from cloud storage")
+                except Exception as e:
+                    logger.warning(
+                        f"[JOB_LOGS] Failed to download from cloud storage: {type(e).__name__}: {e}, "
+                        "will use cached file if available"
+                    )
+            else:
+                logger.warning(
+                    "[JOB_LOGS] No workspace assigned, cannot download from cloud. "
+                    "Will use cached file if available."
+                )
+        elif not is_completed and is_streaming_backend:
+            # For running jobs with streaming backends:
+            # Try to get real-time logs from backend (K8s/Docker), then fall back to cloud
+            log_type = "brain job" if is_brain_job else f"job_id={lookup_job_id}"
+            logger.info(f"[JOB_LOGS] Job running, attempting real-time logs from {backend} for {log_type}")
+            # Get namespace if K8s
+            namespace = None
+            if backend == "local-k8s":
+                namespace = os.getenv("NAMESPACE")
+                logger.debug(f"[JOB_LOGS] K8s namespace: {namespace}")
+            direct_logs = get_job_logs_from_backend(lookup_job_id, backend=backend, namespace=namespace)
+            if direct_logs:
+                log_desc = "brain job" if is_brain_job else "job"
+                log_size_kb = len(direct_logs) / 1024
+                logger.info(
+                    f"[JOB_LOGS] Successfully retrieved {log_desc} logs directly from {backend} "
+                    f"for job_id={lookup_job_id} ({log_size_kb:.1f} KB)"
+                )
+                # Cache the logs to file for future use
+                try:
+                    os.makedirs(os.path.dirname(log_file_path), exist_ok=True)
+                    logger.debug(f"[JOB_LOGS] Caching logs to {log_file_path}")
+                    with open(log_file_path, 'w', encoding='utf-8') as f:
+                        f.write(direct_logs)
+                    logger.info(f"[JOB_LOGS] Successfully cached logs to {log_file_path}")
+                except Exception as e:
+                    logger.warning(f"[JOB_LOGS] Failed to cache logs to file: {type(e).__name__}: {e}")
+                    logger.debug("[JOB_LOGS] Cache exception details:", exc_info=True)
+
+                # Return logs directly
+                logger.debug(f"[JOB_LOGS] Returning {len(direct_logs.splitlines())} lines of logs")
+                return Code(200, iter(direct_logs.splitlines(keepends=True)))
+            logger.warning(f"[JOB_LOGS] Could not retrieve real-time logs from {backend} for job_id={lookup_job_id}")
+            logger.info(f"[JOB_LOGS] Falling back to cloud storage download for job_id={lookup_job_id}")
+            # Fallback to cloud storage
+            workspace_id = handler_metadata.get("workspace", "")
+            if workspace_id:
+                try:
+                    download_log_from_cloud(handler_metadata, lookup_job_id, log_file_path, automl_index)
+                except Exception as e:
+                    logger.warning(f"[JOB_LOGS] Cloud download failed: {type(e).__name__}: {e}")
+            else:
+                logger.warning("[JOB_LOGS] No workspace assigned, cannot download from cloud")
+        else:
+            # For non-streaming backends (NVCF, etc.), use cloud storage
+            logger.debug(
+                f"[JOB_LOGS] Backend {backend} does not support direct streaming, "
+                f"using cloud storage"
+            )
+            workspace_id = handler_metadata.get("workspace", "")
+            if workspace_id:
+                try:
+                    download_log_from_cloud(handler_metadata, lookup_job_id, log_file_path, automl_index)
+                except Exception as e:
+                    logger.warning(f"[JOB_LOGS] Cloud download failed: {type(e).__name__}: {e}")
+            else:
+                logger.warning("[JOB_LOGS] No workspace assigned, cannot download from cloud")
 
         # File not present - Use detailed message or job status
         if not os.path.exists(log_file_path):

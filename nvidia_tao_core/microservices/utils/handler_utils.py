@@ -71,10 +71,13 @@ from .ngc_utils import validate_ptm_download
 from .core_utils import create_folder_with_permissions, get_monitoring_metric
 
 # Configure logging
+TAO_LOG_LEVEL = os.getenv('TAO_LOG_LEVEL', 'INFO').upper()
+tao_log_level = getattr(logging, TAO_LOG_LEVEL, logging.INFO)
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.WARNING,  # Root logger: suppress third-party DEBUG logs
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
+logging.getLogger('nvidia_tao_core').setLevel(tao_log_level)
 logger = logging.getLogger(__name__)
 
 
@@ -193,10 +196,11 @@ class JobContext:
             "name": self.name,
             "description": self.description,
             "id": self.id,
+            "user_id": self.user_id,
             "org_name": self.org_name,
             "parent_id": self.parent_id,
-            "platform_id": self.platform_id,
             "backend_details": self.backend_details,
+            "network_arch": self.network,
             "action": self.action,
             "created_on": self.created_on,
             "specs": self.specs,
@@ -1327,16 +1331,21 @@ def send_statefulset_request(
     )
     if statefulset_replica_index != 0:
         statefulset_replicas = 0
-    return send_microservice_request(
-        base_url,
-        api_endpoint,
-        network,
-        action,
-        cloud_metadata,
-        specs,
-        job_id,
-        docker_env_vars,
-        statefulset_replicas)
+    try:
+        response = send_microservice_request(
+            base_url,
+            api_endpoint,
+            network,
+            action,
+            cloud_metadata,
+            specs,
+            job_id,
+            docker_env_vars,
+            statefulset_replicas)
+    except Exception as e:
+        logger.error("Exception caught during sending a microservice request %s", e)
+        raise e
+    return response
 
 
 def sanitize_metadata(metadata):
@@ -1556,6 +1565,44 @@ def get_file_list_from_cloud_storage(workspace_metadata, res_root):
     files, _ = cs_instance.list_files_in_folder(folder_path)
 
     return files
+
+
+def upload_log_to_cloud(handler_metadata, job_id, log_file_path, automl_index=None):
+    """Upload log file from local pod storage to cloud"""
+    if not os.path.exists(log_file_path):
+        logger.warning(f"Cannot upload log file - does not exist: {log_file_path}")
+        return False
+
+    lookup_job_id = job_id
+    if "experiment_" in log_file_path:
+        controller_list = get_automl_controller_info(job_id)
+        for rec_info in controller_list:
+            rec_id = rec_info.get("id", "")
+            if (rec_id != "" and automl_index is not None) and (int(rec_id) == int(automl_index)):
+                lookup_job_id = rec_info.get("job_id", "")
+                break
+
+    workspace_id = handler_metadata.get("workspace", "")
+    if not workspace_id:
+        logger.warning("No workspace assigned, cannot upload log to cloud")
+        return False
+
+    try:
+        from .stateless_handler_utils import get_handler_metadata
+        from .cloud_utils import create_cs_instance
+        workspace_metadata = get_handler_metadata(workspace_id, "workspace")
+        cs_instance, _ = create_cs_instance(workspace_metadata)
+
+        # Upload to cloud storage at /results/{job_id}/microservices_log.txt
+        cloud_path = f"/results/{lookup_job_id}/microservices_log.txt"
+        logger.info(f"Uploading log file to cloud: {cloud_path}")
+        cs_instance.upload_file(log_file_path, cloud_path, send_status_callbacks=False)
+        logger.info(f"Successfully uploaded log file to cloud: {cloud_path}")
+        return True
+    except Exception as e:
+        logger.error(f"Failed to upload log file to cloud: {type(e).__name__}: {e}")
+        logger.debug("Upload exception details:", exc_info=True)
+        return False
 
 
 def download_log_from_cloud(handler_metadata, job_id, log_file_path, automl_index=None):

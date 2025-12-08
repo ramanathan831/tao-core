@@ -29,10 +29,13 @@ from nvidia_tao_core.microservices.utils.handler_utils import get_total_epochs, 
 from nvidia_tao_core.microservices.utils.stateless_handler_utils import save_automl_brain_info, get_automl_brain_info
 
 # Configure logging
+TAO_LOG_LEVEL = os.getenv('TAO_LOG_LEVEL', 'INFO').upper()
+tao_log_level = getattr(logging, TAO_LOG_LEVEL, logging.INFO)
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.WARNING,  # Root logger: suppress third-party DEBUG logs
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
+logging.getLogger('nvidia_tao_core').setLevel(tao_log_level)
 logger = logging.getLogger(__name__)
 
 
@@ -92,7 +95,8 @@ class Bayesian(AutoMLAlgorithmBase):
             v_min, v_max = get_valid_range(parameter_config, self.parent_params, self.custom_ranges)
 
             # Apply math condition if specified
-            if math_cond and type(math_cond) is str:
+            # Skip relational constraints (like "> depends_on") as they're handled in base class
+            if math_cond and type(math_cond) is str and "depends_on" not in math_cond:
                 parts = math_cond.split(" ")
                 if len(parts) >= 2:
                     operator = parts[0]

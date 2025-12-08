@@ -162,6 +162,17 @@ def download_from_https_link(download_url, destination_folder):
         _extract_images(f'{destination_folder}/{file_name}', f'{destination_folder}')
 
 
+def download_from_git_link(download_url, destination_folder):
+    """Download a repository from a git link.
+
+    Args:
+        download_url (str): The URL of the repository to download.
+        destination_folder (str): The destination folder where the repository will be saved.
+    """
+    cmnd = f"git clone {download_url} {destination_folder}"
+    run_subprocess_command(cmnd)
+
+
 def extract_cloud_details(metadata):
     """Extract cloud-related details from metadata.
 
@@ -275,7 +286,8 @@ def get_file_modification_time(local_path):
 @master_node_only
 def upload_files(local_path, cloud_storage, file_last_modified=None,
                  selective_tarball_config=None, exclude_patterns=None,
-                 file_snapshot=None, progress_tracker=None, exit_event=None):
+                 file_snapshot=None, progress_tracker=None, exit_event=None,
+                 retain_patterns=None):
     """Uploads any detected changes to the specified cloud storage.
 
     Args:
@@ -287,6 +299,10 @@ def upload_files(local_path, cloud_storage, file_last_modified=None,
         file_snapshot (set, optional): Set of relative file paths to upload. If provided, only these files are uploaded.
         progress_tracker: ProgressTracker instance for batch upload tracking (post-job only)
         exit_event: Threading event to check for early exit during continuous upload
+        retain_patterns (list, optional): List of regex patterns to retain files until job completion.
+                                         Files matching these patterns won't be removed after upload
+                                         during continuous monitoring. Set to None during final upload
+                                         or graceful pause to remove all files.
     """
     # If no snapshot provided, create one from directory walk (for continuous monitoring)
     # Track which files need their modification time updated after successful upload
@@ -314,12 +330,23 @@ def upload_files(local_path, cloud_storage, file_last_modified=None,
 
     # Filter files to upload (apply all skip conditions)
     files_to_upload = []
+    backend = os.getenv("TAO_EXECUTION_BACKEND", "")
+    skip_log_files = backend in ("local-k8s", "local-docker")
+
     for rel_path in file_snapshot:
         file_path = os.path.join(local_path, rel_path)
         filename = os.path.basename(file_path)
 
         # Skip if file doesn't exist or is not a regular file
         if not (os.path.exists(file_path) and os.path.isfile(file_path)):
+            continue
+
+        # Skip log files for k8s/docker backends (server streams logs directly)
+        if skip_log_files and filename == "microservices_log.txt":
+            logger.debug(
+                f"Skipping log file upload for backend={backend}: {file_path}. "
+                "Server-side log streaming is enabled."
+            )
             continue
 
         # Skip checkpoint and tmp files
@@ -393,13 +420,36 @@ def upload_files(local_path, cloud_storage, file_last_modified=None,
                     logger.info("Updated modification time for snapshot-mode file: %s", file_path)
 
         # Remove file after successful upload only if size > 50MB
+        # During continuous monitoring, check retain_patterns to avoid removing files needed later
+        # During final upload (retain_patterns=None), remove all large files
         try:
             if cloud_storage.is_file(file_path):
                 file_size_mb = os.path.getsize(file_path) / (1024 * 1024)
                 if file_size_mb > 50:
-                    os.remove(file_path)
-                    logger.info("Large file (%.2f MB) successfully uploaded and removed: %s",
-                                file_size_mb, file_path)
+                    # Check if file should be retained during continuous monitoring
+                    should_retain = False
+                    if retain_patterns:
+                        for pattern in retain_patterns:
+                            try:
+                                if re.search(pattern, rel_path) or re.search(pattern, os.path.basename(file_path)):
+                                    should_retain = True
+                                    logger.info(
+                                        "File (%.2f MB) matches retain pattern '%s', keeping until job completion: %s",
+                                        file_size_mb, pattern, file_path
+                                    )
+                                    break
+                            except re.error:
+                                logger.warning("Invalid regex pattern '%s', skipping", pattern)
+
+                    if not should_retain:
+                        os.remove(file_path)
+                        logger.info("Large file (%.2f MB) successfully uploaded and removed: %s",
+                                    file_size_mb, file_path)
+                    else:
+                        logger.info(
+                            "Large file (%.2f MB) successfully uploaded but retained (matches retain pattern): %s",
+                            file_size_mb, file_path
+                        )
                 else:
                     logger.info("File (%.2f MB) successfully uploaded but retained (under 50MB): %s",
                                 file_size_mb, file_path)
@@ -419,6 +469,16 @@ def get_log_file_name():
 def send_logs_to_server(seek_position, retry=0):
     """Sends TTY logs back to Hosted API"""
     if os.getenv("CLOUD_BASED") == "True":
+        # Skip log upload for k8s and docker backends - server handles it via direct streaming
+        # Check TAO_EXECUTION_BACKEND (set by server for job containers)
+        backend = os.getenv("TAO_EXECUTION_BACKEND", "")
+        if backend in ("local-k8s", "local-docker"):
+            logger.info(
+                f"Skipping container-side log upload for backend={backend}. "
+                "Server-side log streaming is enabled."
+            )
+            return seek_position
+
         if retry >= NUM_RETRY:
             cleanup_cuda_contexts()
             raise ValueError("Log Callback was unsuccessfull")
@@ -598,7 +658,7 @@ def should_skip_file_for_tarball(file_path, local_path, selective_tarball_config
 
 @master_node_only
 def monitor_and_upload(local_path, cloud_storage, exit_event, seek_position=0,
-                       selective_tarball_config=None, exclude_patterns=None):
+                       selective_tarball_config=None, exclude_patterns=None, retain_patterns=None):
     """Monitors the specified local path and its subdirectories for new or modified files.
 
     Args:
@@ -608,17 +668,33 @@ def monitor_and_upload(local_path, cloud_storage, exit_event, seek_position=0,
         seek_position (int): Initial seek position for log reading.
         selective_tarball_config (dict): Configuration for selective tarball patterns to skip.
         exclude_patterns (list, optional): List of regex patterns to exclude files from upload.
+        retain_patterns (list, optional): List of regex patterns to retain files until job completion.
 
     Returns:
         None
     """
     logger.info("monitor_and_upload :: Entering")
+
+    # For k8s and docker backends, skip log file uploads (server handles via streaming)
+    # But still handle send_logs_to_server for status updates
+    # Check TAO_EXECUTION_BACKEND (set by server for job containers)
+    backend = os.getenv("TAO_EXECUTION_BACKEND", "")
+    skip_log_upload = backend in ("local-k8s", "local-docker")
+    if skip_log_upload:
+        logger.info(
+            f"Backend={backend}: Server-side log streaming enabled. "
+            "Log files will not be uploaded from container."
+        )
+
     if selective_tarball_config:
         patterns = selective_tarball_config.get("patterns", [])
         base_path = selective_tarball_config.get("base_path", "")
         logger.info("Selective tarball enabled - skipping patterns: %s in base_path: %s", patterns, base_path)
     if exclude_patterns:
         logger.info("Exclude patterns enabled for continuous upload: %s", exclude_patterns)
+    if retain_patterns:
+        logger.info("Retain patterns enabled - files matching these will be kept until job completion: %s",
+                    retain_patterns)
     file_last_modified = {}
 
     # Initialize file_last_modified with files that are already part of results dir
@@ -698,9 +774,11 @@ def monitor_and_upload(local_path, cloud_storage, exit_event, seek_position=0,
                         logger.info("No files need final upload")
 
                     # Perform final upload with progress tracker (no exit_event check during final upload)
+                    # Set retain_patterns=None to allow removal of all large files after final upload
                     upload_files(local_path, cloud_storage, file_last_modified,
                                  selective_tarball_config, exclude_patterns,
-                                 progress_tracker=final_progress_tracker, exit_event=None)
+                                 progress_tracker=final_progress_tracker, exit_event=None,
+                                 retain_patterns=None)
 
                     # Complete the progress tracker
                     if final_progress_tracker:
@@ -709,8 +787,10 @@ def monitor_and_upload(local_path, cloud_storage, exit_event, seek_position=0,
                     seek_position = send_logs_to_server(seek_position)
 
                 break
+            # During continuous monitoring, pass retain_patterns to keep files until job completes
             upload_files(local_path, cloud_storage, file_last_modified, selective_tarball_config,
-                         exclude_patterns, progress_tracker=None, exit_event=exit_event)
+                         exclude_patterns, progress_tracker=None, exit_event=exit_event,
+                         retain_patterns=retain_patterns)
 
             seek_position = send_logs_to_server(seek_position)
             time.sleep(30)  # Adjust the sleep interval as needed
@@ -1054,37 +1134,88 @@ def download_files_from_cloud(
     return None
 
 
-def count_files_in_spec(data):
+def count_files_in_spec(data, cloud_data=None):
     """Count the total number of files that will be downloaded from a spec.
 
     Args:
         data (dict): The spec data structure to analyze
+        cloud_data (dict): Cloud metadata for accessing cloud storage
 
     Returns:
         int: Total number of downloadable files found in the spec
+
+    Note:
+        - For cloud storage folders, lists actual files in the folder
+        - HuggingFace models (hf_model://) are counted as 1 logical download operation
     """
     file_count = 0
 
     if isinstance(data, dict):
         for _, value in data.items():
             if isinstance(value, dict):
-                file_count += count_files_in_spec(value)
+                file_count += count_files_in_spec(value, cloud_data)
             elif isinstance(value, list):
                 for list_element in value:
                     if isinstance(list_element, str):
                         # Check if this looks like a downloadable file path
                         if _is_downloadable_path(list_element):
-                            # Count each downloadable file as 1 (including PTM models)
-                            file_count += 1
+                            # Count actual files (especially for cloud folders)
+                            file_count += _count_downloadable_path(list_element, cloud_data)
                     elif isinstance(list_element, dict):
-                        file_count += count_files_in_spec(list_element)
+                        file_count += count_files_in_spec(list_element, cloud_data)
             elif isinstance(value, str):
                 # Check if this looks like a downloadable file path
                 if _is_downloadable_path(value):
-                    # Count each downloadable file as 1 (including PTM models)
-                    file_count += 1
+                    # Count actual files (especially for cloud folders)
+                    file_count += _count_downloadable_path(value, cloud_data)
 
     return file_count
+
+
+def _count_downloadable_path(path, cloud_data=None):
+    """Count how many files will be downloaded for a given path.
+
+    Args:
+        path (str): Path to check (could be file, folder, or HF model)
+        cloud_data (dict): Cloud metadata for accessing cloud storage
+
+    Returns:
+        int: Number of files that will be downloaded (1 for single file, N for folders)
+    """
+    try:
+        # Handle HuggingFace models
+        if path.startswith("hf_model://"):
+            # HF models downloaded as single operation via snapshot_download
+            # Even though they contain multiple files, we count as 1 logical operation
+            # because we can't track per-file progress with snapshot_download
+            return 1
+
+        # Handle cloud storage paths (s3://, azure://, etc.)
+        if "://" in path:
+            try:
+                # Get cloud storage object
+                cloud_storage, cloud_file_path = get_cloud_storage_class_object(cloud_data, path)
+
+                if cloud_storage:
+                    # Check if it's a folder or file
+                    if cloud_storage.is_file(cloud_file_path):
+                        return 1
+                    # It's a folder - list actual files
+                    files, _ = cloud_storage.list_files_in_folder(cloud_file_path)  # Returns (files, details) tuple
+                    file_count = len(files) if files else 1
+                    if file_count > 1:
+                        logger.info(f"Cloud folder {path} contains {file_count} files")
+                    return file_count
+            except Exception as e:
+                logger.warning(f"Could not list files in cloud path {path}: {e}")
+                return 1
+
+        # Default: treat as single file
+        return 1
+
+    except Exception as e:
+        logger.warning(f"Error counting files for {path}: {e}")
+        return 1
 
 
 def _is_downloadable_path(path):
@@ -1155,15 +1286,38 @@ def calculate_total_download_size(cloud_data, data, job_id):
             if "://" in file_path and _is_downloadable_path(file_path):
                 # Try to get cloud file size
                 cloud_storage, cloud_file_path = get_cloud_storage_class_object(cloud_data, file_path)
-                if cloud_storage and cloud_storage.is_file(cloud_file_path):
-                    # Get file info to determine size
-                    full_path = cloud_storage.root + cloud_file_path.strip('/')
-                    try:
-                        file_info = cloud_storage.fs.info(full_path)
-                        return file_info.get('size', 0) / (1024 * 1024)  # Convert to MB
-                    except Exception:
-                        logger.warning(f"Could not get size for {file_path}")
-                        return 0.0
+                if cloud_storage:
+                    if cloud_storage.is_file(cloud_file_path):
+                        # Single file - get its size
+                        full_path = cloud_storage.root + cloud_file_path.strip('/')
+                        try:
+                            file_info = cloud_storage.fs.info(full_path)
+                            return file_info.get('size', 0) / (1024 * 1024)  # Convert to MB
+                        except Exception:
+                            logger.warning(f"Could not get size for {file_path}")
+                            return 0.0
+                    else:
+                        # Folder - sum sizes of all files inside
+                        try:
+                            # Returns (files, details) tuple
+                            files, _ = cloud_storage.list_files_in_folder(cloud_file_path)
+                            if files:
+                                folder_size_mb = 0.0
+                                for file in files:
+                                    try:
+                                        # list_files_in_folder returns relative paths, construct full path
+                                        file_full_path = cloud_storage.root + file.strip('/')
+                                        file_info = cloud_storage.fs.info(file_full_path)
+                                        file_size_mb = file_info.get('size', 0) / (1024 * 1024)
+                                        folder_size_mb += file_size_mb
+                                    except Exception:
+                                        continue
+                                if folder_size_mb > 0:
+                                    logger.info(f"Cloud folder {file_path} total size: {folder_size_mb:.1f} MB")
+                                return folder_size_mb
+                        except Exception as e:
+                            logger.warning(f"Could not calculate folder size for {file_path}: {e}")
+                            return 0.0
         except Exception:
             logger.warning(f"Could not determine size for {file_path}")
         return 0.0
@@ -1179,11 +1333,13 @@ def calculate_total_download_size(cloud_data, data, job_id):
                 elif isinstance(value, list):
                     for list_element in value:
                         if isinstance(list_element, str) and _is_downloadable_path(list_element):
-                            total_size_mb += _get_file_size(list_element)
+                            file_size = _get_file_size(list_element)
+                            total_size_mb += file_size
                         elif isinstance(list_element, dict):
                             _process_spec_for_size(list_element)
                 elif isinstance(value, str) and _is_downloadable_path(value):
-                    total_size_mb += _get_file_size(value)
+                    file_size = _get_file_size(value)
+                    total_size_mb += file_size
 
     try:
         _process_spec_for_size(data)

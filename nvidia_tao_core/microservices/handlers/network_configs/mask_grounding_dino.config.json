@@ -40,6 +40,9 @@
                     },
                     "json_file": {
                         "path": "annotations_odvg.jsonl"
+                    },
+                    "label_map": {
+                        "path": "annotations_odvg_labelmap.json"
                     }
                 }
             },
@@ -52,7 +55,7 @@
                         "transform": "handle_tar_path"
                     },
                     "json_file": {
-                        "path": "val.jsonl"
+                        "path": "annotations.json"
                     }
                 }
             }
@@ -67,7 +70,7 @@
                         "transform": "handle_tar_path"
                     },
                     "json_file": {
-                        "path": "val.jsonl"
+                        "path": "annotations.json"
                     }
                 }
             }
@@ -140,8 +143,7 @@
             "results_dir": "output_dir",
             "inference.checkpoint": "parent_model",
             "inference.trt_engine": "parent_model",
-            "encryption_key": "key",
-            "dataset.infer_data_sources.data_type": "VG"
+            "encryption_key": "key"
         },
         "export": {
             "results_dir": "output_dir",

@@ -204,6 +204,7 @@ class AllowedDockerEnvVariables(Enum):
     RECURSIVE_DATASET_FILE_DOWNLOAD = "RECURSIVE_DATASET_FILE_DOWNLOAD"
     ORCHESTRATION_API_NETWORK = "ORCHESTRATION_API_NETWORK"
     ORCHESTRATION_API_ACTION = "ORCHESTRATION_API_ACTION"
+    TAO_EXECUTION_BACKEND = "TAO_EXECUTION_BACKEND"
     AUTOML_EXPERIMENT_NUMBER = "AUTOML_EXPERIMENT_NUMBER"
     JOB_ID = "JOB_ID"
     TAO_API_JOB_ID = "TAO_API_JOB_ID"  # Automl brain job id
@@ -708,7 +709,7 @@ class AWSCredentialsFields:
     cloud_region = fields.Str(validate=validate.Length(max=2048), allow_none=True)
     endpoint_url = fields.Str(validate=[validate_endpoint_url, validate.Length(max=2048)], allow_none=True)
     cloud_bucket_name = fields.Str(validate=validate.Length(min=1, max=2048), allow_none=True)
-
+    cloud_type = fields.Constant(CloudPullTypesEnum.aws.value)
 
 class AzureCredentialsFields:
     """Reusable field definitions for Azure storage credentials"""
@@ -718,12 +719,14 @@ class AzureCredentialsFields:
     cloud_region = fields.Str(validate=validate.Length(max=2048), allow_none=True)
     endpoint_url = fields.Str(validate=[validate_endpoint_url, validate.Length(max=2048)], allow_none=True)
     cloud_bucket_name = fields.Str(validate=validate.Length(min=1, max=2048), allow_none=True)
+    cloud_type = fields.Constant(CloudPullTypesEnum.azure.value)
 
 
 class HuggingFaceCredentialsFields:
     """Reusable field definitions for Hugging Face credentials"""
 
     token = fields.Str(validate=validate.Length(max=2048))
+    cloud_type = fields.Constant(CloudPullTypesEnum.huggingface.value)
 
 
 class AWSCloudPull(AWSCredentialsFields, Schema):
@@ -1231,7 +1234,7 @@ class JobResume(Schema):
     backend_details = fields.Nested(BackendDetails, allow_none=True)
 
 
-class ParameterRangeSchema(Schema):
+class ParameterRange(Schema):
     """Schema for parameter attributes (used for both default and custom)"""
 
     class Meta:
@@ -1266,8 +1269,8 @@ class AutoMLParameterDetail(Schema):
         unknown = EXCLUDE
     parameter = fields.Str(format="regex", regex=r'.*', validate=fields.validate.Length(max=500))
     value_type = fields.Str(format="regex", regex=r'.*', validate=fields.validate.Length(max=100))
-    default = fields.Nested(ParameterRangeSchema)
-    custom = fields.Nested(ParameterRangeSchema, allow_none=True)
+    default = fields.Nested(ParameterRange)
+    custom = fields.Nested(ParameterRange, allow_none=True)
 
 
 class AutoMLParameterDetailsRsp(Schema):
@@ -1292,7 +1295,7 @@ class AutoMLUpdateParameterRangesReq(Schema):
     job_id = fields.Str(format="uuid", validate=fields.validate.Length(max=36), required=True)
     network_arch = fields.Str(format="regex", regex=r'.*', validate=fields.validate.Length(max=100), required=True)
     parameter_ranges = fields.List(
-        fields.Nested(ParameterRangeSchema),
+        fields.Nested(ParameterRange),
         validate=validate.Length(min=1, max=sys.maxsize),
         required=True
     )
@@ -1325,7 +1328,7 @@ class AutoML(Schema):
         allow_none=True
     )
     automl_range_override = fields.List(
-        fields.Nested(ParameterRangeSchema),
+        fields.Nested(ParameterRange),
         validate=validate.Length(max=sys.maxsize),
         allow_none=True
     )
@@ -1944,7 +1947,6 @@ class ExperimentJobRsp(Schema):
         validate=validate.Length(max=sys.maxsize),
         allow_none=True
     )
-    kind = fields.Constant(JobKindEnum.experiment.value)
 
 
 class JobRsp(OneOfSchema):

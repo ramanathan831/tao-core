@@ -14,6 +14,7 @@
 
 """Util functions for AutoML jobs"""
 import logging
+import os
 
 from .stateless_handler_utils import (
     get_public_experiments,
@@ -25,10 +26,13 @@ from .stateless_handler_utils import (
 # StatefulSetExecutor import moved to function level to avoid circular imports
 
 # Configure logging
+TAO_LOG_LEVEL = os.getenv('TAO_LOG_LEVEL', 'INFO').upper()
+tao_log_level = getattr(logging, TAO_LOG_LEVEL, logging.INFO)
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.WARNING,  # Root logger: suppress third-party DEBUG logs
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
+logging.getLogger('nvidia_tao_core').setLevel(tao_log_level)
 logger = logging.getLogger(__name__)
 
 
@@ -64,12 +68,20 @@ def on_new_automl_job(automl_context, recommendation):
     from .job_utils.workflow import Workflow, Job, Dependency
 
     recommendation_id = recommendation.id
+    automl_brain_job_id = automl_context.id  # Brain job ID
+    experiment_job_id = recommendation.job_id  # Individual experiment job ID
+
     deps = []
     deps.append(Dependency(type="automl", name=str(recommendation_id)))
     deps.append(Dependency(type="specs"))
     deps.append(Dependency(type="model"))
     deps.append(Dependency(type="dataset"))
-    deps.append(Dependency(type="gpu"))
+
+    num_gpu = automl_context.num_gpu
+    logger.debug(f"AutoML experiment {experiment_job_id}: Creating GPU dependency with {num_gpu} GPU(s)")
+
+    if num_gpu > 0:
+        deps.append(Dependency(type="gpu", name=automl_context.platform_id, num=num_gpu))
 
     job = {
         'user_id': automl_context.user_id,
@@ -77,15 +89,15 @@ def on_new_automl_job(automl_context, recommendation):
         'num_gpu': automl_context.num_gpu,
         'backend_details': automl_context.backend_details,
         'kind': "experiment",
-        'id': automl_context.id,
-        'parent_id': None,
+        'id': experiment_job_id,  # Use experiment's unique job ID
+        'parent_id': automl_brain_job_id,  # Reference to brain job
         'priority': 2,
         'action': "train",
         'network': automl_context.network,
         'handler_id': automl_context.handler_id,
         'created_on': automl_context.created_on,
         'last_modified': automl_context.last_modified,
-        'specs': get_job_specs(automl_context.id),
+        'specs': get_job_specs(automl_brain_job_id),  # Specs are stored under brain job ID
         'dependencies': deps,
         'retain_checkpoints_for_resume': automl_context.retain_checkpoints_for_resume,
         'early_stop_epoch': automl_context.early_stop_epoch,
@@ -93,38 +105,47 @@ def on_new_automl_job(automl_context, recommendation):
     }
     j = Job(**job)
     Workflow.enqueue(j)
-    logger.info("Recommendation submitted to workflow with %s", recommendation.job_id)
-    metadata = get_handler_job_metadata(automl_context.id)
-    job_details = metadata.get("job_details", {}).get(recommendation.job_id, {})
+    logger.debug("Experiment job %s (recommendation %s) submitted to workflow for brain job %s",
+                 experiment_job_id, recommendation_id, automl_brain_job_id)
+    metadata = get_handler_job_metadata(automl_brain_job_id)
+    job_details = metadata.get("job_details", {}).get(experiment_job_id, {})
     if job_details:
-        metadata["job_details"][recommendation.job_id] = {}
-        write_job_metadata(automl_context.id, metadata)
+        metadata["job_details"][experiment_job_id] = {}
+        write_job_metadata(automl_brain_job_id, metadata)
 
 
 def on_delete_automl_job(job_id):
-    """Dequeue the automl job"""
+    """Dequeue the automl experiment job"""
     # AutoML handler stop would handle this
-    # automl_context is same as JobContext that was created for AutoML job
+    # job_id can be either brain job ID or experiment job ID
+    # Brain jobs are NOT in the workflow queue, so we skip dequeuing for them
     job_metadata = get_job(job_id)
+
+    # Check if this is a brain job (missing workflow-specific fields)
+    # Brain jobs don't have user_id, num_gpu, network, handler_id, workflow_status
+    if not job_metadata or 'user_id' not in job_metadata or 'handler_id' not in job_metadata:
+        logger.debug(f"Skipping dequeue for job {job_id} - appears to be a brain job or missing required fields")
+        return
+
     job_dict = {
-        'user_id': job_metadata["user_id"],
-        'org_name': job_metadata["org_name"],
-        'num_gpu': job_metadata["num_gpu"],
-        'backend_details': job_metadata["backend_details"],
+        'user_id': job_metadata.get("user_id"),
+        'org_name': job_metadata.get("org_name"),
+        'num_gpu': job_metadata.get("num_gpu", 0),
+        'backend_details': job_metadata.get("backend_details"),
         'kind': "experiment",
-        'id': job_metadata["id"],
-        'parent_id': None,
+        'id': job_metadata.get("id"),  # Experiment job ID
+        'parent_id': job_metadata.get("parent_id", None),  # Brain job ID
         'priority': 2,
-        'action': "train",
-        'network': job_metadata["network"],
-        'handler_id': job_metadata["handler_id"],
-        'created_on': job_metadata["created_on"],
-        'last_modified': job_metadata["last_modified"],
-        'specs': job_metadata["specs"],
-        'workflow_status': job_metadata["workflow_status"],
-        'retain_checkpoints_for_resume': job_metadata["retain_checkpoints_for_resume"],
-        'early_stop_epoch': job_metadata["early_stop_epoch"],
-        'timeout_minutes': job_metadata["timeout_minutes"]
+        'action': job_metadata.get("action", "train"),
+        'network': job_metadata.get("network"),
+        'handler_id': job_metadata.get("handler_id"),
+        'created_on': job_metadata.get("created_on"),
+        'last_modified': job_metadata.get("last_modified"),
+        'specs': job_metadata.get("specs", {}),
+        'workflow_status': job_metadata.get("workflow_status", "Pending"),
+        'retain_checkpoints_for_resume': job_metadata.get("retain_checkpoints_for_resume", False),
+        'early_stop_epoch': job_metadata.get("early_stop_epoch"),
+        'timeout_minutes': job_metadata.get("timeout_minutes", 60)
     }
     from .job_utils.workflow import Workflow, Job
     job = Job(**job_dict)

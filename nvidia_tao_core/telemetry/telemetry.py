@@ -18,10 +18,13 @@ import os
 from typing import Any, Dict, List, Optional
 
 import logging as _logging
+TAO_LOG_LEVEL = os.getenv('TAO_LOG_LEVEL', 'INFO').upper()
+tao_log_level = getattr(_logging, TAO_LOG_LEVEL, _logging.INFO)
 _logging.basicConfig(
     format='[%(asctime)s - TAO Toolkit - %(name)s - %(levelname)s] %(message)s',
-    level='INFO'
+    level=_logging.WARNING  # Root logger: suppress third-party DEBUG logs
 )
+_logging.getLogger('nvidia_tao_core').setLevel(tao_log_level)
 logging = _logging
 
 try:

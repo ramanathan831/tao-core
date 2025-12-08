@@ -17,6 +17,7 @@ import argparse
 import traceback
 import json
 import logging
+import os
 
 from nvidia_tao_core.microservices.automl.controller import Controller
 from nvidia_tao_core.microservices.automl.bayesian import Bayesian
@@ -30,11 +31,15 @@ from nvidia_tao_core.microservices.utils.stateless_handler_utils import (
 )
 
 # Configure logging
+TAO_LOG_LEVEL = os.getenv('TAO_LOG_LEVEL', 'INFO').upper()
+tao_log_level = getattr(logging, TAO_LOG_LEVEL, logging.INFO)
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.WARNING,  # Root logger: suppress third-party DEBUG logs
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
+logging.getLogger('nvidia_tao_core').setLevel(tao_log_level)
 logger = logging.getLogger(__name__)
+logger.info(f"Logging configured at level: {TAO_LOG_LEVEL}")
 
 
 def automl_start(
@@ -72,7 +77,12 @@ def automl_start(
             update_job_metadata(jc.handler_id, jc.id, metadata_key="job_details", data=result, kind="experiments")
             raise ValueError(error_message)
 
+    logger.debug(
+        f"[AUTOML-START] AutoML starting: job_id={jc.id}, resume={resume}, "
+        f"algorithm={automl_algorithm}, network={network}"
+    )
     if resume:
+        logger.debug(f"[AUTOML-START] Entering RESUME path: job_id={jc.id}, algorithm={automl_algorithm}")
         if automl_algorithm.lower() in ("hyperband", "h"):
             brain = HyperBand.load_state(
                 job_context=jc,
@@ -102,9 +112,11 @@ def automl_start(
             decrypted_workspace_metadata,
             parameter_names
         )
+        logger.debug(f"[AUTOML-START] Resume path completed, starting controller: job_id={jc.id}")
         controller.start()
 
     else:
+        logger.debug(f"[AUTOML-START] Entering NEW (non-resume) path: job_id={jc.id}, algorithm={automl_algorithm}")
         if automl_algorithm.lower() in ("hyperband", "h"):
             brain = HyperBand(
                 job_context=jc,
@@ -245,6 +257,14 @@ if __name__ == "__main__":
         # Get retain_checkpoints_for_resume from CLI argument
         retain_checkpoints_for_resume = args.retain_checkpoints_for_resume.lower() in ("true", "1")
         timeout_minutes = int(args.timeout_minutes)
+
+        from nvidia_tao_core.microservices.utils.handler_utils import get_num_gpus_from_spec
+        num_gpu = get_num_gpus_from_spec(specs, "train", network=network, default=-1)
+        logger.debug(
+            f"[AUTOML-START] AutoML brain job {automl_job_id}: num_gpu from spec = {num_gpu}, "
+            f"NUM_GPU_PER_NODE={os.getenv('NUM_GPU_PER_NODE', '0')}"
+        )
+
         jc = JobContext(
             automl_job_id,
             None,
@@ -261,6 +281,10 @@ if __name__ == "__main__":
             timeout_minutes=timeout_minutes
         )
         resume = args.resume == "True"
+        logger.debug(
+            f"[AUTOML-START-ARGS] Parsed resume argument: args.resume='{args.resume}', "
+            f"resume={resume}, job_id={automl_job_id}"
+        )
         automl_algorithm = args.automl_algorithm
         automl_max_recommendations = args.automl_max_recommendations
         automl_delete_intermediate_ckpt = args.automl_delete_intermediate_ckpt

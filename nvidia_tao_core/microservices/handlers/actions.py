@@ -95,6 +95,7 @@ from nvidia_tao_core.microservices.utils.job_utils.executor import (
 from nvidia_tao_core.microservices.utils.executor_utils import get_cluster_ip
 from nvidia_tao_core.microservices.utils.network_utils.network_constants import ptm_mapper
 from nvidia_tao_core.microservices.utils.specs_utils import json_to_kitti, json_to_yaml, json_to_toml
+from nvidia_tao_core.microservices.utils.log_monitor_service import start_monitoring_job, stop_monitoring_job
 
 SPEC_BACKEND_TO_FUNCTIONS = {
     "protobuf": json_to_kitti.kitti,
@@ -104,10 +105,13 @@ SPEC_BACKEND_TO_FUNCTIONS = {
 HOST_PLATFORM = os.getenv("HOST_PLATFORM", "local-k8s")
 
 # Configure logging
+TAO_LOG_LEVEL = os.getenv('TAO_LOG_LEVEL', 'INFO').upper()
+tao_log_level = getattr(logging, TAO_LOG_LEVEL, logging.INFO)
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.WARNING,  # Root logger: suppress third-party DEBUG logs
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
+logging.getLogger('nvidia_tao_core').setLevel(tao_log_level)
 logger = logging.getLogger(__name__)
 
 
@@ -338,6 +342,11 @@ class ActionPipeline:
             self.job_context.org_name
         )
         self.job_env_variables["CLOUD_BASED"] = "True"
+        # Pass BACKEND to container so it knows whether to use server-side log streaming
+        # Set TAO_EXECUTION_BACKEND env variable so container knows its execution environment
+        # NOTE: We use TAO_EXECUTION_BACKEND instead of BACKEND to avoid conflicts
+        # BACKEND is used to detect if code is running in service pods vs job containers
+        self.job_env_variables["TAO_EXECUTION_BACKEND"] = BACKEND
         user_key = get_user_key(
             self.job_context.user_id,
             self.job_context.org_name,
@@ -614,12 +623,40 @@ class ActionPipeline:
                     if not os.path.exists(f"{self.jobs_root}/{self.job_name}"):
                         os.makedirs(f"{self.jobs_root}/{self.job_name}")
                     update_job_status(self.handler_id, self.job_name, status="Done", kind=self.handler_kind)
+
+                    # Stop log monitoring when job is done
+                    logger.debug(f"[ACTIONS] Job {self.job_name} completed, checking if should stop log monitoring")
+                    if BACKEND in ("local-k8s", "local-docker"):
+                        try:
+                            logger.info(
+                                f"[ACTIONS] Stopping log monitoring for completed job {self.job_name}"
+                            )
+                            stop_monitoring_job(self.job_name)
+                            logger.info(
+                                f"[ACTIONS] Successfully stopped log monitoring for completed job "
+                                f"{self.job_name}"
+                            )
+                        except Exception as e:
+                            logger.warning(
+                                f"[ACTIONS] Failed to stop log monitoring for job {self.job_name}: "
+                                f"{type(e).__name__}: {e}"
+                            )
+
                     break
                 except Exception as e:
                     # If post run fails, call it Error
                     logger.error("Exception thrown in post run after done status %s", str(e))
                     self.detailed_print(traceback.format_exc())
                     update_job_status(self.handler_id, self.job_name, status="Error", kind=self.handler_kind)
+
+                    # Stop log monitoring when job errors
+                    if BACKEND in ("local-k8s", "local-docker"):
+                        try:
+                            stop_monitoring_job(self.job_name)
+                            logger.info(f"Stopped log monitoring for errored job {self.job_name}")
+                        except Exception as stop_err:
+                            logger.warning(f"Failed to stop log monitoring for job {self.job_name}: {stop_err}")
+
                     break
             # If running in K8s, update results to job_context
             elif k8s_status == "Running":
@@ -812,6 +849,61 @@ class ActionPipeline:
                     automl_exp_job=False,
                 )
             self.detailed_print("Job created", self.job_name)
+
+            # Start log monitoring for K8s and Docker backends
+            logger.debug(
+                f"[ACTIONS] Checking if log monitoring should start for job {self.job_name}, "
+                f"BACKEND={BACKEND}"
+            )
+            if BACKEND in ("local-k8s", "local-docker"):
+                try:
+                    logger.debug(f"[ACTIONS] Starting log monitoring setup for job {self.job_name}")
+                    # Get callback URL if available
+                    callback_url = self.job_env_variables.get("TAO_LOGGING_SERVER_URL")
+                    logger.debug(f"[ACTIONS] Callback URL from env: {callback_url}")
+                    if callback_url:
+                        callback_url = callback_url + ":log_update"
+                        logger.debug(f"[ACTIONS] Full callback URL: {callback_url}")
+
+                    # Get namespace for K8s
+                    namespace = None
+                    if BACKEND == "local-k8s":
+                        namespace = os.getenv("NAMESPACE")
+                        logger.debug(f"[ACTIONS] K8s namespace from env: {namespace}")
+                        if not namespace:
+                            try:
+                                namespace_file = '/var/run/secrets/kubernetes.io/serviceaccount/namespace'
+                                logger.debug(f"[ACTIONS] Reading namespace from {namespace_file}")
+                                with open(namespace_file, 'r', encoding='utf-8') as f:
+                                    namespace = f.read().strip()
+                                logger.debug(f"[ACTIONS] Got namespace from service account: {namespace}")
+                            except Exception as e:
+                                namespace = "default"
+                                logger.debug(f"[ACTIONS] Using default namespace (error: {e})")
+
+                    # Start monitoring
+                    logger.info(f"[ACTIONS] Starting log monitoring for job {self.job_name}, namespace={namespace}")
+                    start_monitoring_job(
+                        self.job_name,
+                        callback_url=callback_url,
+                        namespace=namespace,
+                        metadata={
+                            'handler_id': self.handler_id,
+                            'handler_kind': 'experiment',
+                            'action': self.action,
+                            'network': self.network
+                        }
+                    )
+                    logger.info(f"[ACTIONS] Successfully started log monitoring for job {self.job_name}")
+                except Exception as e:
+                    logger.warning(
+                        f"[ACTIONS] Failed to start log monitoring for job {self.job_name}: "
+                        f"{type(e).__name__}: {e}"
+                    )
+                    logger.debug("[ACTIONS] Exception details:", exc_info=True)
+            else:
+                logger.debug(f"[ACTIONS] Skipping log monitoring for backend {BACKEND}")
+
             self.monitor_job()
             return
 
@@ -1061,7 +1153,9 @@ class AutoMLPipeline(ActionPipeline):
         """Initialize the AutoMLPipeline class"""
         super().__init__(job_context)
         self.network, self.action = get_microservices_network_and_action(self.network, self.action)
-        self.automl_brain_job_id = self.job_context.id
+        # For AutoML experiments: job_context.id is the experiment job ID
+        # and job_context.parent_id is the brain job ID
+        self.automl_brain_job_id = self.job_context.parent_id if self.job_context.parent_id else self.job_context.id
         self.job_root = os.path.join(
             get_jobs_root(self.job_context.user_id, self.job_context.org_name),
             self.automl_brain_job_id
@@ -1324,6 +1418,72 @@ class AutoMLPipeline(ActionPipeline):
                 f"AutoML recommendation with experiment id {self.rec_number} "
                 f"and job id {self.job_name} submitted"
             )
+
+            # Start log monitoring for AutoML recommendation job
+            logger.debug(
+                f"[ACTIONS] Checking if log monitoring should start for AutoML rec job "
+                f"{self.job_name}, BACKEND={BACKEND}"
+            )
+            if BACKEND in ("local-k8s", "local-docker"):
+                try:
+                    logger.debug(
+                        f"[ACTIONS] Starting log monitoring setup for AutoML rec job "
+                        f"{self.job_name} (experiment {self.rec_number})"
+                    )
+                    # Get callback URL if available
+                    callback_url = self.job_env_variables.get("TAO_LOGGING_SERVER_URL")
+                    logger.debug(f"[ACTIONS] AutoML callback URL from env: {callback_url}")
+                    if callback_url:
+                        callback_url = callback_url + ":log_update"
+                        logger.debug(f"[ACTIONS] AutoML full callback URL: {callback_url}")
+
+                    # Get namespace for K8s
+                    namespace = None
+                    if BACKEND == "local-k8s":
+                        namespace = os.getenv("NAMESPACE")
+                        logger.debug(f"[ACTIONS] AutoML K8s namespace from env: {namespace}")
+                        if not namespace:
+                            try:
+                                namespace_file = '/var/run/secrets/kubernetes.io/serviceaccount/namespace'
+                                logger.debug(f"[ACTIONS] Reading namespace from {namespace_file}")
+                                with open(namespace_file, 'r', encoding='utf-8') as f:
+                                    namespace = f.read().strip()
+                                logger.debug(f"[ACTIONS] Got namespace from service account: {namespace}")
+                            except Exception as e:
+                                namespace = "default"
+                                logger.debug(f"[ACTIONS] Using default namespace (error: {e})")
+
+                    # Start monitoring for this recommendation job
+                    logger.info(
+                        f"[ACTIONS] Starting log monitoring for AutoML recommendation job {self.job_name} "
+                        f"(experiment {self.rec_number}), namespace={namespace}"
+                    )
+                    start_monitoring_job(
+                        self.job_name,
+                        callback_url=callback_url,
+                        namespace=namespace,
+                        metadata={
+                            'handler_id': self.handler_id,
+                            'handler_kind': 'experiment',
+                            'action': self.action,
+                            'network': self.network,
+                            'automl_brain_job_id': self.automl_brain_job_id,
+                            'experiment_number': str(self.rec_number)
+                        }
+                    )
+                    logger.info(
+                        f"[ACTIONS] Successfully started log monitoring for AutoML recommendation job {self.job_name} "
+                        f"(experiment {self.rec_number})"
+                    )
+                except Exception as e:
+                    logger.warning(
+                        f"[ACTIONS] Failed to start log monitoring for AutoML job {self.job_name}: "
+                        f"{type(e).__name__}: {e}"
+                    )
+                    logger.debug("[ACTIONS] Exception details:", exc_info=True)
+            else:
+                logger.debug(f"[ACTIONS] Skipping log monitoring for backend {BACKEND}")
+
             self.monitor_job(nv_job_metadata)
 
             return True

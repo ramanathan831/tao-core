@@ -23,24 +23,26 @@ import subprocess
 import traceback
 # pylint: disable=c-extension-no-member
 import docker
-from nvidia_tao_core.microservices.utils.handler_utils import send_microservice_request
 from nvidia_tao_core.microservices.utils.core_utils import get_admin_key
+from nvidia_tao_core.microservices.utils.handler_utils import send_microservice_request
 if os.getenv("BACKEND") == "local-docker":
     from nvidia_tao_core.microservices.utils.job_utils.gpu_manager import gpu_manager
 else:
     gpu_manager = None  # type: ignore
 
 # Configure logging
+TAO_LOG_LEVEL = os.getenv('TAO_LOG_LEVEL', 'INFO').upper()
+tao_log_level = getattr(logging, TAO_LOG_LEVEL, logging.INFO)
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.WARNING,  # Root logger: suppress third-party DEBUG logs
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
+logging.getLogger('nvidia_tao_core').setLevel(tao_log_level)
 logger = logging.getLogger(__name__)
 
 DOCKER_NETWORK = os.getenv("DOCKER_NETWORK", "tao_default")
 DOCKER_USERNAME = os.getenv("DOCKER_USERNAME", "$oauthtoken")
 docker_client = docker.from_env() if os.getenv("DOCKER_HOST") else None
-DEBUG_MODE = os.getenv("DEBUG_MODE", "false").lower() in ("true", "1")
 
 
 def is_tegra_platform():
@@ -125,9 +127,7 @@ def docker_pull_progress(line):
         important_statuses = ['Pulling fs layer', 'Verifying Checksum', 'Download complete', 'Pull complete']
         if line['status'] in important_statuses:
             logger.info(f"Docker pull: {line['status']} for {line.get('id', 'unknown')}")
-        elif DEBUG_MODE:
-            # Only log other statuses in debug mode
-            logger.debug(f"Docker pull status: {line['status']} for {line.get('id', 'unknown')}")
+        logger.debug(f"Docker pull status: {line['status']} for {line.get('id', 'unknown')}")
 
 
 class DockerHandler:
@@ -284,12 +284,19 @@ class DockerHandler:
             device_requests = [docker.types.DeviceRequest(count=-1, capabilities=[["gpu"]])]
         return device_requests
 
-    def start_container(self, container_name="", docker_env_vars={}, command=[], num_gpus=-1, volumes=None):
+    def start_container(
+        self, container_name="", docker_env_vars={}, command=[], num_gpus=-1, volumes=None,
+        pre_assigned_gpu_ids=None
+    ):
         """Start a container with GPU access.
 
         Automatically detects the platform and uses the appropriate GPU access method:
         - Tegra/Jetson: Uses runtime="nvidia" with NVIDIA_VISIBLE_DEVICES
         - Standard x86: Uses device_requests
+
+        Args:
+            pre_assigned_gpu_ids: Optional list of GPU IDs already assigned by workflow.
+                                 If provided, skips GPU assignment and uses these directly.
 
         Args:
             container_name: Name for the container
@@ -306,8 +313,56 @@ class DockerHandler:
                     "Pulling a new docker.")
                 self.pull()
 
-            gpu_ids = gpu_manager.assign_gpus(container_name, num_gpus)
-            logger.info(f"Starting Container: {self._docker_image}")
+            # Check for pre-assigned GPUs in three places (in order of priority):
+            # 1. Passed directly as parameter
+            # 2. Stored in MongoDB job metadata (from workflow pre-assignment)
+            # 3. Assign new GPUs
+            gpu_ids = None
+
+            if pre_assigned_gpu_ids:
+                logger.debug(
+                    f"[GPU_ASSIGN] Using pre-assigned GPU IDs {pre_assigned_gpu_ids} "
+                    f"for container {container_name} (passed as parameter)"
+                )
+                gpu_ids = pre_assigned_gpu_ids
+            else:
+                # Check MongoDB for pre-assigned GPUs
+                from nvidia_tao_core.microservices.utils.stateless_handler_utils import get_handler_job_metadata
+                job_metadata = get_handler_job_metadata(container_name)
+                if job_metadata and "pre_assigned_gpu_ids" in job_metadata:
+                    gpu_ids = job_metadata["pre_assigned_gpu_ids"]
+                    logger.debug(
+                        f"[GPU_ASSIGN] Using pre-assigned GPU IDs {gpu_ids} "
+                        f"for container {container_name} (from workflow pre-assignment in MongoDB)"
+                    )
+
+            if not gpu_ids:
+                # Skip GPU assignment if num_gpus is 0 (job doesn't need GPUs)
+                if num_gpus == 0:
+                    logger.debug(
+                        f"[GPU_ASSIGN] Job {container_name} does not require GPUs (num_gpus=0), "
+                        f"skipping GPU assignment"
+                    )
+                    gpu_ids = []
+                else:
+                    logger.debug(f"[GPU_ASSIGN] Attempting to assign {num_gpus} GPU(s) for container {container_name}")
+                    gpu_ids = gpu_manager.assign_gpus(container_name, num_gpus)
+                    logger.debug(f"[GPU_ASSIGN] Assigned GPU IDs: {gpu_ids} for container {container_name}")
+
+                # This prevents containers from starting with "all" GPUs when none are available
+                # This should rarely happen now because:
+                # - Workflow jobs: pre-assignment prevents dequeue without GPUs
+                # - Direct spawns: availability check prevents calling start_container
+                # But keep this as a safety net
+                if num_gpus > 0 and num_gpus != -1 and not gpu_ids:
+                    error_msg = (
+                        f"[GPU_ASSIGN] FAILED: Cannot start container {container_name} - "
+                        f"requested {num_gpus} GPU(s) but no GPUs available."
+                    )
+                    logger.error(error_msg)
+                    raise RuntimeError(error_msg)
+
+            logger.debug(f"Starting Container: {self._docker_image}")
 
             # Determine GPU access method based on platform
             use_runtime = should_use_nvidia_runtime()
@@ -422,16 +477,29 @@ class DockerHandler:
         if self._container:
             logger.info(f"Making microservice request to container: {self._container.name}")
             base_url = f"http://{self._container.name}:{port}"
-            return send_microservice_request(
-                base_url,
-                api_endpoint,
-                network,
-                action,
-                cloud_metadata,
-                specs,
-                job_id,
-                docker_env_vars
-            )
+            try:
+                response = send_microservice_request(
+                    base_url,
+                    api_endpoint,
+                    network,
+                    action,
+                    cloud_metadata,
+                    specs,
+                    job_id,
+                    docker_env_vars
+                )
+            except requests.exceptions.ConnectionError as e:
+                logger.error("Exception caught during sending a microservice request %s", e)
+                # For get_job_status, return None so caller can handle gracefully
+                # For other endpoints, re-raise as it's a real error
+                if api_endpoint == "get_job_status":
+                    logger.info(f"Container {self._container.name} is not reachable (likely stopped), returning None")
+                    return None
+                raise e
+            except Exception as e:
+                logger.error("Exception caught during sending a microservice request %s", e)
+                raise e
+            return response
         logger.error("No container to make request to")
         return None
 

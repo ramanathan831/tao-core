@@ -27,7 +27,9 @@
 
     "cloud_upload": {
         "exclude_patterns": {
-            "train": ["\\.pth$"]
+            "train": ["\\.pth$"],
+            "evaluate": ["/merged/"],
+            "inference": ["/merged/"]
         },
         "upload_strategy": {
             "evaluate": "tarball_after_completion"

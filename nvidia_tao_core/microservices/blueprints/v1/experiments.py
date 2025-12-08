@@ -1984,8 +1984,17 @@ def experiment_job_pause(org_name, experiment_id, job_id):
             X-RateLimit-Limit:
               $ref: '#/components/headers/X-RateLimit-Limit'
     """
+    logger.debug(
+        f"[BLUEPRINT-PAUSE] Received pause request: org_name={org_name}, "
+        f"experiment_id={experiment_id}, job_id={job_id}"
+    )
+
     message = validate_uuid(experiment_id=experiment_id, job_id=job_id)
     if message:
+        logger.debug(
+            f"[BLUEPRINT-PAUSE] UUID validation failed: experiment_id={experiment_id}, "
+            f"job_id={job_id}, message={message}"
+        )
         metadata = {"error_desc": message, "error_code": 1}
         schema = ErrorRsp()
         response = make_response(jsonify(schema.dump(schema.load(metadata))), 400)
@@ -1993,10 +2002,13 @@ def experiment_job_pause(org_name, experiment_id, job_id):
 
     # Parse request body for graceful parameter
     request_data = request.get_json()
-    graceful = request_data.get("graceful", False)
+    graceful = request_data.get("graceful", False) if request_data else False
+    logger.debug(f"[BLUEPRINT-PAUSE] Parsed request parameters: job_id={job_id}, graceful={graceful}")
 
     # Get response
+    logger.debug(f"[BLUEPRINT-PAUSE] Calling JobHandler.job_pause: job_id={job_id}, graceful={graceful}")
     response = JobHandler.job_pause(org_name, experiment_id, job_id, "experiment", graceful=graceful)
+    logger.debug(f"[BLUEPRINT-PAUSE] JobHandler.job_pause completed: job_id={job_id}, response_code={response.code}")
     # Get schema
     if response.code == 200:
         schema = MessageOnly()
@@ -2079,14 +2091,25 @@ def experiment_job_cancel(org_name, experiment_id, job_id):
             X-RateLimit-Limit:
               $ref: '#/components/headers/X-RateLimit-Limit'
     """
+    logger.debug(
+        f"[BLUEPRINT-CANCEL] Received cancel request: org_name={org_name}, "
+        f"experiment_id={experiment_id}, job_id={job_id}"
+    )
+
     message = validate_uuid(experiment_id=experiment_id, job_id=job_id)
     if message:
+        logger.debug(
+            f"[BLUEPRINT-CANCEL] UUID validation failed: experiment_id={experiment_id}, "
+            f"job_id={job_id}, message={message}"
+        )
         metadata = {"error_desc": message, "error_code": 1}
         schema = ErrorRsp()
         response = make_response(jsonify(schema.dump(schema.load(metadata))), 400)
         return response
     # Get response
+    logger.debug(f"[BLUEPRINT-CANCEL] Calling JobHandler.job_cancel: job_id={job_id}")
     response = JobHandler.job_cancel(org_name, experiment_id, job_id, "experiment")
+    logger.debug(f"[BLUEPRINT-CANCEL] JobHandler.job_cancel completed: job_id={job_id}, response_code={response.code}")
     # Get schema
     if response.code == 200:
         schema = MessageOnly()
@@ -2175,8 +2198,17 @@ def experiment_job_resume(org_name, experiment_id, job_id):
             X-RateLimit-Limit:
               $ref: '#/components/headers/X-RateLimit-Limit'
     """
+    logger.debug(
+        f"[BLUEPRINT-RESUME] Received resume request: org_name={org_name}, "
+        f"experiment_id={experiment_id}, job_id={job_id}"
+    )
+
     message = validate_uuid(experiment_id=experiment_id, job_id=job_id)
     if message:
+        logger.debug(
+            f"[BLUEPRINT-RESUME] UUID validation failed: experiment_id={experiment_id}, "
+            f"job_id={job_id}, message={message}"
+        )
         metadata = {"error_desc": message, "error_code": 1}
         schema = ErrorRsp()
         response = make_response(jsonify(schema.dump(schema.load(metadata))), 400)
@@ -2193,7 +2225,13 @@ def experiment_job_resume(org_name, experiment_id, job_id):
     if parent_job_id:
         parent_job_id = str(parent_job_id)
     specs = request_schema_data.get('specs', {})
+    logger.debug(
+        f"[BLUEPRINT-RESUME] Parsed request parameters: job_id={job_id}, name={name}, "
+        f"num_gpu={num_gpu}, backend_details={backend_details}, "
+        f"timeout_minutes={timeout_minutes}, has_specs={bool(specs)}"
+    )
     # Get response
+    logger.debug(f"[BLUEPRINT-RESUME] Calling ExperimentHandler.resume_experiment_job: job_id={job_id}")
     response = ExperimentHandler.resume_experiment_job(
         org_name,
         experiment_id,
@@ -2206,6 +2244,10 @@ def experiment_job_resume(org_name, experiment_id, job_id):
         num_gpu=num_gpu,
         timeout_minutes=timeout_minutes,
         backend_details=backend_details
+    )
+    logger.debug(
+        f"[BLUEPRINT-RESUME] ExperimentHandler.resume_experiment_job completed: "
+        f"job_id={job_id}, response_code={response.code}"
     )
     # Get schema
     if response.code == 200:

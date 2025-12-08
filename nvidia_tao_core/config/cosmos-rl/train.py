@@ -213,7 +213,6 @@ class LoraConfig:
         description="Per-module overrides for LoRA rank r. Keys are regex patterns; "
                     "evaluated in insertion order, first match wins. Example: "
                     "{'visual\\..*': 16, 'attn.*': 8}",
-        automl_enabled="TRUE"
     )
 
     lora_alpha: int = INT_FIELD(
@@ -233,7 +232,6 @@ class LoraConfig:
         description="Per-module overrides for lora_alpha. Keys are regex patterns; "
                     "evaluated in insertion order, first match wins. Example: "
                     "{'visual\\..*': 32.0, 'attn.*': 16.0}",
-        automl_enabled="TRUE"
     )
 
     lora_dropout: float = FLOAT_FIELD(
@@ -254,7 +252,6 @@ class LoraConfig:
         display_name="LoRA target modules",
         description="LoRA target modules, subset of valid options. Can be a list of strings or 'all-linear'. "
                     "Cannot include attn.qkv or attn.proj if modules_to_save contains 'visual'",
-        automl_enabled="TRUE",
         depends_on="policy.lora.modules_to_save"
     )
 
@@ -273,7 +270,6 @@ class LoraConfig:
         display_name="Modules to save",
         description="List of modules apart from LoRA layers to be set as trainable "
                     "and saved in the final checkpoint. Can be None or ['visual']",
-        automl_enabled="TRUE",
         parent_param="TRUE",
         default_value=[]
     )
@@ -440,14 +436,12 @@ class TrainConfig:
         valid_options="AdamW,Adam",
         display_name="Optimizer name",
         description="Name of the optimizer to use.",
-        automl_enabled="TRUE"
     )
 
     optm_betas: List[float] = LIST_FIELD(
         arrList=[0.9, 0.999],
         display_name="Optimizer betas",
         description="Beta parameters for Adam/AdamW optimizer.",
-        automl_enabled="TRUE",
         value_type="list_2",
         valid_min=[0.8, 0.9],
         valid_max=[0.95, 0.999]
@@ -462,7 +456,6 @@ class TrainConfig:
         math_cond="/ 2",
         display_name="Warmup epochs",
         description="Number of warmup epochs for learning rate scheduler (epochs / 2).",
-        automl_enabled="TRUE",
         depends_on="train.epoch"
     )
     optm_decay_type: str = STR_FIELD(

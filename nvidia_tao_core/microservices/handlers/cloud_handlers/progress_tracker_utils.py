@@ -83,11 +83,21 @@ def send_progress_status_callback(message):
 
     For cloud-based jobs: sends HTTP callback to server
     For SLURM jobs: writes to status.json so microservices can pick it up
+    Also notifies inference microservice progress bridge for real-time progress updates.
 
     Args:
         message (str): Progress message to send
     """
     try:
+        # Notify inference microservice progress bridge (if registered)
+        try:
+            job_id = os.getenv("TAO_API_JOB_ID")
+            if job_id:
+                from nvidia_tao_core.microservices.handlers.inference_progress_bridge import notify_progress
+                notify_progress(job_id, message)
+        except Exception as e:
+            logger.debug(f"Could not notify inference progress bridge: {e}")
+
         if os.getenv("CLOUD_BASED") == "True":
             # Use status_callback (HTTP) instead of internal_job_status_update (MongoDB)
             # Job pods don't have MongoDB access, so we send via HTTP to the server
