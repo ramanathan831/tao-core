@@ -32,8 +32,10 @@ from nvidia_tao_core.microservices.utils.automl_utils import apply_automl_custom
 from nvidia_tao_core.microservices.utils.stateless_handler_utils import (
     check_read_access,
     check_write_access,
+    get_automl_controller_info,
     get_handler_status,
     get_automl_current_rec,
+    get_automl_best_rec_info,
     get_handler_job_metadata,
     get_handler_metadata,
     write_handler_metadata,
@@ -96,7 +98,7 @@ class JobHandler:
         name=None,
         description=None,
         num_gpu=-1,
-        platform_id=None,
+        backend_details=None,
         job_id=None,
         from_ui=False,
         retain_checkpoints_for_resume=False,
@@ -121,7 +123,8 @@ class JobHandler:
             name (str, optional): The job's name.
             description (str, optional): The job's description.
             num_gpu (int, optional): The number of GPUs to allocate.
-            platform_id (str, optional): The platform ID for job execution.
+            backend_details (dict, optional): Backend-specific execution details
+                (partition, cluster_name, platform_id, etc.).
             job_id (str, optional): The ID of the job to be created (auto-generated if not provided).
             from_ui (bool, optional): Indicates whether the job call is from the UI.
             retain_checkpoints_for_resume (bool, optional): Whether to retain .pth checkpoints for training resume.
@@ -134,6 +137,11 @@ class JobHandler:
                   - 400: If job execution was unsuccessful.
                   - 404: If dataset/experiment/action not found or access is denied.
         """
+        # Extract platform_id from backend_details
+        platform_id = None
+        if backend_details and backend_details.get('backend_type') in ["nvcf", "lepton"]:
+            platform_id = backend_details.get('platform_id')
+
         handler_metadata = resolve_metadata(kind, handler_id)
         if not handler_metadata:
             return Code(404, [], f"{handler_id} {kind} doesn't exist")
@@ -266,7 +274,7 @@ class JobHandler:
                     job_id,
                     handler_metadata,
                     name=name,
-                    platform_id=platform_id,
+                    backend_details=backend_details,
                     retain_checkpoints_for_resume=retain_checkpoints_for_resume,
                     timeout_minutes=timeout_minutes
                 )
@@ -286,7 +294,7 @@ class JobHandler:
                     name=name,
                     description=description,
                     num_gpu=num_gpu,
-                    platform_id=platform_id,
+                    backend_details=backend_details,
                     retain_checkpoints_for_resume=retain_checkpoints_for_resume,
                     early_stop_epoch=early_stop_epoch,
                     timeout_minutes=timeout_minutes
@@ -329,9 +337,9 @@ class JobHandler:
         specs = job_metadata.get('specs')
         name = job_metadata.get('name', "Job") + " Retry"
         description = job_metadata.get('description')
-        platform_id = job_metadata.get('platform_id')
+        backend_details = job_metadata.get('backend_details')
         job_response = JobHandler.job_run(org_name, handler_id, parent_job_id, action, kind, specs, name, description,
-                                          platform_id=platform_id, from_ui=from_ui)
+                                          backend_details=backend_details, from_ui=from_ui)
         return job_response
 
     @staticmethod
@@ -407,9 +415,14 @@ class JobHandler:
             return Code(404, [], "job trying to update not found")
 
         automl = False
+        experiment_number = "0"
         if is_request_automl(handler_id, action, kind) and action == "train":
             automl = True
-        save_dnn_status(job_id, automl, callback_data, handler_id=handler_id, kind=kind)
+            # Extract experiment_number from callback_data for automl jobs
+            experiment_number = callback_data.get("experiment_number", "0")
+        save_dnn_status(
+            job_id, automl, callback_data, experiment_number=experiment_number, handler_id=handler_id, kind=kind
+        )
         return Code(200, [], "Job status updated")
 
     @staticmethod
@@ -481,6 +494,78 @@ class JobHandler:
         return Code(200, return_metadata, "Jobs retrieved")
 
     @staticmethod
+    def augment_automl_job_info(job_id, job_meta):
+        """Augment job metadata with AutoML-specific information.
+
+        This function enriches the job_meta for AutoML jobs by:
+        1. Adding best experiment ID to automl_brain_info
+        2. Adding best metric value to automl_result for completed jobs
+        3. Adding specs to each experiment in job_details
+
+        Parameters:
+        job_id (str): UUID of the AutoML brain job
+        job_meta (dict): Job metadata dictionary to augment
+
+        Returns:
+        None: Modifies job_meta in place
+        """
+        try:
+            # Get controller data
+            automl_controller_data = get_automl_controller_info(job_id)
+
+            if not automl_controller_data:
+                return
+
+            job_details = job_meta.get("job_details", {})
+            brain_job_details = job_details.get(job_id, {})
+            automl_brain_info = brain_job_details.get("automl_brain_info", [])
+            automl_result = brain_job_details.get("automl_result", [])
+
+            # Get metric name for later use
+            metric_name = automl_controller_data[0].get("metric")
+
+            # Add best experiment id to automl_brain_info
+            best_rec_number, _ = get_automl_best_rec_info(job_id)
+            if best_rec_number and best_rec_number != "-1":
+                # Check if best experiment id is already in the list (added by controller)
+                has_best_exp_id = any(item.get("metric") == "Best experiment id" for item in automl_brain_info)
+                if not has_best_exp_id:
+                    # Add it if not already present (value must be string for automl_brain_info)
+                    automl_brain_info.append({
+                        "metric": "Best experiment id",
+                        "value": str(best_rec_number)
+                    })
+
+                # Add best metric value to automl_result if not already present
+                best_exp_id = int(best_rec_number)
+                if best_exp_id < len(automl_controller_data):
+                    best_exp_data = automl_controller_data[best_exp_id]
+                    best_metric_value = best_exp_data.get("result")
+                    if best_metric_value is not None and metric_name:
+                        best_metric_key = f"best_{metric_name}"
+                        has_best_metric = any(item.get("metric") == best_metric_key for item in automl_result)
+                        if not has_best_metric:
+                            automl_result.append({
+                                "metric": best_metric_key,
+                                "value": best_metric_value
+                            })
+
+            # Update brain_job_details with modified automl_brain_info and automl_result
+            if automl_brain_info:
+                brain_job_details["automl_brain_info"] = automl_brain_info
+            if automl_result:
+                brain_job_details["automl_result"] = automl_result
+
+            # Add specs to each experiment job in job_details
+            for experiment_details in automl_controller_data:
+                exp_job_id = experiment_details.get("job_id", "")
+                if exp_job_id and exp_job_id in job_details:
+                    job_details[exp_job_id]["specs"] = experiment_details.get("specs", {})
+        except Exception as e:
+            logger.error(f"Error adding AutoML information to job_retrieve: {e}")
+            logger.error(traceback.format_exc())
+
+    @staticmethod
     def job_retrieve(org_name, handler_id, job_id, kind, return_specs=False):
         """Retrieve the specified job based on its ID and kind (experiment or dataset).
 
@@ -508,9 +593,23 @@ class JobHandler:
         if not job_meta:
             return Code(404, {}, "Job trying to retrieve not found")
         job_meta.pop('num_gpu', None)
+
+        # Check if this is an AutoML job
+        is_automl_job = (
+            job_meta.get("action") == "train" and
+            handler_metadata.get("automl_settings", {}).get("automl_enabled", False)
+        )
+
+        # Remove top-level specs (not needed in response)
+        # For AutoML, specs will be added per-experiment in job_details
         if not return_specs:
             if "specs" in job_meta:
                 _ = job_meta.pop("specs")
+
+        # For AutoML jobs, add AutoML-specific information
+        if is_automl_job:
+            JobHandler.augment_automl_job_info(job_id, job_meta)
+
         return Code(200, job_meta, "Job retrieved")
 
     @staticmethod

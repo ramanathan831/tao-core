@@ -250,6 +250,11 @@ class Recommendation:
         self.best_epoch_number = ""
         self.metric = metric
 
+        # Add timestamps for timeout tracking
+        current_time = datetime.datetime.now(tz=datetime.timezone.utc).isoformat()
+        self.created_on = current_time
+        self.last_modified = current_time
+
     def items(self):
         """Returns specs.items"""
         return self.specs.items()
@@ -263,6 +268,9 @@ class Recommendation:
         assert type(job_id) is str, f"Job ID must be a string, got {type(job_id)}"
         self.job_id = job_id
 
+        # Update last_modified timestamp when job is assigned
+        self.last_modified = datetime.datetime.now(tz=datetime.timezone.utc).isoformat()
+
     def update_result(self, result):
         """Update the result value"""
         result = float(result)
@@ -273,6 +281,9 @@ class Recommendation:
         """Update the status value"""
         assert type(status) is str, f"Status must be a string, got {type(status)}"
         self.status = status
+
+        # Update last_modified timestamp when status changes
+        self.last_modified = datetime.datetime.now(tz=datetime.timezone.utc).isoformat()
 
     def __repr__(self):
         """Constructs a dictionary with the class members and returns them"""
@@ -333,10 +344,12 @@ def update_automl_details_metadata(brain_job_id, handler_id, handler_kind="exper
         for experiment_details in automl_controller_data:
             automl_interpretable_result["metric"] = experiment_details.get("metric")
             exp_id = experiment_details.get("id")
-            automl_interpretable_result["experiments"][exp_id] = {}
-            automl_interpretable_result["experiments"][exp_id]["result"] = experiment_details.get("result")
-            automl_interpretable_result["experiments"][exp_id]["status"] = experiment_details.get("status")
-            automl_interpretable_result["experiments"][exp_id]["specs"] = experiment_details.get("specs", {})
+            # Convert exp_id to string for MongoDB compatibility (MongoDB requires string keys)
+            exp_id_str = str(exp_id)
+            automl_interpretable_result["experiments"][exp_id_str] = {}
+            automl_interpretable_result["experiments"][exp_id_str]["result"] = experiment_details.get("result")
+            automl_interpretable_result["experiments"][exp_id_str]["status"] = experiment_details.get("status")
+            automl_interpretable_result["experiments"][exp_id_str]["specs"] = experiment_details.get("specs", {})
 
         # Get the best experiment id from the automl_jobs table
         best_rec_number, _ = get_automl_best_rec_info(brain_job_id)

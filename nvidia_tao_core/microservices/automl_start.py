@@ -13,7 +13,6 @@
 # limitations under the License.
 
 """AutoML main handler"""
-import ast
 import argparse
 import traceback
 import json
@@ -224,8 +223,9 @@ if __name__ == "__main__":
     )
 
     parser.add_argument(
-        '--platform_id',
+        '--backend_details',
         type=str,
+        help='Backend details as JSON string'
     )
 
     args = parser.parse_args()
@@ -237,7 +237,9 @@ if __name__ == "__main__":
     try:
         root = args.root
         name = args.name
-        platform_id = args.platform_id
+        backend_details = None
+        if args.backend_details:
+            backend_details = json.loads(args.backend_details)
         specs = get_job_specs(automl_job_id)
 
         # Get retain_checkpoints_for_resume from CLI argument
@@ -253,7 +255,7 @@ if __name__ == "__main__":
             org_name,
             "experiment",
             name=name,
-            platform_id=platform_id,
+            backend_details=backend_details,
             specs=specs,
             retain_checkpoints_for_resume=retain_checkpoints_for_resume,
             timeout_minutes=timeout_minutes
@@ -266,7 +268,8 @@ if __name__ == "__main__":
         automl_nu = args.automl_nu
         metric = args.metric
         epoch_multiplier = args.epoch_multiplier
-        automl_hyperparameters = ast.literal_eval(args.automl_hyperparameters)
+        # Parse automl_hyperparameters - normalized to JSON by handler
+        automl_hyperparameters = json.loads(args.automl_hyperparameters)
         override_automl_disabled_params = args.override_automl_disabled_params == "True"
         decrypted_workspace_metadata = args.decrypted_workspace_metadata
         automl_start(

@@ -155,7 +155,7 @@ def job_create(org_name):
     name = request_dict.get('name', '')
     description = request_dict.get('description', '')
     num_gpu = request_dict.get('num_gpu', -1)
-    platform_id = request_dict.get('platform_id', None)
+    backend_details = request_dict.get('backend_details', None)
     retain_checkpoints_for_resume = request_dict.get('retain_checkpoints_for_resume', None)
     early_stop_epoch = request_dict.get('early_stop_epoch', None)
     timeout_minutes = request_dict.get('timeout_minutes', 60)
@@ -203,7 +203,7 @@ def job_create(org_name):
         action,
         kind,
         specs=specs, name=name, description=description, num_gpu=num_gpu,
-        platform_id=platform_id,
+        backend_details=backend_details,
         job_id=experiment_id if kind == 'experiment' else None,
         retain_checkpoints_for_resume=retain_checkpoints_for_resume,
         early_stop_epoch=early_stop_epoch,
@@ -1139,7 +1139,7 @@ def specs_schema(org_name):
     datasets = request.args.getlist('datasets')
     job_id = request.args.get('job_id')
     base_experiment_id = request.args.get('base_experiment_id')
-    response = make_response("missing network, base_experiment_id or job_id", 400)  # default response
+    response = None
     if base_experiment_id:
         message = validate_uuid(experiment_id=base_experiment_id)
         if message:
@@ -1182,6 +1182,11 @@ def specs_schema(org_name):
     elif network:
         response = SpecHandler.get_spec_schema_without_handler_id(
             org_name, network, dataset_format, action, datasets)
+    else:
+        metadata = {"error_desc": "missing network, base_experiment_id or job_id", "error_code": 1}
+        schema = ErrorRsp()
+        schema_dict = schema.dump(schema.load(metadata))
+        return make_response(jsonify(schema_dict), 400)
     if response.code != 200:
         schema = ErrorRsp()
         schema_dict = schema.dump(schema.load(response.data))
@@ -1792,7 +1797,7 @@ def job_resume(org_name, job_id):
     name = request_schema_data.get('name', '')
     description = request_schema_data.get('description', '')
     num_gpu = request_schema_data.get('num_gpu', -1)
-    platform_id = request_schema_data.get('platform_id', None)
+    backend_details = request_schema_data.get('backend_details', None)
     timeout_minutes = request_schema_data.get('timeout_minutes', 60)
     if parent_job_id:
         parent_job_id = str(parent_job_id)
@@ -1807,8 +1812,8 @@ def job_resume(org_name, job_id):
         name=name,
         description=description,
         num_gpu=num_gpu,
-        platform_id=platform_id,
-        timeout_minutes=timeout_minutes
+        timeout_minutes=timeout_minutes,
+        backend_details=backend_details
     )
     schema = MessageOnly() if response.code == 200 else ErrorRsp()
     schema_dict = schema.dump(schema.load(response.data))

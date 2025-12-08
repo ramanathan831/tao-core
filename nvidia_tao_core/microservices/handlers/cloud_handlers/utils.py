@@ -60,12 +60,13 @@ def _untar_file(tar_path, dest, strip_components=0):
             tar.extract(member, path=dest, set_attrs=False)
 
 
-def _extract_images(tar_path, dest):
+def _extract_images(tar_path, dest, remove_tar=True):
     """Function to extract images, other directories on same level as images to root of dataset.
 
     Args:
         tar_path (str): The path to the tar file.
         dest (str): The destination directory where the contents will be extracted.
+        remove_tar (bool): Whether to remove the tar file after extraction. Default: True
     """
     # Infer how many components to strip to get images,labels to top of dataset directory
     # Assumes: images, other necessary directories are in the same level
@@ -81,10 +82,13 @@ def _extract_images(tar_path, dest):
     _untar_file(tar_path, dest, strip_components)
     logger.info("Untarring data complete")
 
-    # Remove .tar.gz file
-    logger.info("Removing data tar file")
-    os.remove(tar_path)
-    logger.info("Deleted data tar file")
+    # Remove .tar.gz file (optional)
+    if remove_tar:
+        logger.info("Removing data tar file")
+        os.remove(tar_path)
+        logger.info("Deleted data tar file")
+    else:
+        logger.info("Keeping tar file (remove_tar=False)")
 
 
 def search_for_ptm(root, network="", parameter_name=""):
@@ -406,7 +410,8 @@ def upload_files(local_path, cloud_storage, file_last_modified=None,
 def get_log_file_name():
     """Return log file name"""
     job_id = os.getenv("JOB_ID")
-    logs_dir = os.getenv('TAO_MICROSERVICES_TTY_LOG', '/results')
+    # Use TAO_API_RESULTS_DIR for SLURM compatibility, fallback to /results
+    logs_dir = os.getenv('TAO_MICROSERVICES_TTY_LOG') or os.getenv('TAO_API_RESULTS_DIR', '/results')
     log_file = f'{logs_dir}/{job_id}/microservices_log.txt'
     return log_file
 
@@ -716,8 +721,37 @@ def monitor_and_upload(local_path, cloud_storage, exit_event, seek_position=0,
 
 
 def get_file_path_from_cloud_string(value):
-    """Get the cloud storage class object from the value"""
-    csp_provider = value.split(":")[0]
+    """Get the cloud storage class object from the value
+
+    Args:
+        value (str): Path string with protocol (e.g., aws://bucket/path, lustre://path)
+
+    Returns:
+        tuple: (csp_provider, bucket_name, cloud_file_path)
+               For local mounts (lustre, file, local), bucket_name is empty string
+    """
+    csp_provider = value.split(":")[0].lower()
+
+    # Normalize s3:// to aws://
+    if csp_provider == "s3":
+        csp_provider = "aws"
+
+    # Handle local filesystem protocols (no bucket concept)
+    if csp_provider in ['lustre', 'file', 'local', 'slurm']:
+        # Format: protocol://path
+        cloud_file_path = value.split("://", 1)[1] if "://" in value else value
+
+        # For SLURM, skip the "None" placeholder bucket name
+        # Format: slurm://None/actual/path -> /actual/path
+        if csp_provider == 'slurm' and cloud_file_path.startswith('None/'):
+            cloud_file_path = cloud_file_path[5:]  # Skip "None/"
+
+        # Ensure path starts with /
+        if not cloud_file_path.startswith('/'):
+            cloud_file_path = '/' + cloud_file_path
+        return csp_provider, '', cloud_file_path
+
+    # Handle cloud protocols with bucket (aws, azure, seaweedfs)
     bucket_name = value.split("//")[1].split("/")[0]
     cloud_file_path = value[value.find(bucket_name) + len(bucket_name):]
     return csp_provider, bucket_name, cloud_file_path
@@ -726,6 +760,17 @@ def get_file_path_from_cloud_string(value):
 def get_cloud_storage_class_object(cloud_data, cloud_string):
     """Initalize Apache LibCloud class"""
     csp_provider, bucket_name, cloud_file_path = get_file_path_from_cloud_string(cloud_string)
+
+    # Handle local filesystem and SLURM protocols (no cloud credentials needed)
+    if csp_provider in ['lustre', 'file', 'local', 'slurm']:
+        # For SLURM, files are directly accessible on Lustre mount - no cloud storage needed
+        # For other local protocols (lustre, file, local), also skip cloud storage
+        # These are used when jobs run on nodes with direct filesystem access
+        while cloud_file_path.find("//") != -1:
+            cloud_file_path = cloud_file_path.replace("//", "/")
+        return None, cloud_file_path
+
+    # Handle cloud protocols with credentials
     cloud_storage = initialize_cloud_storage(
         cloud_type=csp_provider,
         bucket_name=bucket_name,
@@ -745,6 +790,40 @@ def download_from_user_storage(
 ):
     """Download a file/folder from user storage"""
     try:
+        # Check if this is a local filesystem path (SLURM, Lustre, file, local)
+        # These paths are directly accessible - no download needed
+        if value.startswith(("slurm://", "lustre://", "file://", "local://")):
+            protocol, _, cloud_file_path = get_file_path_from_cloud_string(value)
+            # Clean up double slashes
+            while cloud_file_path.find("//") != -1:
+                cloud_file_path = cloud_file_path.replace("//", "/")
+
+            logger.info(f"{protocol.upper()} path detected - skipping download, using direct path: {cloud_file_path}")
+
+            # Check if it's a tar file that needs extraction
+            if cloud_file_path.endswith(".tar.gz") or cloud_file_path.endswith(".tar"):
+                extraction_dir = cloud_file_path.replace(".tar.gz", "").replace(".tar", "")
+
+                # Check if tar file exists and extracted directory doesn't
+                if os.path.exists(cloud_file_path) and not os.path.exists(extraction_dir):
+                    logger.info(f"Extracting SLURM tar file (keeping original): {cloud_file_path}")
+                    _extract_images(cloud_file_path, os.path.dirname(cloud_file_path), remove_tar=False)
+                    logger.info(f"Extracted to: {extraction_dir}")
+                elif os.path.exists(extraction_dir):
+                    logger.info(f"SLURM extracted directory already exists: {extraction_dir}")
+                else:
+                    logger.warning(f"SLURM tar file not found: {cloud_file_path}")
+
+                # Return the extracted directory path
+                if reset_value and dictionary and key:
+                    dictionary[key] = extraction_dir
+                return extraction_dir
+
+            # Not a tar file - return as-is
+            if reset_value and dictionary and key:
+                dictionary[key] = cloud_file_path
+            return cloud_file_path
+
         if not cloud_storage:
             cloud_storage, cloud_file_path = get_cloud_storage_class_object(cloud_data, value)
         else:
@@ -941,6 +1020,37 @@ def download_files_from_cloud(
             reset_value=reset_value,
             progress_tracker=progress_tracker
         )
+
+    # Handle plain absolute paths for tar files (SLURM case)
+    # This runs in the job container where Lustre is mounted, so we can extract if needed
+    if isinstance(value, str) and os.path.isabs(value):
+        if value.endswith(".tar.gz") or value.endswith(".tar"):
+            extraction_dir = value.replace(".tar.gz", "").replace(".tar", "")
+
+            # Check if tar file exists and needs extraction
+            if os.path.exists(value):
+                if not os.path.exists(extraction_dir):
+                    try:
+                        _extract_images(value, os.path.dirname(value), remove_tar=False)
+                    except Exception as e:
+                        logger.error(f"Failed to extract {value}: {e}")
+                        return value
+                else:
+                    logger.info(f"Extracted directory already exists: {extraction_dir}")
+            else:
+                # Tar file doesn't exist, but maybe directory does
+                if os.path.exists(extraction_dir):
+                    logger.info(f"Tar file not found, but directory exists: {extraction_dir}")
+                else:
+                    logger.warning(f"Neither tar file nor extracted directory found: {value}")
+                    return value
+
+            # Update dictionary to use extracted directory
+            if reset_value and dictionary and key:
+                dictionary[key] = extraction_dir
+
+            return extraction_dir
+
     return None
 
 
@@ -1210,6 +1320,12 @@ def get_results_cloud_data(cloud_data, spec_data, dest_dir=None):
         cloud_storage, cloud_file_path = get_cloud_storage_class_object(cloud_data, results_dir)
         spec_data["results_dir"] = cloud_file_path
         return cloud_storage, spec_data
+
+    # Check if results_dir is an absolute path (e.g., Slurm Lustre paths)
+    if os.path.isabs(results_dir):
+        # Use the absolute path as-is, don't prepend dest_dir
+        return None, spec_data
+
     if not dest_dir:
         cleanup_cuda_contexts()
         raise ValueError("Destination directory is not provided")

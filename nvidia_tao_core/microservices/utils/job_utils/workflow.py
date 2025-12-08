@@ -108,7 +108,7 @@ class Job(PrioritizedItem, IdedItem):
     kind: str = field(compare=False, default=None)
     specs: dict = field(compare=False, default=None)
     num_gpu: int = field(compare=False, default=0)
-    platform_id: uuid.UUID = field(compare=False, default=uuid.uuid4())
+    backend_details: dict = field(compare=False, default=None)
     workflow_status: str = field(compare=False, default=None)
     retain_checkpoints_for_resume: bool = field(compare=False, default=False)
     early_stop_epoch: int = field(compare=False, default=None)
@@ -200,7 +200,11 @@ def write_job(job):
 
 
 def check_for_timed_out_jobs():
-    """Check all running jobs and AutoML experiments for timeouts and terminate timed out ones"""
+    """Check all running jobs and AutoML experiments for timeouts and terminate timed out ones
+
+    Note: SLURM status syncing happens automatically in get_job_status() for each job,
+    so no separate sync loop is needed here.
+    """
     # Check if timeout monitoring is enabled
     timeout_monitoring_enabled = os.getenv("JOB_TIMEOUT_MONITORING_ENABLED", "true").lower() in ("true", "1")
     if not timeout_monitoring_enabled:
@@ -504,7 +508,7 @@ class Workflow:
             name = job_dict.get("name")
             org_name = job_dict.get("org_name")
             specs = job_dict.get("specs")
-            platform_id = job_dict.get("platform_id")
+            backend_details = job_dict.get("backend_details")
             retain_checkpoints_for_resume = job_dict.get("retain_checkpoints_for_resume", False)
             early_stop_epoch = job_dict.get("early_stop_epoch", None)
             timeout_minutes = job_dict.get("timeout_minutes", None)
@@ -561,10 +565,10 @@ class Workflow:
                 name=name,
                 num_gpu=num_gpu,
                 specs=specs,
-                platform_id=platform_id,
                 retain_checkpoints_for_resume=retain_checkpoints_for_resume,
                 early_stop_epoch=early_stop_epoch,
-                timeout_minutes=timeout_minutes
+                timeout_minutes=timeout_minutes,
+                backend_details=backend_details
             )
             # If job has yet to be executed, skip monitoring
             if still_exists(job_context):
@@ -622,10 +626,10 @@ class Workflow:
                                 kind,
                                 name=name,
                                 num_gpu=num_gpu,
-                                platform_id=platform_id,
                                 retain_checkpoints_for_resume=retain_checkpoints_for_resume,
                                 early_stop_epoch=early_stop_epoch,
-                                timeout_minutes=timeout_minutes
+                                timeout_minutes=timeout_minutes,
+                                backend_details=backend_details
                             )
                             automl_context.dependencies = deps
                             from nvidia_tao_core.microservices.handlers.actions import AutoMLPipeline

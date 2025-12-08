@@ -23,6 +23,7 @@ import sys
 import shlex
 import shutil
 import subprocess
+import threading
 from contextlib import contextmanager
 from time import time
 import logging
@@ -148,10 +149,14 @@ def vlm_launch(neural_network_name, action, specs, job_id=""):
 
         train_args = ""
         if action == "train":
-            train_args = f"{lepton_args} --port 8080 --rdzv-port 29345 scripts/custom_sft.py"
+            train_args = f"{lepton_args} scripts/custom_sft.py"
+        # Use TAO_API_RESULTS_DIR for SLURM compatibility, fallback to /results
+        results_base = os.getenv('TAO_API_RESULTS_DIR', '/results')
+        logger.info(f"results_base: {results_base}")
         launch_cmd = (
-            f"{neural_network_name}-{action} --config /results/{job_id}/spec.toml {train_args}"
+            f"{neural_network_name}-{action} --config {results_base}/{job_id}/spec.toml {train_args}"
         )
+        logger.info(f"launch_cmd: {launch_cmd}")
         command = ["/bin/bash", "-c", launch_cmd]
     else:
         cli_args = convert_dict_to_cli_args(specs)
@@ -163,7 +168,8 @@ def vlm_launch(neural_network_name, action, specs, job_id=""):
         # Run the script.
         log_file = ""
         if os.getenv("JOB_ID"):
-            logs_dir = os.getenv('TAO_MICROSERVICES_TTY_LOG', '/results')
+            # Use TAO_API_RESULTS_DIR for SLURM compatibility, fallback to /results
+            logs_dir = os.getenv('TAO_MICROSERVICES_TTY_LOG') or os.getenv('TAO_API_RESULTS_DIR', '/results')
             log_file = f"{logs_dir}/{os.getenv('JOB_ID')}/microservices_log.txt"
 
         progress_bar_pattern = re.compile(r"Epoch \d+: \s*\d+%|\[.*\]")
@@ -173,12 +179,31 @@ def vlm_launch(neural_network_name, action, specs, job_id=""):
             proc = subprocess.Popen(  # pylint: disable=R1732
                 command,
                 stdout=subprocess.PIPE,
-                stderr=subprocess.STDOUT,
+                stderr=subprocess.PIPE,  # Capture stderr separately
                 bufsize=1,  # Line-buffered
                 universal_newlines=True  # Text mode
             )
             last_progress_bar_line = None
 
+            def handle_stderr():
+                """Thread to handle stderr output separately to ensure errors are captured."""
+                try:
+                    for line in proc.stderr:
+                        # Prefix stderr with [STDERR] to distinguish error output
+                        error_line = f"[STDERR] {line}" if not line.startswith('[STDERR]') else line
+                        stdout_target.write(error_line)
+                        stdout_target.flush()
+                        if log_target:
+                            log_target.write(error_line)
+                            log_target.flush()
+                except Exception as e:
+                    logger.error(f"Error in stderr handler thread: {e}")
+
+            # Start stderr handler thread
+            stderr_thread = threading.Thread(target=handle_stderr, daemon=True)
+            stderr_thread.start()
+
+            # Handle stdout in main thread
             for line in proc.stdout:
                 # Check if the line contains \r or matches the progress bar pattern
                 if '\r' in line or progress_bar_pattern.search(line):
@@ -200,10 +225,17 @@ def vlm_launch(neural_network_name, action, specs, job_id=""):
                         log_target.flush()
 
             proc.wait()  # Wait for the process to complete
+            stderr_thread.join(timeout=5)  # Wait for stderr thread to finish processing
+
             # Write the final progress bar line after process completion
             if last_progress_bar_line and log_target:
                 log_target.write(last_progress_bar_line + '\n')
                 log_target.flush()
+
+            # Log the return code for debugging
+            if proc.returncode != 0:
+                logger.error(f"Process exited with return code: {proc.returncode}")
+
             if proc.returncode == 0:
                 process_passed = True
 
@@ -213,6 +245,9 @@ def vlm_launch(neural_network_name, action, specs, job_id=""):
     except subprocess.CalledProcessError as e:
         if e.output is not None:
             logger.error(e.output)
+        process_passed = False
+    except Exception as e:
+        logger.error(f"Error: {e}")
         process_passed = False
 
     end = time()

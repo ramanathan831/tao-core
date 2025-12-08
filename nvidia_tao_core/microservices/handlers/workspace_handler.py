@@ -31,6 +31,7 @@ from nvidia_tao_core.microservices.utils.stateless_handler_utils import (
 )
 from nvidia_tao_core.microservices.utils.cloud_utils import create_cs_instance
 from nvidia_tao_core.microservices.utils.dataset_utils import validate_dataset
+from nvidia_tao_core.microservices.handlers.lepton_handler import LeptonHandler
 from nvidia_tao_core.microservices.utils.encrypt_utils import NVVaultEncryption
 from nvidia_tao_core.microservices.utils.handler_utils import Code
 
@@ -187,7 +188,16 @@ class WorkspaceHandler:
                     }
 
         encrypted_metadata = copy.deepcopy(metadata)
-
+        cloud_specific_details = encrypted_metadata.get("cloud_specific_details", {})
+        lepton_workspace_id = cloud_specific_details.get('lepton_workspace_id')
+        lepton_auth_token = cloud_specific_details.get('lepton_auth_token')
+        if lepton_workspace_id and lepton_auth_token:
+            try:
+                lepton_handler = LeptonHandler(lepton_workspace_id, lepton_auth_token)
+                lepton_handler.api_client.info()
+            except Exception as e:
+                logger.error(f"Exception instantiating Lepton Handler: {e}")
+                return Code(400, {}, "Provided Lepton cloud credentials are invalid")
         # Encrypt Cloud details
         config_path = os.getenv("VAULT_SECRET_PATH", None)
         if encrypted_metadata["cloud_specific_details"]:

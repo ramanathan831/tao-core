@@ -161,7 +161,7 @@ def dependency_check_model(job_context, dependency):
     from nvidia_tao_core.microservices.constants import NO_PTM_MODELS
     if network in NO_PTM_MODELS:
         return True, ""
-    base_experiment_ids = handler_metadata.get("base_experiment_ids", None)
+    base_experiment_ids = handler_metadata.get("base_experiment_ids", [])
     for base_experiment_id in base_experiment_ids:
         if not base_experiment_id:
             return False, "Base Experiment ID is None"

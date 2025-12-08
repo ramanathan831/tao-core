@@ -273,7 +273,7 @@ def check_job_timeout(job_info):
         last_timestamp = get_last_status_timestamp(lookup_job_id, automl=is_automl, experiment_number=experiment_number)
 
         if is_automl:
-            job_description = f"AutoML experiment {experiment_number} for job {lookup_job_id}"
+            job_description = f"AutoML experiment {experiment_number} for job {job_id} with brain job {brain_job_id}"
         else:
             job_description = f"Job {lookup_job_id}"
 
@@ -313,6 +313,26 @@ def check_job_timeout(job_info):
             return is_timed_out
 
         # CASE 2: No status updates - check if pod is alive via liveness endpoint
+        # EXCEPT for SLURM and Lepton jobs which are batch jobs with no pods to check
+        cloud_type = job_info.get('cloud_type')
+
+        if cloud_type in ('slurm', 'lepton'):
+            # SLURM/Lepton batch jobs have no pods and no liveness checks
+            # We rely purely on job status and status.json updates
+            logger.info("=" * 80)
+            logger.info(f"{cloud_type.upper()} JOB TIMEOUT CHECK: {job_description}")
+            logger.info(f"  Job ID: {job_id}")
+            logger.info(f"  Cloud type: {cloud_type}")
+            logger.info("  Status: No status updates found yet")
+            logger.info(f"  ℹ {cloud_type.upper()} batch jobs have no pods/liveness checks")
+            logger.info("  ℹ Job might be queued, starting, or not writing status yet")
+            logger.info(f"  ℹ {cloud_type.upper()} job status will detect actual failures")
+            logger.info("  ✓ Skipping timeout - relying on status.json sync")
+            logger.info("=" * 80)
+            # Don't timeout SLURM/Lepton jobs without status updates - they might just be starting
+            # or in queue. The job status check will handle actual failures.
+            return False
+
         logger.info(
             f"No status updates found for {job_description}. "
             "Checking if pod is alive via liveness endpoint..."
@@ -333,57 +353,125 @@ def check_job_timeout(job_info):
             )
 
             # Get job creation/start time from job metadata
-            job_metadata = get_handler_job_metadata(lookup_job_id)
-            if job_metadata:
-                last_modified = job_metadata.get("last_modified")
-                created_on = job_metadata.get("created_on")
+            # For AutoML experiments, timestamps are stored in controller info, not handler_job_metadata
+            last_modified = None
+            created_on = None
 
-                # Use the most recent timestamp
-                job_start_time = None
-                for timestamp_field in [last_modified, created_on]:
-                    if timestamp_field:
-                        try:
-                            if isinstance(timestamp_field, str):
-                                job_start_time = datetime.fromisoformat(timestamp_field.replace('Z', '+00:00'))
-                            elif isinstance(timestamp_field, datetime):
-                                job_start_time = timestamp_field
-                            break
-                        except (ValueError, TypeError):
-                            continue
+            if is_automl and brain_job_id:
+                # AutoML experiments: fetch from controller info
+                logger.debug(
+                    f"{job_description} Fetching timestamps from controller info "
+                    f"(brain_job_id={brain_job_id}, experiment_number={experiment_number})"
+                )
 
-                if job_start_time:
-                    # Job has proper metadata - clean up from no-timestamp tracker
-                    _no_timestamp_job_tracker.pop(actual_job_id, None)
+                controller_info = get_automl_controller_info(brain_job_id)
 
-                    current_time = datetime.now(tz=timezone.utc)
-                    time_since_start = current_time - job_start_time
-
-                    if time_since_start.total_seconds() > timeout_seconds:
-                        timeout_message = (
-                            f"Job timed out: pod is alive but has sent no status updates for "
-                            f"{time_since_start.total_seconds():.0f}s (timeout: {timeout_seconds}s). "
-                            "Job may be stuck or failing to report progress. Terminating."
+                if isinstance(controller_info, list):
+                    # Find the specific experiment in the controller info list
+                    try:
+                        experiment_num = int(experiment_number)
+                        if 0 <= experiment_num < len(controller_info):
+                            experiment_data = controller_info[experiment_num]
+                            if isinstance(experiment_data, dict):
+                                last_modified = experiment_data.get("last_modified")
+                                created_on = experiment_data.get("created_on")
+                                logger.debug(
+                                    f"{job_description} Found timestamps in controller info: "
+                                    f"last_modified={last_modified}, created_on={created_on}"
+                                )
+                            else:
+                                logger.debug(
+                                    f"{job_description} Experiment data at index {experiment_num} "
+                                    f"is not a dict: {type(experiment_data)}"
+                                )
+                        else:
+                            logger.error(
+                                f"{job_description} Experiment number {experiment_num} out of range "
+                                f"(controller_info has {len(controller_info)} experiments)"
+                            )
+                    except (ValueError, TypeError) as e:
+                        logger.error(
+                            f"{job_description} Error parsing experiment_number {experiment_number}: {e}"
                         )
-                        logger.warning(f"{job_description} {timeout_message}")
-
-                        # Update job status before terminating
-                        internal_job_status_update(
-                            job_id=lookup_job_id,
-                            automl=is_automl,
-                            automl_experiment_number=experiment_number,
-                            message=timeout_message,
-                            status="FAILURE",
-                            handler_id=job_info.get('handler_id'),
-                            kind=job_info.get('kind')
-                        )
-                        return True  # Timeout this job
-
-                    logger.info(
-                        f"{job_description} pod is alive but no status updates yet. "
-                        f"Job started {time_since_start.total_seconds():.0f}s ago. "
-                        f"Giving it more time (timeout: {timeout_seconds}s)."
+                else:
+                    logger.error(
+                        f"{job_description} Controller info is not a list: {type(controller_info)}"
                     )
-                    return False  # Still within grace period
+            else:
+                # Regular jobs: fetch from handler_job_metadata
+                job_metadata = get_handler_job_metadata(job_id)
+
+                logger.debug(
+                    f"{job_description} Fetching timestamps from handler_job_metadata "
+                    f"(job_id={job_id})"
+                )
+
+                if job_metadata:
+                    last_modified = job_metadata.get("last_modified")
+                    created_on = job_metadata.get("created_on")
+                    logger.debug(
+                        f"{job_description} Metadata timestamps: "
+                        f"last_modified={last_modified}, created_on={created_on}"
+                    )
+                else:
+                    logger.warning(f"{job_description} No handler_job_metadata found")
+
+            # Use the most recent timestamp (applies to both AutoML and regular jobs)
+            job_start_time = None
+            for timestamp_field in [last_modified, created_on]:
+                if timestamp_field:
+                    try:
+                        if isinstance(timestamp_field, str):
+                            job_start_time = datetime.fromisoformat(timestamp_field.replace('Z', '+00:00'))
+                        elif isinstance(timestamp_field, datetime):
+                            job_start_time = timestamp_field
+                        break
+                    except (ValueError, TypeError):
+                        continue
+
+            if job_start_time:
+                logger.debug(
+                    f"{job_description} Using job_start_time={job_start_time} "
+                    f"for timeout calculation"
+                )
+                # Job has proper metadata - clean up from no-timestamp tracker
+                _no_timestamp_job_tracker.pop(actual_job_id, None)
+
+                current_time = datetime.now(tz=timezone.utc)
+                time_since_start = current_time - job_start_time
+
+                if time_since_start.total_seconds() > timeout_seconds:
+                    timeout_message = (
+                        f"Job timed out: pod is alive but has sent no status updates for "
+                        f"{time_since_start.total_seconds():.0f}s (timeout: {timeout_seconds}s). "
+                        "Job may be stuck or failing to report progress. Terminating."
+                    )
+                    logger.debug(
+                        f"{job_description} {timeout_message}\n"
+                        f"  Current time: {current_time}\n"
+                        f"  Job start time: {job_start_time}\n"
+                        f"  Elapsed: {time_since_start.total_seconds():.0f}s\n"
+                        f"  Timeout threshold: {timeout_seconds}s"
+                    )
+
+                    # Update job status before terminating
+                    internal_job_status_update(
+                        job_id=lookup_job_id,
+                        automl=is_automl,
+                        automl_experiment_number=experiment_number,
+                        message=timeout_message,
+                        status="FAILURE",
+                        handler_id=job_info.get('handler_id'),
+                        kind=job_info.get('kind')
+                    )
+                    return True  # Timeout this job
+
+                logger.info(
+                    f"{job_description} pod is alive but no status updates yet. "
+                    f"Job started {time_since_start.total_seconds():.0f}s ago. "
+                    f"Giving it more time (timeout: {timeout_seconds}s)."
+                )
+                return False  # Still within grace period
 
             # If we can't determine job start time, track when we first detected this
             # and apply timeout after grace period
@@ -462,6 +550,21 @@ def terminate_timed_out_job(job_info):
     brain_job_id = job_info.get('brain_job_id', None)
     experiment_number = job_info.get('experiment_number', '0')
     source = job_info.get('source', '')
+    # Enhanced logging for termination with full context
+    logger.debug(
+        f"{'-' * 80}\n"
+        f"TERMINATING TIMED OUT JOB\n"
+        f"job_id: {job_id}\n"
+        f"handler_id: {handler_id}\n"
+        f"kind: {kind}\n"
+        f"is_automl: {is_automl}\n"
+        f"is_automl_brain: {is_automl_brain}\n"
+        f"brain_job_id: {brain_job_id}\n"
+        f"experiment_number: {experiment_number}\n"
+        f"source: {source}\n"
+        f"full_job_info: {job_info}\n"
+        f"{'-' * 80}"
+    )
 
     if not job_id:
         logger.error(f"Cannot terminate job: missing job_id in {job_info}")

@@ -65,12 +65,39 @@ def infer_create_od_tf_records(job_context, handler_metadata):
 
 def infer_output_dir(job_context, handler_metadata):
     """Creates output directory within jobs root"""
+    workspace_id = handler_metadata.get('workspace')
+
+    # Check if this is a Slurm workspace
+    if workspace_id:
+        workspace_metadata = get_handler_metadata(workspace_id, "workspaces")
+        cloud_type = workspace_metadata.get('cloud_type', '')
+        cloud_specific_details = workspace_metadata.get("cloud_specific_details", {})
+
+        if cloud_type == 'slurm':
+            # Slurm workspace - use configured base path or default
+            slurm_user = cloud_specific_details.get('slurm_user', 'unknown')
+            base_results_dir = cloud_specific_details.get('base_results_dir')
+
+            if not base_results_dir:
+                # Default path if not specified
+                base_results_dir = f"/lustre/fsw/portfolios/edgeai/users/{slurm_user}"
+
+            # Return Lustre path for Slurm jobs
+            dnn_results_dir = f'{base_results_dir}/results/{job_context.id}'
+            if job_context.network == "vila":
+                llm_mode = job_context.specs.get("train", {}).get("llm_mode", "lora")
+                vision_mode = job_context.specs.get("train", {}).get("vision_mode", "ft")
+                dnn_results_dir = f'{base_results_dir}/results/{job_context.id}/{vision_mode}_{llm_mode}'
+
+            logger.info(f"Using Slurm results directory: {dnn_results_dir}")
+            return dnn_results_dir
+
+    # Original logic for non-Slurm workspaces
     results_root = get_jobs_root(user_id=job_context.user_id, org_name=job_context.org_name)
     results_dir = os.path.join(results_root, job_context.id)
     if not os.path.exists(results_dir):
         os.makedirs(results_dir)
 
-    workspace_id = handler_metadata.get("workspace")
     workspace_identifier = get_workspace_string_identifier(workspace_id, workspace_cache={})
     dnn_results_dir = f'{workspace_identifier}results/{job_context.id}'
     if job_context.network == "vila":

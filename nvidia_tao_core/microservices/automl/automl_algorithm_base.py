@@ -232,6 +232,12 @@ class AutoMLAlgorithmBase:
             # Randomly decide whether to include items (30% chance for empty list)
             selected_items = []
             if np.random.random() < 0.3:
+                # Handle LoRA target_modules with constraints even for empty list
+                if self.network == "cosmos-rl" and "target_modules" in parameter_name:
+                    # Constraint function will return "all-linear" if list is empty
+                    return network_utils.apply_lora_constraints(
+                        self.parent_params, selected_items
+                    )
                 return selected_items
             # Randomly select 1 or more items
             num_items = np.random.randint(1, len(valid_options) + 1)

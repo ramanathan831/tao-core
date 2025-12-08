@@ -14,6 +14,7 @@
 
 """Job executor for regular Kubernetes Job operations"""
 import os
+import logging
 import traceback
 from kubernetes import client, config
 
@@ -26,7 +27,10 @@ from nvidia_tao_core.microservices.utils.stateless_handler_utils import (
     update_job_message,
     get_job_specs
 )
-from nvidia_tao_core.microservices.utils.handler_utils import send_microservice_request
+from nvidia_tao_core.microservices.utils.handler_utils import send_statefulset_request
+from nvidia_tao_core.microservices.handlers.lepton_handler import get_lepton_handler_from_workspace
+from nvidia_tao_core.microservices.handlers.execution_handlers.slurm_handler import get_slurm_handler_from_workspace
+from nvidia_tao_core.microservices.handlers.container_handler import ContainerJobHandler
 from nvidia_tao_core.microservices.utils.nvcf_utils import (
     create_function,
     deploy_function,
@@ -50,6 +54,12 @@ else:
 
 from .base_executor import BaseExecutor
 from nvidia_tao_core.microservices.utils.executor_utils import override_k8_status
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logger = logging.getLogger(__name__)
 
 
 class JobExecutor(BaseExecutor):
@@ -135,7 +145,15 @@ class JobExecutor(BaseExecutor):
                 "DOCKER_HOST": os.getenv("DOCKER_HOST", default="unix:///var/run/docker.sock"),
                 "DOCKER_NETWORK": os.getenv("DOCKER_NETWORK", default="tao_default")
             }
-            volumes = ['/var/run/docker.sock:/var/run/docker.sock'] if automl_brain else None
+            volumes = None
+            if automl_brain:
+                # AutoML brain needs Docker socket and SSH keys to sync status from SLURM
+                # HOST_SSH_PATH should be set in docker-compose.yml to the host's SSH directory
+                host_ssh_path = os.getenv('HOST_SSH_PATH', '/root/.ssh')
+                volumes = ['/var/run/docker.sock:/var/run/docker.sock']
+                if host_ssh_path:
+                    volumes.append(f'{host_ssh_path}:/root/.ssh:ro')
+                    self.logger.info(f"Mounting SSH keys for AutoML brain from host path: {host_ssh_path}")
             docker_handler.start_container(
                 job_name,
                 command=["/bin/bash", "-c", command],
@@ -342,8 +360,46 @@ class JobExecutor(BaseExecutor):
 
     def get_job_status(self, org_name, handler_id, job_name, handler_kind, use_ngc=True, network="",
                        action="", automl_exp_job=False, docker_env_vars={},
-                       authorized_party_nca_id="", automl_experiment_id="0"):
+                       authorized_party_nca_id="", automl_experiment_id="0",
+                       workspace_metadata={}, results_dir=""):
         """Returns status of kubernetes job"""
+        if workspace_metadata and results_dir:
+            lepton_handler = get_lepton_handler_from_workspace(workspace_metadata.get("id"))
+            slurm_handler = get_slurm_handler_from_workspace(workspace_metadata.get("id"))
+
+            if slurm_handler:
+                logger.info(f"Checking SLURM job {job_name} status")
+
+                # Check SLURM batch job status (from squeue/sacct)
+                slurm_status = slurm_handler.get_tao_job_status(job_name)
+                logger.info(f"SLURM job {job_name} TAO status: {slurm_status}")
+
+                # If SLURM status is definitive (not None), return it
+                # None means COMPLETED - need to check status.json for actual result
+                if slurm_status is not None:
+                    return slurm_status
+
+                # SLURM job completed, check status.json for final result
+                logger.info(f"SLURM job COMPLETED - reading final status from {results_dir}/status.json")
+                try:
+                    container_job_status = ContainerJobHandler.get_current_job_status(
+                        results_dir, workspace_metadata, job_id=job_name)
+                    logger.info(f"SLURM job {job_name} final status from status.json: {container_job_status}")
+                    return container_job_status
+                except Exception as e:
+                    logger.error(f"Failed to get final status from status.json for {job_name}: {e}")
+                    logger.error(f"results_dir: {results_dir}, workspace_metadata: {workspace_metadata}")
+                    logger.error(traceback.format_exc())
+                    return "Pending"
+
+            # For other cloud handlers (Lepton, etc.)
+            if lepton_handler:
+                # Pass workspace_metadata for Lepton to enable proper status fetching
+                container_job_status = ContainerJobHandler.get_current_job_status(
+                    results_dir, workspace_metadata, job_id=job_name)
+                logger.info(f"Job {job_name} status from cloud is {container_job_status}")
+                return container_job_status
+
         if BACKEND == "local-k8s":
             if os.getenv("DEV_MODE", "False").lower() in ("true", "1"):
                 config.load_kube_config()
@@ -455,6 +511,8 @@ class JobExecutor(BaseExecutor):
                 if response and response.ok:
                     job_status = response.json()
                     status = job_status.get("status")
+                    if status == "Error":
+                        self.logger.error(f"Error when sending microservice request {response.text}")
                     return status
                 self.logger.error(f"Error when sending microservice request {response.text}")
             return "Error"
@@ -463,7 +521,7 @@ class JobExecutor(BaseExecutor):
         service_executor = ServiceExecutor()
         service_status = service_executor.wait_for_service(job_name)
         if service_status == "Running":
-            response = send_microservice_request(
+            response = send_statefulset_request(
                 api_endpoint="get_job_status",
                 network=network,
                 action=action,

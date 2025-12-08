@@ -16,6 +16,7 @@
 import os
 import time
 import traceback
+import inspect
 from kubernetes import client, config
 from kubernetes.client.rest import ApiException
 
@@ -25,6 +26,8 @@ from nvidia_tao_core.microservices.utils.handler_utils import (
     get_statefulset_name,
     get_statefulset_service_name
 )
+from nvidia_tao_core.microservices.handlers.lepton_handler import get_lepton_handler_from_workspace
+from nvidia_tao_core.microservices.handlers.execution_handlers.slurm_handler import get_slurm_handler_from_workspace
 
 if os.getenv("BACKEND") == "local-docker":
     from ..gpu_manager import gpu_manager
@@ -378,16 +381,56 @@ echo "Starting Inference Microservice..." &&
             self.logger.error(traceback.format_exc())
             return False
 
-    def delete_statefulset(self, job_name, use_ngc=True, resource_type="multinode"):
+    def delete_statefulset(self, job_name, use_ngc=True, resource_type="multinode", workspace_metadata={}):
         """Deletes a Job or StatefulSet"""
+        # Enhanced logging with call stack to understand WHY deletion was triggered
+        caller_frame = inspect.currentframe().f_back
+        caller_info = inspect.getframeinfo(caller_frame) if caller_frame else None
+        caller_location = f"{caller_info.filename}:{caller_info.lineno}" if caller_info else "unknown"
+
+        self.logger.debug(
+            f"{'-' * 80}\n"
+            f"DELETE_STATEFULSET CALLED\n"
+            f"Job Name: {job_name}\n"
+            f"Backend: {BACKEND}\n"
+            f"Use NGC: {use_ngc}\n"
+            f"Resource Type: {resource_type}\n"
+            f"Called From: {caller_location}\n"
+            f"Call Stack (top 5):\n"
+        )
+
+        # Log call stack to understand the termination trigger
+        stack_lines = traceback.format_stack(limit=6)
+        for line in stack_lines[-5:]:  # Last 5 frames
+            self.logger.warning(f"  {line.strip()}")
+
+        self.logger.debug(f"{'-' * 80}")
+
+        if workspace_metadata:
+            lepton_handler = get_lepton_handler_from_workspace(workspace_metadata.get("id"))
+            slurm_handler = get_slurm_handler_from_workspace(workspace_metadata.get("id"))
+            if lepton_handler:
+                # Lepton jobs run on SLURM, so cancel via SLURM handler
+                if slurm_handler:
+                    self.logger.info(f"Canceling Lepton job {job_name} on SLURM cluster")
+                    return slurm_handler.cancel_job(job_name)
+                return True
+            if slurm_handler:
+                self.logger.info(f"Canceling SLURM job {job_name}")
+                return slurm_handler.cancel_job(job_name)
+
         if BACKEND == "local-docker":
             from nvidia_tao_core.microservices.handlers.docker_handler import DockerHandler
+            self.logger.debug(f"Docker backend: Looking for container {job_name}")
             docker_handler = DockerHandler.get_handler_for_container(job_name)
             if docker_handler:
+                self.logger.debug(f"Docker container found for {job_name}, stopping it now")
                 docker_handler.stop_container()
+                self.logger.debug(f"Successfully stopped Docker container for {job_name}")
             else:
                 self.logger.error(f"Docker container not found for job {job_name}")
             gpu_manager.release_gpus(job_name)
+            self.logger.debug(f"Released GPUs for job {job_name}")
             return True
 
         name_space = self.get_namespace()

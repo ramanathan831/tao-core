@@ -22,7 +22,7 @@ from nvidia_tao_core.microservices.decorators import disk_space_check
 from nvidia_tao_core.microservices.utils.auth_utils import authentication
 from nvidia_tao_core.microservices.utils.filter_utils import filtering, pagination
 from nvidia_tao_core.microservices.handlers.workspace_handler import WorkspaceHandler
-from nvidia_tao_core.microservices.handlers import MongoBackupHandler
+from nvidia_tao_core.microservices.handlers import MongoBackupHandler, SpecHandler
 from .schemas import (
     WorkspaceListRsp,
     WorkspaceRsp,
@@ -31,7 +31,8 @@ from .schemas import (
     MessageOnly,
     BulkOpsRsp,
     WorkspaceReq,
-    WorkspaceBackupReq
+    WorkspaceBackupReq,
+    GpuDetails
 )
 from nvidia_tao_core.microservices.utils.handler_utils import validate_uuid
 
@@ -756,14 +757,6 @@ def workspace_backup(org_name):
           type: string
           maxLength: 255
           pattern: '^[a-zA-Z0-9_-]+$'
-      - name: workspace_id
-        in: path
-        description: ID of Workspace to update
-        required: true
-        schema:
-          type: string
-          format: uuid
-          maxLength: 36
       requestBody:
         content:
           application/json:
@@ -843,14 +836,6 @@ def workspace_restore(org_name):
           type: string
           maxLength: 255
           pattern: '^[a-zA-Z0-9_-]+$'
-      - name: workspace_id
-        in: path
-        description: ID of Workspace to update
-        required: true
-        schema:
-          type: string
-          format: uuid
-          maxLength: 36
       requestBody:
         content:
           application/json:
@@ -908,3 +893,18 @@ def workspace_restore(org_name):
         schema = ErrorRsp()
         response = make_response(jsonify(schema.dump(schema.load(metadata))), 400)
         return response
+
+
+@workspaces_bp_v2.route('/orgs/<org_name>/workspaces/<workspace_id>/gpu_types', methods=['GET'])
+@disk_space_check
+def get_workspace_gpu_types(org_name, workspace_id):
+    """Retrieve available GPU type."""
+    user_id = authentication.get_user_id(request.headers.get('Authorization', ''), org_name)
+    response = SpecHandler.get_gpu_types(user_id, org_name, workspace_id)
+    schema = GpuDetails()
+    if response.code == 200:
+        return make_response(jsonify(response.data), response.code)
+    schema = ErrorRsp()
+    # Load metadata in schema and return
+    schema_dict = schema.dump(schema.load(response.data))
+    return make_response(jsonify(schema_dict), response.code)

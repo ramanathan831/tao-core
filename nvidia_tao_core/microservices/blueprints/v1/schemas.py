@@ -199,6 +199,7 @@ class AllowedDockerEnvVariables(Enum):
     ORCHESTRATION_API_ACTION = "ORCHESTRATION_API_ACTION"
     AUTOML_EXPERIMENT_NUMBER = "AUTOML_EXPERIMENT_NUMBER"
     JOB_ID = "JOB_ID"
+    TAO_API_RESULTS_DIR = "TAO_API_RESULTS_DIR"
     TAO_API_JOB_ID = "TAO_API_JOB_ID"  # Automl brain job id
     RETAIN_CHECKPOINTS_FOR_RESUME = "RETAIN_CHECKPOINTS_FOR_RESUME"
     EARLY_STOP_EPOCH = "EARLY_STOP_EPOCH"
@@ -504,27 +505,6 @@ class AutoMLResults(Schema):
     value = CustomFloatField(allow_none=True)
 
 
-class AutoMLResultsDetailed(Schema):
-    """Class defining AutoML detailed results schema"""
-
-    class Meta:
-        """Class enabling sorting field values by the order in which they are declared"""
-
-        ordered = True
-    current_experiment_id = fields.Int(
-        allow_none=True,
-        validate=fields.validate.Range(min=0, max=sys.maxsize),
-        format=sys_int_format()
-    )
-    best_experiment_id = fields.Int(
-        allow_none=True,
-        validate=fields.validate.Range(min=0, max=sys.maxsize),
-        format=sys_int_format()
-    )
-    metric = EnumFieldPrefix(Metrics)
-    experiments = fields.Raw()
-
-
 class Stats(Schema):
     """Class defining results stats schema"""
 
@@ -550,9 +530,9 @@ class JobSubset(Schema):
     eta = fields.Str(allow_none=True, format="regex", regex=r'.*', validate=fields.validate.Length(max=sys.maxsize))
     epoch = fields.Int(
         allow_none=True,
-        validate=fields.validate.Range(min=-1, max=sys.maxsize),
+        validate=fields.validate.Range(min=0, max=sys.maxsize),
         format=sys_int_format(),
-        error="Epoch should be larger than -1. With -1 meaning non-valid."
+        error="Epoch must be non-negative."
     )
     max_epoch = fields.Int(
         allow_none=True,
@@ -589,9 +569,9 @@ class JobResult(Schema):
     # AutoML
     epoch = fields.Int(
         allow_none=True,
-        validate=fields.validate.Range(min=-1, max=sys.maxsize),
+        validate=fields.validate.Range(min=0, max=sys.maxsize),
         format=sys_int_format(),
-        error="Epoch should be larger than -1. With -1 meaning non-valid."
+        error="Epoch must be non-negative."
     )
     max_epoch = fields.Int(
         allow_none=True,
@@ -630,6 +610,8 @@ class JobResult(Schema):
     detailed_status = fields.Nested(DetailedStatus, allow_none=True)
     key_metric = fields.Float(allow_none=True)
     message = fields.Str(allow_none=True, format="regex", regex=r'.*', validate=fields.validate.Length(max=sys.maxsize))
+    # Specs (only populated for AutoML experiments)
+    specs = fields.Raw(allow_none=True)
 
 
 class LoginReq(Schema):
@@ -738,6 +720,8 @@ class GpuDetails(Schema):
     max_limit = fields.Int(format="int64", validate=validate.Range(min=0, max=sys.maxsize), allow_none=True)
     current_used = fields.Int(format="int64", validate=validate.Range(min=0, max=sys.maxsize), allow_none=True)
     current_available = fields.Int(format="int64", validate=validate.Range(min=0, max=sys.maxsize), allow_none=True)
+    node_type = fields.Str(validate=validate.Length(max=2048), allow_none=True)
+    backend_type = fields.Str(validate=validate.Length(max=2048), allow_none=True)
 
 
 class TelemetryReq(Schema):
@@ -882,6 +866,44 @@ class DatasetPathLst(Schema):
     )
 
 
+class LocalBackendDetails(Schema):
+    """Backend details for local execution - no additional parameters"""
+
+    backend_type = fields.Constant("local")
+
+
+class SlurmBackendDetails(Schema):
+    """Backend details for Slurm execution"""
+
+    backend_type = fields.Constant("slurm")
+    partition = fields.Str(validate=validate.Length(max=2048), allow_none=True)
+    cluster_name = fields.Str(validate=validate.Length(max=2048), allow_none=True)
+
+
+class NVCFBackendDetails(Schema):
+    """Backend details for NVCF execution"""
+
+    backend_type = fields.Constant("nvcf")
+    platform_id = fields.Str(format="uuid", validate=fields.validate.Length(max=36), allow_none=True)
+
+
+class LeptonBackendDetails(Schema):
+    """Backend details for Lepton execution"""
+
+    backend_type = fields.Constant("lepton")
+    platform_id = fields.Str(format="uuid", validate=fields.validate.Length(max=36), allow_none=True)
+
+
+class BackendDetails(Schema):
+    """Class defining polymorphic backend execution details schema (v1 - simplified)"""
+
+    backend_type = fields.Str(validate=validate.Length(max=50), allow_none=True)
+    partition = fields.Str(validate=validate.Length(max=2048), allow_none=True)
+    cluster_name = fields.Str(validate=validate.Length(max=2048), allow_none=True)
+    platform_id = fields.Str(format="uuid", validate=fields.validate.Length(max=36), allow_none=True)
+    slurm_metadata = fields.Dict(allow_none=True)  # For storing slurm_job_id and other runtime metadata
+
+
 class DatasetActions(Schema):
     """Class defining dataset actions schema"""
 
@@ -891,7 +913,7 @@ class DatasetActions(Schema):
     description = fields.Str(format="regex", regex=r'.*', validate=fields.validate.Length(max=1000), allow_none=True)
     specs = fields.Raw()
     num_gpu = fields.Int(format="int64", validate=validate.Range(min=0, max=sys.maxsize), allow_none=True)
-    platform_id = fields.Str(format="uuid", validate=fields.validate.Length(max=36), allow_none=True)
+    backend_details = fields.Nested(BackendDetails, allow_none=True)
     retain_checkpoints_for_resume = fields.Bool(allow_none=True)
     early_stop_epoch = fields.Int(format="int64", validate=validate.Range(min=0, max=sys.maxsize), allow_none=True)
     timeout_minutes = fields.Int(format="int64", validate=validate.Range(min=1, max=sys.maxsize), allow_none=True)
@@ -992,7 +1014,7 @@ class DatasetJob(Schema):
     name = fields.Str(format="regex", regex=r'.*', validate=fields.validate.Length(max=500), allow_none=True)
     description = fields.Str(format="regex", regex=r'.*', validate=fields.validate.Length(max=1000), allow_none=True)
     num_gpu = fields.Int(format="int64", validate=validate.Range(min=0, max=sys.maxsize), allow_none=True)
-    platform_id = fields.Str(format="uuid", validate=fields.validate.Length(max=36), allow_none=True)
+    backend_details = fields.Nested(BackendDetails, allow_none=True)
     dataset_id = fields.Str(format="uuid", validate=fields.validate.Length(max=36), allow_none=True)
 
 
@@ -1107,7 +1129,7 @@ class ExperimentActions(Schema):
     description = fields.Str(format="regex", regex=r'.*', validate=fields.validate.Length(max=1000), allow_none=True)
     specs = fields.Raw()
     num_gpu = fields.Int(format="int64", validate=validate.Range(min=0, max=sys.maxsize), allow_none=True)
-    platform_id = fields.Str(format="uuid", validate=fields.validate.Length(max=36), allow_none=True)
+    backend_details = fields.Nested(BackendDetails, allow_none=True)
     retain_checkpoints_for_resume = fields.Bool(allow_none=True)
     early_stop_epoch = fields.Int(format="int64", validate=validate.Range(min=0, max=sys.maxsize), allow_none=True)
     timeout_minutes = fields.Int(format="int64", validate=validate.Range(min=1, max=sys.maxsize), allow_none=True)
@@ -1332,7 +1354,7 @@ class ExperimentJob(Schema):
     name = fields.Str(format="regex", regex=r'.*', validate=fields.validate.Length(max=500), allow_none=True)
     description = fields.Str(format="regex", regex=r'.*', validate=fields.validate.Length(max=1000), allow_none=True)
     num_gpu = fields.Int(format="int64", validate=validate.Range(min=0, max=sys.maxsize), allow_none=True)
-    platform_id = fields.Str(format="uuid", validate=fields.validate.Length(max=36), allow_none=True)
+    backend_details = fields.Nested(BackendDetails, allow_none=True)
     experiment_id = fields.Str(format="uuid", validate=fields.validate.Length(max=36), allow_none=True)
 
 

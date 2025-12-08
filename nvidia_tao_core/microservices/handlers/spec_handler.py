@@ -27,6 +27,7 @@ from nvidia_tao_core.microservices.utils.handler_utils import Code
 from nvidia_tao_core.microservices.utils.executor_utils import get_available_local_k8s_gpus
 from nvidia_tao_core.microservices.utils.nvcf_utils import get_available_nvcf_instances
 from nvidia_tao_core.microservices.utils.specs_utils import csv_to_json_schema
+from nvidia_tao_core.microservices.handlers.lepton_handler import get_lepton_handler_from_workspace
 from nvidia_tao_core.microservices.utils.core_utils import (
     merge_nested_dicts,
     override_dicts,
@@ -347,7 +348,7 @@ class SpecHandler:
         return Code(200, json_schema, "Schema retrieved")
 
     @staticmethod
-    def get_gpu_types(user_id, org_name):
+    def get_gpu_types(user_id, org_name, workspace_id=None):
         """Retrieves available GPU types for the given user and organization.
 
         This method checks the backend for available GPU resources based on the
@@ -363,6 +364,14 @@ class SpecHandler:
                   - 200: A list of available GPUs.
                   - 404: If GPUs cannot be retrieved for the specified backend.
         """
+        if workspace_id:
+            lepton_handler = get_lepton_handler_from_workspace(workspace_id)
+            if lepton_handler:
+                logger.info(f"Getting available Lepton instances for workspace {workspace_id}")
+                available_lepton_instances = lepton_handler.get_available_lepton_instances()
+                if available_lepton_instances:
+                    return Code(200, available_lepton_instances, "Retrieved available GPU info")
+                return Code(404, [], f"Lepton GPU's are not available for {org_name}")
         if BACKEND == "NVCF":
             available_nvcf_instances = get_available_nvcf_instances(user_id, org_name)
             if available_nvcf_instances:

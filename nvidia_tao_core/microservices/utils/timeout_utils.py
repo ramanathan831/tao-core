@@ -190,6 +190,17 @@ def get_all_running_jobs():
         ):
             automl_brain = True
 
+        # Get workspace info to determine if this is a SLURM job
+        workspace_id = job.get('workspace')
+        workspace_metadata = None
+        cloud_type = None
+        if workspace_id:
+            try:
+                workspace_metadata = get_handler_metadata(workspace_id, 'workspaces')
+                cloud_type = workspace_metadata.get('cloud_type') if workspace_metadata else None
+            except Exception:
+                pass  # Ignore errors getting workspace metadata
+
         job_info = {
             'job_id': job_id,
             'handler_id': job.get('handler_id'),
@@ -204,7 +215,10 @@ def get_all_running_jobs():
             'is_automl_brain': automl_brain,
             'experiment_number': '0',
             'timeout_minutes': job.get('timeout_minutes'),
-            'source': 'db'
+            'source': 'db',
+            'workspace_id': workspace_id,
+            'workspace_metadata': workspace_metadata,
+            'cloud_type': cloud_type
         }
         running_jobs.append(job_info)
 
@@ -396,6 +410,8 @@ def get_all_running_automl_experiments():
                                         'brain_job_id': job_id,
                                         'experiment_number': str(rec_id),
                                         'timeout_minutes': job.get('timeout_minutes'),
+                                        'workspace_metadata': job.get('workspace_metadata'),  # For SLURM detection
+                                        'cloud_type': job.get('cloud_type'),  # For SLURM detection
                                         'source': 'db'
                                     }
                                     running_automl_experiments.append(automl_exp_info)

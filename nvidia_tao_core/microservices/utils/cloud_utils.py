@@ -24,6 +24,7 @@ from datetime import datetime
 # Lazy import to avoid circular dependencies
 from nvidia_tao_core.distributed.decorators import master_node_only
 from nvidia_tao_core.microservices.utils.stateless_handler_utils import report_health_beat
+from nvidia_tao_core.microservices.utils.slurm_cloud_storage import SlurmCloudStorageAdapter
 
 NUM_RETRY = 5
 
@@ -125,7 +126,7 @@ def create_cs_instance_with_decrypted_metadata(decrypted_metadata):
 
     # Original cloud providers
     cs_instance = None
-    if cloud_specific_details and cloud_bucket_name:
+    if cloud_specific_details and (cloud_bucket_name or cloud_type == "slurm"):
         if cloud_type == "aws":
             cs_instance = CloudStorage(
                 cloud_type="aws",
@@ -146,13 +147,54 @@ def create_cs_instance_with_decrypted_metadata(decrypted_metadata):
             )
         elif cloud_type == "seaweedfs":
             return _create_seaweedfs_instance(cloud_specific_details)
+        elif cloud_type == "slurm":
+            # SLURM uses SSH-based remote filesystem access
+            slurm_user = cloud_specific_details.get("slurm_user")
+            slurm_hostname = cloud_specific_details.get("slurm_hostname")
+            base_results_dir = cloud_specific_details.get("base_results_dir")
+
+            if not base_results_dir:
+                # Default path if not specified
+                base_results_dir = f"/lustre/fsw/portfolios/edgeai/users/{slurm_user}"
+
+            if not slurm_user or not slurm_hostname:
+                raise ValueError("SLURM workspace requires slurm_user and slurm_hostname")
+
+            # Validate hostname is a list
+            if not isinstance(slurm_hostname, list):
+                raise ValueError("SLURM slurm_hostname must be a list of strings")
+            if not slurm_hostname:
+                raise ValueError("SLURM hostname list cannot be empty")
+
+            logger.info(f"SLURM workspace configured with {len(slurm_hostname)} hostname(s) for failover")
+
+            # Use SSH key from environment variable or auto-detect from common locations
+            ssh_key_path = os.getenv('SSH_KEY_PATH')
+            if not ssh_key_path or not os.path.exists(ssh_key_path):
+                # Try common locations for SSH keys
+                for candidate in ["/home/www-data/.ssh/id_ed25519", "/root/.ssh/id_ed25519",
+                                  "/home/www-data/.ssh/id_rsa", "/root/.ssh/id_rsa"]:
+                    if os.path.exists(candidate):
+                        ssh_key_path = candidate
+                        logger.info(f"Auto-detected SSH key: {ssh_key_path}")
+                        break
+                else:
+                    ssh_key_path = None
+                    logger.warning("No SSH key found for SLURM connection")
+
+            cs_instance = SlurmCloudStorageAdapter(
+                slurm_user=slurm_user,
+                slurm_hostname=slurm_hostname,
+                base_results_dir=base_results_dir,
+                ssh_key_path=ssh_key_path
+            )
         else:
             raise ValueError(f"Unsupported cloud_type: {cloud_type}")
 
     return cs_instance, cloud_specific_details
 
 
-def create_cs_instance(handler_metadata):
+def create_cs_instance(workspace_metadata):
     """Create a cloud storage instance based on handler metadata
 
     Args:
@@ -169,18 +211,19 @@ def create_cs_instance(handler_metadata):
     # Clear caches before creating new instance
     clear_fsspec_caches()
 
-    handler_metadata_copy = copy.deepcopy(handler_metadata)
+    handler_metadata_copy = copy.deepcopy(workspace_metadata)
     cloud_type = handler_metadata_copy.get("cloud_type", "aws")
     cloud_specific_details = handler_metadata_copy.get("cloud_specific_details", {})
 
-    # Decrypt cloud details for original cloud providers
-    config_path = os.getenv("VAULT_SECRET_PATH", None)
-    if config_path:
-        from .encrypt_utils import NVVaultEncryption
-        encryption = NVVaultEncryption(config_path)
-        for key, encrypted_value in cloud_specific_details.items():
-            if encryption.check_config()[0]:
-                cloud_specific_details[key] = encryption.decrypt(encrypted_value)
+    # Decrypt cloud details for original cloud providers (not needed for Slurm)
+    if cloud_type != "slurm":
+        config_path = os.getenv("VAULT_SECRET_PATH", None)
+        if config_path:
+            from .encrypt_utils import NVVaultEncryption
+            encryption = NVVaultEncryption(config_path)
+            for key, encrypted_value in cloud_specific_details.items():
+                if encryption.check_config()[0]:
+                    cloud_specific_details[key] = encryption.decrypt(encrypted_value)
 
     cloud_bucket_name = cloud_specific_details.get("cloud_bucket_name")
 
@@ -206,10 +249,52 @@ def create_cs_instance(handler_metadata):
             )
         elif cloud_type == "seaweedfs":
             cs_instance, _ = _create_seaweedfs_instance(cloud_specific_details)
+        elif cloud_type == "slurm":
+            # SLURM uses SSH-based remote filesystem access
+            slurm_user = cloud_specific_details.get("slurm_user")
+            slurm_hostname = cloud_specific_details.get("slurm_hostname")
+            base_results_dir = cloud_specific_details.get("base_results_dir")
+
+            if not base_results_dir:
+                # Default path if not specified
+                base_results_dir = f"/lustre/fsw/portfolios/edgeai/users/{slurm_user}"
+
+            if not slurm_user or not slurm_hostname:
+                raise ValueError("SLURM workspace requires slurm_user and slurm_hostname")
+
+            # Validate hostname is a list
+            if not isinstance(slurm_hostname, list):
+                raise ValueError("SLURM slurm_hostname must be a list of strings")
+            if not slurm_hostname:
+                raise ValueError("SLURM hostname list cannot be empty")
+
+            logger.info(f"SLURM workspace configured with {len(slurm_hostname)} hostname(s) for failover")
+
+            # Use SSH key from environment variable or auto-detect from common locations
+            ssh_key_path = os.getenv('SSH_KEY_PATH')
+            if not ssh_key_path or not os.path.exists(ssh_key_path):
+                # Try common locations for SSH keys
+                for candidate in ["/home/www-data/.ssh/id_ed25519", "/root/.ssh/id_ed25519",
+                                  "/home/www-data/.ssh/id_rsa", "/root/.ssh/id_rsa"]:
+                    if os.path.exists(candidate):
+                        ssh_key_path = candidate
+                        logger.info(f"Auto-detected SSH key: {ssh_key_path}")
+                        break
+                else:
+                    ssh_key_path = None
+                    logger.warning("No SSH key found for SLURM connection")
+
+            cs_instance = SlurmCloudStorageAdapter(
+                slurm_user=slurm_user,
+                slurm_hostname=slurm_hostname,
+                base_results_dir=base_results_dir,
+                ssh_key_path=ssh_key_path
+            )
         else:
             raise ValueError(f"Unsupported cloud_type: {cloud_type}")
 
-    if cs_instance and cloud_bucket_name:
+    # Validate connection for all cloud providers including SLURM
+    if cs_instance and (cloud_bucket_name or cloud_type == "slurm"):
         logger.info(f"Validating {cloud_type} credentials...")
         try:
             # Directly validate the connection using the instance method
@@ -321,7 +406,11 @@ class CloudStorage:
             self.fs = fsspec.filesystem('s3', **seaweedfs_kwargs)
             self.root = f'{bucket_name}/'
         else:
-            raise ValueError("Unsupported cloud_type. Use 'aws', 'azure', or 'seaweedfs'.")
+            raise ValueError(
+                f"Unsupported cloud_type: '{cloud_type}'. "
+                "Use 'aws', 'azure', or 'seaweedfs'. "
+                "For SLURM, use SlurmCloudStorageAdapter directly via create_cs_instance()."
+            )
 
     def reset_filesystem_state(self):
         """Reset the filesystem state to clear any corrupted caches."""
@@ -502,14 +591,46 @@ class CloudStorage:
             raise
 
     @retry_method
+    def is_file_modified(self, cloud_path, local_path):
+        """Check if a cloud storage file has been modified compared to the local file using fsspec.
+
+        Args:
+            cloud_path (str): Path to the file in cloud storage (relative to bucket root)
+            local_path (str): Path to the local file
+
+        Returns:
+            bool: True if the cloud file is newer than the local file, False otherwise
+        """
+        try:
+            # Get local file modification time
+            if not os.path.exists(local_path):
+                logger.warning(f"Local file {local_path} does not exist")
+                return True  # Consider it modified if local file doesn't exist
+
+            current_last_modified = os.path.getmtime(local_path)
+            if not cloud_path.startswith(self.root):
+                cloud_path = self.root + cloud_path.strip('/')
+
+            # Get cloud file info using fsspec
+            logger.info(f"Checking Cloud path: {cloud_path}")
+            file_info = self.fs.info(cloud_path)
+            last_modified = file_info.get('LastModified', datetime.now()).timestamp()
+            if 'LastModified' not in file_info:
+                logger.warning(f"Could not get last modified time for cloud file {cloud_path}, "
+                               f"defaulting to current time")
+            return last_modified > current_last_modified
+        except Exception as e:
+            logger.error(f"Error checking file modification for {cloud_path}: {e}")
+            return False
+
+    @retry_method
     def download_folder(self, cloud_folder, local_destination,
-                        maintain_src_folder_structure=False, progress_tracker=None):
+                        maintain_src_folder_structure=False, progress_tracker=None, extensions=[]):
         """Download a folder from cloud storage to local destination with progress tracking."""
         from nvidia_tao_core.microservices.handlers.cloud_handlers.progress_tracker import ProgressTracker
         from nvidia_tao_core.microservices.handlers.cloud_handlers.progress_tracker_utils import (
             send_progress_status_callback
         )
-
         # Normalize path to avoid double slashes
         cloud_folder_normalized = cloud_folder.strip('/')
         full_path = self.root + cloud_folder_normalized + '/' if cloud_folder_normalized else self.root
@@ -539,7 +660,9 @@ class CloudStorage:
 
             # Use fsspec for all cloud providers (unified approach)
             if maintain_src_folder_structure:
-                if os.path.exists(local_destination):
+                if not os.path.exists(local_destination):
+                    self.fs.download(full_path, local_destination, recursive=True)
+                else:
                     logger.info(f"Folder {local_destination} already exists, skipping download")
                     return
 
@@ -547,7 +670,8 @@ class CloudStorage:
                 if file_count > 10 or total_size_mb > 100:
                     self._download_folder_with_progress(
                         file_paths, full_path, local_destination, progress_tracker,
-                        maintain_src_folder_structure=True, cloud_folder_normalized=cloud_folder_normalized
+                        maintain_src_folder_structure=True, cloud_folder_normalized=cloud_folder_normalized,
+                        extensions=extensions
                     )
                 else:
                     # Download maintaining the source folder structure
@@ -558,7 +682,7 @@ class CloudStorage:
                 os.makedirs(local_destination, exist_ok=True)
                 self._download_folder_with_progress(
                     file_paths, full_path, local_destination, progress_tracker,
-                    maintain_src_folder_structure=False
+                    maintain_src_folder_structure=False, extensions=extensions
                 )
 
             if create_own_tracker:
@@ -573,7 +697,7 @@ class CloudStorage:
             raise
 
     def _download_folder_with_progress(self, file_paths, full_path, local_destination, progress_tracker,
-                                       maintain_src_folder_structure=False, cloud_folder_normalized=""):
+                                       maintain_src_folder_structure=False, cloud_folder_normalized="", extensions=[]):
         """Download folder contents with detailed progress tracking."""
         try:
             for file_path in file_paths:
@@ -586,6 +710,17 @@ class CloudStorage:
                         # Flatten structure
                         relative_path = file_path[len(full_path):]
                         local_file_path = os.path.join(local_destination, relative_path)
+                        if extensions and not any(file_path.endswith(ext) for ext in extensions):
+                            continue
+                        if self.is_file_modified(file_path, local_file_path):
+                            os.makedirs(os.path.dirname(local_file_path), exist_ok=True)
+                            self.fs.download(file_path, local_file_path)
+                            logger.info(f"Downloaded {file_path} to {local_file_path}")
+                        else:
+                            logger.info(
+                                f"File {local_file_path} in folder {local_destination} "
+                                f"already exists, skipping download"
+                            )
 
                     # Skip if file already exists
                     if os.path.exists(local_file_path):
