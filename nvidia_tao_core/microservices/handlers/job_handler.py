@@ -66,6 +66,7 @@ from nvidia_tao_core.microservices.utils.automl_job_utils import on_delete_autom
 from nvidia_tao_core.microservices.utils.core_utils import (
     check_and_convert
 )
+from nvidia_tao_core.microservices.utils.deduplication_utils import find_duplicate_job
 
 if os.getenv("BACKEND"):
     from .mongo_handler import MongoHandler
@@ -105,7 +106,8 @@ class JobHandler:
         retain_checkpoints_for_resume=False,
         early_stop_epoch=None,
         timeout_minutes=60,
-        automl_settings=None
+        automl_settings=None,
+        force_create=False
     ):
         """Runs a job based on the specified parameters.
 
@@ -131,10 +133,11 @@ class JobHandler:
             retain_checkpoints_for_resume (bool, optional): Whether to retain .pth checkpoints for training resume.
             early_stop_epoch (int, optional): The epoch number to early stop training.
             timeout_minutes (int, optional): The job-specific timeout in minutes. Defaults to 60 minutes.
+            force_create (bool, optional): If False, return existing job with same params. Defaults to False.
 
         Returns:
             Code: A response code object containing the status and job ID or error details:
-                  - 200: Job successfully queued.
+                  - 200: Job successfully queued or duplicate found.
                   - 400: If job execution was unsuccessful.
                   - 404: If dataset/experiment/action not found or access is denied.
         """
@@ -144,6 +147,30 @@ class JobHandler:
             platform_id = backend_details.get('platform_id')
 
         handler_metadata = resolve_metadata(kind, handler_id)
+        if not handler_metadata:
+            return Code(404, [], f"{handler_id} {kind} doesn't exist")
+
+        user_id = handler_metadata.get("user_id")
+
+        # Check for duplicate job unless force_create is True
+        if not force_create:
+            job_params = {
+                "kind": kind,
+                "handler_id": handler_id,
+                "action": action,
+                "specs": specs,
+                "parent_job_id": parent_job_id,
+                "base_experiment_ids": handler_metadata.get("base_experiment_ids", []),
+                "network_arch": handler_metadata.get("network_arch", ""),
+                "automl_settings": automl_settings  # Include AutoML settings for proper deduplication
+            }
+            duplicate_job_id = find_duplicate_job(user_id, org_name, job_params)
+            if duplicate_job_id:
+                logger.info(
+                    "Returning existing job %s for %s %s with matching params",
+                    duplicate_job_id, kind, handler_id
+                )
+                return Code(200, duplicate_job_id, "Job with same parameters already exists")
         if not handler_metadata:
             return Code(404, [], f"{handler_id} {kind} doesn't exist")
 

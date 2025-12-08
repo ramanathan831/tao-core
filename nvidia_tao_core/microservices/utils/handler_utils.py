@@ -87,10 +87,11 @@ logger = logging.getLogger(__name__)
 class TAOResponse:
     """Helper class for API response"""
 
-    def __init__(self, code, data):
+    def __init__(self, code, data, message=""):
         """Initialize TAOResponse helper class"""
         self.code = code
         self.data = data
+        self.message = message
         self.attachment_key = None
 
 
@@ -100,23 +101,23 @@ def Code(code, data={}, msg="", use_data_as_response=False):
     Args:
         code (int): HTTP status code
         data (dict): Response data
-        msg (str): Error message
+        msg (str): Error message or informational message
         use_data_as_response (bool): If True, use data directly as response (like 200 responses)
                                    If False, format as standard error response
     """
     if code == 200:
-        return TAOResponse(code, data)
+        return TAOResponse(code, data, msg)
 
     if code in [400, 404]:
         if use_data_as_response:
             # Use data directly as response, just like 200 responses
-            return TAOResponse(code, data)
+            return TAOResponse(code, data, msg)
         # Standard error formatting
         error_data = {"error_desc": msg, "error_code": code}
-        return TAOResponse(code, error_data)
+        return TAOResponse(code, error_data, msg)
 
     error_data = {"error_desc": msg, "error_code": code}
-    return TAOResponse(404, error_data)
+    return TAOResponse(404, error_data, msg)
 
 
 class JobContext:

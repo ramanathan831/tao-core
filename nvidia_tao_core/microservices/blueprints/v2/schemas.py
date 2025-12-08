@@ -711,6 +711,7 @@ class AWSCredentialsFields:
     cloud_bucket_name = fields.Str(validate=validate.Length(min=1, max=2048), allow_none=True)
     cloud_type = fields.Constant(CloudPullTypesEnum.aws.value)
 
+
 class AzureCredentialsFields:
     """Reusable field definitions for Azure storage credentials"""
 
@@ -907,6 +908,7 @@ class WorkspaceReq(Schema):
     version = fields.Str(format="regex", regex=r'^\d+\.\d+\.\d+$', validate=fields.validate.Length(max=10))
     cloud_type = EnumField(CloudPullTypesEnum, allow_none=False)
     cloud_specific_details = fields.Nested(CloudSpecificDetails, allow_none=False)
+    force_create = fields.Bool(allow_none=True)
 
     @validates_schema
     def validate_cloud_specific_details(self, data, **kwargs):
@@ -1086,6 +1088,7 @@ class DatasetReq(Schema):
         ),
         validate=validate.Length(max=16)
     )
+    force_create = fields.Bool(allow_none=True)
 
 
 class DatasetJob(Schema):
@@ -1589,6 +1592,7 @@ class DatasetJobReq(Schema):
         fields.Str(format="uuid", validate=fields.validate.Length(max=36)),
         validate=validate.Length(max=2)
     )
+    force_create = fields.Bool(allow_none=True)
 
 
 class ExperimentJobReq(Schema):
@@ -1717,6 +1721,7 @@ class ExperimentJobReq(Schema):
         allow_none=True
     )
     kind = fields.Constant(JobKindEnum.experiment.value)
+    force_create = fields.Bool(allow_none=True)
 
 
 class JobReq(OneOfSchema):

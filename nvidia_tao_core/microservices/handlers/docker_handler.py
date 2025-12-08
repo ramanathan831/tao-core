@@ -406,6 +406,27 @@ class DockerHandler:
 
                 run_kwargs["device_requests"] = device_requests
 
+            # Check if a container with this name already exists and remove it
+            try:
+                existing_container = self._docker_client.containers.get(container_name)
+                logger.warning(
+                    f"Container {container_name} already exists "
+                    f"(status={existing_container.status}). Removing it."
+                )
+                try:
+                    existing_container.stop(timeout=5)
+                    logger.info(f"Stopped existing container {container_name}")
+                except Exception as stop_err:
+                    logger.debug(f"Error stopping container (may already be stopped): {stop_err}")
+                try:
+                    existing_container.remove(force=True)
+                    logger.info(f"Removed existing container {container_name}")
+                except Exception as rm_err:
+                    logger.warning(f"Error removing container: {rm_err}")
+            except Exception:
+                # Container doesn't exist, which is the normal case
+                logger.debug(f"No existing container named {container_name} found (normal)")
+
             # Start the container
             self._container = self._docker_client.containers.run(**run_kwargs)
             logger.info(f"Container {container_name} started successfully")
