@@ -25,10 +25,13 @@ from .stateless_handler_utils import get_toolkit_status
 release_name = os.getenv("RELEASE_NAME", 'tao-api')
 
 # Configure logging
+TAO_LOG_LEVEL = os.getenv('TAO_LOG_LEVEL', 'INFO').upper()
+tao_log_level = getattr(logging, TAO_LOG_LEVEL, logging.INFO)
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.WARNING,  # Root logger: suppress third-party DEBUG logs
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
+logging.getLogger('nvidia_tao_core').setLevel(tao_log_level)
 logger = logging.getLogger(__name__)
 
 
@@ -110,9 +113,33 @@ def dependency_check(num_gpu=-1, accelerator=None):
         num_gpu = int(os.getenv('NUM_GPU_PER_NODE', default='1'))
     if BACKEND == "local-docker":
         from .job_utils.gpu_manager import gpu_manager
+        logger.debug(f"[GPU_CHECK] Checking GPU availability: requesting {num_gpu} GPU(s)")
+
+        # Trigger lazy GC to get accurate availability
+        reclaimed = gpu_manager._reclaim_stale_gpus()
+        if reclaimed > 0:
+            logger.debug(f"[GPU_CHECK] Lazy GC reclaimed {reclaimed} GPU(s) from stopped containers")
+
+        # Get available GPUs
         available_gpus = gpu_manager.get_available_gpus()
         gpu_count = len(available_gpus) if available_gpus else 0
-        return bool(available_gpus), gpu_count
+
+        # DEBUG: Log GPU table state
+        from .mongo_utils import MongoHandler
+        mongo_handler = MongoHandler("tao", "gpus")
+        all_gpus = mongo_handler.find({})
+        logger.debug("[GPU_CHECK_DEBUG] GPU table state:")
+        for gpu in all_gpus:
+            logger.debug(
+                f"[GPU_CHECK_DEBUG]   GPU {gpu.get('id')}: "
+                f"status={gpu.get('status')}, job_id={gpu.get('job_id')}"
+            )
+
+        is_available = gpu_count >= num_gpu
+        logger.debug(
+            f"[GPU_CHECK] Result: {gpu_count} available, {num_gpu} requested, sufficient={is_available}"
+        )
+        return is_available, gpu_count
     label_selector = 'accelerator=' + str(accelerator)
     if not accelerator:
         label_selector = None

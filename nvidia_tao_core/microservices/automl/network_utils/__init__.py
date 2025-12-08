@@ -28,6 +28,7 @@ import logging
 
 # Import network modules
 from nvidia_tao_core.microservices.automl.network_utils import cosmos_rl
+from nvidia_tao_core.microservices.automl.network_utils import dino
 
 logger = logging.getLogger(__name__)
 
@@ -35,6 +36,10 @@ logger = logging.getLogger(__name__)
 # Maps network name -> data type -> handler function
 NETWORK_PARAM_HANDLERS = {
     "cosmos-rl": cosmos_rl.HANDLERS,
+    "dino": dino.HANDLERS,
+    "deformable_detr": dino.HANDLERS,  # Same constraint as DINO
+    "grounding_dino": dino.HANDLERS,  # Same constraint as DINO
+    "rtdetr": dino.HANDLERS,  # Same constraint as DINO
 }
 
 # Export cosmos-rl functions for backward compatibility
@@ -85,7 +90,7 @@ def apply_network_specific_param_logic(
     if data_type in ("dict", "collection"):
         result = handler(parameter_name, value, parent_params)
     else:
-        result = handler(parameter_name, value, v_max, default_train_spec)
+        result = handler(parameter_name, value, v_max, default_train_spec, parent_params)
 
     # Log if handler modified the value (handle both scalar and list types)
     try:

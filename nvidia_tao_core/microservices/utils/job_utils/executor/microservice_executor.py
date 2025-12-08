@@ -17,6 +17,7 @@ import os
 import time
 import uuid
 import traceback
+import functools
 from kubernetes import client
 
 from nvidia_tao_core.microservices.constants import NETWORK_CONTAINER_MAPPING
@@ -33,12 +34,58 @@ from nvidia_tao_core.microservices.utils.handler_utils import (
 from nvidia_tao_core.microservices.handlers.lepton_handler import LeptonHandler
 from nvidia_tao_core.microservices.handlers.execution_handlers.slurm_handler import SlurmHandler
 
-if os.getenv("BACKEND") == "local-docker":
-    from ..gpu_manager import gpu_manager
-else:
-    gpu_manager = None  # type: ignore
-
 from .base_executor import BaseExecutor
+
+
+def retry_docker_microservice(max_retries=3, delay_seconds=5):
+    """Retry decorator for docker microservice creation.
+
+    Retries when the wrapped function returns False or raises an Exception.
+    """
+
+    def decorator(func):
+        @functools.wraps(func)
+        def wrapper(*args, **kwargs):
+            # Assumes first arg is `self` (MicroserviceExecutor instance)
+            self = args[0] if args else None
+            logger = getattr(self, "logger", None)
+
+            last_exc = None
+            for attempt in range(1, max_retries + 1):
+                try:
+                    result = func(*args, **kwargs)
+                    # Only retry on explicit False; True/None/etc. are treated as final
+                    if result is not False:
+                        return result
+
+                    if logger:
+                        logger.warning(
+                            f"[DOCKER_MICROSERVICE_RETRY] {func.__name__} returned False "
+                            f"(attempt {attempt}/{max_retries}), will retry after {delay_seconds}s"
+                        )
+                except Exception as exc:  # noqa: BLE001
+                    last_exc = exc
+                    if logger:
+                        logger.error(
+                            f"[DOCKER_MICROSERVICE_RETRY] {func.__name__} raised {type(exc).__name__}: {exc} "
+                            f"(attempt {attempt}/{max_retries})"
+                        )
+                        logger.error(traceback.format_exc())
+
+                if attempt < max_retries:
+                    time.sleep(delay_seconds)
+
+            # Exhausted retries
+            if last_exc is not None:
+                # Re-raise the last exception after all retries
+                raise last_exc
+
+            # All attempts returned False
+            return False
+
+        return wrapper
+
+    return decorator
 
 
 class MicroserviceExecutor(BaseExecutor):
@@ -274,11 +321,11 @@ class MicroserviceExecutor(BaseExecutor):
                             message=f"Error when sending microservice request {response.text}"
                         )
                         docker_handler.stop_container()
-                        gpu_manager.release_gpus(microservice_pod_id)
+                        # GPUs will be automatically reclaimed by lazy garbage collection on next assignment
                         return None
                     if api_endpoint != "post_action":
                         docker_handler.stop_container()
-                        gpu_manager.release_gpus(microservice_pod_id)
+                        # GPUs will be automatically reclaimed by lazy garbage collection on next assignment
                     return response
                 internal_job_status_update(
                     microservice_pod_id,
@@ -336,7 +383,15 @@ class MicroserviceExecutor(BaseExecutor):
             statefulset_executor.delete_statefulset(microservice_pod_id, use_ngc=False)
             return None
 
-    def create_docker_inference_microservice(self, job_id, image, custom_command=None, api_port=8080, num_gpu=1):
+    @retry_docker_microservice(max_retries=3, delay_seconds=5)
+    def create_docker_inference_microservice(
+        self,
+        job_id,
+        image,
+        custom_command=None,
+        api_port=8080,
+        num_gpu=1,
+    ):
         """Create a docker-compose inference microservice container"""
         try:
             from nvidia_tao_core.microservices.handlers.docker_handler import DockerHandler
@@ -364,9 +419,10 @@ class MicroserviceExecutor(BaseExecutor):
 
             self.logger.error(f"Failed to start docker inference microservice {job_id}")
             docker_handler.stop_container()
-            gpu_manager.release_gpus(job_id)
+            # GPUs will be automatically reclaimed by lazy garbage collection on next assignment
             return False
 
         except Exception as e:
             self.logger.error(f"Error creating docker inference microservice {job_id}: {e}")
+            self.logger.error(traceback.format_exc())
             return False

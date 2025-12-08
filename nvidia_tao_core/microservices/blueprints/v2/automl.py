@@ -14,6 +14,7 @@
 
 """AutoML Flask Routes - Manage parameter ranges and details"""
 import logging
+import os
 import traceback
 from flask import Blueprint, request, jsonify
 
@@ -24,10 +25,13 @@ from nvidia_tao_core.microservices.utils import get_microservices_network_and_ac
 from nvidia_tao_core.microservices.enum_constants import ExperimentNetworkArch
 
 # Configure logging
+TAO_LOG_LEVEL = os.getenv('TAO_LOG_LEVEL', 'INFO').upper()
+tao_log_level = getattr(logging, TAO_LOG_LEVEL, logging.INFO)
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.WARNING,  # Root logger: suppress third-party DEBUG logs
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
+logging.getLogger('nvidia_tao_core').setLevel(tao_log_level)
 logger = logging.getLogger(__name__)
 
 # Create blueprint for automl params routes

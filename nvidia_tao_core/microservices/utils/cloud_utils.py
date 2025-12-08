@@ -29,10 +29,13 @@ from nvidia_tao_core.microservices.utils.slurm_cloud_storage import SlurmCloudSt
 NUM_RETRY = 5
 
 # Configure logging
+TAO_LOG_LEVEL = os.getenv('TAO_LOG_LEVEL', 'INFO').upper()
+tao_log_level = getattr(logging, TAO_LOG_LEVEL, logging.INFO)
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.WARNING,  # Root logger: suppress third-party DEBUG logs
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
+logging.getLogger('nvidia_tao_core').setLevel(tao_log_level)
 logger = logging.getLogger(__name__)
 
 
@@ -674,9 +677,13 @@ class CloudStorage:
                         extensions=extensions
                     )
                 else:
-                    # Download maintaining the source folder structure
+                    # Download maintaining the source folder structure (small folders)
                     self.fs.download(full_path, local_destination, recursive=True)
-                    progress_tracker.update_progress(files_processed=file_count, size_processed_mb=total_size_mb)
+                    # Mark all files as downloaded
+                    for _ in range(file_count):
+                        progress_tracker.start_file_download()
+                        progress_tracker.complete_file_download()
+                    progress_tracker.update_progress(size_processed_mb=total_size_mb)
             else:
                 # Download contents without the source folder structure
                 os.makedirs(local_destination, exist_ok=True)
@@ -731,7 +738,10 @@ class CloudStorage:
                             file_size_mb = file_info.get('size', 0) / (1024 * 1024) if 'size' in file_info else 0.0
                         except Exception:
                             file_size_mb = 0.0
-                        progress_tracker.update_progress(files_processed=1, size_processed_mb=file_size_mb)
+                        file_name = os.path.basename(file_path)
+                        progress_tracker.start_file_download(file_name=file_name, file_size_mb=file_size_mb)
+                        progress_tracker.update_progress(size_processed_mb=file_size_mb)
+                        progress_tracker.complete_file_download()
                         continue
 
                     # Create directory if needed
@@ -744,18 +754,24 @@ class CloudStorage:
                     except Exception:
                         file_size_mb = 0.0
 
+                    # Mark file download as started
+                    file_name = os.path.basename(file_path)
+                    progress_tracker.start_file_download(file_name=file_name, file_size_mb=file_size_mb)
+
                     # Use streaming download for large files
                     if file_size_mb > 50:
                         self._download_file_with_streaming_progress(
                             file_path, local_file_path, file_size_mb,
-                            os.path.basename(file_path)
+                            file_name, progress_tracker
                         )
                     else:
                         # Download individual file
                         self.fs.download(file_path, local_file_path)
+                        # Update progress with the file size (streaming does this automatically)
+                        progress_tracker.update_progress(size_processed_mb=file_size_mb)
 
-                    # Update progress
-                    progress_tracker.update_progress(files_processed=1, size_processed_mb=file_size_mb)
+                    # Mark file download as complete
+                    progress_tracker.complete_file_download()
 
                 except Exception as file_err:
                     logger.warning(f"Failed to download {file_path}: {file_err}")
@@ -810,10 +826,7 @@ class CloudStorage:
                         chunk_size_mb = len(chunk) / (1024 * 1024)
                         streaming_tracker.update_progress(size_processed_mb=chunk_size_mb)
 
-            # Mark file as complete when streaming download finishes (if using external tracker)
-            if not manage_tracker and external_progress_tracker:
-                external_progress_tracker.complete_file_download()
-
+            # Only call complete() if we created our own tracker (not using external)
             if manage_tracker:
                 streaming_tracker.complete()
 
@@ -1091,19 +1104,23 @@ class CloudStorage:
 
     @retry_method
     @master_node_only
-    def move_folder(self, source_path, destination_path, job_id=None):
+    def move_folder(self, source_path, destination_path, job_id=None, exclude_files=None):
         """Move a folder within cloud storage.
 
         Args:
             source_path: Source folder path
             destination_path: Destination folder path
             job_id: Optional job ID for health beat reporting during long operations
+            exclude_files: Optional list of filenames to exclude from move (e.g., ['microservices_log.txt', 'log.txt'])
         """
         full_source = self.root + source_path.strip('/').rstrip('/') + '/'
         full_destination = self.root + destination_path.strip('/').rstrip('/') + '/'
+        exclude_files = exclude_files or []
 
         try:
             logger.info(f"Moving folder {full_source} to {full_destination}")
+            if exclude_files:
+                logger.info(f"Excluding files from move: {exclude_files}")
 
             if job_id:
                 report_health_beat(job_id, f"Starting folder move: {source_path} -> {destination_path}")
@@ -1111,6 +1128,16 @@ class CloudStorage:
             # Get all files in source
             all_files = self.fs.find(full_source)
             files_only = [f for f in all_files if self.fs.isfile(f)]
+            # Filter out excluded files
+            if exclude_files:
+                filtered_files = []
+                for file_path in files_only:
+                    filename = file_path.split('/')[-1]
+                    if filename not in exclude_files:
+                        filtered_files.append(file_path)
+                    else:
+                        logger.info(f"Excluding file from move: {file_path}")
+                files_only = filtered_files
 
             logger.info(f"Attempting to move {len(files_only)} files individually")
 

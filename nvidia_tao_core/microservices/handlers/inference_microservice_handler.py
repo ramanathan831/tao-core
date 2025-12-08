@@ -32,10 +32,13 @@ from nvidia_tao_core.microservices.utils.core_utils import read_network_config
 
 
 # Configure logging
+TAO_LOG_LEVEL = os.getenv('TAO_LOG_LEVEL', 'INFO').upper()
+tao_log_level = getattr(logging, TAO_LOG_LEVEL, logging.INFO)
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.WARNING,  # Root logger: suppress third-party DEBUG logs
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
+logging.getLogger('nvidia_tao_core').setLevel(tao_log_level)
 logger = logging.getLogger(__name__)
 
 
@@ -123,7 +126,7 @@ class InferenceMicroserviceHandler:
         # logger.info("Using CLI args: %s", cli_args)
 
         docker_env_vars = experiment_metadata.get("docker_env_vars", {})
-        docker_env_vars["BACKEND"] = os.getenv("BACKEND", "local-k8s")
+        docker_env_vars["TAO_EXECUTION_BACKEND"] = os.getenv("BACKEND", "local-k8s")
         docker_env_vars["TAO_API_JOB_ID"] = job_id
 
         # Set up environment variables for status callbacks (auto-deletion)
@@ -339,8 +342,16 @@ umask 0 &&
             return Code(500, {}, f"Failed to get service status: {str(e)}")
 
     @staticmethod
-    def check_inference_microservice_model_readiness(job_id: str) -> dict:
-        """Check if Inference Microservice model is ready in StatefulSet containers"""
+    def check_inference_microservice_model_readiness(job_id: str, api_port: int = 8080) -> dict:
+        """Check if Inference Microservice model is ready in StatefulSet containers
+
+        Args:
+            job_id: Job ID for the microservice
+            api_port: Port number for the microservice
+
+        Returns:
+            Dictionary with readiness status and progress information
+        """
         try:
             statefulset_name = f"ims-{job_id}"
 
@@ -351,14 +362,31 @@ umask 0 &&
                 )
                 statefulset_status = stat_dict.get("status", "Unknown")
 
+                # If StatefulSet is running, get detailed status from the microservice
                 if statefulset_status == "Running":
-                    # If StatefulSet is running, model should be loaded (loaded at startup)
-                    return {
-                        "job_id": job_id,
-                        "status": "ready",
-                        "loaded": True,
-                        "statefulset_status": statefulset_status
-                    }
+                    try:
+                        # Get detailed status including progress
+                        status_response = InferenceMicroserviceHandler.get_inference_microservice_status_direct(
+                            job_id, api_port
+                        )
+                        return {
+                            "job_id": job_id,
+                            "status": "ready" if status_response.get("model_loaded") else "loading",
+                            "loaded": status_response.get("model_loaded", False),
+                            "loading": status_response.get("model_loading", False),
+                            "initializing": status_response.get("server_initializing", False),
+                            "statefulset_status": statefulset_status,
+                            "progress": status_response.get("progress", {})
+                        }
+                    except Exception as status_err:
+                        logger.warning(f"Could not get detailed status for {job_id}: {status_err}")
+                        # Fallback to basic response
+                        return {
+                            "job_id": job_id,
+                            "status": "ready",
+                            "loaded": True,
+                            "statefulset_status": statefulset_status
+                        }
                 return {
                     "job_id": job_id,
                     "status": "not_ready",
@@ -461,11 +489,22 @@ umask 0 &&
         except requests.exceptions.Timeout:
             error_msg = f"Inference request timed out after {timeout} seconds for job {job_id}"
             logger.error(error_msg)
+            # Try to get current progress to include in error response
+            try:
+                status_response = (
+                    InferenceMicroserviceHandler.get_inference_microservice_status_direct(
+                        job_id, api_port
+                    )
+                )
+                progress_info = status_response.get("progress", {})
+            except Exception:
+                progress_info = {}
             return {
                 "status": "error",
                 "error": error_msg,
                 "job_id": job_id,
-                "timestamp": datetime.now().isoformat()
+                "timestamp": datetime.now().isoformat(),
+                "progress": progress_info
             }
         except requests.exceptions.ConnectionError:
             error_msg = f"Could not connect to inference microservice for job {job_id}"
@@ -474,7 +513,13 @@ umask 0 &&
                 "status": "error",
                 "error": error_msg,
                 "job_id": job_id,
-                "timestamp": datetime.now().isoformat()
+                "timestamp": datetime.now().isoformat(),
+                "progress": {
+                    "stage": "error",
+                    "message": "Connection failed - microservice may not be running",
+                    "remaining_steps": [],
+                    "details": {"error": "ConnectionError"}
+                }
             }
         except Exception as e:
             error_msg = f"Unexpected error during inference request for job {job_id}: {str(e)}"
@@ -483,7 +528,13 @@ umask 0 &&
                 "status": "error",
                 "error": error_msg,
                 "job_id": job_id,
-                "timestamp": datetime.now().isoformat()
+                "timestamp": datetime.now().isoformat(),
+                "progress": {
+                    "stage": "error",
+                    "message": f"Unexpected error: {str(e)}",
+                    "remaining_steps": [],
+                    "details": {"error": str(e)}
+                }
             }
 
     @staticmethod
@@ -494,7 +545,7 @@ umask 0 &&
             job_id: Job ID for the microservice
 
         Returns:
-            Status response from the microservice
+            Status response from the microservice including progress information
         """
         try:
             logger.info(f"Getting status for inference microservice job {job_id}")
@@ -510,6 +561,7 @@ umask 0 &&
             if response.status_code == 200:
                 result = response.json()
                 logger.info(f"Status retrieved successfully for job {job_id}")
+                # Progress information is already included in the result from the server
                 return result
             error_msg = f"Status request failed with status {response.status_code}"
             logger.error(f"{error_msg} for job {job_id}")
@@ -517,7 +569,13 @@ umask 0 &&
                 "status": "error",
                 "error": error_msg,
                 "job_id": job_id,
-                "timestamp": datetime.now().isoformat()
+                "timestamp": datetime.now().isoformat(),
+                "progress": {
+                    "stage": "error",
+                    "message": error_msg,
+                    "remaining_steps": [],
+                    "details": {}
+                }
             }
 
         except Exception as e:
@@ -527,7 +585,13 @@ umask 0 &&
                 "status": "error",
                 "error": error_msg,
                 "job_id": job_id,
-                "timestamp": datetime.now().isoformat()
+                "timestamp": datetime.now().isoformat(),
+                "progress": {
+                    "stage": "error",
+                    "message": f"Failed to connect to microservice: {str(e)}",
+                    "remaining_steps": [],
+                    "details": {"error": str(e)}
+                }
             }
 
     @staticmethod

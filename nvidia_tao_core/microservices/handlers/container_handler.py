@@ -62,10 +62,13 @@ from nvidia_tao_core.microservices.utils.core_utils import (
 )
 from nvidia_tao_core.microservices.utils.specs_utils import json_to_kitti, json_to_yaml, json_to_toml
 # Configure logging
+TAO_LOG_LEVEL = os.getenv('TAO_LOG_LEVEL', 'INFO').upper()
+tao_log_level = getattr(logging, TAO_LOG_LEVEL, logging.INFO)
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.WARNING,  # Root logger: suppress third-party DEBUG logs
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
+logging.getLogger('nvidia_tao_core').setLevel(tao_log_level)
 logger = logging.getLogger(__name__)
 
 # Spec backend to conversion functions mapping
@@ -105,8 +108,8 @@ def prepare_data_before_job_run(job, docker_env_vars):
     # Count total files to download before starting
     logger.info("Analyzing spec for download requirements...")
 
-    # Count files in main spec
-    main_spec_files = count_files_in_spec(specs)
+    # Count files in main spec (pass cloud_metadata to count actual files in cloud folders)
+    main_spec_files = count_files_in_spec(specs, cloud_data=job.get("cloud_metadata"))
 
     # Count additional downloads
     additional_downloads = specs.pop("additional_downloads", [])
@@ -553,18 +556,24 @@ class ContainerJobHandler:
                     # Capture snapshot of results directory after downloads but before job execution
                     results_dir_snapshot = ContainerJobHandler.capture_directory_snapshot(specs["results_dir"])
 
-                    # Get upload strategy and exclude patterns by reading network config directly
+                    # Get upload strategy, exclude patterns, and retain patterns by reading network config directly
                     network = docker_env_vars.get("ORCHESTRATION_API_NETWORK",
                                                   job.get("neural_network_name", ""))
                     action = docker_env_vars.get("ORCHESTRATION_API_ACTION", job.get("action_name", ""))
                     retain_checkpoints_for_resume = (
                         docker_env_vars.get("RETAIN_CHECKPOINTS_FOR_RESUME", "false").lower() == "true"
                     )
-                    upload_strategy, exclude_patterns = ContainerJobHandler.get_upload_strategy_from_config(
-                        network, action, retain_checkpoints_for_resume)
+                    upload_strategy, exclude_patterns, retain_patterns = (
+                        ContainerJobHandler.get_upload_strategy_from_config(
+                            network, action, retain_checkpoints_for_resume
+                        )
+                    )
                     logger.info("Using upload strategy for %s %s: %s", network, action, upload_strategy)
                     if exclude_patterns:
                         logger.info("Excluding patterns for %s %s: %s", network, action, exclude_patterns)
+                    if retain_patterns:
+                        logger.info("Retaining files matching patterns for %s %s until job completion: %s",
+                                    network, action, retain_patterns)
 
                     # Determine if we should start continuous monitoring
                     should_start_continuous = True
@@ -589,7 +598,7 @@ class ContainerJobHandler:
                         upload_thread = threading.Thread(
                             target=monitor_and_upload,
                             args=(specs["results_dir"], cloud_storage, exit_event, 0,
-                                  selective_tarball_config, exclude_patterns),
+                                  selective_tarball_config, exclude_patterns, retain_patterns),
                             daemon=True
                         )
                         upload_thread.start()
@@ -632,15 +641,38 @@ class ContainerJobHandler:
                             """Monitor for graceful termination signal and trigger shutdown if detected."""
                             nonlocal is_completed, status_logger, status_file
                             check_interval = 5  # Check every 5 seconds
+                            logger.debug(
+                                f"[GRACEFUL-PAUSE] Starting graceful termination monitor: "
+                                f"job_id={job['job_id']}, check_interval={check_interval}s"
+                            )
                             while entrypoint_running.is_set():
                                 if ContainerJobHandler.check_graceful_termination_signal(specs["results_dir"]):
-                                    logger.info("Graceful termination signal detected for job %s", job["job_id"])
+                                    logger.debug(
+                                        f"[GRACEFUL-PAUSE] Graceful termination signal detected: "
+                                        f"job_id={job['job_id']}, results_dir={specs['results_dir']}"
+                                    )
                                     entrypoint_running.clear()  # Stop monitoring
+                                    logger.debug(
+                                        f"[GRACEFUL-PAUSE] Cleared entrypoint running flag: "
+                                        f"job_id={job['job_id']}"
+                                    )
                                     is_completed = False  # Mark as paused, not completed
+                                    logger.debug(
+                                        f"[GRACEFUL-PAUSE] Marked job as not completed (paused): "
+                                        f"job_id={job['job_id']}"
+                                    )
 
                                     cleanup_already_done.set()  # Prevent duplicate cleanup in finally block
+                                    logger.debug(
+                                        f"[GRACEFUL-PAUSE] Set cleanup_already_done flag: "
+                                        f"job_id={job['job_id']}"
+                                    )
 
                                     # Snapshot files to upload (prevents uploading files generated during upload wait)
+                                    logger.debug(
+                                        f"[GRACEFUL-PAUSE] Capturing directory snapshot for upload: "
+                                        f"job_id={job['job_id']}, results_dir={specs['results_dir']}"
+                                    )
                                     current_snapshot = ContainerJobHandler.capture_directory_snapshot(
                                         specs["results_dir"]
                                     )
@@ -648,22 +680,31 @@ class ContainerJobHandler:
                                         current_snapshot - results_dir_snapshot
                                         if results_dir_snapshot else current_snapshot
                                     )
-                                    logger.info("Snapshot: %d files to upload", len(files_to_upload))
-                                    logger.info("Files to upload: %s", files_to_upload)
+                                    logger.debug(
+                                        f"[GRACEFUL-PAUSE] Snapshot captured: "
+                                        f"job_id={job['job_id']}, total_files={len(files_to_upload)}"
+                                    )
+                                    logger.debug(
+                                        f"[GRACEFUL-PAUSE] Files to upload: "
+                                        f"job_id={job['job_id']}, files={files_to_upload}"
+                                    )
 
                                     # Stop continuous upload monitor and wait for current uploads
                                     if exit_event:
-                                        logger.info("Stopping continuous upload monitor")
+                                        logger.debug("Stopping continuous upload monitor")
                                         exit_event.set()
                                     if upload_thread:
-                                        logger.info("Waiting for current upload to complete")
+                                        logger.debug("Waiting for current upload to complete")
                                         upload_thread.join()
-                                        logger.info("Upload thread joined successfully")
+                                        logger.debug("Upload thread joined successfully")
 
                                     # Upload snapshot files using common upload function
                                     if cloud_storage and files_to_upload:
-                                        logger.info("Starting snapshot upload of %d files", len(files_to_upload))
-                                        logger.info("Files to upload: %s", files_to_upload)
+                                        logger.debug(
+                                            f"[GRACEFUL-PAUSE] Starting snapshot upload: "
+                                            f"job_id={job['job_id']}, num_files={len(files_to_upload)}"
+                                        )
+                                        logger.debug(f"[GRACEFUL-PAUSE] Files to upload: {files_to_upload}")
 
                                         # Create progress tracker for snapshot upload
                                         snapshot_progress_tracker = None
@@ -671,16 +712,24 @@ class ContainerJobHandler:
                                             # Calculate total size of files to upload
                                             total_size_mb = 0.0
                                             valid_files = []
+                                            logger.debug(
+                                                f"[GRACEFUL-PAUSE] Calculating file sizes: "
+                                                f"job_id={job['job_id']}"
+                                            )
                                             for rel_path in files_to_upload:
                                                 file_path = os.path.join(specs["results_dir"], rel_path)
                                                 if os.path.exists(file_path) and os.path.isfile(file_path):
                                                     total_size_mb += os.path.getsize(file_path) / (1024 * 1024)
                                                     valid_files.append(rel_path)
-                                            logger.info("Valid files: %s", valid_files)
+                                            logger.debug(
+                                                f"[GRACEFUL-PAUSE] Valid files: "
+                                                f"job_id={job['job_id']}, files={valid_files}"
+                                            )
                                             if valid_files:
-                                                logger.info(
-                                                    "Snapshot upload: %d files (%.1f MB) to upload",
-                                                    len(valid_files), total_size_mb
+                                                logger.debug(
+                                                    f"[GRACEFUL-PAUSE] Snapshot upload details: "
+                                                    f"job_id={job['job_id']}, files={len(valid_files)}, "
+                                                    f"size_mb={total_size_mb:.1f}"
                                                 )
 
                                                 snapshot_progress_tracker = ProgressTracker(
@@ -689,32 +738,52 @@ class ContainerJobHandler:
                                                     total_size_mb=total_size_mb,
                                                     send_callbacks=True  # Enable callbacks for snapshot uploads
                                                 )
+                                                logger.debug(
+                                                    f"[GRACEFUL-PAUSE] Progress tracker created: "
+                                                    f"job_id={job['job_id']}"
+                                                )
 
+                                                logger.debug(
+                                                    f"[GRACEFUL-PAUSE] Uploading files to cloud storage: "
+                                                    f"job_id={job['job_id']}"
+                                                )
+                                                # Don't retain during graceful pause - remove all files
                                                 upload_files(
                                                     specs["results_dir"],
                                                     cloud_storage,
                                                     file_snapshot=valid_files,
                                                     selective_tarball_config=selective_tarball_config,
                                                     exclude_patterns=exclude_patterns,
-                                                    progress_tracker=snapshot_progress_tracker
+                                                    progress_tracker=snapshot_progress_tracker,
+                                                    retain_patterns=None
                                                 )
 
                                                 # Complete the progress tracker
                                                 snapshot_progress_tracker.complete()
-                                                logger.info("Snapshot upload completed successfully")
+                                                logger.debug(
+                                                    f"[GRACEFUL-PAUSE] Snapshot upload completed "
+                                                    f"successfully: job_id={job['job_id']}"
+                                                )
                                             else:
-                                                logger.warning("No valid files found in snapshot to upload")
+                                                logger.warning(
+                                                    f"[GRACEFUL-PAUSE] No valid files found in snapshot "
+                                                    f"to upload: job_id={job['job_id']}"
+                                                )
                                         except Exception as e:
-                                            logger.error("Error during snapshot upload: %s", str(e))
-                                            logger.error("Traceback: %s", traceback.format_exc())
+                                            logger.error(
+                                                f"[GRACEFUL-PAUSE] Error during snapshot upload: "
+                                                f"job_id={job['job_id']}, error={str(e)}"
+                                            )
+                                            logger.error(f"[GRACEFUL-PAUSE] Traceback: {traceback.format_exc()}")
                                             if snapshot_progress_tracker:
                                                 # Mark as complete even on error to send final status
                                                 snapshot_progress_tracker.complete()
                                             raise
                                     else:
                                         logger.warning(
-                                            "Snapshot upload skipped - cloud_storage=%s, files_to_upload=%s",
-                                            bool(cloud_storage), len(files_to_upload) if files_to_upload else 0
+                                            f"[GRACEFUL-PAUSE] Snapshot upload skipped: "
+                                            f"job_id={job['job_id']}, cloud_storage={bool(cloud_storage)}, "
+                                            f"files_to_upload={len(files_to_upload) if files_to_upload else 0}"
                                         )
 
                                     # Initialize status logger and run cleanup
@@ -739,10 +808,25 @@ class ContainerJobHandler:
                                         exclude_patterns=exclude_patterns,
                                         is_graceful_pause=True
                                     )
+                                    logger.debug(
+                                        f"[GRACEFUL-PAUSE] Checkpoint upload completed: "
+                                        f"job_id={job['job_id']}"
+                                    )
 
                                     ContainerJobHandler.remove_graceful_termination_signal(specs["results_dir"])
-                                    logger.info("Graceful pause complete, exiting")
+                                    logger.debug(
+                                        f"[GRACEFUL-PAUSE] Removed termination signal file: "
+                                        f"job_id={job['job_id']}"
+                                    )
+                                    logger.debug(
+                                        f"[GRACEFUL-PAUSE] Graceful pause complete, exiting: "
+                                        f"job_id={job['job_id']}"
+                                    )
                                     sys.exit(0)
+                                logger.debug(
+                                    f"[GRACEFUL-PAUSE] Monitoring - no signal detected, continuing: "
+                                    f"job_id={job['job_id']}"
+                                )
                                 threading.Event().wait(check_interval)
 
                         # Start graceful termination monitor (non-daemon to ensure cleanup completes)
@@ -1176,7 +1260,7 @@ class ContainerJobHandler:
 
     @staticmethod
     def get_upload_strategy_from_config(network, action, retain_checkpoints_for_resume=False):
-        """Get upload strategy and exclude patterns by reading network config directly.
+        """Get upload strategy, exclude patterns, and retain patterns by reading network config directly.
 
         Args:
             network (str): Network name
@@ -1184,8 +1268,8 @@ class ContainerJobHandler:
             retain_checkpoints_for_resume (bool): Whether to retain .pth checkpoints for training resume
 
         Returns:
-            tuple: (upload_strategy, exclude_patterns) where upload_strategy is dict or str,
-                   and exclude_patterns is list or None
+            tuple: (upload_strategy, exclude_patterns, retain_patterns) where upload_strategy is dict or str,
+                   exclude_patterns is list or None, and retain_patterns is list or None
         """
         try:
             network_config = read_network_config(network)
@@ -1193,6 +1277,7 @@ class ContainerJobHandler:
                 cloud_upload_config = network_config["cloud_upload"]
                 strategy = cloud_upload_config.get("upload_strategy", {}).get(action, "continuous")
                 exclude_patterns = cloud_upload_config.get("exclude_patterns", {}).get(action)
+                retain_patterns = cloud_upload_config.get("retain_patterns", {}).get(action)
 
                 # If retaining for resume, remove .pth exclusion patterns
                 if retain_checkpoints_for_resume and exclude_patterns:
@@ -1208,11 +1293,11 @@ class ContainerJobHandler:
                     # Return None if all patterns were removed
                     exclude_patterns = exclude_patterns if exclude_patterns else None
 
-                return strategy, exclude_patterns
-            return "continuous", None  # Default to continuous if not specified
+                return strategy, exclude_patterns, retain_patterns
+            return "continuous", None, None  # Default to continuous if not specified
         except Exception as e:
             logger.error("Error reading upload strategy from network config: %s", str(e))
-            return "continuous"
+            return "continuous", None, None
 
 
 def main():

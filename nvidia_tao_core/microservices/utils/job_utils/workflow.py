@@ -50,11 +50,15 @@ from nvidia_tao_core.microservices.utils.core_utils import read_network_config
 from .dependencies import dependency_type_map, dependency_check_default
 
 # Configure logging
+TAO_LOG_LEVEL = os.getenv('TAO_LOG_LEVEL', 'INFO').upper()
+tao_log_level = getattr(logging, TAO_LOG_LEVEL, logging.INFO)
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.WARNING,  # Root logger: suppress third-party DEBUG logs
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
+logging.getLogger('nvidia_tao_core').setLevel(tao_log_level)
 logger = logging.getLogger(__name__)
+logger.info(f"Logging configured at level: {TAO_LOG_LEVEL}")
 
 
 def synchronized(wrapped):
@@ -123,7 +127,51 @@ def dependency_check(job_context, dependency):
 
 
 def execute_job(job_context):
-    """Starts a thread on pipelines present in actions.py"""
+    """Starts a thread on pipelines present in actions.py
+
+    Returns:
+        bool: True if job can be dequeued (successfully started or doesn't need GPUs)
+              False if job should stay in queue (GPU assignment failed)
+    """
+    # CRITICAL FIX: Pre-assign GPUs BEFORE starting async thread
+    # This prevents race condition where job is dequeued before we discover GPUs aren't available
+    from nvidia_tao_core.microservices.utils.stateless_handler_utils import BACKEND
+    if BACKEND == "local-docker":
+        # Check if this job needs GPUs
+        gpu_dependency = None
+        for dep in job_context.dependencies:
+            if dep.type == "gpu":
+                gpu_dependency = dep
+                break
+
+        if gpu_dependency and gpu_dependency.num > 0:
+            from nvidia_tao_core.microservices.utils.job_utils.gpu_manager import gpu_manager
+            logger.debug(
+                f"[WORKFLOW] Pre-assigning {gpu_dependency.num} GPU(s) for job {job_context.id} "
+                f"to prevent dequeuing before we know GPUs are available"
+            )
+            gpu_ids = gpu_manager.assign_gpus(str(job_context.id), gpu_dependency.num)
+
+            if not gpu_ids:
+                logger.warning(
+                    f"[WORKFLOW] Job {job_context.id}: GPU assignment FAILED - "
+                    f"requested {gpu_dependency.num} GPU(s) but none available. "
+                    f"Job will stay in queue and retry in next scan cycle."
+                )
+                return False  # Don't dequeue - job stays in queue for retry
+
+            logger.debug(f"[WORKFLOW] Successfully pre-assigned GPUs {gpu_ids} to job {job_context.id}")
+            # Store assigned GPU IDs in MongoDB so start_container can retrieve them
+            from nvidia_tao_core.microservices.utils.stateless_handler_utils import (
+                get_handler_job_metadata,
+                write_job_metadata
+            )
+            job_metadata = get_handler_job_metadata(str(job_context.id))
+            if job_metadata:
+                job_metadata["pre_assigned_gpu_ids"] = gpu_ids
+                write_job_metadata(str(job_context.id), job_metadata)
+                logger.debug(f"[WORKFLOW] Stored pre-assigned GPU IDs in job metadata for {job_context.id}")
+
     isautoml = False
     for dep in job_context.dependencies:
         if dep.type == "automl":
@@ -310,6 +358,10 @@ def scan_for_jobs():
             job = queue.queue[i]
             report_healthy(f"{job.id} with action {job.action}: Checking dependencies")
             report_healthy(f"Total dependencies: {len(job.dependencies)}")
+            logger.debug(
+                f"[WORKFLOW] Processing job {i + 1}/{len(queue.queue)}: {job.id} "
+                f"({job.network}/{job.action}) - checking {len(job.dependencies)} dependencies"
+            )
             all_met = True
             pending_reason_message = ""
 
@@ -323,10 +375,16 @@ def scan_for_jobs():
                     break
 
             for dep in job.dependencies:
+                logger.debug(
+                    f"[WORKFLOW] Job {job.id}: Checking dependency "
+                    f"type={dep.type}, name={dep.name}, num={dep.num}"
+                )
                 dependency_met, message = dependency_check(job, dep)
                 if not dependency_met:
                     pending_reason_message += f"{message} and, "
-                    report_healthy(f"Unmet dependency: {dep.type} {pending_reason_message}")
+                    report_healthy(f"Unmet dependency for job {job.id}: {dep.type} {pending_reason_message}")
+                    logger.debug("job details: %s", job.__dict__)
+                    logger.debug("dependency details: %s", dep.__dict__)
                     all_met = False
                 # Handle permanent failures that should error out the job
                 if "Parent job " in message and "errored out" in message:
@@ -367,12 +425,18 @@ def scan_for_jobs():
                 # execute job
                 # check if job is still enqueued in the DB
                 report_healthy(f"{job.id} with action {job.action}: All dependencies met")
+                logger.debug(f"[WORKFLOW] Job {job.id}: All dependencies met, calling execute_job()")
                 if execute_job(job):
                     # dequeue job
+                    logger.debug(f"[WORKFLOW] Job {job.id}: execute_job() returned True, will be dequeued")
                     jobs_to_dequeue.append(job)
                 else:
+                    logger.warning(f"[WORKFLOW] Job {job.id}: execute_job() returned False, will NOT be dequeued")
                     report_healthy(f"{job.id} with action {job.action}: Job execution failed")
+
+        logger.debug(f"[WORKFLOW] Dequeuing {len(jobs_to_dequeue)} job(s)")
         for job in jobs_to_dequeue:
+            logger.debug(f"[WORKFLOW] Dequeuing job {job.id}")
             Workflow.dequeue(job)
 
         # Check for timed out jobs and terminate them

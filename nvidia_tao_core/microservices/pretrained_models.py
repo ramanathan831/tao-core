@@ -36,7 +36,12 @@ if os.getenv("AIRGAPPED_MODE", "False").lower() == "false":
 else:
     MongoHandler = None  # type: ignore
 from nvidia_tao_core.microservices.utils.ngc_utils import get_ngc_token_from_api_key
-from nvidia_tao_core.microservices.utils.core_utils import read_network_config, get_admin_key, safe_load_file
+from nvidia_tao_core.microservices.utils.core_utils import (
+    read_network_config,
+    get_admin_key,
+    safe_load_file,
+    get_orchestration_network_from_microservices
+)
 from nvidia_tao_core.microservices.handlers.cloud_handlers.huggingface import (
     download_huggingface_model as download_hf_model
 )
@@ -46,14 +51,18 @@ from nvidia_tao_core.microservices.enum_constants import (
     BaseExperimentDomain,
     BaseExperimentBackboneClass,
     BaseExperimentBackboneType,
-    BaseExperimentLicense
+    BaseExperimentLicense,
+    ExperimentNetworkArch
 )
 
 # Configure logging
+TAO_LOG_LEVEL = os.getenv('TAO_LOG_LEVEL', 'INFO').upper()
+tao_log_level = getattr(logging, TAO_LOG_LEVEL, logging.INFO)
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.WARNING,  # Root logger: suppress third-party DEBUG logs
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
+logging.getLogger('nvidia_tao_core').setLevel(tao_log_level)
 logger = logging.getLogger(__name__)
 
 base_exp_uuid = "00000000-0000-0000-0000-000000000000"
@@ -128,9 +137,6 @@ class BaseExperimentMetadata:
         # create rootdir if it doesn't exist
         os.makedirs(self.rootdir, exist_ok=True)
 
-        # create a list of all supported network architectures
-        self.supported_network_archs = self.get_supported_network_archs()
-
         # set tao version and comparison operators
         self.tao_version = None  # type: version.Version
         self.comparison_operators = {
@@ -202,6 +208,11 @@ class BaseExperimentMetadata:
     def get_network_config_cached(self, network_arch: str):
         """Get network config with caching to avoid repeated file reads
 
+        Tries to load the config in the following order:
+        1. Direct network config for network_arch
+        2. Orchestration network config (if network_arch is a microservices network)
+        3. Default fallback config
+
         Args:
             network_arch: Network architecture name
 
@@ -209,12 +220,28 @@ class BaseExperimentMetadata:
             dict: Network configuration
         """
         if network_arch not in self._network_config_cache:
+            # Try loading direct network config first
             try:
                 self._network_config_cache[network_arch] = read_network_config(network_arch)
-                logger.debug(f"Cached network config for {network_arch}")
+                logger.debug(f"Cached network config for {network_arch} (direct)")
+                if not self._network_config_cache[network_arch]:
+                    logger.debug(f"Could not load direct network config for {network_arch}")
+                    # Try to find orchestration network and load its config
+                    orchestration_network = get_orchestration_network_from_microservices(network_arch)
+                    if orchestration_network != network_arch:
+                        self._network_config_cache[network_arch] = read_network_config(orchestration_network)
+                        logger.info(
+                            f"Cached network config for {network_arch} using "
+                            f"orchestration network: {orchestration_network}"
+                        )
+                    else:
+                        # No orchestration mapping found, use default
+                        raise Exception("No orchestration network mapping found")
             except Exception as e:
-                logger.warning(f"Could not load network config for {network_arch}: {e}")
-                # Cache empty config to avoid repeated failures
+                logger.warning(
+                    f"Could not load network config for {network_arch} or its orchestration network: {e}"
+                )
+                # Cache default config to avoid repeated failures
                 self._network_config_cache[network_arch] = {
                     "api_params": {
                         "dataset_type": "object_detection",
@@ -243,6 +270,35 @@ class BaseExperimentMetadata:
             if not version_ok:
                 break
         return version_ok
+
+    def validate_network_endpoint(self, network_arch: str):
+        """Validate that network architecture is a valid endpoint (not orchestration-only).
+
+        Args:
+            network_arch: Network architecture name to validate
+
+        Raises:
+            ValueError: If network is orchestration-only without a dedicated config file
+
+        A valid endpoint must either:
+        1. Have its own config file (e.g., visual_changenet_classify, visual_changenet_segment)
+        2. Be a microservices network that maps to a different orchestration network
+           (e.g., auto_label -> object_detection)
+
+        Invalid endpoints are orchestration-only networks without config files that map to
+        themselves (e.g., visual_changenet)
+        """
+        direct_config = read_network_config(network_arch)
+        if not direct_config:
+            # Check if this is a microservices network that maps to a different orchestration network
+            orchestration_network = get_orchestration_network_from_microservices(network_arch)
+            if orchestration_network == network_arch:
+                # This network doesn't have a config and doesn't map to a different orchestration network
+                # It's an orchestration-only network that shouldn't be used as an endpoint
+                raise ValueError(
+                    f"Entrypoint `{network_arch}` is not supported. "
+                    f"This is an orchestration-only network without a dedicated config file."
+                )
 
     def get_ngc_token(self, org: str = "", team: str = ""):
         """Authenticate to NGC"""
@@ -341,14 +397,6 @@ class BaseExperimentMetadata:
         logger.info(f"Created {len(org_teams)} org/team pairs for the provided NGC Personal key ")
         logger.info("--------------------------------------------------------")
         return org_teams
-
-    @staticmethod
-    def get_supported_network_archs():
-        """Get the list of all supported network architectures by API"""
-        # remove .config.json (12 charachter) from the end of the file name
-        return [
-            arch[:-12] for arch in os.listdir(f"{os.path.dirname(os.path.abspath(__file__))}/handlers/network_configs/")
-        ]
 
     @staticmethod
     def split_ngc_path(ngc_path):
@@ -473,6 +521,13 @@ class BaseExperimentMetadata:
                         logger.info(f"Skipping {model_path} - not in requested model names: {self.model_names}")
                         continue
 
+                    # Validate that the network architecture is a valid endpoint
+                    try:
+                        self.validate_network_endpoint(network_arch)
+                    except ValueError as e:
+                        logger.error(f"CSV row {row_num}: {e}")
+                        continue
+
                     # Parse model path to determine source type
                     source_type, cleaned_path = self.parse_model_path(model_path)
 
@@ -490,11 +545,11 @@ class BaseExperimentMetadata:
                         exp_id = str(uuid.uuid5(self.base_exp_uuid, f"hf:{cleaned_path}"))
 
                         # Validate network architecture for Hugging Face models
-                        if network_arch not in self.supported_network_archs:
+                        if network_arch not in ExperimentNetworkArch.__members__:
                             logger.warning(
                                 f"CSV row {row_num}: Network architecture '{network_arch}' "
                                 f"is not supported for Hugging Face model. "
-                                f"Supported architectures: {', '.join(self.supported_network_archs)}"
+                                f"Supported architectures: {', '.join(ExperimentNetworkArch.__members__)}"
                             )
                             logger.info(
                                 f"Proceeding with custom network architecture '{network_arch}' for Hugging Face model"
@@ -836,6 +891,9 @@ class BaseExperimentMetadata:
     def extract_common_metadata(self, experiment_info, api_params, model_specific_overrides=None):
         """Create common metadata structure for both NGC and Hugging Face models"""
         network_arch = experiment_info["network_arch"]
+        dataset_type = api_params.get("dataset_type", None)
+        if dataset_type is None:
+            dataset_type = get_orchestration_network_from_microservices(network_arch)
 
         # Common network architecture processing
         accepted_ds_intents = api_params.get("accepted_ds_intents", ["training", "evaluation"])
@@ -862,7 +920,7 @@ class BaseExperimentMetadata:
             "encryption_key": "tlt_encode",  # Default encryption key
             "logo": "https://www.nvidia.com",  # Default, can be overridden
             "network_arch": network_arch,
-            "dataset_type": api_params["dataset_type"],
+            "dataset_type": dataset_type,
             "dataset_formats": api_params.get("formats", ["coco"]),
             "accepted_dataset_intents": accepted_ds_intents,
             "actions": api_params["actions"],
@@ -910,7 +968,10 @@ class BaseExperimentMetadata:
         """Create metadata for Hugging Face models using network config"""
         network_arch = experiment_info["network_arch"]
 
-        # Load network configuration (cached)
+        # Validate that the network architecture is a valid endpoint
+        self.validate_network_endpoint(network_arch)
+
+        # Load network configuration (cached with automatic fallback)
         network_config = self.get_network_config_cached(network_arch)
         api_params = network_config["api_params"]
 
@@ -940,8 +1001,11 @@ class BaseExperimentMetadata:
         if model_info["modelVersion"]["status"] != "UPLOAD_COMPLETE":
             raise ValueError(f"Model {experiment_info['ngc_path']} is not in UPLOAD_COMPLETE status!")
         network_arch = experiment_info["network_arch"]
-        if network_arch not in self.supported_network_archs:
+        if network_arch not in ExperimentNetworkArch.__members__:
             raise ValueError(f"Network architecture of `{network_arch}` is not supported by API!")
+
+        # Validate that the network architecture is a valid endpoint
+        self.validate_network_endpoint(network_arch)
 
         # Extract NGC-specific attributes from customMetrics
         attr = {}
@@ -966,16 +1030,21 @@ class BaseExperimentMetadata:
             if not attr.get("trainable"):
                 raise ValueError(f"Model {experiment_info['ngc_path']} is not trainable!")
             for endpoint in attr.get("endpoints", []):
-                if endpoint not in self.supported_network_archs:
+                if endpoint not in ExperimentNetworkArch.__members__:
                     logger.warning(
                         f"Skipping the 'endpoint' metadata for {experiment_info['ngc_path']}. "
                         f"'endpoint' metadata [{endpoint}] is not supported by API!"
                         "This may prevent base experiment creation in the future releases."
                     )
 
-        # Load network configuration (cached)
+        # Load network configuration (cached with automatic fallback)
         network_config = self.get_network_config_cached(network_arch)
+        logger.debug(f"network_arch: {network_arch}")
+        logger.debug(f"network_config: {network_config}")
         api_params = network_config["api_params"]
+        dataset_type = api_params.get("dataset_type", None)
+        if dataset_type is None:
+            dataset_type = get_orchestration_network_from_microservices(network_arch)
 
         # NGC-specific overrides
         ngc_overrides = {
@@ -989,7 +1058,7 @@ class BaseExperimentMetadata:
             "sha256_digest": attr.get("sha256_digest", {}),
             "dataset_formats": api_params.get(
                 "formats",
-                self.get_network_config_cached(api_params["dataset_type"]).get("api_params", {}).get("formats", None)
+                self.get_network_config_cached(dataset_type).get("api_params", {}).get("formats", None)
             ),
             "base_experiment_metadata": {
                 "task": self.convert_str_to_enum(attr.get("task", None), BaseExperimentTask),

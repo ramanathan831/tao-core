@@ -807,30 +807,48 @@ class ExperimentHandler:
         from nvidia_tao_core.microservices.utils.job_utils.workflow_driver import create_job_context, on_new_job
         from nvidia_tao_core.microservices.utils.stateless_handler_utils import get_job_specs
 
+        logger.debug(
+            f"[RESUME] Starting resume operation: job_id={job_id}, "
+            f"experiment_id={experiment_id}, kind={kind}, org_name={org_name}"
+        )
+
         handler_metadata = resolve_metadata(kind, experiment_id)
         if not handler_metadata:
+            logger.debug(f"[RESUME] Experiment not found: experiment_id={experiment_id}")
             return Code(404, [], "Experiment not found")
 
         user_id = handler_metadata.get("user_id")
         if not check_write_access(user_id, org_name, experiment_id, kind="experiments"):
+            logger.debug(f"[RESUME] Write access denied: user_id={user_id}, experiment_id={experiment_id}")
             return Code(404, [], "Experiment not found")
 
         job_metadata = get_handler_job_metadata(job_id)
         if not job_metadata:
+            logger.debug(f"[RESUME] Job metadata not found: job_id={job_id}")
             return Code(404, None, "job trying to resume not found")
         action = job_metadata.get("action", "")
         action = infer_action_from_job(experiment_id, job_id)
         status = job_metadata.get("status", "")
         if not timeout_minutes:
             timeout_minutes = job_metadata.get("timeout_minutes", 60)
+
+        logger.debug(
+            f"[RESUME] Job metadata retrieved: job_id={job_id}, action={action}, "
+            f"status={status}, timeout_minutes={timeout_minutes}"
+        )
+
         if status != "Paused":
+            logger.debug(f"[RESUME] Job status is not Paused: job_id={job_id}, status={status}")
             return Code(400, [], f"Job status should be paused, not {status}")
         if action not in ("train", "distill", "quantize", "retrain"):
+            logger.debug(f"[RESUME] Action not resumable: job_id={job_id}, action={action}")
             return Code(400, [], f"Action should be train, distill, quantize, retrain, not {action}")
         network = handler_metadata.get("network_arch", None)
         if network in MAXINE_NETWORKS:
+            logger.debug(f"[RESUME] Maxine network does not support resume: job_id={job_id}, network={network}")
             return Code(400, [], "Maxine networks do not support resume.")
         if not user_id:
+            logger.debug(f"[RESUME] User ID not found in metadata: experiment_id={experiment_id}")
             return Code(
                 404,
                 [],
@@ -840,17 +858,21 @@ class ExperimentHandler:
         msg = ""
         try:
             from nvidia_tao_core.microservices.utils.stateless_handler_utils import update_job_status
+            logger.debug(f"[RESUME] Updating job status to Resuming: job_id={job_id}")
             update_job_status(experiment_id, job_id, status="Resuming", kind=kind + "s")
             # Reset timeout timer by clearing old status history
             delete_dnn_status(job_id, automl=False)
-            logger.info(f"Cleared status history for resumed job {job_id} to reset timeout timer")
+            logger.debug(f"[RESUME] Cleared status history for resumed job to reset timeout timer: job_id={job_id}")
             if not name:
                 name = job_metadata.get("name", "")
+                logger.debug(f"[RESUME] Using existing name from metadata: job_id={job_id}, name={name}")
             if not backend_details:
                 logger.info("Loading existing backend_details from paused job")
                 backend_details = job_metadata.get("backend_details", None)
+
             if is_request_automl(experiment_id, action, kind):
                 msg = "AutoML "
+                logger.debug(f"[RESUME] Resuming AutoML job: job_id={job_id}, experiment_id={experiment_id}")
                 AutoMLHandler.resume(
                     user_id,
                     org_name,
@@ -861,14 +883,22 @@ class ExperimentHandler:
                     backend_details=backend_details,
                     timeout_minutes=timeout_minutes
                 )
+                logger.debug(f"[RESUME] AutoML resume handler called: job_id={job_id}")
             else:
                 # Create a job and run it
+                logger.debug(f"[RESUME] Resuming non-AutoML job: job_id={job_id}")
                 if not specs:
-                    logger.info("Loading existing specs from paused job")
                     specs = get_job_specs(job_id)
+                    logger.debug(
+                        f"[RESUME] Loading existing specs from paused job: "
+                        f"job_id={job_id}, num_spec_keys={len(specs) if specs else 0}"
+                    )
                 if not parent_job_id:
-                    logger.info("Loading existing parent_job_id from paused job")
                     parent_job_id = handler_metadata.get('parent_job_id', None)
+                    logger.debug(
+                        f"[RESUME] Loading existing parent_job_id from metadata: "
+                        f"job_id={job_id}, parent_job_id={parent_job_id}"
+                    )
                 if not description:
                     description = job_metadata.get("description", "")
                 if num_gpu == -1:
@@ -876,6 +906,13 @@ class ExperimentHandler:
                 retain_checkpoints_for_resume = job_metadata.get("retain_checkpoints_for_resume", False)
                 early_stop_epoch = job_metadata.get("early_stop_epoch", None)
                 timeout_minutes = job_metadata.get("timeout_minutes", None)
+                logger.debug(
+                    f"[RESUME] Job configuration: job_id={job_id}, num_gpu={num_gpu}, "
+                    f"retain_checkpoints={retain_checkpoints_for_resume}, "
+                    f"early_stop_epoch={early_stop_epoch}"
+                )
+
+                logger.debug(f"[RESUME] Creating job context: job_id={job_id}")
                 job_context = create_job_context(
                     parent_job_id,
                     "train",
@@ -894,11 +931,14 @@ class ExperimentHandler:
                     timeout_minutes=timeout_minutes,
                     backend_details=backend_details
                 )
+                logger.debug(f"[RESUME] Calling on_new_job to queue resumed job: job_id={job_id}")
                 on_new_job(job_context)
+                logger.debug(f"[RESUME] Job queued successfully: job_id={job_id}")
+            logger.debug(f"[RESUME] Resume operation completed successfully: job_id={job_id}")
             return Code(200, {"message": f"{msg}Action for job {job_id} resumed"})
         except Exception as e:
-            logger.error("Exception thrown in resume_experiment_job is %s", str(e))
-            logger.error(traceback.format_exc())
+            logger.error(f"[RESUME] Exception thrown in resume_experiment_job: job_id={job_id}, error={str(e)}")
+            logger.error(f"[RESUME] Traceback: {traceback.format_exc()}")
             return Code(400, [], "Action cannot be resumed")
 
     @staticmethod
@@ -938,11 +978,13 @@ class ExperimentHandler:
             for experiment_details in automl_controller_data:
                 automl_interpretable_result["metric"] = experiment_details.get("metric")
                 exp_id = experiment_details.get("id")
-                automl_interpretable_result["experiments"][exp_id] = {}
-                automl_interpretable_result["experiments"][exp_id]["result"] = experiment_details.get("result")
-                automl_interpretable_result["experiments"][exp_id]["status"] = experiment_details.get("status")
-                automl_interpretable_result["experiments"][exp_id]["specs"] = experiment_details.get("specs", {})
-                automl_interpretable_result["experiments"][exp_id]["job_id"] = experiment_details.get("job_id", "")
+                # Convert exp_id to string for MongoDB compatibility (MongoDB requires string keys)
+                exp_id_str = str(exp_id)
+                automl_interpretable_result["experiments"][exp_id_str] = {}
+                automl_interpretable_result["experiments"][exp_id_str]["result"] = experiment_details.get("result")
+                automl_interpretable_result["experiments"][exp_id_str]["status"] = experiment_details.get("status")
+                automl_interpretable_result["experiments"][exp_id_str]["specs"] = experiment_details.get("specs", {})
+                automl_interpretable_result["experiments"][exp_id_str]["job_id"] = experiment_details.get("job_id", "")
 
             # Get the best experiment id from the automl_jobs table
             best_rec_number, _ = get_automl_best_rec_info(job_id)

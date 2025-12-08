@@ -13,10 +13,23 @@
 # limitations under the License.
 
 """Workflow manager for normal model actions"""
+import os
+import logging
+
 from nvidia_tao_core.microservices.constants import NO_SPEC_ACTIONS_MODEL
 from nvidia_tao_core.microservices.utils.stateless_handler_utils import get_handler_type, get_job
-from nvidia_tao_core.microservices.utils.handler_utils import JobContext
+from nvidia_tao_core.microservices.utils.handler_utils import JobContext, get_num_gpus_from_spec
 from .workflow import Dependency, Job, Workflow
+
+# Configure logging
+TAO_LOG_LEVEL = os.getenv('TAO_LOG_LEVEL', 'INFO').upper()
+tao_log_level = getattr(logging, TAO_LOG_LEVEL, logging.INFO)
+logging.basicConfig(
+    level=logging.WARNING,  # Root logger: suppress third-party DEBUG logs
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logging.getLogger('nvidia_tao_core').setLevel(tao_log_level)
+logger = logging.getLogger(__name__)
 
 
 def create_job_context(
@@ -81,21 +94,33 @@ def on_new_job(job_context):
     num_gpu = job_context.num_gpu
     platform_id = job_context.platform_id
 
-    if job_context.action not in ["convert", "dataset_convert", "kmeans", "annotation"]:
-        num_gpu = 1
-        platform_id = None
-    elif job_context.action in ("convert", "gen_trt_engine"):
+    logger.debug(f"Job action: {job_context.action}")
+    if job_context.action not in ["convert", "kmeans", "annotation"]:
         if job_context.specs and job_context.specs.get("platform_id"):
             num_gpu = job_context.specs.get("num_gpu")
             platform_id = job_context.specs.get("platform_id")
+        if job_context.specs:
+            try:
+                num_gpu = get_num_gpus_from_spec(
+                    job_context.specs,
+                    job_context.action,
+                    network=job_context.network,
+                    default=num_gpu
+                )
+                logger.debug(
+                    f"GPU count determined from specs for {job_context.network}/{job_context.action}: {num_gpu}"
+                )
+            except Exception as e:
+                logger.warning(f"Failed to get GPU count from specs: {e}, using default: {num_gpu}")
 
+    logger.debug(f"Num GPU for job {job_context.id} assigned as dependency: {num_gpu}")
     if num_gpu > 0:
         deps.append(Dependency(type="gpu", name=platform_id, num=num_gpu))
 
     job = {
         'user_id': job_context.user_id,
         'org_name': job_context.org_name,
-        'num_gpu': job_context.num_gpu,
+        'num_gpu': num_gpu,
         'backend_details': job_context.backend_details,
         'kind': job_context.kind,
         'id': job_context.id,

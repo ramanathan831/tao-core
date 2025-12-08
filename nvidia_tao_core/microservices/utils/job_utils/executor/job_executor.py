@@ -14,6 +14,7 @@
 
 """Job executor for regular Kubernetes Job operations"""
 import os
+import time
 import logging
 import traceback
 from kubernetes import client, config
@@ -138,13 +139,13 @@ class JobExecutor(BaseExecutor):
         if BACKEND == "local-docker":
             from nvidia_tao_core.microservices.handlers.docker_handler import DockerHandler
             docker_handler = DockerHandler(image)
-            docker_env_vars = {
+            docker_env_vars.update({
                 "BACKEND": BACKEND,
                 "HOST_PLATFORM": "local-docker",
                 "MONGOSECRET": mongo_secret,
                 "DOCKER_HOST": os.getenv("DOCKER_HOST", default="unix:///var/run/docker.sock"),
                 "DOCKER_NETWORK": os.getenv("DOCKER_NETWORK", default="tao_default")
-            }
+            })
             volumes = None
             if automl_brain:
                 # AutoML brain needs Docker socket and SSH keys to sync status from SLURM
@@ -294,16 +295,31 @@ class JobExecutor(BaseExecutor):
             return
 
     def delete_job(self, job_name, use_ngc=True):
-        """Deletes a kubernetes job"""
+        """Deletes a job (K8s Job, Docker container, or NVCF function)"""
+        # Handle docker-compose backend
+        if BACKEND == "local-docker":
+            from nvidia_tao_core.microservices.handlers.docker_handler import DockerHandler
+            self.logger.debug(f"Docker backend: Looking for container {job_name}")
+            docker_handler = DockerHandler.get_handler_for_container(job_name)
+            if docker_handler:
+                self.logger.debug(f"Docker container found for {job_name}, stopping it now")
+                docker_handler.stop_container()
+                self.logger.info(f"Successfully stopped Docker container for {job_name}")
+            else:
+                self.logger.warning(f"Docker container not found for job {job_name}")
+            return
+
+        # Handle NVCF backend
+        if BACKEND == "NVCF" and use_ngc:
+            self._delete_nvcf_function(job_name)
+            return
+
+        # Handle local-k8s backend
         name_space = self.get_namespace()
         if os.getenv("DEV_MODE", "False").lower() in ("true", "1"):
             config.load_kube_config()
         else:
             config.load_incluster_config()
-
-        if BACKEND == "NVCF" and use_ngc:
-            self._delete_nvcf_function(job_name)
-            return
 
         api_instance = client.BatchV1Api()
         from .service_executor import ServiceExecutor
@@ -360,9 +376,13 @@ class JobExecutor(BaseExecutor):
 
     def get_job_status(self, org_name, handler_id, job_name, handler_kind, use_ngc=True, network="",
                        action="", automl_exp_job=False, docker_env_vars={},
-                       authorized_party_nca_id="", automl_experiment_id="0",
+                       authorized_party_nca_id="", automl_experiment_id="0", skip_service_wait=False,
                        workspace_metadata={}, results_dir=""):
-        """Returns status of kubernetes job"""
+        """Returns status of kubernetes job
+
+        Args:
+            skip_service_wait: If True, skip waiting for service (useful for brain jobs or after deletion)
+        """
         if workspace_metadata and results_dir:
             lepton_handler = get_lepton_handler_from_workspace(workspace_metadata.get("id"))
             slurm_handler = get_slurm_handler_from_workspace(workspace_metadata.get("id"))
@@ -508,6 +528,10 @@ class JobExecutor(BaseExecutor):
                     job_id=job_name,
                     specs=specs,
                 )
+                # If response is None, container is not reachable (stopped/deleted)
+                if response is None:
+                    self.logger.info(f"Container {job_name} is not reachable, likely stopped or deleted")
+                    return "Error"
                 if response and response.ok:
                     job_status = response.json()
                     status = job_status.get("status")
@@ -519,6 +543,19 @@ class JobExecutor(BaseExecutor):
 
         from .service_executor import ServiceExecutor
         service_executor = ServiceExecutor()
+
+        # Skip service wait for brain jobs or when service was just deleted
+        if skip_service_wait:
+            self.logger.info(f"Skipping service wait for job {job_name} (skip_service_wait=True)")
+            # Check job metadata directly for status
+            job_metadata = get_handler_job_metadata(job_name)
+            if job_metadata:
+                status = job_metadata.get("status", "Error")
+                self.logger.info(f"Job {job_name} status from metadata: {status}")
+                return status
+            self.logger.warning(f"Job {job_name} metadata not found, returning Error")
+            return "Error"
+
         service_status = service_executor.wait_for_service(job_name)
         if service_status == "Running":
             response = send_statefulset_request(
@@ -535,3 +572,135 @@ class JobExecutor(BaseExecutor):
         elif service_status in ("Canceled", "Canceling", "Paused", "Pausing"):
             return service_status
         return "Error"
+
+    def wait_for_job_termination(self, job_id, timeout_seconds=120):
+        """Wait for a Job and its containers/pods to be fully terminated.
+
+        Args:
+            job_id: The job ID to wait for termination
+            timeout_seconds: Maximum time to wait (default 120 seconds)
+
+        Returns:
+            bool: True if job terminated, False if timeout
+        """
+        poll_interval = 5
+        max_polls = timeout_seconds // poll_interval
+        poll_count = 0
+        job_terminated = False
+
+        self.logger.debug(
+            f"Waiting for job termination: job_id={job_id}, backend={BACKEND}, timeout={timeout_seconds}s"
+        )
+
+        # Handle docker-compose backend
+        if BACKEND == "local-docker":
+            from nvidia_tao_core.microservices.handlers.docker_handler import DockerHandler
+
+            while poll_count < max_polls:
+                docker_handler = DockerHandler.get_handler_for_container(job_id)
+                if docker_handler and docker_handler._container:
+                    # Reload container status
+                    try:
+                        docker_handler._container.reload()
+                        container_status = docker_handler._container.status
+                        if container_status in ("exited", "dead", "removing", "removed"):
+                            self.logger.debug(
+                                f"Docker container terminated: job_id={job_id}, status={container_status}"
+                            )
+                            job_terminated = True
+                            break
+                        self.logger.debug(
+                            f"Docker container still running: job_id={job_id}, status={container_status}, "
+                            f"poll={poll_count}/{max_polls}"
+                        )
+                    except Exception as e:
+                        self.logger.debug(f"Docker container no longer exists: job_id={job_id}, error={str(e)}")
+                        job_terminated = True
+                        break
+                else:
+                    # Container not found
+                    self.logger.debug(f"Docker container not found: job_id={job_id}")
+                    job_terminated = True
+                    break
+
+                time.sleep(poll_interval)
+                poll_count += 1
+
+        # Handle NVCF backend
+        elif BACKEND == "NVCF":
+            # For NVCF, check job metadata status
+            while poll_count < max_polls:
+                job_metadata = get_handler_job_metadata(job_id)
+                if not job_metadata:
+                    self.logger.debug(f"NVCF job metadata not found: job_id={job_id}")
+                    job_terminated = True
+                    break
+
+                job_status = job_metadata.get("status", "")
+                if job_status in ("Canceled", "Done", "Error", "Paused"):
+                    self.logger.debug(f"NVCF job terminated: job_id={job_id}, status={job_status}")
+                    job_terminated = True
+                    break
+
+                self.logger.debug(
+                    f"NVCF job still active: job_id={job_id}, status={job_status}, "
+                    f"poll={poll_count}/{max_polls}"
+                )
+                time.sleep(poll_interval)
+                poll_count += 1
+
+        # Handle local-k8s backend
+        elif BACKEND == "local-k8s":
+            if os.getenv("DEV_MODE", "False").lower() in ("true", "1"):
+                config.load_kube_config()
+            else:
+                config.load_incluster_config()
+
+            batch_v1 = client.BatchV1Api()
+            core_v1 = client.CoreV1Api()
+            namespace = os.getenv("NAMESPACE", "default")
+
+            while poll_count < max_polls:
+                try:
+                    # Check if K8s Job still exists
+                    batch_v1.read_namespaced_job(job_id, namespace)
+                    self.logger.debug(
+                        f"K8s Job still exists, waiting for deletion: job_id={job_id}, "
+                        f"poll={poll_count}/{max_polls}"
+                    )
+                except client.exceptions.ApiException as e:
+                    if e.status == 404:
+                        self.logger.debug(f"K8s Job deleted: job_id={job_id}")
+                        # Also check if pods are gone
+                        try:
+                            pods = core_v1.list_namespaced_pod(
+                                namespace,
+                                label_selector=f"job-name={job_id}"
+                            )
+                            if len(pods.items) == 0:
+                                self.logger.debug(f"All K8s job pods terminated: job_id={job_id}")
+                                job_terminated = True
+                                break
+                            # Still waiting for pods to terminate
+                            self.logger.debug(
+                                f"K8s job pods still terminating: job_id={job_id}, count={len(pods.items)}"
+                            )
+                        except Exception as pod_err:
+                            self.logger.warning(f"Error checking pods: {str(pod_err)}")
+                            job_terminated = True  # Assume terminated if we can't check
+                            break
+                    self.logger.error(f"Error checking K8s job: {str(e)}")
+                    break
+
+                time.sleep(poll_interval)
+                poll_count += 1
+        else:
+            self.logger.warning(f"Unknown BACKEND: {BACKEND}, assuming job terminated")
+            return True
+
+        if not job_terminated and poll_count >= max_polls:
+            self.logger.warning(f"Timeout waiting for job termination: job_id={job_id}, backend={BACKEND}")
+            return False
+
+        self.logger.debug(f"Job termination confirmed: job_id={job_id}, backend={BACKEND}")
+        return True

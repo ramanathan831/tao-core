@@ -29,11 +29,6 @@ from nvidia_tao_core.microservices.utils.handler_utils import (
 from nvidia_tao_core.microservices.handlers.lepton_handler import get_lepton_handler_from_workspace
 from nvidia_tao_core.microservices.handlers.execution_handlers.slurm_handler import get_slurm_handler_from_workspace
 
-if os.getenv("BACKEND") == "local-docker":
-    from ..gpu_manager import gpu_manager
-else:
-    gpu_manager = None  # type: ignore
-
 from .base_executor import BaseExecutor
 
 
@@ -426,24 +421,38 @@ echo "Starting Inference Microservice..." &&
             if docker_handler:
                 self.logger.debug(f"Docker container found for {job_name}, stopping it now")
                 docker_handler.stop_container()
-                self.logger.debug(f"Successfully stopped Docker container for {job_name}")
+                self.logger.info(f"Successfully stopped Docker container for {job_name}")
+
+                # Explicitly release GPUs for Docker Compose backend
+                # This ensures immediate GPU availability for next job instead of waiting for lazy GC
+                try:
+                    from nvidia_tao_core.microservices.utils.job_utils.gpu_manager import gpu_manager
+                    self.logger.debug(f"[GPU_RELEASE] Explicitly releasing GPUs for stopped container: {job_name}")
+                    gpu_manager.release_gpus(job_name)
+                    self.logger.info(f"[GPU_RELEASE] Successfully released GPUs for job: {job_name}")
+                except Exception as e:
+                    # Log but don't fail - lazy GC will handle it eventually
+                    self.logger.warning(
+                        f"[GPU_RELEASE] Failed to explicitly release GPUs for {job_name}: {e}. "
+                        f"GPUs will be reclaimed via lazy GC during next job assignment."
+                    )
             else:
-                self.logger.error(f"Docker container not found for job {job_name}")
-            gpu_manager.release_gpus(job_name)
-            self.logger.debug(f"Released GPUs for job {job_name}")
+                self.logger.warning(f"Docker container not found for job {job_name}")
             return True
 
-        name_space = self.get_namespace()
-        if os.getenv("DEV_MODE", "False").lower() in ("true", "1"):
-            config.load_kube_config()
-        else:
-            config.load_incluster_config()
-
+        # Handle NVCF backend
         if BACKEND == "NVCF" and use_ngc:
             from .job_executor import JobExecutor
             job_executor = JobExecutor()
             job_executor._delete_nvcf_function(job_name)
             return True
+
+        # Handle local-k8s backend
+        name_space = self.get_namespace()
+        if os.getenv("DEV_MODE", "False").lower() in ("true", "1"):
+            config.load_kube_config()
+        else:
+            config.load_incluster_config()
 
         api_instance = client.AppsV1Api()
         from .service_executor import ServiceExecutor
@@ -512,3 +521,138 @@ echo "Starting Inference Microservice..." &&
         except Exception as e:
             self.logger.error(f"Got {type(e)} error: {e}")
             return {"status": "Error"}
+
+    def wait_for_statefulset_termination(self, job_id, timeout_seconds=120):
+        """Wait for a StatefulSet and its containers/pods to be fully terminated.
+
+        Args:
+            job_id: The job ID to wait for termination
+            timeout_seconds: Maximum time to wait (default 120 seconds)
+
+        Returns:
+            bool: True if StatefulSet terminated, False if timeout
+        """
+        poll_interval = 5
+        max_polls = timeout_seconds // poll_interval
+        poll_count = 0
+        sts_terminated = False
+
+        self.logger.debug(
+            f"Waiting for StatefulSet termination: job_id={job_id}, backend={BACKEND}, "
+            f"timeout={timeout_seconds}s"
+        )
+
+        # Handle docker-compose backend
+        if BACKEND == "local-docker":
+            from nvidia_tao_core.microservices.handlers.docker_handler import DockerHandler
+
+            while poll_count < max_polls:
+                docker_handler = DockerHandler.get_handler_for_container(job_id)
+                if docker_handler and docker_handler._container:
+                    # Reload container status
+                    try:
+                        docker_handler._container.reload()
+                        container_status = docker_handler._container.status
+                        if container_status in ("exited", "dead", "removing", "removed"):
+                            self.logger.debug(
+                                f"Docker container terminated: job_id={job_id}, status={container_status}"
+                            )
+                            sts_terminated = True
+                            break
+                        self.logger.debug(
+                            f"Docker container still running: job_id={job_id}, status={container_status}, "
+                            f"poll={poll_count}/{max_polls}"
+                        )
+                    except Exception as e:
+                        self.logger.debug(f"Docker container no longer exists: job_id={job_id}, error={str(e)}")
+                        sts_terminated = True
+                        break
+                else:
+                    # Container not found
+                    self.logger.debug(f"Docker container not found: job_id={job_id}")
+                    sts_terminated = True
+                    break
+
+                time.sleep(poll_interval)
+                poll_count += 1
+
+        # Handle NVCF backend
+        elif BACKEND == "NVCF":
+            from nvidia_tao_core.microservices.utils.stateless_handler_utils import get_handler_job_metadata
+            # For NVCF, check job metadata status
+            while poll_count < max_polls:
+                job_metadata = get_handler_job_metadata(job_id)
+                if not job_metadata:
+                    self.logger.debug(f"NVCF job metadata not found: job_id={job_id}")
+                    sts_terminated = True
+                    break
+
+                job_status = job_metadata.get("status", "")
+                if job_status in ("Canceled", "Done", "Error", "Paused"):
+                    self.logger.debug(f"NVCF job terminated: job_id={job_id}, status={job_status}")
+                    sts_terminated = True
+                    break
+
+                self.logger.debug(
+                    f"NVCF job still active: job_id={job_id}, status={job_status}, "
+                    f"poll={poll_count}/{max_polls}"
+                )
+                time.sleep(poll_interval)
+                poll_count += 1
+
+        # Handle local-k8s backend
+        elif BACKEND == "local-k8s":
+            if os.getenv("DEV_MODE", "False").lower() in ("true", "1"):
+                config.load_kube_config()
+            else:
+                config.load_incluster_config()
+
+            apps_v1 = client.AppsV1Api()
+            core_v1 = client.CoreV1Api()
+            namespace = os.getenv("NAMESPACE", "default")
+            statefulset_name = f"tao-api-sts-{job_id}"
+
+            while poll_count < max_polls:
+                try:
+                    # Check if K8s StatefulSet still exists
+                    apps_v1.read_namespaced_stateful_set(statefulset_name, namespace)
+                    self.logger.debug(
+                        f"K8s StatefulSet still exists, waiting for deletion: job_id={job_id}, "
+                        f"poll={poll_count}/{max_polls}"
+                    )
+                except client.exceptions.ApiException as e:
+                    if e.status == 404:
+                        self.logger.debug(f"K8s StatefulSet deleted: job_id={job_id}")
+                        # Also check if pods are gone
+                        try:
+                            pods = core_v1.list_namespaced_pod(
+                                namespace,
+                                label_selector=f"job={job_id}"
+                            )
+                            if len(pods.items) == 0:
+                                self.logger.debug(f"All K8s StatefulSet pods terminated: job_id={job_id}")
+                                sts_terminated = True
+                                break
+                            self.logger.debug(
+                                f"K8s StatefulSet pods still terminating: job_id={job_id}, "
+                                f"count={len(pods.items)}"
+                            )
+                        except Exception as pod_err:
+                            self.logger.warning(f"Error checking pods: {str(pod_err)}")
+                            sts_terminated = True  # Assume terminated if we can't check
+                            break
+                    self.logger.error(f"Error checking K8s StatefulSet: {str(e)}")
+                    break
+
+                time.sleep(poll_interval)
+                poll_count += 1
+        else:
+            self.logger.warning(f"Unknown BACKEND: {BACKEND}, assuming StatefulSet terminated")
+            return True
+
+        if not sts_terminated and poll_count >= max_polls:
+            self.logger.warning(f"Timeout waiting for StatefulSet termination: job_id={job_id}, backend={BACKEND}")
+            return False
+
+        self.logger.info(f"StatefulSet termination confirmed: job_id={job_id}, backend={BACKEND}")
+        return True

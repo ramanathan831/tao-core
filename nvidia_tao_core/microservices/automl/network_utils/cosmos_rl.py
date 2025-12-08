@@ -137,7 +137,7 @@ def generate_lora_pattern(base_value, param_type="alpha", valid_multipliers=None
     return pattern_dict
 
 
-def apply_optm_lr_logic(parameter_name, lr_value, v_max, default_train_spec):
+def apply_optm_lr_logic(parameter_name, lr_value, v_max, default_train_spec, parent_params=None):
     """Apply cosmos-rl specific logic for optm_lr parameter.
 
     For full SFT training (no LoRA), there's a 30% chance to generate dual learning rates
@@ -148,6 +148,7 @@ def apply_optm_lr_logic(parameter_name, lr_value, v_max, default_train_spec):
         lr_value: The generated learning rate value
         v_max: Maximum valid value for learning rate
         default_train_spec: The original train specification to check for LoRA presence
+        parent_params: Dictionary of already-sampled parameters (optional, not used here)
 
     Returns:
         Either the original lr_value (float) or a list [llm_lr, vision_lr]
