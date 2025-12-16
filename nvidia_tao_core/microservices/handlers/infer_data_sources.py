@@ -109,7 +109,7 @@ def create_storage_handler_for_protocol(protocol, path, workspace_metadata=None)
         return None, formatted_path
 
     # Cloud protocols - create CloudStorage instance
-    if protocol in ['aws', 'azure']:
+    if protocol in ['aws', 'azure', 'lepton']:
         # If workspace_metadata is provided, use existing credentials
         if workspace_metadata and workspace_metadata.get('cloud_type') == protocol:
             from nvidia_tao_core.microservices.utils.cloud_utils import create_cs_instance

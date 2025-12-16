@@ -15,7 +15,7 @@
 """Unit tests for job timeout monitoring feature in workflow.py"""
 
 import os
-from unittest.mock import Mock, patch
+from unittest.mock import patch
 from datetime import datetime, timezone, timedelta
 
 from nvidia_tao_core.microservices.utils.job_utils.timeout_monitor import (
@@ -315,7 +315,7 @@ class TestCheckJobTimeout:
 class TestTerminateTimedOutJob:
     """Test terminate_timed_out_job function"""
 
-    @patch('nvidia_tao_core.microservices.utils.job_utils.executor.statefulset_executor.StatefulSetExecutor')
+    @patch('nvidia_tao_core.microservices.handlers.execution_handlers.execution_handler.ExecutionHandler')
     @patch('nvidia_tao_core.microservices.utils.job_utils.timeout_monitor.update_job_status')
     def test_terminate_timed_out_regular_job(self, mock_update_status, mock_executor_class):
         """Test terminating a timed out regular job"""
@@ -328,17 +328,16 @@ class TestTerminateTimedOutJob:
             'is_automl': False
         }
 
-        mock_executor = Mock()
-        mock_executor.delete_statefulset.return_value = True
-        mock_executor_class.return_value = mock_executor
+        # Mock the class method directly
+        mock_executor_class.delete_with_handler.return_value = True
 
         result = terminate_timed_out_job(job_info)
 
         assert result is True
         mock_update_status.assert_called_once_with(handler_id, job_id, status="Error", kind='experiment')
-        mock_executor.delete_statefulset.assert_called_once_with(job_id, use_ngc=True)
+        mock_executor_class.delete_with_handler.assert_called_once_with(job_id)
 
-    @patch('nvidia_tao_core.microservices.utils.job_utils.executor.statefulset_executor.StatefulSetExecutor')
+    @patch('nvidia_tao_core.microservices.handlers.execution_handlers.execution_handler.ExecutionHandler')
     @patch('nvidia_tao_core.microservices.utils.job_utils.timeout_monitor.save_automl_controller_info')
     @patch('nvidia_tao_core.microservices.utils.job_utils.timeout_monitor.get_automl_controller_info')
     def test_terminate_timed_out_automl_experiment(
@@ -365,9 +364,8 @@ class TestTerminateTimedOutJob:
         ]
         mock_get_controller.return_value = controller_data
 
-        mock_executor = Mock()
-        mock_executor.delete_statefulset.return_value = True
-        mock_executor_class.return_value = mock_executor
+        # Mock the class method directly
+        mock_executor_class.delete_with_handler.return_value = True
 
         result = terminate_timed_out_job(job_info)
 
@@ -383,10 +381,10 @@ class TestTerminateTimedOutJob:
         assert experiment_5['status'] == 'failure'
         assert 'timeout' in experiment_5['message'].lower()
 
-        # Verify StatefulSet was deleted with the correct job_id
-        mock_executor.delete_statefulset.assert_called_once_with(job_id, use_ngc=True)
+        # Verify ExecutionHandler was deleted with the correct job_id
+        mock_executor_class.delete_with_handler.assert_called_once_with(job_id)
 
-    @patch('nvidia_tao_core.microservices.utils.job_utils.executor.statefulset_executor.StatefulSetExecutor')
+    @patch('nvidia_tao_core.microservices.handlers.execution_handlers.execution_handler.ExecutionHandler')
     def test_terminate_timed_out_job_missing_info(self, mock_executor_class):
         """Test handling of missing job information - treated as orphaned job"""
         job_info = {
@@ -395,22 +393,20 @@ class TestTerminateTimedOutJob:
             'is_automl': False
         }
 
-        # Configure mock to return True (orphaned jobs can still be terminated)
-        mock_executor = Mock()
-        mock_executor.delete_statefulset.return_value = True
-        mock_executor_class.return_value = mock_executor
+        # Mock the class method directly
+        mock_executor_class.delete_with_handler.return_value = True
 
         result = terminate_timed_out_job(job_info)
 
         # Orphaned jobs (without handler_id) can still be terminated
         assert result is True
-        # Verify StatefulSet deletion was attempted
-        mock_executor.delete_statefulset.assert_called_once_with('test-job-123', use_ngc=True)
+        # Verify ExecutionHandler deletion was attempted
+        mock_executor_class.delete_with_handler.assert_called_once_with('test-job-123')
 
-    @patch('nvidia_tao_core.microservices.utils.job_utils.executor.statefulset_executor.StatefulSetExecutor')
+    @patch('nvidia_tao_core.microservices.handlers.execution_handlers.execution_handler.ExecutionHandler')
     @patch('nvidia_tao_core.microservices.utils.job_utils.timeout_monitor.update_job_status')
-    def test_terminate_timed_out_job_statefulset_deletion_fails(self, mock_update_status, mock_executor_class):
-        """Test when StatefulSet deletion fails"""
+    def test_terminate_timed_out_job_execution_handler_deletion_fails(self, mock_update_status, mock_executor_class):
+        """Test when ExecutionHandler deletion fails"""
         job_id = "test-job-123"
         handler_id = "handler-123"
         job_info = {
@@ -420,9 +416,8 @@ class TestTerminateTimedOutJob:
             'is_automl': False
         }
 
-        mock_executor = Mock()
-        mock_executor.delete_statefulset.return_value = False
-        mock_executor_class.return_value = mock_executor
+        # Mock the class method directly
+        mock_executor_class.delete_with_handler.return_value = False
 
         result = terminate_timed_out_job(job_info)
 

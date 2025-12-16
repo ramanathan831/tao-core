@@ -30,8 +30,9 @@ import traceback
 from nvidia_tao_core.microservices.utils.cloud_utils import CloudStorage
 from nvidia_tao_core.microservices.utils.ngc_utils import download_ngc_model, split_ngc_path, get_model_size_info
 from nvidia_tao_core.microservices.utils.nvcf_utils import invoke_function
-from nvidia_tao_core.microservices.utils.stateless_handler_utils import get_internal_job_status_update_data
+from nvidia_tao_core.microservices.utils.stateless_handler_utils import BACKEND, get_internal_job_status_update_data
 from nvidia_tao_core.distributed.decorators import master_node_only
+from nvidia_tao_core.microservices.enum_constants import Backend
 
 
 logger = logging.getLogger(__name__)
@@ -330,23 +331,12 @@ def upload_files(local_path, cloud_storage, file_last_modified=None,
 
     # Filter files to upload (apply all skip conditions)
     files_to_upload = []
-    backend = os.getenv("TAO_EXECUTION_BACKEND", "")
-    skip_log_files = backend in ("local-k8s", "local-docker")
-
     for rel_path in file_snapshot:
         file_path = os.path.join(local_path, rel_path)
         filename = os.path.basename(file_path)
 
         # Skip if file doesn't exist or is not a regular file
         if not (os.path.exists(file_path) and os.path.isfile(file_path)):
-            continue
-
-        # Skip log files for k8s/docker backends (server streams logs directly)
-        if skip_log_files and filename == "microservices_log.txt":
-            logger.debug(
-                f"Skipping log file upload for backend={backend}: {file_path}. "
-                "Server-side log streaming is enabled."
-            )
             continue
 
         # Skip checkpoint and tmp files
@@ -471,10 +461,11 @@ def send_logs_to_server(seek_position, retry=0):
     if os.getenv("CLOUD_BASED") == "True":
         # Skip log upload for k8s and docker backends - server handles it via direct streaming
         # Check TAO_EXECUTION_BACKEND (set by server for job containers)
-        backend = os.getenv("TAO_EXECUTION_BACKEND", "")
-        if backend in ("local-k8s", "local-docker"):
+        backend = os.getenv("TAO_EXECUTION_BACKEND", BACKEND.value)
+        backend = Backend(backend)
+        if backend in (Backend.LOCAL_K8S, Backend.LOCAL_DOCKER):
             logger.info(
-                f"Skipping container-side log upload for backend={backend}. "
+                f"Skipping container-side log upload for backend={backend.value}. "
                 "Server-side log streaming is enabled."
             )
             return seek_position
@@ -678,11 +669,12 @@ def monitor_and_upload(local_path, cloud_storage, exit_event, seek_position=0,
     # For k8s and docker backends, skip log file uploads (server handles via streaming)
     # But still handle send_logs_to_server for status updates
     # Check TAO_EXECUTION_BACKEND (set by server for job containers)
-    backend = os.getenv("TAO_EXECUTION_BACKEND", "")
-    skip_log_upload = backend in ("local-k8s", "local-docker")
+    backend = os.getenv("TAO_EXECUTION_BACKEND", BACKEND.value)
+    backend = Backend(backend)
+    skip_log_upload = backend in (Backend.LOCAL_K8S, Backend.LOCAL_DOCKER)
     if skip_log_upload:
         logger.info(
-            f"Backend={backend}: Server-side log streaming enabled. "
+            f"Backend={backend.value}: Server-side log streaming enabled. "
             "Log files will not be uploaded from container."
         )
 
@@ -854,7 +846,7 @@ def get_cloud_storage_class_object(cloud_data, cloud_string):
     cloud_storage = initialize_cloud_storage(
         cloud_type=csp_provider,
         bucket_name=bucket_name,
-        region=cloud_data[csp_provider][bucket_name].get("region"),
+        region=cloud_data[csp_provider][bucket_name].get("cloud_region"),
         access_key=cloud_data[csp_provider][bucket_name].get("access_key"),
         secret_key=cloud_data[csp_provider][bucket_name].get("secret_key"),
         endpoint_url=cloud_data[csp_provider][bucket_name].get("endpoint_url")

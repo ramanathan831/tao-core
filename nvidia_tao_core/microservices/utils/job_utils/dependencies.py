@@ -33,10 +33,11 @@ from nvidia_tao_core.microservices.utils.stateless_handler_utils import (
     get_handler_metadata,
     get_base_experiment_metadata,
     get_job_specs,
-    get_automl_controller_info
+    get_automl_controller_info,
+    BACKEND
 )
 from nvidia_tao_core.microservices.utils.executor_utils import dependency_check
-
+from nvidia_tao_core.microservices.enum_constants import Backend
 # Configure logging
 TAO_LOG_LEVEL = os.getenv('TAO_LOG_LEVEL', 'INFO').upper()
 tao_log_level = getattr(logging, TAO_LOG_LEVEL, logging.INFO)
@@ -189,7 +190,7 @@ def dependency_check_gpu(job_context, dependency):
 
     # If BACKEND is NVCF, then we don't need to check for GPU availability if it's not a local job
     local_job = (job_context.specs and "cluster" in job_context.specs and job_context.specs["cluster"] == "local")
-    if os.getenv("BACKEND") == "NVCF" and not local_job:
+    if BACKEND == Backend.NVCF and not local_job:
         return True, ""
 
     try:

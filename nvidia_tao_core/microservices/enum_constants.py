@@ -433,6 +433,23 @@ class BaseExperimentLicense(enum.Enum):
     cc_by_nc_sa_4 = "cc by nc sa 4.0"
 
 
+class Backend(enum.Enum):
+    """Class defining execution backend enum"""
+
+    LOCAL_K8S = "local-k8s"
+    LOCAL_DOCKER = "local-docker"
+    NVCF = "NVCF"
+    SLURM = "slurm"
+    LEPTON = "lepton"
+
+    @classmethod
+    def _missing_(cls, value):
+        """Enable lookup by value"""
+        for member in cls:
+            if member.value == value:
+                return member
+        return None
+
 # Create Enums
 
 

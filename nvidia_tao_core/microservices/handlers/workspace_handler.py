@@ -31,7 +31,6 @@ from nvidia_tao_core.microservices.utils.stateless_handler_utils import (
 )
 from nvidia_tao_core.microservices.utils.cloud_utils import create_cs_instance
 from nvidia_tao_core.microservices.utils.dataset_utils import validate_dataset
-from nvidia_tao_core.microservices.handlers.lepton_handler import LeptonHandler
 from nvidia_tao_core.microservices.utils.encrypt_utils import NVVaultEncryption
 from nvidia_tao_core.microservices.utils.handler_utils import Code
 
@@ -193,6 +192,7 @@ class WorkspaceHandler:
         lepton_auth_token = cloud_specific_details.get('lepton_auth_token')
         if lepton_workspace_id and lepton_auth_token:
             try:
+                from nvidia_tao_core.microservices.handlers.execution_handlers.lepton_handler import LeptonHandler
                 lepton_handler = LeptonHandler(lepton_workspace_id, lepton_auth_token)
                 lepton_handler.api_client.info()
             except Exception as e:
@@ -211,7 +211,7 @@ class WorkspaceHandler:
                         return Code(400, {}, "Vault service does not work, can't save cloud workspace")
 
         try:
-            if encrypted_metadata["cloud_type"] in ("aws", "azure"):
+            if encrypted_metadata["cloud_type"] in ("aws", "azure", "lepton"):
                 create_cs_instance(encrypted_metadata)
         except Exception as e:
             logger.error("Exception thrown in create workspace is %s", str(e))
@@ -279,11 +279,10 @@ class WorkspaceHandler:
                                     encryption.encrypt(cloud_value)
                                 )
 
-        if encrypted_metadata["cloud_type"] in ("aws", "azure"):
+        if encrypted_metadata["cloud_type"] in ("aws", "azure", "lepton"):
             try:
                 if "cloud_type" in request_dict.keys() or "cloud_specific_details" in request_dict.keys():
-                    if encrypted_metadata["cloud_type"] in ("aws", "azure"):
-                        create_cs_instance(encrypted_metadata)
+                    create_cs_instance(encrypted_metadata)
             except Exception as e:
                 logger.error("Exception thrown in update_workspace is %s", str(e))
                 logger.error(traceback.format_exc())
