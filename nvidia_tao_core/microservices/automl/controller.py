@@ -30,8 +30,6 @@ from nvidia_tao_core.microservices.constants import (
     NO_VAL_METRICS_DURING_TRAINING_NETWORKS,
     MISSING_EPOCH_FORMAT_NETWORKS
 )
-if os.getenv("BACKEND") == "NVCF":
-    from nvidia_tao_core.microservices.dgx_controller import overwrite_job_logs_from_bcp
 from nvidia_tao_core.microservices.utils.cloud_utils import create_cs_instance_with_decrypted_metadata
 from nvidia_tao_core.microservices.utils.handler_utils import (
     StatusParser,
@@ -63,13 +61,17 @@ from nvidia_tao_core.microservices.utils.stateless_handler_utils import (
     delete_dnn_status,
     update_automl_stats,
     report_health_beat,
-    delete_health_beat
+    delete_health_beat,
+    BACKEND
 )
 from nvidia_tao_core.microservices.utils.automl_job_utils import (
     on_new_automl_job,
     on_delete_automl_job,
     on_cancel_automl_job
 )
+from nvidia_tao_core.microservices.enum_constants import Backend
+if BACKEND == Backend.NVCF:
+    from nvidia_tao_core.microservices.dgx_controller import overwrite_job_logs_from_bcp
 
 # Configure logging
 TAO_LOG_LEVEL = os.getenv('TAO_LOG_LEVEL', 'INFO').upper()
@@ -134,6 +136,7 @@ class Controller:
         self.recommendations = []
         self.automl_context = automl_context
         logger.info("automl_context.id: %s", self.automl_context.id)
+        logger.info("automl_context: %s", self.automl_context)
 
         self.root = root
         self.network = network

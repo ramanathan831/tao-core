@@ -29,6 +29,7 @@ from .stateless_handler_utils import (
     get_automl_best_rec_info,
     update_job_metadata
 )
+from nvidia_tao_core.microservices.enum_constants import Backend
 
 # Configure logging
 TAO_LOG_LEVEL = os.getenv('TAO_LOG_LEVEL', 'INFO').upper()
@@ -186,8 +187,8 @@ def report_healthy(path, message, clear=False):
 
 def wait_for_job_completion(job_id):
     """Check if the provided job_id is actively running and wait until completion"""
-    if BACKEND == "local-docker":
-        from nvidia_tao_core.microservices.handlers.docker_handler import DockerHandler
+    if BACKEND == Backend.LOCAL_DOCKER:
+        from nvidia_tao_core.microservices.handlers.execution_handlers.docker_handler import DockerHandler
         while True:
             handler = DockerHandler.get_handler_for_container(job_id)
             if not handler:
@@ -197,7 +198,7 @@ def wait_for_job_completion(job_id):
     config.load_incluster_config()
     while True:
         dgx_active_jobs = []
-        if BACKEND == "NVCF":
+        if BACKEND == Backend.NVCF:
             custom_api = client.CustomObjectsApi()
             crd_group = 'nvcf-job-manager.nvidia.io'
             crd_version = 'v1alpha1'

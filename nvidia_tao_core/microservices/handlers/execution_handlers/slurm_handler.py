@@ -25,6 +25,7 @@ import time
 import traceback
 from datetime import datetime, timezone
 
+from nvidia_tao_core.microservices.handlers.execution_handlers.execution_handler import ExecutionHandler
 from nvidia_tao_core.microservices.utils.stateless_handler_utils import (
     get_handler_job_metadata,
     write_job_metadata,
@@ -40,6 +41,7 @@ from nvidia_tao_core.microservices.utils.stateless_handler_utils import (
 
 from nvidia_tao_core.microservices.handlers.mongo_handler import MongoHandler
 from nvidia_tao_core.microservices.handlers.cloud_handlers.utils import get_file_path_from_cloud_string
+from nvidia_tao_core.microservices.enum_constants import Backend
 from typing import Union
 
 # Configure logging
@@ -104,11 +106,8 @@ def get_slurm_handler_from_workspace(workspace_id):
     return None
 
 
-class SlurmHandler:
-    """Handler to execute jobs on Slurm
-
-    Supports multiple hostnames for automatic failover when a host becomes unreachable.
-    """
+class SlurmHandler(ExecutionHandler):
+    """Handler to execute jobs on Slurm"""
 
     def __init__(self, login_user=None, login_hostname=None, ssh_key_path=None):
         """Initialize the Slurm Handler
@@ -120,6 +119,7 @@ class SlurmHandler:
             ssh_key_path: Path to SSH private key (can be set via SSH_KEY_PATH env var,
                          default: auto-detect in ~/.ssh/)
         """
+        super().__init__(backend_type=Backend.SLURM)
         # Allow configuration via environment variables for containerized deployments
         self.login_user = login_user or os.getenv('SSH_USER') or os.getenv('USER', 'root')
 
@@ -174,50 +174,6 @@ class SlurmHandler:
         # Update SSH options with new hostname
         self.ssh_options = self._get_ssh_options()
         return True
-
-    def _get_automl_aware_handler_params(self, job_id):
-        """Get handler parameters that are AutoML-aware.
-
-        For AutoML experiments, returns brain job ID for handler lookups
-        and experiment job ID for status updates.
-
-        Args:
-            job_id: TAO job ID (could be regular job, brain job, or experiment job)
-
-        Returns:
-            dict: {
-                'handler_lookup_id': ID to use for handler lookups,
-                'is_automl_experiment': boolean,
-                'experiment_job_id': experiment job_id if AutoML, None otherwise,
-                'brain_job_id': brain job_id if AutoML, None otherwise
-            }
-        """
-        # Try to find if this job_id is an AutoML experiment
-        mongo_jobs = MongoHandler("tao", "jobs")
-        all_jobs = mongo_jobs.find({'status': {'$exists': True}})
-
-        for job_data in all_jobs:
-            potential_brain_id = job_data.get('id')
-            if potential_brain_id:
-                controller_info = get_automl_controller_info(potential_brain_id)
-                if isinstance(controller_info, list):
-                    for rec in controller_info:
-                        if rec.get("job_id") == job_id:
-                            # This is an AutoML experiment!
-                            return {
-                                'handler_lookup_id': potential_brain_id,
-                                'is_automl_experiment': True,
-                                'experiment_job_id': job_id,
-                                'brain_job_id': potential_brain_id
-                            }
-
-        # Not an AutoML experiment - regular job or brain job
-        return {
-            'handler_lookup_id': job_id,
-            'is_automl_experiment': False,
-            'experiment_job_id': None,
-            'brain_job_id': None
-        }
 
     @staticmethod
     def _find_ssh_key():
@@ -432,7 +388,7 @@ class SlurmHandler:
         # Update job status if job_id provided
         if job_id:
             try:
-                automl_params = self._get_automl_aware_handler_params(job_id)
+                automl_params = self.get_automl_aware_handler_params(job_id)
                 lookup_id = automl_params['handler_lookup_id']
 
                 handler_id = get_handler_id(lookup_id)
@@ -544,7 +500,7 @@ class SlurmHandler:
                 # Update job status if job_id provided
                 if job_id:
                     try:
-                        automl_params = self._get_automl_aware_handler_params(job_id)
+                        automl_params = self.get_automl_aware_handler_params(job_id)
                         lookup_id = automl_params['handler_lookup_id']
 
                         handler_id = get_handler_id(lookup_id)
@@ -637,7 +593,7 @@ class SlurmHandler:
 
         if job_id:
             try:
-                automl_params = self._get_automl_aware_handler_params(job_id)
+                automl_params = self.get_automl_aware_handler_params(job_id)
                 lookup_id = automl_params['handler_lookup_id']
 
                 handler_id = get_handler_id(lookup_id)
@@ -686,7 +642,7 @@ class SlurmHandler:
                 logger.info("Skipping conversion (using cached SQSH)")
 
                 # Update job status
-                if update_job_message and handler_id and handler_kind and automl_params:
+                if update_job_message and handler_id and handler_kind:
                     try:
                         update_params = {
                             "handler_id": handler_id,
@@ -694,7 +650,7 @@ class SlurmHandler:
                             "kind": handler_kind,
                             "message": "Using cached SQSH image (skipping conversion)"
                         }
-                        if automl_params['is_automl_experiment']:
+                        if automl_params and automl_params['is_automl_experiment']:
                             update_params["automl_expt_job_id"] = automl_params['experiment_job_id']
                             update_params["update_automl_expt"] = True
 
@@ -711,7 +667,7 @@ class SlurmHandler:
         logger.info("This may take 5-30 minutes depending on image size...")
 
         # Update job status - conversion starting
-        if update_job_message and handler_id and handler_kind and automl_params:
+        if update_job_message and handler_id and handler_kind:
             try:
                 update_params = {
                     "handler_id": handler_id,
@@ -719,7 +675,7 @@ class SlurmHandler:
                     "kind": handler_kind,
                     "message": "Starting SQSH conversion for container image (may take 5-30 minutes)"
                 }
-                if automl_params['is_automl_experiment']:
+                if automl_params and automl_params['is_automl_experiment']:
                     update_params["automl_expt_job_id"] = automl_params['experiment_job_id']
                     update_params["update_automl_expt"] = True
 
@@ -741,7 +697,7 @@ class SlurmHandler:
                 logger.info(f"SQSH preparation complete - using: {sqsh_path}")
 
                 # Update job status - conversion complete
-                if update_job_message and handler_id and handler_kind and automl_params:
+                if update_job_message and handler_id and handler_kind:
                     try:
                         update_params = {
                             "handler_id": handler_id,
@@ -749,7 +705,7 @@ class SlurmHandler:
                             "kind": handler_kind,
                             "message": "SQSH conversion complete - preparing to submit job to SLURM"
                         }
-                        if automl_params['is_automl_experiment']:
+                        if automl_params and automl_params['is_automl_experiment']:
                             update_params["automl_expt_job_id"] = automl_params['experiment_job_id']
                             update_params["update_automl_expt"] = True
 
@@ -929,6 +885,7 @@ class SlurmHandler:
             conversion_memory_gb=32,
             force_reconvert_latest=False,
             max_num_gpus=8,
+            **kwargs
     ):
         """Create a comprehensive Slurm job with container support and advanced features.
 
@@ -955,6 +912,11 @@ class SlurmHandler:
             - Set force_reconvert_latest=True to always reconvert :latest tagged images
             - Cached SQSH files are stored in sqsh_cache_dir for reuse across jobs
         """
+        # Detect multi-node from num_nodes parameter
+        is_multi_node = num_nodes > 1
+        if is_multi_node:
+            logger.info(f"Detected multi-node job: {num_nodes} nodes")
+
         # Set default timeout if not specified
         if timeout_hours is None:
             timeout_hours = time_hours - 0.2  # 12 minutes buffer
@@ -1142,42 +1104,20 @@ class SlurmHandler:
                 try:
                     # Check if this is an AutoML experiment by looking for AUTOML_EXPERIMENT_NUMBER
                     is_automl_experiment = "AUTOML_EXPERIMENT_NUMBER" in docker_env_vars
+                    experiment_number = docker_env_vars.get("AUTOML_EXPERIMENT_NUMBER", "0")
 
-                    if is_automl_experiment:
-                        # For AutoML experiments: store SLURM job ID in controller info
-                        experiment_number = docker_env_vars.get("AUTOML_EXPERIMENT_NUMBER", "0")
+                    if is_automl_experiment and experiment_number:
                         logger.info(f"Detected AutoML experiment {experiment_number} with job_id {job_id}")
-
-                        # Find brain job ID by searching all brain jobs for this experiment
-                        mongo_jobs = MongoHandler("tao", "jobs")
-                        all_jobs = mongo_jobs.find({'status': {'$exists': True}})
-                        brain_job_id = None
-
-                        for job_data in all_jobs:
-                            potential_brain_id = job_data.get('id')
-                            if potential_brain_id:
-                                controller_info = get_automl_controller_info(potential_brain_id)
-                                if isinstance(controller_info, list):
-                                    for idx, rec in enumerate(controller_info):
-                                        if rec.get("job_id") == job_id:
-                                            brain_job_id = potential_brain_id
-                                            experiment_number = str(idx)
-                                            logger.info(
-                                                f"Found brain job {brain_job_id} for "
-                                                f"experiment {experiment_number}"
-                                            )
-                                            break
-                                if brain_job_id:
-                                    break
+                        brain_job_id = self.get_automl_brain_job_id(job_id)
 
                         if brain_job_id:
                             # Store SLURM job ID in controller info
                             controller_info = get_automl_controller_info(brain_job_id)
                             if isinstance(controller_info, list) and int(experiment_number) < len(controller_info):
                                 rec = controller_info[int(experiment_number)]
-                                if "backend_details" not in rec:
-                                    rec["backend_details"] = {}
-                                if "slurm_metadata" not in rec["backend_details"]:
+                                if not rec.get("backend_details", {}):
+                                    rec["backend_details"] = {'backend_type': 'slurm'}
+                                if not rec["backend_details"].get("slurm_metadata", {}):
                                     rec["backend_details"]["slurm_metadata"] = {}
 
                                 rec["backend_details"]["slurm_metadata"]["slurm_job_id"] = slurm_job_id
@@ -1194,35 +1134,22 @@ class SlurmHandler:
                         if not job_metadata:
                             logger.warning(f"No metadata found for job {job_id}, cannot store SLURM job ID")
                         else:
-                            if "backend_details" not in job_metadata:
-                                job_metadata["backend_details"] = {}
-                            if "slurm_metadata" not in job_metadata["backend_details"]:
+                            if not job_metadata.get("backend_details", {}):
+                                job_metadata["backend_details"] = {'backend_type': 'slurm'}
+                            if not job_metadata["backend_details"].get("slurm_metadata", {}):
                                 job_metadata["backend_details"]["slurm_metadata"] = {}
 
                             job_metadata["backend_details"]["slurm_metadata"]["slurm_job_id"] = slurm_job_id
                             write_job_metadata(job_id, job_metadata)
                             logger.info(f"Stored SLURM job ID {slurm_job_id} in job metadata for {job_id}")
 
-                    # Update job message with SLURM submission details
-                    # For AutoML experiments, use brain_job_id for handler lookups
-                    lookup_id = brain_job_id if brain_job_id else job_id
-                    handler_id = get_handler_id(lookup_id)
-                    handler_metadata = get_handler_metadata(lookup_id, kind=None)
-                    handler_kind = get_handler_kind(handler_metadata)
+                    self.update_job_status(
+                        job_id,
+                        "RUNNING",
+                        f"Job submitted to SLURM cluster (Job ID: {slurm_job_id}). Waiting for resources...")
 
-                    update_params = {
-                        "handler_id": handler_id,
-                        "job_id": lookup_id,
-                        "kind": handler_kind,
-                        "message": f"Job submitted to SLURM cluster (Job ID: {slurm_job_id}). Waiting for resources..."
-                    }
-                    if brain_job_id:
-                        # AutoML experiment: add experiment-specific params
-                        update_params["automl_expt_job_id"] = job_id
-                        update_params["update_automl_expt"] = True
-
-                    update_job_message(**update_params)
                 except Exception as e:
+                    logger.error(traceback.format_exc())
                     logger.warning(f"Failed to store SLURM job ID or update status: {e}")
 
             return sbatch_output
@@ -1235,6 +1162,175 @@ class SlurmHandler:
                 os.unlink(local_script)
             except OSError:
                 pass
+
+    def get_slurm_job_id(self, job_id):
+        """Get the SLURM job ID for a given TAO job ID.
+
+        Args:
+            job_id (str): TAO job ID
+
+        Returns:
+            str: SLURM job ID, or None if not found
+        """
+        try:
+            # Get AutoML-aware parameters
+            automl_params = self.get_automl_aware_handler_params(job_id)
+            brain_job_id = automl_params['brain_job_id']
+            is_automl_experiment = automl_params['is_automl_experiment']
+
+            # Get job metadata to find SLURM job ID
+            job_metadata = get_handler_job_metadata(brain_job_id)
+            if not job_metadata:
+                logger.warning(f"No metadata found for job {job_id}")
+                return None
+
+            # Get SLURM job ID
+            slurm_job_id = None
+            if is_automl_experiment:
+                controller_info = get_automl_controller_info(brain_job_id)
+                experiment_number = automl_params['experiment_number']
+                if controller_info and len(controller_info) > experiment_number:
+                    experiment_info = controller_info[experiment_number]
+                    backend_details = experiment_info.get('backend_details', {})
+                    slurm_metadata = backend_details.get('slurm_metadata', {})
+                    slurm_job_id = slurm_metadata.get('slurm_job_id')
+                    logger.info(f"AutoML experiment {experiment_number}, SLURM job ID: {slurm_job_id}")
+            else:
+                # Regular job - get SLURM job ID from job metadata
+                backend_details = job_metadata.get('backend_details', {})
+                slurm_metadata = backend_details.get('slurm_metadata', {})
+                slurm_job_id = slurm_metadata.get('slurm_job_id')
+                logger.info(f"Regular job, SLURM job ID: {slurm_job_id}")
+
+            if not slurm_job_id:
+                logger.warning(f"No SLURM job ID found for TAO job {job_id}")
+                logger.info("Job may not have been submitted to SLURM yet")
+                logger.info("=" * 80)
+                return None
+            return slurm_job_id
+        except Exception as e:
+            logger.error(f"Error getting SLURM job ID for job {job_id}: {e}")
+            logger.error(traceback.format_exc())
+        return None
+
+    def get_job_logs(self, job_id, tail_lines=None, log_dir="./slurm-logs"):
+        """Get the logs of a SLURM job by downloading from remote cluster.
+
+        Args:
+            job_id (str): TAO job ID
+            tail_lines (int, optional): Number of lines to tail. If None, gets all logs
+            log_dir (str): Base log directory on SLURM cluster (default: ./slurm-logs)
+
+        Returns:
+            str: Combined log content (stdout + stderr), or None if logs cannot be retrieved
+        """
+        logger.info("=" * 80)
+        logger.info(f"SLURM LOG RETRIEVAL: Fetching logs for job {job_id}")
+        logger.info(f"SSH: {self.login_user}@{self.login_hostname}")
+
+        try:
+            slurm_job_id = self.get_slurm_job_id(job_id)
+            if not slurm_job_id:
+                return None
+
+            # Get SLURM job name
+            job_name = self.get_slurm_job_name(job_id)
+
+            # Construct log directory path: {log_dir}/{job_name}-{slurm_job_id}/
+            log_path = f"{log_dir}/{job_name}-{slurm_job_id}"
+            logger.info(f"Log directory: {log_path}")
+
+            # Try to read both stdout and stderr files
+            logs = []
+
+            # Read main.out (stdout)
+            stdout_file = f"{log_path}/main.out"
+            logger.info(f"Reading stdout: {stdout_file}")
+            stdout_content = self._read_remote_log_file(stdout_file, tail_lines)
+            if stdout_content:
+                logs.append(stdout_content)
+            else:
+                logger.info(f"No stdout found at {stdout_file}")
+
+            # Read main.err (stderr)
+            stderr_file = f"{log_path}/main.err"
+            logger.info(f"Reading stderr: {stderr_file}")
+            stderr_content = self._read_remote_log_file(stderr_file, tail_lines)
+            if stderr_content:
+                if logs:
+                    logs.append("\n")
+                logs.append(stderr_content)
+            else:
+                logger.info(f"No stderr found at {stderr_file}")
+
+            if not logs:
+                logger.warning(f"No log files found for SLURM job {slurm_job_id}")
+                logger.info("Job may not have started yet or log directory doesn't exist")
+                logger.info("=" * 80)
+                return None
+
+            combined_logs = "\n".join(logs)
+            log_size_kb = len(combined_logs) / 1024
+            logger.info(f"Successfully retrieved {log_size_kb:.1f} KB of logs")
+            logger.info("=" * 80)
+            return combined_logs
+
+        except Exception as e:
+            logger.error(f"Error retrieving logs for job {job_id}: {e}")
+            logger.error(traceback.format_exc())
+            logger.info("=" * 80)
+            return None
+
+    def _read_remote_log_file(self, remote_file_path, tail_lines=None):
+        """Read a log file from the remote SLURM cluster via SSH.
+
+        Args:
+            remote_file_path (str): Full path to the log file on remote cluster
+            tail_lines (int, optional): Number of lines to tail. If None, reads entire file
+
+        Returns:
+            str: File content, or None if file cannot be read
+        """
+        try:
+            # Build command: tail -n X or cat
+            if tail_lines is not None:
+                read_command = f"tail -n {tail_lines} {shlex.quote(remote_file_path)} 2>/dev/null"
+                logger.debug(f"Using tail with {tail_lines} lines")
+            else:
+                read_command = f"cat {shlex.quote(remote_file_path)} 2>/dev/null"
+                logger.debug("Reading entire file with cat")
+
+            ssh_command = self._build_ssh_command(read_command)
+
+            result = subprocess.run(
+                ssh_command,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                timeout=TIMEOUT_SECONDS,
+                check=False
+            )
+
+            if result.returncode != 0:
+                logger.debug(f"Failed to read {remote_file_path}: return code {result.returncode}")
+                return None
+
+            content = result.stdout
+            if not content:
+                logger.debug(f"File {remote_file_path} is empty")
+                return None
+
+            line_count = len(content.splitlines())
+            size_kb = len(content) / 1024
+            logger.debug(f"Read {line_count} lines ({size_kb:.1f} KB) from {remote_file_path}")
+            return content
+
+        except subprocess.TimeoutExpired:
+            logger.error(f"Timeout reading file {remote_file_path}")
+            return None
+        except Exception as e:
+            logger.error(f"Error reading remote file {remote_file_path}: {e}")
+            return None
 
     def _build_slurm_script(
             self,
@@ -1261,14 +1357,27 @@ class SlurmHandler:
         # Convert time to HH:MM:SS format
         time_str = f"{int(time_hours):02d}:{int((time_hours % 1) * 60):02d}:00"
 
+        # Detect multi-node
+        is_multi_node = num_nodes > 1
+
         script_lines = [
             "#!/bin/bash -x",
             f"#SBATCH --nodes={num_nodes}",
             f"#SBATCH --gres=gpu:{num_gpus}",
-            "#SBATCH --ntasks-per-node=1",
+            f"#SBATCH --ntasks-per-node={num_gpus}",
+        ]
+
+        # Adjust ntasks for multi-node
+        if is_multi_node:
+            # Multi-node: one task per node
+            script_lines.extend([
+                f"#SBATCH --ntasks={num_nodes}",
+            ])
+
+        script_lines.extend([
             f"#SBATCH --cpus-per-task={cpus_per_task}",
             "#SBATCH --wait-all-nodes=1",
-        ]
+        ])
 
         if exclusive:
             script_lines.append("#SBATCH --exclusive")
@@ -1306,6 +1415,21 @@ class SlurmHandler:
                 safe_value = str(value).replace("'", "'\"'\"'")
                 script_lines.append(f"export {key}='{safe_value}'")
             script_lines.append("")
+
+        # Add multi-node coordination env vars (mimics Kubernetes statefulset)
+        if is_multi_node:
+            script_lines.extend([
+                f"export WORLD_SIZE={num_nodes}",
+                f"export NUM_GPU_PER_NODE={num_gpus}",
+                "export MASTER_PORT=29500",
+                "",
+                "# Compute MASTER_ADDR (first node)",
+                "NODELIST=$(scontrol show hostname $SLURM_JOB_NODELIST)",
+                "export MASTER_ADDR=$(echo $NODELIST | cut -d' ' -f1)",
+                "",
+                "# NODE_RANK from SLURM node ID (more semantically correct than SLURM_PROCID)",
+                "export NODE_RANK=$SLURM_NODEID",
+            ])
 
         # CUDA environment override for jobs that need to force use of specific CUDA version
         # This is useful when:
@@ -1359,7 +1483,17 @@ class SlurmHandler:
             container_image = image
 
         # Build container-env list from docker_env_vars keys
+        # Add multi-node env vars to container
         container_env_keys = ",".join(docker_env_vars.keys()) if docker_env_vars else ""
+        if is_multi_node:
+            multi_node_env_keys = ",".join([
+                "NODE_RANK", "WORLD_SIZE", "MASTER_ADDR", "MASTER_PORT",
+                "NUM_GPU_PER_NODE"
+            ])
+            if container_env_keys:
+                container_env_keys = multi_node_env_keys + "," + container_env_keys
+            else:
+                container_env_keys = multi_node_env_keys
 
         # Build base srun (all srun options MUST come before the "--")
         srun_base = (
@@ -1443,7 +1577,7 @@ class SlurmHandler:
 
             if result.returncode == 0 and result.stdout.strip():
                 status = result.stdout.strip()
-                logger.info(f"SLURM job {slurm_job_id} active status: {status}")
+                self.logger.info(f"SLURM job {slurm_job_id} active status: {status}")
                 return status
 
             # If not in active queue, check sacct for completed/failed jobs
@@ -1464,19 +1598,20 @@ class SlurmHandler:
                 for line in result.stdout.strip().split('\n'):
                     if line.strip():
                         status = line.strip()
-                        logger.info(f"SLURM job {slurm_job_id} historical status: {status}")
+                        self.logger.info(f"SLURM job {slurm_job_id} historical status: {status}")
                         return status
 
-            logger.warning(f"SLURM job {slurm_job_id} not found in squeue or sacct")
+            self.logger.warning(f"SLURM job {slurm_job_id} not found in squeue or sacct")
             return "NOT_FOUND"
 
         except subprocess.TimeoutExpired:
-            logger.error(f"SSH timeout ({TIMEOUT_SECONDS}s) while checking SLURM job {slurm_job_id} status")
-            logger.error("This is an SSH/network issue, not a SLURM job timeout")
-            logger.error("The SLURM cluster may be slow or unresponsive")
+            self.logger.error(f"SSH timeout ({TIMEOUT_SECONDS}s) while checking SLURM job {slurm_job_id} status")
+            self.logger.error("This is an SSH/network issue, not a SLURM job timeout")
+            self.logger.error("The SLURM cluster may be slow or unresponsive")
             return "ERROR"  # Changed from "TIMEOUT" to distinguish from actual SLURM job timeouts
         except Exception as e:
-            logger.error(f"Error checking SLURM job {slurm_job_id} status: {e}")
+            self.logger.error(traceback.format_exc())
+            self.logger.error(f"Error checking SLURM job {slurm_job_id} status: {e}")
             return "ERROR"
 
     def map_slurm_status_to_tao_status(self, slurm_status, stage="main"):
@@ -1519,7 +1654,7 @@ class SlurmHandler:
             return "Paused"
 
         # Unknown status
-        logger.warning(f"Unknown SLURM status '{slurm_status}' for stage '{stage}'")
+        self.logger.warning(f"Unknown SLURM status '{slurm_status}' for stage '{stage}'")
         return "Pending"
 
     def get_slurm_job_id_from_output(self, sbatch_output):
@@ -1559,7 +1694,7 @@ class SlurmHandler:
 
             # If not found, check if this is an AutoML experiment
             if not slurm_job_id:
-                logger.info(f"No SLURM job ID in job metadata for {job_id}, checking if AutoML experiment...")
+                self.logger.info(f"No SLURM job ID in job metadata for {job_id}, checking if AutoML experiment...")
 
                 # Search through brain jobs to find this experiment
                 mongo_jobs = MongoHandler("tao", "jobs")
@@ -1577,7 +1712,7 @@ class SlurmHandler:
                                     slurm_metadata = backend_details.get("slurm_metadata", {})
                                     slurm_job_id = slurm_metadata.get("slurm_job_id")
                                     brain_job_id = potential_brain_id
-                                    logger.info(
+                                    self.logger.info(
                                         f"Found AutoML experiment {idx} in brain {brain_job_id}, "
                                         f"SLURM job ID: {slurm_job_id}"
                                     )
@@ -1586,7 +1721,7 @@ class SlurmHandler:
                             break
 
             if not slurm_job_id:
-                logger.warning(
+                self.logger.warning(
                     f"No SLURM job ID found for TAO job {job_id} - "
                     f"submission may be in progress or not yet stored"
                 )
@@ -1594,7 +1729,7 @@ class SlurmHandler:
 
             # Check SLURM job status
             slurm_status = self.get_slurm_job_status(slurm_job_id)
-            logger.info(f"SLURM job {slurm_job_id} (TAO job {job_id}) status: {slurm_status}")
+            self.logger.info(f"SLURM job {slurm_job_id} (TAO job {job_id}) status: {slurm_status}")
 
             # Get handler info for status updates
             # For AutoML experiments, use brain job ID to get handler metadata
@@ -1616,24 +1751,18 @@ class SlurmHandler:
                 update_params["update_automl_expt"] = True
 
             if slurm_status == "PENDING":
-                current_time = datetime.now(timezone.utc)
-                update_job_message(
-                    **update_params,
-                    message={
-                        "date": current_time.strftime("%m/%d/%Y"),
-                        "time": current_time.strftime("%H:%M:%S"),
-                        "status": "RUNNING",
-                        "message": f"SLURM job is pending (Job ID: {slurm_job_id}). Waiting for resources..."
-                    }
-                )
+                message = f"SLURM job is pending (Job ID: {slurm_job_id}). Waiting for resources..."
+                self.update_job_status(job_id, "RUNNING", message)
                 return "Pending"
 
             if slurm_status == "RUNNING":
-                logger.info(f"SLURM job {slurm_job_id} is RUNNING - StatusParser will show progress from DNN status")
+                self.logger.info(
+                    f"SLURM job {slurm_job_id} is RUNNING - StatusParser will show progress from DNN status"
+                )
                 return "Running"
 
             if slurm_status == "COMPLETING":
-                logger.info(
+                self.logger.info(
                     f"SLURM job {slurm_job_id} is COMPLETING - "
                     "StatusParser will show final status from DNN status"
                 )
@@ -1645,78 +1774,86 @@ class SlurmHandler:
                 return None
 
             if slurm_status in ("FAILED", "BOOT_FAIL", "DEADLINE", "OUT_OF_MEMORY", "NODE_FAIL"):
-                current_time = datetime.now(timezone.utc)
-                update_job_message(
-                    **update_params,
-                    message={
-                        "date": current_time.strftime("%m/%d/%Y"),
-                        "time": current_time.strftime("%H:%M:%S"),
-                        "status": "FAILURE",
-                        "message": f"SLURM job failed with status: {slurm_status}"
-                    }
-                )
+                message = f"SLURM job {slurm_job_id} failed with status: {slurm_status}"
+                self.update_job_status(job_id, "FAILURE", message)
                 return "Error"
 
             if slurm_status in ("CANCELLED", "PREEMPTED", "REVOKED"):
-                current_time = datetime.now(timezone.utc)
-                update_job_message(
-                    **update_params,
-                    message={
-                        "date": current_time.strftime("%m/%d/%Y"),
-                        "time": current_time.strftime("%H:%M:%S"),
-                        "status": "CANCELLED",
-                        "message": f"SLURM job was cancelled (status: {slurm_status})"
-                    }
-                )
+                message = f"SLURM job {slurm_job_id} was cancelled (status: {slurm_status})"
+                self.update_job_status(job_id, "CANCELLED", message)
                 return "Canceled"
 
             if slurm_status == "TIMEOUT":
-                current_time = datetime.now(timezone.utc)
-                update_job_message(
-                    **update_params,
-                    message={
-                        "date": current_time.strftime("%m/%d/%Y"),
-                        "time": current_time.strftime("%H:%M:%S"),
-                        "status": "FAILURE",
-                        "message": "SLURM job hit time limit and was terminated"
-                    }
-                )
+                message = f"SLURM job {slurm_job_id} hit time limit and was terminated"
+                self.update_job_status(job_id, "FAILURE", message)
                 return "Error"
 
             if slurm_status in ("SUSPENDED", "STOPPED"):
-                current_time = datetime.now(timezone.utc)
-                update_job_message(
-                    **update_params,
-                    message={
-                        "date": current_time.strftime("%m/%d/%Y"),
-                        "time": current_time.strftime("%H:%M:%S"),
-                        "status": "PAUSED",
-                        "message": f"SLURM job is suspended (status: {slurm_status})"
-                    }
-                )
+                message = f"SLURM job {slurm_job_id} is suspended (status: {slurm_status})"
+                self.update_job_status(job_id, "PAUSED", message)
                 return "Paused"
 
             if slurm_status == "NOT_FOUND":
-                logger.warning(f"SLURM job {slurm_job_id} not found in queue or history")
+                self.logger.warning(f"SLURM job {slurm_job_id} not found in queue or history")
                 return "Pending"
 
             if slurm_status == "ERROR":
-                logger.error(f"Error querying SLURM status for job {slurm_job_id}")
-                update_job_message(
-                    **update_params,
-                    message="Unable to check SLURM job status (SSH/network issue). Will retry..."
-                )
+                self.logger.error(f"Error querying SLURM status for job {slurm_job_id}")
+                message = "Unable to check SLURM job status (SSH/network issue). Will retry..."
+                self.update_job_status(job_id, "RUNNING", message)
                 # Return current metadata status instead of marking as Error
                 # This allows the system to retry on next check
                 return job_metadata.get("status", "Running")
 
             # Unknown status
-            logger.warning(f"Unknown SLURM status '{slurm_status}' for job {job_id}")
+            self.logger.warning(f"Unknown SLURM status '{slurm_status}' for job {job_id}")
             return "Pending"
 
         except Exception as e:
-            logger.error(f"Error getting SLURM job status for {job_id}: {e}")
+            self.logger.error(traceback.format_exc())
+            self.logger.error(f"Error getting SLURM job status for {job_id}: {e}")
             return "Error"
+
+    def get_job_status(self, job_id, **kwargs):
+        """Get job status - unified interface for ExecutionHandler
+
+        Args:
+            job_id: Job identifier
+            **kwargs: Additional parameters (results_dir and workspace_metadata)
+
+        Returns:
+            str: Job status (Pending, Running, Done, Error, etc.)
+        """
+        self.logger.info(f"Checking SLURM job {job_id} status")
+
+        # Check SLURM batch job status (from squeue/sacct)
+        slurm_status = self.get_tao_job_status(job_id)
+        self.logger.info(f"SLURM job {job_id} TAO status: {slurm_status}")
+
+        results_dir = kwargs.get("results_dir")
+        workspace_metadata = kwargs.get("workspace_metadata")
+        if not results_dir or not workspace_metadata:
+            self.logger.error(f"No results_dir or workspace_metadata found for SLURM job {job_id}")
+            return "Error"
+
+        # If SLURM status is definitive (not None), return it
+        # None means COMPLETED - need to check status.json for actual result
+        if slurm_status is not None:
+            return slurm_status
+
+        # SLURM job completed, check status.json for final result
+        self.logger.info(f"SLURM job COMPLETED - reading final status from {results_dir}/status.json")
+        try:
+            from nvidia_tao_core.microservices.handlers.container_handler import ContainerJobHandler
+            container_job_status = ContainerJobHandler.get_current_job_status(
+                results_dir, workspace_metadata, job_id=job_id)
+            self.logger.info(f"SLURM job {job_id} final status from status.json: {container_job_status}")
+            return container_job_status
+        except Exception as e:
+            self.logger.error(f"Failed to get final status from status.json for {job_id}: {e}")
+            self.logger.error(f"results_dir: {results_dir}, workspace_metadata: {workspace_metadata}")
+            self.logger.error(traceback.format_exc())
+            return "Pending"
 
     def cancel_job(self, job_id):
         """Cancel a SLURM job using scancel.
@@ -1728,55 +1865,31 @@ class SlurmHandler:
             bool: True if cancellation was successful or job already terminated, False otherwise
         """
         try:
-            logger.info("=" * 80)
-            logger.info(f"SLURM JOB CANCEL: Canceling job {job_id}")
+            self.logger.info("=" * 80)
+            self.logger.info(f"SLURM JOB CANCEL: Canceling job {job_id}")
 
-            # Get AutoML-aware parameters
-            automl_params = self._get_automl_aware_handler_params(job_id)
-            brain_job_id = automl_params['brain_job_id']
-            is_automl_experiment = automl_params['is_automl_experiment']
-
-            # Get job metadata to find SLURM job ID
-            job_metadata = get_handler_job_metadata(brain_job_id)
-            if not job_metadata:
-                logger.warning(f"No metadata found for job {job_id}")
-                logger.info("=" * 80)
-                return True  # Consider it success if job doesn't exist
-
-            # Check if this is AutoML experiment - get SLURM job ID from controller info
-            slurm_job_id = None
-            if is_automl_experiment:
-                controller_info = get_automl_controller_info(brain_job_id)
-                experiment_number = automl_params['experiment_number']
-                if controller_info and len(controller_info) > experiment_number:
-                    experiment_info = controller_info[experiment_number]
-                    slurm_job_id = experiment_info.get('slurm_job_id')
-                    logger.info(f"AutoML experiment {experiment_number}, SLURM job ID: {slurm_job_id}")
-            else:
-                # Regular job - get SLURM job ID from job metadata
-                slurm_job_id = job_metadata.get('slurm_job_id')
-                logger.info(f"Regular job, SLURM job ID: {slurm_job_id}")
+            slurm_job_id = self.get_slurm_job_id(job_id)
 
             if not slurm_job_id:
-                logger.warning(f"No SLURM job ID found for TAO job {job_id}")
-                logger.info("Job may not have been submitted to SLURM yet, or already completed")
-                logger.info("=" * 80)
+                self.logger.warning(f"No SLURM job ID found for TAO job {job_id}")
+                self.logger.info("Job may not have been submitted to SLURM yet, or already completed")
+                self.logger.info("=" * 80)
                 return True  # No SLURM job to cancel
 
             # Check if job is already completed
             slurm_status = self.get_slurm_job_status(slurm_job_id)
             if not slurm_status:
-                logger.info(f"SLURM job {slurm_job_id} not found (may have already completed)")
-                logger.info("=" * 80)
+                self.logger.info(f"SLURM job {slurm_job_id} not found (may have already completed)")
+                self.logger.info("=" * 80)
                 return True
 
             if slurm_status in ("COMPLETED", "FAILED", "CANCELLED", "TIMEOUT"):
-                logger.info(f"SLURM job {slurm_job_id} already terminated with status: {slurm_status}")
-                logger.info("=" * 80)
+                self.logger.info(f"SLURM job {slurm_job_id} already terminated with status: {slurm_status}")
+                self.logger.info("=" * 80)
                 return True
 
             # Cancel the SLURM job
-            logger.info(f"Canceling SLURM job {slurm_job_id} (current status: {slurm_status})")
+            self.logger.info(f"Canceling SLURM job {slurm_job_id} (current status: {slurm_status})")
             scancel_cmd = f"scancel {slurm_job_id}"
             ssh_cmd = self._build_ssh_command(scancel_cmd)
 
@@ -1789,49 +1902,40 @@ class SlurmHandler:
             )
 
             if result.returncode == 0:
-                logger.info(f"Successfully canceled SLURM job {slurm_job_id}")
+                self.logger.info(f"Successfully canceled SLURM job {slurm_job_id}")
 
                 # Update job message to reflect cancellation
-                current_time = datetime.now(timezone.utc)
-                update_job_message(
-                    handler_id=automl_params['handler_id'],
-                    job_id=brain_job_id,
-                    kind=automl_params['handler_kind'],
-                    message={
-                        "date": current_time.strftime("%m/%d/%Y"),
-                        "time": current_time.strftime("%H:%M:%S"),
-                        "status": "CANCELED",
-                        "message": f"SLURM job {slurm_job_id} canceled by user"
-                    },
-                    automl_expt_job_id=job_id if is_automl_experiment else None,
-                    update_automl_expt=is_automl_experiment
-                )
+                self.update_job_status(job_id, "CANCELLED", f"SLURM job {slurm_job_id} canceled by user")
 
-                logger.info("=" * 80)
+                self.logger.info("=" * 80)
                 return True
 
             error_msg = result.stderr.strip() if result.stderr else result.stdout.strip()
             # scancel returns non-zero if job doesn't exist (already terminated)
             if "Invalid job id specified" in error_msg or "does not exist" in error_msg:
-                logger.info(f"SLURM job {slurm_job_id} no longer exists (already terminated)")
-                logger.info("=" * 80)
+                self.logger.info(f"SLURM job {slurm_job_id} no longer exists (already terminated)")
+                self.logger.info("=" * 80)
                 return True
 
-            logger.error(f"Failed to cancel SLURM job {slurm_job_id}: {error_msg}")
-            logger.info("=" * 80)
+            self.logger.error(f"Failed to cancel SLURM job {slurm_job_id}: {error_msg}")
+            self.logger.info("=" * 80)
             return False
 
         except subprocess.TimeoutExpired:
-            logger.error(f"Timeout while canceling SLURM job for {job_id}")
-            logger.info("=" * 80)
+            self.logger.error(f"Timeout while canceling SLURM job for {job_id}")
+            self.logger.info("=" * 80)
             return False
         except Exception as e:
-            logger.error(f"Error canceling SLURM job for {job_id}: {e}")
-            logger.error(traceback.format_exc())
-            logger.info("=" * 80)
+            self.logger.error(f"Error canceling SLURM job for {job_id}: {e}")
+            self.logger.error(traceback.format_exc())
+            self.logger.info("=" * 80)
             return False
 
-    def fetch_status_json(self, results_dir):
+    def delete(self, job_id):
+        """Delete a SLURM job"""
+        return self.cancel_job(job_id)
+
+    def fetch_status_json(self, results_dir, **kwargs):
         """Fetch status.json from the SLURM cluster's Lustre storage.
 
         Searches for status.json in the results directory and its subdirectories.
@@ -1842,21 +1946,21 @@ class SlurmHandler:
         Returns:
             list: List of status line dictionaries, or empty list if file doesn't exist or can't be read
         """
-        logger.info("=" * 80)
-        logger.info("SLURM STATUS FETCH: Searching for status.json")
-        logger.info(f"Results dir: {results_dir}")
-        logger.info(f"SSH: {self.login_user}@{self.login_hostname}")
+        self.logger.info("=" * 80)
+        self.logger.info("SLURM STATUS FETCH: Searching for status.json")
+        self.logger.info(f"Results dir: {results_dir}")
+        self.logger.info(f"SSH: {self.login_user}@{self.login_hostname}")
 
         # Search for status.json in results_dir and subdirectories
         # Use find command to locate the file (limits to 3 directory levels deep for performance)
         find_command = f"find {shlex.quote(results_dir)} -maxdepth 3 -type f -name 'status.json' 2>/dev/null | head -1"
-        logger.info(f"Find command: {find_command}")
+        self.logger.info(f"Find command: {find_command}")
 
         ssh_command = self._build_ssh_command(find_command)
-        logger.debug(f"Full SSH command: {' '.join(ssh_command)}")
+        self.logger.debug(f"Full SSH command: {' '.join(ssh_command)}")
 
         try:
-            logger.info("Executing find command via SSH...")
+            self.logger.info("Executing find command via SSH...")
             result = subprocess.run(
                 ssh_command,
                 capture_output=True,
@@ -1865,27 +1969,27 @@ class SlurmHandler:
                 check=False
             )
 
-            logger.debug(f"Find return code: {result.returncode}")
-            logger.debug(f"Find stdout: {result.stdout[:200] if result.stdout else '(empty)'}")
-            logger.debug(f"Find stderr: {result.stderr[:200] if result.stderr else '(empty)'}")
+            self.logger.debug(f"Find return code: {result.returncode}")
+            self.logger.debug(f"Find stdout: {result.stdout[:200] if result.stdout else '(empty)'}")
+            self.logger.debug(f"Find stderr: {result.stderr[:200] if result.stderr else '(empty)'}")
 
             status_file_path = result.stdout.strip()
 
             if not status_file_path:
-                logger.info(f"status.json NOT FOUND in {results_dir}")
-                logger.info("This is normal if the job hasn't started writing status yet")
-                logger.info("=" * 80)
+                self.logger.info(f"status.json NOT FOUND in {results_dir}")
+                self.logger.info("This is normal if the job hasn't started writing status yet")
+                self.logger.info("=" * 80)
                 return []
 
-            logger.info(f"Found status.json at: {status_file_path}")
+            self.logger.info(f"Found status.json at: {status_file_path}")
 
             # File exists - read it
             cat_command = f"cat {shlex.quote(status_file_path)}"
-            logger.debug(f"Cat command: {cat_command}")
+            self.logger.debug(f"Cat command: {cat_command}")
 
             ssh_command = self._build_ssh_command(cat_command)
 
-            logger.info("Reading status.json via SSH...")
+            self.logger.info("Reading status.json via SSH...")
             result = subprocess.run(
                 ssh_command,
                 capture_output=True,
@@ -1894,15 +1998,15 @@ class SlurmHandler:
                 check=False
             )
 
-            logger.debug(f"Cat return code: {result.returncode}")
+            self.logger.debug(f"Cat return code: {result.returncode}")
 
             if result.returncode != 0:
-                logger.warning(f"Failed to read status.json: {result.stderr}")
-                logger.info("=" * 80)
+                self.logger.warning(f"Failed to read status.json: {result.stderr}")
+                self.logger.info("=" * 80)
                 return []
 
             file_size = len(result.stdout)
-            logger.info(f"Read {file_size} bytes from status.json")
+            self.logger.info(f"Read {file_size} bytes from status.json")
 
             # Parse status.json - each line is a separate JSON object
             status_lines = []
@@ -1918,31 +2022,31 @@ class SlurmHandler:
                 except json.JSONDecodeError as e:
                     parse_errors += 1
                     if parse_errors <= 3:  # Only log first 3 errors to avoid spam
-                        logger.warning(f"⚠ Failed to parse line {line_num}: {line[:100]}... Error: {e}")
+                        self.logger.warning(f"⚠ Failed to parse line {line_num}: {line[:100]}... Error: {e}")
                     continue
 
             if parse_errors > 3:
-                logger.warning(f"⚠ Total parse errors: {parse_errors} (showing first 3)")
+                self.logger.warning(f"⚠ Total parse errors: {parse_errors} (showing first 3)")
 
-            logger.info(f"Successfully parsed {len(status_lines)} status entries")
-            logger.info("=" * 80)
+            self.logger.info(f"Successfully parsed {len(status_lines)} status entries")
+            self.logger.info("=" * 80)
             return status_lines
 
         except subprocess.TimeoutExpired as e:
-            logger.error(f"SSH command timed out after {TIMEOUT_SECONDS} seconds: {e}")
-            logger.info("=" * 80)
+            self.logger.error(f"SSH command timed out after {TIMEOUT_SECONDS} seconds: {e}")
+            self.logger.info("=" * 80)
             return []
         except subprocess.CalledProcessError as e:
-            logger.warning(f"SSH command failed: {e}")
-            logger.info("=" * 80)
+            self.logger.warning(f"SSH command failed: {e}")
+            self.logger.info("=" * 80)
             return []
         except Exception as e:
-            logger.error(f"Unexpected error fetching status.json: {e}")
-            logger.error(traceback.format_exc())
-            logger.info("=" * 80)
+            self.logger.error(f"Unexpected error fetching status.json: {e}")
+            self.logger.error(traceback.format_exc())
+            self.logger.info("=" * 80)
             return []
 
-    def sync_status_to_database(self, job_id, results_dir, handler_id=None, kind=None):
+    def sync_status_to_database(self, job_id, results_dir, **kwargs):
         """Fetch status.json from SLURM and sync to database.
 
         This method replicates what status callbacks do for local GPU jobs:
@@ -1959,15 +2063,13 @@ class SlurmHandler:
         Returns:
             bool: True if sync was successful, False otherwise
         """
-        logger.info("=" * 80)
-        logger.info("SLURM STATUS SYNC: Syncing status to database")
-        logger.info(f"Job ID: {job_id}")
-        logger.info(f"Handler ID: {handler_id}")
-        logger.info(f"Kind: {kind}")
-        logger.info(f"Results dir: {results_dir}")
+        self.logger.info("=" * 80)
+        self.logger.info("SLURM STATUS SYNC: Syncing status to database")
+        self.logger.info(f"Job ID: {job_id}")
+        self.logger.info(f"Results dir: {results_dir}")
 
         # Detect if this is an AutoML experiment
-        automl_params = self._get_automl_aware_handler_params(job_id)
+        automl_params = self.get_automl_aware_handler_params(job_id)
 
         is_automl_experiment = automl_params['is_automl_experiment']
         if is_automl_experiment:
@@ -1982,33 +2084,33 @@ class SlurmHandler:
                     break
 
             if experiment_number is None:
-                logger.warning(f"⚠ Could not find experiment number for AutoML job {job_id}")
+                self.logger.warning(f"⚠ Could not find experiment number for AutoML job {job_id}")
                 experiment_number = "0"
 
-            logger.info("Detected AutoML experiment")
-            logger.info(f"Brain Job ID: {brain_job_id}")
-            logger.info(f"Experiment Number: {experiment_number}")
-            logger.info(f"Experiment Job ID: {experiment_job_id}")
+            self.logger.info("Detected AutoML experiment")
+            self.logger.info(f"Brain Job ID: {brain_job_id}")
+            self.logger.info(f"Experiment Number: {experiment_number}")
+            self.logger.info(f"Experiment Job ID: {experiment_job_id}")
         else:
-            logger.info("Not an AutoML experiment")
+            self.logger.info("Not an AutoML experiment")
             brain_job_id = job_id
             experiment_number = "0"
 
         try:
             # Fetch status lines from Lustre
-            logger.info("Step 1: Fetching status.json from Lustre...")
+            self.logger.info("Step 1: Fetching status.json from Lustre...")
             status_lines = self.fetch_status_json(results_dir)
 
             if not status_lines:
-                logger.info(f"No status updates found for job {job_id}")
-                logger.info("This is expected if job hasn't started or hasn't written status yet")
-                logger.info("=" * 80)
+                self.logger.info(f"No status updates found for job {job_id}")
+                self.logger.info("This is expected if job hasn't started or hasn't written status yet")
+                self.logger.info("=" * 80)
                 return False
 
-            logger.info(f"Fetched {len(status_lines)} status entries from Lustre")
+            self.logger.info(f"Fetched {len(status_lines)} status entries from Lustre")
 
             # Get existing status from database to avoid duplicates
-            logger.info("Step 2: Checking for existing status in database...")
+            self.logger.info("Step 2: Checking for existing status in database...")
             existing_status = get_dnn_status(
                 brain_job_id,
                 automl=is_automl_experiment,
@@ -2016,24 +2118,24 @@ class SlurmHandler:
             )
             existing_count = len(existing_status) if existing_status else 0
 
-            logger.info(f"Database has {existing_count} existing status entries")
+            self.logger.info(f"Database has {existing_count} existing status entries")
 
             # Only save new status lines (ones we haven't saved yet)
             new_status_count = len(status_lines) - existing_count
 
             if new_status_count <= 0:
-                logger.info(
+                self.logger.info(
                     "  No new status updates to sync "
                     f"(DB has {existing_count}, file has {len(status_lines)})"
                 )
-                logger.info("Status is already up to date")
-                logger.info("=" * 80)
+                self.logger.info("Status is already up to date")
+                self.logger.info("=" * 80)
                 return True
 
-            logger.info(f"Found {new_status_count} NEW status entries to sync")
+            self.logger.info(f"Found {new_status_count} NEW status entries to sync")
 
             # Save only the new status lines
-            logger.info("Step 3: Saving new status entries to database...")
+            self.logger.info("Step 3: Saving new status entries to database...")
 
             saved_count = 0
             for idx, status_entry in enumerate(status_lines[existing_count:], start=1):
@@ -2048,35 +2150,34 @@ class SlurmHandler:
                         'experiment_number': experiment_number
                     }
 
-                    logger.debug(f"Saving status entry {idx}/{new_status_count}: {str(status_entry)[:100]}...")
+                    self.logger.debug(f"Saving status entry {idx}/{new_status_count}: {str(status_entry)[:100]}...")
 
                     save_dnn_status(
                         job_id=brain_job_id,
                         automl=is_automl_experiment,
                         callback_data=callback_data,
                         experiment_number=experiment_number,
-                        handler_id=handler_id,
-                        kind=kind
                     )
                     saved_count += 1
 
                 except Exception as save_error:
-                    logger.error(f"Failed to save status entry {idx}: {save_error}")
+                    self.logger.error(f"Failed to save status entry {idx}: {save_error}")
+                    self.logger.error(traceback.format_exc())
                     # Continue with next entry
                     continue
 
             if saved_count == new_status_count:
-                logger.info(f"Successfully saved all {saved_count} new status entries to database")
+                self.logger.info(f"Successfully saved all {saved_count} new status entries to database")
             else:
-                logger.warning(f"Saved {saved_count}/{new_status_count} status entries (some failed)")
+                self.logger.warning(f"Saved {saved_count}/{new_status_count} status entries (some failed)")
 
-            logger.info(f"Database now has {existing_count + saved_count} total status entries")
-            logger.info("SYNC COMPLETE")
-            logger.info("=" * 80)
+            self.logger.info(f"Database now has {existing_count + saved_count} total status entries")
+            self.logger.info("SYNC COMPLETE")
+            self.logger.info("=" * 80)
             return True
 
         except Exception as e:
-            logger.error(f"Error syncing status to database for job {job_id}: {e}")
-            logger.error(traceback.format_exc())
-            logger.info("=" * 80)
+            self.logger.error(f"Error syncing status to database for job {job_id}: {e}")
+            self.logger.error(traceback.format_exc())
+            self.logger.info("=" * 80)
             return False

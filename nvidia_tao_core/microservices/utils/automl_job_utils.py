@@ -23,7 +23,6 @@ from .stateless_handler_utils import (
     get_job_specs,
     get_job
 )
-# StatefulSetExecutor import moved to function level to avoid circular imports
 
 # Configure logging
 TAO_LOG_LEVEL = os.getenv('TAO_LOG_LEVEL', 'INFO').upper()
@@ -176,8 +175,8 @@ def on_cancel_automl_job(job_id):
                 if workspace_id:
                     workspace_metadata = get_handler_metadata(workspace_id, kind='workspaces')
 
-    from .job_utils.executor import StatefulSetExecutor
-    result = StatefulSetExecutor().delete_statefulset(job_id, workspace_metadata=workspace_metadata)
+    from nvidia_tao_core.microservices.handlers.execution_handlers.execution_handler import ExecutionHandler
+    result = ExecutionHandler.delete_with_handler(job_id, workspace_metadata=workspace_metadata)
 
     if result:
         logger.info(f"Successfully deleted StatefulSet for AutoML job {job_id}")
