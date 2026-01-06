@@ -47,6 +47,8 @@ COPY . .
 RUN bash release/python/build_wheel.sh && \
     find dist/ -name "nvidia_tao_core*.whl" -type f | xargs -n 1 pip install && \
     cp nvidia_tao_core/microservices/nginx.conf /etc/nginx/ && \
+    chmod +x $(python -c "import nvidia_tao_core; print(nvidia_tao_core.__path__[0])")/microservices/*.py && \
+    chmod +x $(python -c "import nvidia_tao_core; print(nvidia_tao_core.__path__[0])")/microservices/*.sh && \
     rm -rf tao-core
 
 RUN python -c "import nvidia_tao_core; print('nvidia_tao_core is installed.')"
