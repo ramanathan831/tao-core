@@ -117,6 +117,7 @@ class Job(PrioritizedItem, IdedItem):
     retain_checkpoints_for_resume: bool = field(compare=False, default=False)
     early_stop_epoch: int = field(compare=False, default=None)
     timeout_minutes: int = field(compare=False, default=None)
+    backend_type: str = field(compare=False, default=None)
 
 
 def dependency_check(job_context, dependency):

@@ -20,28 +20,25 @@ from nvidia_tao_core.microservices.utils.stateless_handler_utils import (
     check_read_access,
     get_base_experiment_metadata,
     get_handler_job_metadata,
+    get_handler_metadata,
     get_job_specs,
     is_request_automl
 )
 from nvidia_tao_core.microservices.utils.handler_utils import Code
-from nvidia_tao_core.microservices.utils.executor_utils import get_available_local_k8s_gpus
-from nvidia_tao_core.microservices.utils.nvcf_utils import get_available_nvcf_instances
-from nvidia_tao_core.microservices.utils.specs_utils import csv_to_json_schema
-from nvidia_tao_core.microservices.handlers.lepton_handler import get_lepton_handler_from_workspace
+from nvidia_tao_core.microservices.utils.stateless_handler_utils import BACKEND
 from nvidia_tao_core.microservices.utils.core_utils import (
     merge_nested_dicts,
     override_dicts,
     get_microservices_network_and_action
 )
 from nvidia_tao_core.scripts.generate_schema import generate_schema, validate_and_clean_merged_spec
+from nvidia_tao_core.microservices.handlers.execution_handlers.execution_handler import ExecutionHandler
+from nvidia_tao_core.microservices.utils.specs_utils.csv_to_json_schema import convert
 
 from ..utils.basic_utils import resolve_metadata
 
 # Configure logging
 logger = logging.getLogger(__name__)
-
-# Identify if workflow is on NGC
-BACKEND = os.getenv("BACKEND", "local-k8s")
 
 
 class SpecHandler:
@@ -120,7 +117,7 @@ class SpecHandler:
                 )
                 if not os.path.exists(CSV_PATH):
                     return Code(404, {}, "Default specs do not exist for action")
-            json_schema = csv_to_json_schema.convert(CSV_PATH)
+            json_schema = convert(CSV_PATH)
 
         if "default" in json_schema and base_experiment_spec:
             # Merge the base experiment spec with the default schema
@@ -192,7 +189,7 @@ class SpecHandler:
                 )
                 if not os.path.exists(CSV_PATH):
                     return Code(404, {}, "Default specs do not exist for action")
-            json_schema = csv_to_json_schema.convert(CSV_PATH)
+            json_schema = convert(CSV_PATH)
 
         json_schema["default"] = job_specs
         if "popular" in json_schema and job_specs:
@@ -267,7 +264,7 @@ class SpecHandler:
                                     f"{base_experiment_network} - {action}.csv")
             if not os.path.exists(CSV_PATH):
                 return Code(404, {}, "Default specs do not exist for action")
-            json_schema = csv_to_json_schema.convert(CSV_PATH)
+            json_schema = convert(CSV_PATH)
         if "default" in json_schema and base_experiment_spec:
             # Merge the base experiment spec with the default schema
             merged_default = merge_nested_dicts(json_schema["default"], base_experiment_spec)
@@ -342,9 +339,9 @@ class SpecHandler:
                     f"{network} - {action}__{dataset_format}.csv"
                 )
                 if not os.path.exists(CSV_PATH):
-                    Code(404, {}, "Default specs do not exist for action")
+                    return Code(404, {}, "Default specs do not exist for action")
 
-            json_schema = csv_to_json_schema.convert(CSV_PATH)
+            json_schema = convert(CSV_PATH)
         return Code(200, json_schema, "Schema retrieved")
 
     @staticmethod
@@ -364,26 +361,12 @@ class SpecHandler:
                   - 200: A list of available GPUs.
                   - 404: If GPUs cannot be retrieved for the specified backend.
         """
-        if workspace_id:
-            lepton_handler = get_lepton_handler_from_workspace(workspace_id)
-            if lepton_handler:
-                logger.info(f"Getting available Lepton instances for workspace {workspace_id}")
-                available_lepton_instances = lepton_handler.get_available_lepton_instances()
-                if available_lepton_instances:
-                    return Code(200, available_lepton_instances, "Retrieved available GPU info")
-                return Code(404, [], f"Lepton GPU's are not available for {org_name}")
-        if BACKEND == "NVCF":
-            available_nvcf_instances = get_available_nvcf_instances(user_id, org_name)
-            if available_nvcf_instances:
-                return Code(200, available_nvcf_instances, "Retrieved available GPU info")
-            return Code(404, [], f"NVCF GPU's are not available for {org_name}")
-        if BACKEND == "local-k8s":
-            available_gpu_types = get_available_local_k8s_gpus()
-            if available_gpu_types:
-                return Code(200, available_gpu_types, "Retrieved available GPU info")
-            return Code(
-                404, [],
-                "Requested GPU's are not available in the current deployment. "
-                "Check if all nodes has accelerator labels"
-            )
+        workspace_metadata = get_handler_metadata(workspace_id, "workspaces")
+        handler = ExecutionHandler.create_handler(
+            workspace_metadata=workspace_metadata,
+            backend=BACKEND,
+        )
+        available_instances = handler.get_available_instances(user_id=user_id)
+        if available_instances:
+            return Code(200, available_instances, "Retrieved available GPU info")
         return Code(404, [], f"GPU types can't be retrieved for deployed Backend {BACKEND}")

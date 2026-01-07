@@ -16,18 +16,20 @@
 import logging
 import os
 from pymongo import ReturnDocument
+from nvidia_tao_core.microservices.enum_constants import Backend
+from nvidia_tao_core.microservices.utils.stateless_handler_utils import BACKEND
 
-logger = logging.getLogger(__name__)
-
-if os.getenv("BACKEND") in ("local-k8s", "local-docker"):
+if os.getenv("BACKEND"):
     from nvidia_tao_core.microservices.utils.mongo_utils import MongoHandler
 else:
     MongoHandler = None  # type: ignore
 
+logger = logging.getLogger(__name__)
+
 if os.getenv("BACKEND") == "local-docker":
-    import docker
+    from docker import from_env
     try:
-        docker_client = docker.from_env() if os.getenv("DOCKER_HOST") else None
+        docker_client = from_env() if os.getenv("DOCKER_HOST") else None
     except Exception as e:
         logger.error(f"Failed to initialize docker client: {e}")
         docker_client = None
@@ -95,6 +97,7 @@ class GPUManager:
         Returns:
             bool: True if container is running, False otherwise
         """
+        from docker.errors import NotFound
         if os.getenv("BACKEND") != "local-docker":
             logger.warning(f"Container check not supported for backend {os.getenv('BACKEND')}")
             return True  # Assume running for non-docker backends
@@ -108,7 +111,7 @@ class GPUManager:
             is_running = container.status.lower() == 'running'
             logger.debug(f"Container {container_name} status: {container.status}, is_running: {is_running}")
             return is_running
-        except docker.errors.NotFound:
+        except NotFound:
             logger.debug(f"Container {container_name} not found (likely completed or failed)")
             return False
         except Exception as e:
@@ -459,7 +462,7 @@ class GPUManager:
         return gpu_ids
 
 
-if os.getenv("BACKEND") == "local-docker":
+if BACKEND == Backend.LOCAL_DOCKER:
     gpu_manager = GPUManager()
 else:
     gpu_manager = None  # type: ignore

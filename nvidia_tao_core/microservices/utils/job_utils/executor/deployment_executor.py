@@ -17,8 +17,6 @@ import os
 from kubernetes import client
 from kubernetes.client.rest import ApiException
 
-from .base_executor import BaseExecutor
-
 if os.getenv("BACKEND"):  # To see if the container is going to be used for Service pods or network jobs
     from nvidia_tao_core.microservices.utils.mongo_utils import (
         mongo_secret,
@@ -31,7 +29,7 @@ else:
     mongo_namespace = None  # type: ignore
 
 
-class DeploymentExecutor(BaseExecutor):
+class DeploymentExecutor():
     """Handles Kubernetes Deployment operations for Tensorboard"""
 
     def create_tensorboard_deployment(self, deployment_name, image, command, logs_image, logs_command, replicas):

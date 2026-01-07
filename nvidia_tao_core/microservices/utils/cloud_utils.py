@@ -150,6 +150,16 @@ def create_cs_instance_with_decrypted_metadata(decrypted_metadata):
             )
         elif cloud_type == "seaweedfs":
             return _create_seaweedfs_instance(cloud_specific_details)
+        elif cloud_type == "lepton":
+            # Lepton workspaces use AWS S3 for storage with the same credential structure as AWS
+            cs_instance = CloudStorage(
+                cloud_type="aws",
+                bucket_name=cloud_bucket_name,
+                region=cloud_specific_details.get("cloud_region"),
+                key=cloud_specific_details.get("access_key"),
+                secret=cloud_specific_details.get("secret_key"),
+                client_kwargs={"endpoint_url": cloud_specific_details.get("endpoint_url")}
+            )
         elif cloud_type == "slurm":
             # SLURM uses SSH-based remote filesystem access
             slurm_user = cloud_specific_details.get("slurm_user")
@@ -252,6 +262,16 @@ def create_cs_instance(workspace_metadata):
             )
         elif cloud_type == "seaweedfs":
             cs_instance, _ = _create_seaweedfs_instance(cloud_specific_details)
+        elif cloud_type == "lepton":
+            # Lepton workspaces use AWS S3 for storage with the same credential structure as AWS
+            cs_instance = CloudStorage(
+                cloud_type="aws",
+                bucket_name=cloud_bucket_name,
+                region=cloud_specific_details.get("cloud_region"),
+                key=cloud_specific_details.get("access_key"),
+                secret=cloud_specific_details.get("secret_key"),
+                client_kwargs={"endpoint_url": cloud_specific_details.get("endpoint_url")}
+            )
         elif cloud_type == "slurm":
             # SLURM uses SSH-based remote filesystem access
             slurm_user = cloud_specific_details.get("slurm_user")
@@ -378,7 +398,7 @@ class CloudStorage:
             'skip_instance_cache': True   # Skip fsspec instance caching
         }
 
-        if cloud_type == 'aws':
+        if cloud_type in ['aws', 'lepton']:
             # Merge fsspec config with user kwargs
             aws_kwargs = {**kwargs, **fsspec_config}
             self.fs = fsspec.filesystem('s3', **aws_kwargs)

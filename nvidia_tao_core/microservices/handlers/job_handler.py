@@ -48,7 +48,8 @@ from nvidia_tao_core.microservices.utils.stateless_handler_utils import (
     save_dnn_status,
     save_job_specs,
     resolve_metadata,
-    resolve_existence
+    resolve_existence,
+    BACKEND
 )
 from nvidia_tao_core.microservices.utils.handler_utils import (
     Code,
@@ -57,16 +58,13 @@ from nvidia_tao_core.microservices.utils.handler_utils import (
     get_num_gpus_from_spec,
     send_microservice_request
 )
-from nvidia_tao_core.microservices.utils.job_utils.executor import (
-    JobExecutor,
-    StatefulSetExecutor
-)
 from nvidia_tao_core.microservices.utils.job_utils.workflow_driver import create_job_context, on_delete_job, on_new_job
 from nvidia_tao_core.microservices.utils.automl_job_utils import on_delete_automl_job
 from nvidia_tao_core.microservices.utils.core_utils import (
     check_and_convert
 )
 from nvidia_tao_core.microservices.utils.deduplication_utils import find_duplicate_job
+from nvidia_tao_core.microservices.enum_constants import Backend
 
 if os.getenv("BACKEND"):
     from .mongo_handler import MongoHandler
@@ -81,9 +79,6 @@ from ..utils.basic_utils import (
 
 # Configure logging
 logger = logging.getLogger(__name__)
-
-# Identify if workflow is on NGC
-BACKEND = os.getenv("BACKEND", "local-k8s")
 
 
 class JobHandler:
@@ -210,7 +205,7 @@ class JobHandler:
                 if not parent_handler_id:
                     return Code(404, [], f"Unable to identify {parent_kind} id for parent job {parent_job_id}")
 
-        if BACKEND == "NVCF":
+        if BACKEND == Backend.NVCF:
             available_nvcf_instances = get_available_nvcf_instances(user_id, org_name)
             if not available_nvcf_instances:
                 platform_id = "052fc221-ffaa-5c15-8d22-b663e7339349"
@@ -304,7 +299,7 @@ class JobHandler:
                     name=name,
                     backend_details=backend_details,
                     retain_checkpoints_for_resume=retain_checkpoints_for_resume,
-                    timeout_minutes=timeout_minutes
+                    timeout_minutes=timeout_minutes,
                 )
                 msg = "AutoML "
             else:
@@ -325,7 +320,7 @@ class JobHandler:
                     backend_details=backend_details,
                     retain_checkpoints_for_resume=retain_checkpoints_for_resume,
                     early_stop_epoch=early_stop_epoch,
-                    timeout_minutes=timeout_minutes
+                    timeout_minutes=timeout_minutes,
                 )
                 on_new_job(job_context)
             if specs:
@@ -669,6 +664,9 @@ class JobHandler:
             logger.debug(f"[CANCEL] Job not found in handler's job list: job_id={job_id}, handler_id={handler_id}")
             return Code(404, [], f"Job to cancel not found in the {kind}.")
 
+        workspace_id = handler_metadata.get("workspace")
+        workspace_metadata = get_handler_metadata(workspace_id, kind="workspaces")
+
         user_id = handler_metadata.get("user_id")
         if not check_write_access(user_id, org_name, handler_id, kind=kind + "s"):
             logger.debug(f"[CANCEL] Write access denied: user_id={user_id}, handler_id={handler_id}")
@@ -724,8 +722,8 @@ class JobHandler:
             update_job_status(handler_id, job_id, status="Canceling", kind=kind + "s")
             logger.debug(f"[CANCEL] Deleting job from workflow queue: job_id={job_id}")
             on_delete_job(job_id)
-            logger.debug(f"[CANCEL] Deleting statefulset: job_id={job_id}, use_ngc={use_ngc}")
-            StatefulSetExecutor().delete_statefulset(job_id, use_ngc=use_ngc)
+            from nvidia_tao_core.microservices.handlers.execution_handlers.execution_handler import ExecutionHandler
+            ExecutionHandler.delete_with_handler(job_id)
             update_job_status(handler_id, job_id, status="Canceled", kind=kind + "s")
             logger.debug(f"[CANCEL] Pending job successfully canceled: job_id={job_id}")
             return Code(200, {"message": f"Pending job {job_id} cancelled"})
@@ -735,34 +733,38 @@ class JobHandler:
             try:
                 # Delete job (K8s pod or Docker container)
                 update_job_status(handler_id, job_id, status="Canceling", kind=kind + "s")
-                logger.debug(f"[CANCEL] Job status updated to Canceling: job_id={job_id}")
-                logger.debug(f"[CANCEL] Deleting statefulset for running job: job_id={job_id}, use_ngc={use_ngc}")
-                StatefulSetExecutor().delete_statefulset(job_id, use_ngc=use_ngc)
-
-                # Poll for job termination (works for both K8s and Docker Compose)
-                # For Docker: get_job_status returns "Error" immediately when container not reachable
-                # For K8s: polls until pod terminates
-                logger.debug(f"[CANCEL] Waiting for job termination: job_id={job_id}")
-                k8s_status = JobExecutor().get_job_status(
-                    org_name,
-                    handler_id,
-                    job_id,
-                    kind + "s",
-                    use_ngc=use_ngc,
-                    automl_exp_job=False
+                from nvidia_tao_core.microservices.handlers.execution_handlers.execution_handler import ExecutionHandler
+                ExecutionHandler.delete_with_handler(job_id)
+                k8s_status = ExecutionHandler.get_job_status_with_handler(
+                    job_name=job_id,
+                    workspace_metadata=workspace_metadata,
+                    handler_id=handler_id,
+                    handler_kind=kind + "s",
+                    network="",
+                    action="",
+                    specs=None,
+                    docker_env_vars={},
+                    results_dir="",
+                    automl_exp_job=False,
+                    org_name=org_name
                 )
                 logger.debug(f"[CANCEL] Initial status after delete: job_id={job_id}, status={k8s_status}")
                 while k8s_status in ("Done", "Error", "Running", "Pending"):
                     if k8s_status in ("Done", "Error"):
                         logger.debug(f"[CANCEL] Job terminated: job_id={job_id}, final_status={k8s_status}")
                         break
-                    k8s_status = JobExecutor().get_job_status(
-                        org_name,
-                        handler_id,
-                        job_id,
-                        kind + "s",
-                        use_ngc=use_ngc,
-                        automl_exp_job=False
+                    k8s_status = ExecutionHandler.get_job_status_with_handler(
+                        job_name=job_id,
+                        workspace_metadata=workspace_metadata,
+                        handler_id=handler_id,
+                        handler_kind=kind + "s",
+                        network="",
+                        action="",
+                        specs=None,
+                        docker_env_vars={},
+                        results_dir="",
+                        automl_exp_job=False,
+                        org_name=org_name
                     )
                     logger.debug(f"[CANCEL] Polling status: job_id={job_id}, status={k8s_status}")
                     time.sleep(5)
@@ -808,6 +810,9 @@ class JobHandler:
         if not check_write_access(user_id, org_name, handler_id, kind=kind + "s"):
             logger.debug(f"[PAUSE] Write access denied: user_id={user_id}, handler_id={handler_id}")
             return Code(404, [], f"{kind} not found")
+
+        workspace_id = handler_metadata.get("workspace")
+        workspace_metadata = get_handler_metadata(workspace_id, kind="workspaces")
 
         job_metadata = get_handler_job_metadata(job_id)
         if not job_metadata:
@@ -868,8 +873,8 @@ class JobHandler:
             update_job_status(handler_id, job_id, status="Pausing", kind=kind + "s")
             logger.debug(f"[PAUSE] Deleting job from workflow queue: job_id={job_id}")
             on_delete_job(job_id)
-            logger.debug(f"[PAUSE] Deleting statefulset: job_id={job_id}, use_ngc={use_ngc}")
-            StatefulSetExecutor().delete_statefulset(job_id, use_ngc=use_ngc)
+            from nvidia_tao_core.microservices.handlers.execution_handlers.execution_handler import ExecutionHandler
+            ExecutionHandler.delete_with_handler(job_id)
             update_job_status(handler_id, job_id, status="Paused", kind=kind + "s")
             logger.debug(f"[PAUSE] Pending job successfully paused: job_id={job_id}")
             return Code(200, {"message": f"Pending job {job_id} paused"})
@@ -920,30 +925,38 @@ class JobHandler:
                     logger.warning(f"[PAUSE] Graceful pause unavailable for job {job_id}, using abrupt pause")
 
                 # Abrupt pause (or fallback if graceful pause failed)
-                logger.debug(f"[PAUSE] Performing abrupt pause: job_id={job_id}")
-                logger.debug(f"[PAUSE] Deleting statefulset for running job: job_id={job_id}, use_ngc={use_ngc}")
-                StatefulSetExecutor().delete_statefulset(job_id, use_ngc=use_ngc)
-                logger.debug(f"[PAUSE] Waiting for job termination: job_id={job_id}")
-                k8s_status = JobExecutor().get_job_status(
-                    org_name,
-                    handler_id,
-                    job_id,
-                    kind + "s",
-                    use_ngc=use_ngc,
-                    automl_exp_job=False
+                from nvidia_tao_core.microservices.handlers.execution_handlers.execution_handler import ExecutionHandler
+                ExecutionHandler.delete_with_handler(job_id)
+                k8s_status = ExecutionHandler.get_job_status_with_handler(
+                    job_name=job_id,
+                    workspace_metadata=workspace_metadata,
+                    handler_id=handler_id,
+                    handler_kind=kind + "s",
+                    network="",
+                    action="",
+                    specs=None,
+                    docker_env_vars={},
+                    results_dir="",
+                    automl_exp_job=False,
+                    org_name=org_name
                 )
                 logger.debug(f"[PAUSE] Initial status after delete: job_id={job_id}, status={k8s_status}")
                 while k8s_status in ("Done", "Error", "Running", "Pending"):
                     if k8s_status in ("Done", "Error"):
                         logger.debug(f"[PAUSE] Job terminated: job_id={job_id}, final_status={k8s_status}")
                         break
-                    k8s_status = JobExecutor().get_job_status(
-                        org_name,
-                        handler_id,
-                        job_id,
-                        kind + "s",
-                        use_ngc=use_ngc,
-                        automl_exp_job=False
+                    k8s_status = ExecutionHandler.get_job_status_with_handler(
+                        job_name=job_id,
+                        workspace_metadata=workspace_metadata,
+                        handler_id=handler_id,
+                        handler_kind=kind + "s",
+                        network="",
+                        action="",
+                        specs=None,
+                        docker_env_vars={},
+                        results_dir="",
+                        automl_exp_job=False,
+                        org_name=org_name
                     )
                     logger.debug(f"[PAUSE] Polling status: job_id={job_id}, status={k8s_status}")
                     time.sleep(5)
@@ -1386,8 +1399,7 @@ class JobHandler:
         )
         # Determine log retrieval strategy based on job status and backend
         is_completed = job_status in ("Done", "Error", "Canceled", "Paused")
-        is_streaming_backend = backend in ("local-k8s", "local-docker")
-        if is_completed and is_streaming_backend:
+        if is_completed:
             # For completed jobs with streaming backends:
             # 1. Try cloud storage first (log monitor uploads complete logs there)
             # 2. Fall back to cached file if cloud download fails
@@ -1410,17 +1422,12 @@ class JobHandler:
                     "[JOB_LOGS] No workspace assigned, cannot download from cloud. "
                     "Will use cached file if available."
                 )
-        elif not is_completed and is_streaming_backend:
+        elif not is_completed:
             # For running jobs with streaming backends:
             # Try to get real-time logs from backend (K8s/Docker), then fall back to cloud
             log_type = "brain job" if is_brain_job else f"job_id={lookup_job_id}"
             logger.info(f"[JOB_LOGS] Job running, attempting real-time logs from {backend} for {log_type}")
-            # Get namespace if K8s
-            namespace = None
-            if backend == "local-k8s":
-                namespace = os.getenv("NAMESPACE")
-                logger.debug(f"[JOB_LOGS] K8s namespace: {namespace}")
-            direct_logs = get_job_logs_from_backend(lookup_job_id, backend=backend, namespace=namespace)
+            direct_logs = get_job_logs_from_backend(lookup_job_id)
             if direct_logs:
                 log_desc = "brain job" if is_brain_job else "job"
                 log_size_kb = len(direct_logs) / 1024
@@ -1453,21 +1460,6 @@ class JobHandler:
                     logger.warning(f"[JOB_LOGS] Cloud download failed: {type(e).__name__}: {e}")
             else:
                 logger.warning("[JOB_LOGS] No workspace assigned, cannot download from cloud")
-        else:
-            # For non-streaming backends (NVCF, etc.), use cloud storage
-            logger.debug(
-                f"[JOB_LOGS] Backend {backend} does not support direct streaming, "
-                f"using cloud storage"
-            )
-            workspace_id = handler_metadata.get("workspace", "")
-            if workspace_id:
-                try:
-                    download_log_from_cloud(handler_metadata, lookup_job_id, log_file_path, automl_index)
-                except Exception as e:
-                    logger.warning(f"[JOB_LOGS] Cloud download failed: {type(e).__name__}: {e}")
-            else:
-                logger.warning("[JOB_LOGS] No workspace assigned, cannot download from cloud")
-
         # File not present - Use detailed message or job status
         if not os.path.exists(log_file_path):
             detailed_result_msg = (

@@ -18,12 +18,12 @@ import logging
 
 from .mongo_utils import MongoHandler
 from .stateless_handler_utils import (
+    BACKEND,
     get_handler_metadata,
     get_automl_controller_info,
     is_request_automl
 )
-
-BACKEND = os.getenv("BACKEND", "local-k8s")
+from nvidia_tao_core.microservices.enum_constants import Backend
 
 # Configure logging
 TAO_LOG_LEVEL = os.getenv('TAO_LOG_LEVEL', 'INFO').upper()
@@ -252,9 +252,9 @@ def get_all_running_jobs():
     except Exception as e:
         logger.debug(f"Error collecting AutoML experiment job IDs: {e}")
 
-    if BACKEND == "local-docker":
+    if BACKEND == Backend.LOCAL_DOCKER:
         # Import at function level to avoid circular imports
-        from ..handlers.docker_handler import get_all_docker_running_containers
+        from ..handlers.execution_handlers.docker_handler import get_all_docker_running_containers
         docker_containers = get_all_docker_running_containers()
         for container in docker_containers:
             job_id = container.get('job_id')
@@ -429,9 +429,9 @@ def get_all_running_automl_experiments():
 
         # Now check K8s/Docker for orphaned AutoML experiment pods
         # These are pods that have completed (success/failure) in DB but are still running
-        if BACKEND == "local-docker":
+        if BACKEND == Backend.LOCAL_DOCKER:
             # Import at function level to avoid circular imports
-            from ..handlers.docker_handler import get_all_docker_running_containers
+            from ..handlers.execution_handlers.docker_handler import get_all_docker_running_containers
             docker_containers = get_all_docker_running_containers()
             for container in docker_containers:
                 container_job_id = container.get('job_id')

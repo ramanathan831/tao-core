@@ -23,12 +23,9 @@ from .docker_images import DOCKER_IMAGE_MAPPER
 from nvidia_tao_core.microservices.utils.handler_utils import (
     Code, add_workspace_to_cloud_metadata, get_model_results_path
 )
-from nvidia_tao_core.microservices.utils.job_utils.executor import (
-    ServiceExecutor,
-    StatefulSetExecutor
-)
-from nvidia_tao_core.microservices.utils.stateless_handler_utils import get_handler_metadata
+from nvidia_tao_core.microservices.utils.stateless_handler_utils import get_handler_metadata, BACKEND
 from nvidia_tao_core.microservices.utils.core_utils import read_network_config
+from nvidia_tao_core.microservices.enum_constants import Backend
 
 
 # Configure logging
@@ -62,7 +59,6 @@ class InferenceMicroserviceHandler:
         """
         from nvidia_tao_core.microservices.utils.stateless_handler_utils import write_job_metadata
         from nvidia_tao_core.microservices.utils import get_admin_key
-        from nvidia_tao_core.microservices.utils.job_utils.executor.base_executor import get_cluster_ip
 
         logger.info("Starting Inference Microservice %s for experiment %s", job_id, experiment_id)
 
@@ -126,13 +122,14 @@ class InferenceMicroserviceHandler:
         # logger.info("Using CLI args: %s", cli_args)
 
         docker_env_vars = experiment_metadata.get("docker_env_vars", {})
-        docker_env_vars["TAO_EXECUTION_BACKEND"] = os.getenv("BACKEND", "local-k8s")
+        docker_env_vars["TAO_EXECUTION_BACKEND"] = BACKEND.value
         docker_env_vars["TAO_API_JOB_ID"] = job_id
 
         # Set up environment variables for status callbacks (auto-deletion)
         docker_env_vars["CLOUD_BASED"] = "True"
         host_base_url = os.getenv("HOSTBASEURL", "no_url")
-        if os.getenv("BACKEND", "local-k8s") == "local-k8s":
+        if BACKEND == Backend.LOCAL_K8S:
+            from nvidia_tao_core.microservices.utils.executor_utils import get_cluster_ip
             cluster_ip, cluster_port = get_cluster_ip()
             if cluster_ip and cluster_port:
                 host_base_url = f"http://{cluster_ip}:{cluster_port}"
@@ -176,23 +173,19 @@ umask 0 &&
 {network_arch}-inference-microservice --job "{str(job_metadata)}" --docker_env_vars "{str(docker_env_vars)}"
         """
         logger.info("Using run command: %s", run_command)
+        run_command = ["/bin/bash", "-c", run_command]
 
         try:
             # Create long-lived inference service StatefulSet
             # IMPORTANT: This overrides the default container entrypoint (e.g., "flask run")
             # with our custom command that starts the persistent model server + container_handler.py
-            statefulset_executor = StatefulSetExecutor()
-            success = statefulset_executor.create_statefulset(
+            from nvidia_tao_core.microservices.handlers.execution_handlers.execution_handler import ExecutionHandler
+            success = ExecutionHandler.create_microservice(
                 job_id=job_id,
-                num_gpu_per_node=1,
-                num_nodes=replicas,
                 image=image,
-                api_port=api_port,
-                statefulset_type="inference_microservice",
                 custom_command=run_command,
-                org_name=org_name,
-                experiment_id=experiment_id,
-                is_long_lived=True
+                api_port=api_port,
+                inference_microservice=True
             )
 
             if not success:
@@ -202,15 +195,16 @@ umask 0 &&
             service_id = f"ims-svc-{job_id}"
             logger.info("Waiting for Inference Microservice service %s to be ready", service_id)
 
-            if os.getenv("BACKEND") == "local-k8s":
-                service_executor = ServiceExecutor()
-                service_status = service_executor.wait_for_service(job_id, service_name=service_id)
+            if BACKEND == Backend.LOCAL_K8S:
+                from .execution_handlers.kubernetes_handler import KubernetesHandler
+                kubernetes_handler = KubernetesHandler()
+                service_status = kubernetes_handler.wait_for_service(job_id, service_name=service_id)
                 if service_status != "Running":
                     logger.error("Inference Microservice service failed to become ready. Status: %s", service_status)
                     return Code(500, {}, f"Inference Microservice service failed to become ready: {service_status}")
 
             # For Kubernetes services, we typically use cluster IP for internal communication
-            service_url = f"http://{service_id}:{api_port}"
+            service_url = InferenceMicroserviceHandler.get_inference_microservice_url(job_id, None, api_port)
 
             logger.info("Inference Microservice created at %s", service_url)
 
@@ -272,13 +266,10 @@ umask 0 &&
         logger.info("%s Inference Microservice %s %s", action, job_id, reason)
 
         try:
-            # Delete the StatefulSet and associated service using the enhanced delete function
-            statefulset_executor = StatefulSetExecutor()
-            deletion_success = statefulset_executor.delete_statefulset(
-                job_id, resource_type="inference_microservice"
-            )
+            from nvidia_tao_core.microservices.handlers.execution_handlers.execution_handler import ExecutionHandler
+            success = ExecutionHandler.delete(job_id, resource_type="inference_microservice")
 
-            if deletion_success:
+            if success:
                 success_message = "auto-deleted due to inactivity" if auto_deletion else "stopped successfully"
                 logger.info(
                     "Successfully %s Inference Microservice %s",
@@ -319,93 +310,6 @@ umask 0 &&
             return Code(500, {"error": str(e)}, f"Error {action.lower()} Inference Microservice")
 
     @staticmethod
-    def get_inference_microservice_status(job_id: str) -> Code:
-        """Gets the status of a Inference Microservice StatefulSet"""
-        statefulset_name = f"ims-{job_id}"
-
-        try:
-            stat_dict = StatefulSetExecutor().get_statefulset_status(
-                statefulset_name, replicas=1, resource_type="Inference Microservice"
-            )
-            status = stat_dict.get("status", "Unknown")
-
-            return Code(200, {
-                "job_id": job_id,
-                "service_name": statefulset_name,
-                "status": status,
-                "replicas": stat_dict.get("replicas", {}),
-                "pods": []
-            }, f"Inference Microservice status: {status}")
-
-        except Exception as e:
-            logger.error("Error getting Inference Microservice status: %s", str(e))
-            return Code(500, {}, f"Failed to get service status: {str(e)}")
-
-    @staticmethod
-    def check_inference_microservice_model_readiness(job_id: str, api_port: int = 8080) -> dict:
-        """Check if Inference Microservice model is ready in StatefulSet containers
-
-        Args:
-            job_id: Job ID for the microservice
-            api_port: Port number for the microservice
-
-        Returns:
-            Dictionary with readiness status and progress information
-        """
-        try:
-            statefulset_name = f"ims-{job_id}"
-
-            # Check if StatefulSet pods exist and are running
-            try:
-                stat_dict = StatefulSetExecutor().get_statefulset_status(
-                    statefulset_name, replicas=1, resource_type="Inference Microservice"
-                )
-                statefulset_status = stat_dict.get("status", "Unknown")
-
-                # If StatefulSet is running, get detailed status from the microservice
-                if statefulset_status == "Running":
-                    try:
-                        # Get detailed status including progress
-                        status_response = InferenceMicroserviceHandler.get_inference_microservice_status_direct(
-                            job_id, api_port
-                        )
-                        return {
-                            "job_id": job_id,
-                            "status": "ready" if status_response.get("model_loaded") else "loading",
-                            "loaded": status_response.get("model_loaded", False),
-                            "loading": status_response.get("model_loading", False),
-                            "initializing": status_response.get("server_initializing", False),
-                            "statefulset_status": statefulset_status,
-                            "progress": status_response.get("progress", {})
-                        }
-                    except Exception as status_err:
-                        logger.warning(f"Could not get detailed status for {job_id}: {status_err}")
-                        # Fallback to basic response
-                        return {
-                            "job_id": job_id,
-                            "status": "ready",
-                            "loaded": True,
-                            "statefulset_status": statefulset_status
-                        }
-                return {
-                    "job_id": job_id,
-                    "status": "not_ready",
-                    "loaded": False,
-                    "statefulset_status": statefulset_status
-                }
-            except Exception:
-                return {
-                    "job_id": job_id,
-                    "status": "not_found",
-                    "loaded": False,
-                    "statefulset_status": "NotFound"
-                }
-
-        except Exception as e:
-            logger.error(f"Error checking Inference Microservice model readiness: {e}")
-            return {"status": "error", "error": str(e), "loaded": False}
-
-    @staticmethod
     def get_inference_microservice_url(job_id: str, endpoint: str = "inference", api_port: int = 8080) -> str:
         """Get the URL for inference microservice requests
 
@@ -421,16 +325,19 @@ umask 0 &&
 
         # Always use simple service name for both Kubernetes and docker-compose
         # This works reliably for intra-cluster communication and avoids DNS issues
-        if os.environ.get('BACKEND', 'local-k8s') == 'local-docker':
-            url = f"http://{job_id}:{api_port}/api/v1/{endpoint}"
+        if BACKEND == Backend.LOCAL_DOCKER:
+            url = f"http://{job_id}:{api_port}"
         else:
-            url = f"http://{service_name}:{api_port}/api/v1/{endpoint}"
+            url = f"http://{service_name}:{api_port}"
+
+        if endpoint:
+            url = f"{url}/api/v1/{endpoint}"
 
         logger.info(f"Inference microservice URL: {url}")
         return url
 
     @staticmethod
-    def process_inference_microservice_request_direct(
+    def process_inference_microservice_request(
             job_id: str, request_data: Dict[str, Any], api_port: int = 8080
     ) -> Dict[str, Any]:
         """Process inference request directly to the StatefulSet microservice
@@ -592,33 +499,4 @@ umask 0 &&
                     "remaining_steps": [],
                     "details": {"error": str(e)}
                 }
-            }
-
-    @staticmethod
-    def get_inference_microservice_status_detailed(job_id: str) -> dict:
-        """Get Inference Microservice service status with model readiness information"""
-        try:
-            statefulset_name = f"ims-{job_id}"
-            stat_dict = StatefulSetExecutor().get_statefulset_status(
-                statefulset_name, replicas=1, resource_type="Inference Microservice"
-            )
-
-            # Check model readiness
-            model_state = InferenceMicroserviceHandler.check_inference_microservice_model_readiness(job_id)
-
-            return {
-                "job_id": job_id,
-                "service_name": statefulset_name,
-                "status": stat_dict.get("status", "Unknown"),
-                "replicas": stat_dict.get("replicas", {}),
-                "model_loaded": model_state.get("loaded", False),
-                "model_status": model_state.get("status", "unknown")
-            }
-
-        except Exception as e:
-            logger.error(f"Error getting Inference Microservice service status: {e}")
-            return {
-                "job_id": job_id,
-                "status": "error",
-                "error": str(e)
             }

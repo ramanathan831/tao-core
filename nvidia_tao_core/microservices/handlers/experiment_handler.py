@@ -27,7 +27,7 @@ from nvidia_tao_core.microservices.constants import (
     MAXINE_NETWORKS
 )
 from nvidia_tao_core.microservices.utils.airgapped_utils import AirgappedExperimentLoader
-from nvidia_tao_core.microservices.enum_constants import ExperimentNetworkArch
+from nvidia_tao_core.microservices.enum_constants import Backend, ExperimentNetworkArch
 from nvidia_tao_core.microservices.utils.stateless_handler_utils import (
     check_read_access,
     check_write_access,
@@ -48,7 +48,8 @@ from nvidia_tao_core.microservices.utils.stateless_handler_utils import (
     get_automl_best_rec_info,
     get_handler_job_metadata,
     is_request_automl,
-    delete_dnn_status
+    delete_dnn_status,
+    BACKEND
 )
 from nvidia_tao_core.microservices.utils.encrypt_utils import NVVaultEncryption
 from nvidia_tao_core.microservices.handlers.tensorboard_handler import TensorboardHandler
@@ -75,8 +76,6 @@ from ..utils.basic_utils import (
 # Configure logging
 logger = logging.getLogger(__name__)
 
-# Identify if workflow is on NGC
-BACKEND = os.getenv("BACKEND", "local-k8s")
 # Identify if nginx-ingress is enabled (should be disabled for NVCF deployments)
 ingress_enabled = os.getenv("INGRESSENABLED", "false") == "true"
 
@@ -300,10 +299,10 @@ class ExperimentHandler:
 
         if metadata.get("automl_settings", {}).get("automl_enabled") and mdl_nw in AUTOML_DISABLED_NETWORKS:
             return Code(400, {}, "automl_enabled cannot be True for unsupported network")
-        if metadata.get("automl_settings", {}).get("automl_enabled") and BACKEND == "NVCF":
+        if metadata.get("automl_settings", {}).get("automl_enabled") and BACKEND == Backend.NVCF:
             return Code(400, {}, "Automl not supported on NVCF backend, use baremetal deployments of TAO-API")
 
-        if BACKEND == "NVCF" and metadata.get("tensorboard_enabled", False):
+        if BACKEND == Backend.NVCF and metadata.get("tensorboard_enabled", False):
             return Code(400, {}, "Tensorboard not supported on NVCF backend, use baremetal deployments of TAO-API")
         if mdl_nw in TAO_NETWORKS and (not metadata.get("workspace")):
             return Code(400, {}, "Workspace must be provided for experiment creation")
@@ -636,13 +635,13 @@ class ExperimentHandler:
                 # If False, can set. If True, need to check if AutoML is supported
                 if value:
                     mdl_nw = metadata.get("network_arch", "")
-                    if automl_enabled and BACKEND == "NVCF":
+                    if automl_enabled and BACKEND == Backend.NVCF:
                         return Code(
                             400,
                             {},
                             "Automl not supported on NVCF backend, use baremetal deployments of TAO-API"
                         )
-                    if tensorboard_enabled and BACKEND == "NVCF":
+                    if tensorboard_enabled and BACKEND == Backend.NVCF:
                         return Code(
                             400,
                             {},

@@ -67,6 +67,7 @@ from .stateless_handler_utils import (
     get_automl_experiment_job_id,
     BACKEND
 )
+from nvidia_tao_core.microservices.enum_constants import Backend
 from .ngc_utils import validate_ptm_download
 from .core_utils import create_folder_with_permissions, get_monitoring_metric
 
@@ -177,7 +178,6 @@ class JobContext:
         self.retain_checkpoints_for_resume = retain_checkpoints_for_resume
         self.early_stop_epoch = early_stop_epoch
         self.timeout_minutes = timeout_minutes
-
         self.write()
 
     def write(self):
@@ -212,7 +212,8 @@ class JobContext:
             "job_details": self.job_details,
             "retain_checkpoints_for_resume": self.retain_checkpoints_for_resume,
             "early_stop_epoch": self.early_stop_epoch,
-            "timeout_minutes": self.timeout_minutes}
+            "timeout_minutes": self.timeout_minutes,
+        }
         return _schema
 
 
@@ -512,31 +513,40 @@ class StatusParser:
         # This ensures StatusParser reads the latest status updates
         if workspace_metadata and cloud_results_dir:
             cloud_type = workspace_metadata.get('cloud_type', '')
-            if cloud_type == 'slurm':
+            if cloud_type in ["slurm", "lepton"]:
                 from nvidia_tao_core.microservices.handlers.execution_handlers.slurm_handler import (
                     get_slurm_handler_from_workspace
                 )
+                from nvidia_tao_core.microservices.handlers.execution_handlers.lepton_handler import (
+                    get_lepton_handler_from_workspace
+                )
                 workspace_id = workspace_metadata.get('id')
                 if workspace_id:
-                    slurm_handler = get_slurm_handler_from_workspace(workspace_id)
-                    if slurm_handler:
+                    slurm_handler = get_slurm_handler_from_workspace(workspace_id) if cloud_type == "slurm" else None
+                    lepton_handler = get_lepton_handler_from_workspace(workspace_id) if cloud_type == "lepton" else None
+                    if slurm_handler or lepton_handler:
                         try:
                             # Determine which job_id to use for sync
                             sync_job_id = rec_job_id if rec_job_id else job_id
 
                             logger.debug(
-                                "StatusParser: Syncing SLURM status for job_id=%s, automl=%s, exp=%s",
+                                "StatusParser: Syncing cloud status for job_id=%s, automl=%s, exp=%s",
                                 sync_job_id, automl, experiment_number
                             )
-                            slurm_handler.sync_status_to_database(
-                                job_id=sync_job_id,
-                                results_dir=cloud_results_dir,
-                                handler_id=None,  # StatusParser doesn't have handler_id
-                                kind=None
-                            )
+                            if slurm_handler:
+                                slurm_handler.sync_status_to_database(
+                                    job_id=sync_job_id,
+                                    results_dir=cloud_results_dir,
+                                )
+                            if lepton_handler:
+                                lepton_handler.sync_status_to_database(
+                                    job_id=sync_job_id,
+                                    results_dir=cloud_results_dir,
+                                    workspace_metadata=workspace_metadata,
+                                )
                         except Exception as e:
                             logger.warning(
-                                "StatusParser: Failed to sync SLURM status for job %s: %s",
+                                "StatusParser: Failed to sync status for job %s: %s",
                                 sync_job_id, str(e)
                             )
                             # Continue - work with whatever is in DB
@@ -1093,7 +1103,7 @@ def validate_num_gpu(num_gpu=None, action: str = ""):
         return 0, f"Requested number of GPUs ({num_gpu}) is invalid negative number."
 
     # Get maximum available number of GPUs
-    if BACKEND == "NVCF":
+    if BACKEND == Backend.NVCF:
         max_num_gpu = 8
     else:
         num_gpu_per_node = os.getenv("NUM_GPU_PER_NODE")

@@ -399,11 +399,23 @@ class ContainerJobHandler:
 
             cloud_storage, specs, spec_path = prepare_data_before_job_run(job, docker_env_vars)
 
-            # Get upload strategy by reading network config directly
+            # Get upload strategy, exclude patterns, and retain patterns by reading network config directly
             network = docker_env_vars.get("ORCHESTRATION_API_NETWORK", job.get("neural_network_name", ""))
             action = docker_env_vars.get("ORCHESTRATION_API_ACTION", job.get("action_name", ""))
-            upload_strategy = ContainerJobHandler.get_upload_strategy_from_config(network, action)
+            retain_checkpoints_for_resume = (
+                docker_env_vars.get("RETAIN_CHECKPOINTS_FOR_RESUME", "false").lower() == "true"
+            )
+            upload_strategy, exclude_patterns, retain_patterns = (
+                ContainerJobHandler.get_upload_strategy_from_config(
+                    network, action, retain_checkpoints_for_resume
+                )
+            )
             logger.info("Using upload strategy for %s %s: %s", network, action, upload_strategy)
+            if exclude_patterns:
+                logger.info("Excluding patterns for %s %s: %s", network, action, exclude_patterns)
+            if retain_patterns:
+                logger.info("Retaining files matching patterns for %s %s until job completion: %s",
+                            network, action, retain_patterns)
 
             # Determine if we should start continuous monitoring
             should_start_continuous = True
@@ -424,14 +436,20 @@ class ContainerJobHandler:
                 should_start_continuous = False
 
             if cloud_storage and should_start_continuous:
+                logger.info("Starting continuous upload monitor thread (sync mode)")
                 exit_event = threading.Event()
                 upload_thread = threading.Thread(
                     target=monitor_and_upload,
-                    args=(specs["results_dir"], cloud_storage, exit_event, 0, selective_tarball_config),
+                    args=(specs["results_dir"], cloud_storage, exit_event, 0,
+                          selective_tarball_config, exclude_patterns, retain_patterns),
                     daemon=True
                 )
                 upload_thread.start()
+                logger.info("Upload monitor thread started successfully")
             else:
+                logger.info(
+                    "Not starting continuous upload monitor: cloud_storage=%s, should_start_continuous=%s",
+                    bool(cloud_storage), should_start_continuous)
                 # For tarball_after_completion or complex strategies, we'll handle upload after job completion
                 exit_event = None
                 upload_thread = None

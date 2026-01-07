@@ -154,7 +154,7 @@ class SlurmCloudStorageAdapter:
         self.current_hostname_index = 0
         self.slurm_hostname = self.slurm_hostnames[self.current_hostname_index]
 
-        self.ssh_key_path = ssh_key_path or "/root/.ssh/id_ed25519"
+        self.ssh_key_path = ssh_key_path or "/home/www-data/.ssh/id_ed25519"
         logger.info(
             f"Initialized SLURM cloud storage adapter with root: {self.root}, "
             f"hostnames: {self.slurm_hostnames} ({len(self.slurm_hostnames)} host(s)), "
