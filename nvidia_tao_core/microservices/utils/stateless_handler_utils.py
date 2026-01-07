@@ -28,6 +28,7 @@ import logging
 from nvidia_tao_core.microservices.constants import CV_ACTION_CHAINED_ONLY, CV_ACTION_RULES
 from .encrypt_utils import NVVaultEncryption
 from .mongo_utils import MongoHandler
+from nvidia_tao_core.microservices.enum_constants import Backend
 
 # Configure logging
 TAO_LOG_LEVEL = os.getenv('TAO_LOG_LEVEL', 'INFO').upper()
@@ -39,7 +40,7 @@ logging.basicConfig(
 logging.getLogger('nvidia_tao_core').setLevel(tao_log_level)
 logger = logging.getLogger(__name__)
 
-BACKEND = os.getenv("BACKEND", "local-k8s")
+BACKEND = Backend(os.getenv("BACKEND", "local-k8s"))
 tao_root = os.environ.get("TAO_ROOT", "/tmp/shared/orgs/")
 base_exp_uuid = "00000000-0000-0000-0000-000000000000"
 

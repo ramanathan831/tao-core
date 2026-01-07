@@ -20,6 +20,8 @@ from kubernetes import client, config
 from kubernetes.client.rest import ApiException
 
 from .stateless_handler_utils import get_toolkit_status
+from nvidia_tao_core.microservices.enum_constants import Backend
+from .stateless_handler_utils import BACKEND
 
 # Global constants
 release_name = os.getenv("RELEASE_NAME", 'tao-api')
@@ -37,7 +39,7 @@ logger = logging.getLogger(__name__)
 
 def get_namespace():
     """Returns the namespace of the environment"""
-    if os.getenv("BACKEND") == "local-docker":
+    if BACKEND == Backend.LOCAL_DOCKER:
         return "default"
     if os.getenv("DEV_MODE", "False").lower() in ("true", "1"):
         name_space = os.getenv('NAMESPACE', default="default")
@@ -105,13 +107,11 @@ def dependency_check(num_gpu=-1, accelerator=None):
             - gpu_count (int): Maximum number of available GPUs on any single node
                               (-1 for non-local backends where count is unknown)
     """
-    from .stateless_handler_utils import BACKEND
-
-    if os.getenv("BACKEND", "") not in ("local-k8s", "local-docker"):
+    if BACKEND not in (Backend.LOCAL_K8S, Backend.LOCAL_DOCKER):
         return True, -1
     if num_gpu == -1:
         num_gpu = int(os.getenv('NUM_GPU_PER_NODE', default='1'))
-    if BACKEND == "local-docker":
+    if BACKEND == Backend.LOCAL_DOCKER:
         from .job_utils.gpu_manager import gpu_manager
         logger.debug(f"[GPU_CHECK] Checking GPU availability: requesting {num_gpu} GPU(s)")
 
@@ -246,8 +246,7 @@ def get_all_k8s_running_resources():
     Returns:
         dict: {'statefulsets': [...], 'jobs': [...]}
     """
-    backend = os.getenv("BACKEND", "local-k8s")
-    if backend == "local-docker":
+    if BACKEND == Backend.LOCAL_DOCKER:
         # For Docker Compose, we'll check containers separately
         return {'statefulsets': [], 'jobs': []}
 

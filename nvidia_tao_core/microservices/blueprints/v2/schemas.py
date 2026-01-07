@@ -218,6 +218,8 @@ class AllowedDockerEnvVariables(Enum):
 
     CUDA_OVERRIDE_VERSION = "CUDA_OVERRIDE_VERSION"
 
+    LEPTON_SHARED_MEMORY_SIZE = "LEPTON_SHARED_MEMORY_SIZE"
+
 
 class NVCFEndpoint(Enum):
     """Class defining action type enum"""
@@ -712,6 +714,7 @@ class AWSCredentialsFields:
     cloud_bucket_name = fields.Str(validate=validate.Length(min=1, max=2048), allow_none=True)
     cloud_type = fields.Constant(CloudPullTypesEnum.aws.value)
 
+
 class AzureCredentialsFields:
     """Reusable field definitions for Azure storage credentials"""
 
@@ -797,22 +800,6 @@ class LeptonStorageBackend(OneOfSchema):
         raise ValidationError(f"Invalid storage type: {storage_type}")
 
 
-class LeptonCloudPull(Schema):
-    """Class defining Lepton Cloud pull schema
-
-    Lepton requires both Lepton credentials AND storage backend credentials
-    (AWS, Azure, Seaweedfs, or Huggingface)
-    """
-
-    # Lepton-specific fields
-    lepton_workspace_id = fields.Str(validate=validate.Length(max=2048), required=True)
-    lepton_auth_token = fields.Str(validate=validate.Length(max=2048), required=True)
-    cloud_type = fields.Constant(CloudPullTypesEnum.lepton.value)
-
-    # Storage backend configuration (polymorphic based on storage_type)
-    storage_backend = fields.Nested(LeptonStorageBackend, required=True)
-
-
 class SlurmCloudPull(Schema):
     """Class defining Slurm Cloud pull schema
 
@@ -824,27 +811,6 @@ class SlurmCloudPull(Schema):
                                  required=True, validate=validate.Length(min=1))
     base_results_dir = fields.Str(validate=validate.Length(max=2048), allow_none=True)
     cloud_type = fields.Constant(CloudPullTypesEnum.slurm.value)
-
-
-class CloudSpecificDetails(OneOfSchema):
-    """Class defining a polymorphic cloud specific details schema"""
-
-    type_schemas = {
-        "aws": AWSCloudPull,
-        "azure": AzureCloudPull,
-        "huggingface": HuggingFaceCloudPull,
-        "seaweedfs": SeaweedfsCloudPull,
-        "lepton": LeptonCloudPull,
-        "slurm": SlurmCloudPull,
-    }
-    type_field = "cloud_type"
-
-    def get_obj_type(self, obj):
-        """Determine the schema to use based on the properties of the Python object"""
-        cloud_type = obj.get("cloud_type")
-        if cloud_type in [e.value for e in CloudPullTypesEnum]:
-            return cloud_type
-        raise fields.ValidationError(f"Invalid cloud type: {cloud_type}")
 
 
 class LocalBackendDetails(Schema):
@@ -893,6 +859,40 @@ class BackendDetails(OneOfSchema):
         if backend_type in self.type_schemas:
             return backend_type
         raise fields.ValidationError(f"Invalid backend type: {backend_type}")
+
+
+class LeptonCloudPull(AWSCredentialsFields, Schema):
+    """Class defining Lepton Cloud pull schema
+
+    Lepton workspaces use AWS S3 for storage, so they include AWS credentials
+    along with Lepton-specific authentication fields.
+    """
+
+    # Lepton-specific fields
+    lepton_workspace_id = fields.Str(validate=validate.Length(max=2048), required=True)
+    lepton_auth_token = fields.Str(validate=validate.Length(max=2048), required=True)
+    cloud_type = fields.Constant(CloudPullTypesEnum.lepton.value)
+
+
+class CloudSpecificDetails(OneOfSchema):
+    """Class defining a polymorphic cloud specific details schema"""
+
+    type_schemas = {
+        "aws": AWSCloudPull,
+        "azure": AzureCloudPull,
+        "huggingface": HuggingFaceCloudPull,
+        "seaweedfs": SeaweedfsCloudPull,
+        "lepton": LeptonCloudPull,
+        "slurm": SlurmCloudPull,
+    }
+    type_field = "cloud_type"
+
+    def get_obj_type(self, obj):
+        """Determine the schema to use based on the properties of the Python object"""
+        cloud_type = obj.get("cloud_type")
+        if cloud_type in [e.value for e in CloudPullTypesEnum]:
+            return cloud_type
+        raise fields.ValidationError(f"Invalid cloud type: {cloud_type}")
 
 
 class WorkspaceReq(Schema):

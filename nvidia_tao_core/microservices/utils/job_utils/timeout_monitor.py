@@ -26,6 +26,7 @@ from nvidia_tao_core.microservices.utils.stateless_handler_utils import (
     internal_job_status_update,
     get_health_beat
 )
+from nvidia_tao_core.microservices.enum_constants import Backend
 
 # Configure logging
 TAO_LOG_LEVEL = os.getenv('TAO_LOG_LEVEL', 'INFO').upper()
@@ -97,7 +98,7 @@ def check_pod_liveness(job_id):
 
         port = 8000
 
-        if BACKEND == "local-docker":
+        if BACKEND == Backend.LOCAL_DOCKER:
             # Docker Compose: use container name directly
             # Container name is the same as job_id
             liveness_url = f"http://{job_id}:{port}/api/v1/health/liveness"
@@ -542,9 +543,7 @@ def check_job_timeout(job_info):
 
 def terminate_timed_out_job(job_info):
     """Terminate a timed out job"""
-    from nvidia_tao_core.microservices.utils.job_utils.executor.statefulset_executor import StatefulSetExecutor
-    from nvidia_tao_core.microservices.utils.job_utils.executor.job_executor import JobExecutor
-
+    from nvidia_tao_core.microservices.handlers.execution_handlers.execution_handler import ExecutionHandler
     job_id = job_info.get('job_id')
     handler_id = job_info.get('handler_id')
     kind = job_info.get('kind', '')
@@ -591,8 +590,7 @@ def terminate_timed_out_job(job_info):
                     update_job_status(handler_id, job_id, status="Error", kind=kind)
 
             # Delete the K8s Job (not StatefulSet)
-            job_executor = JobExecutor()
-            job_executor.delete_job(job_id)
+            ExecutionHandler.delete_job_with_handler(job_id)
 
             logger.info(f"Deletion request sent for timed out AutoML brain job {job_id}")
             return True
@@ -632,8 +630,7 @@ def terminate_timed_out_job(job_info):
 
                     # Try to terminate the StatefulSet for this specific experiment
                     # The StatefulSet name for AutoML experiments typically includes the experiment number
-                    statefulset_executor = StatefulSetExecutor()
-                    success = statefulset_executor.delete_statefulset(job_id, use_ngc=True)
+                    success = ExecutionHandler.delete_with_handler(job_id)
 
                     if success:
                         logger.info(
@@ -664,8 +661,7 @@ def terminate_timed_out_job(job_info):
                 update_job_status(handler_id, job_id, status="Error", kind=kind)
 
         # Delete the StatefulSet (works for both orphaned and regular jobs)
-        statefulset_executor = StatefulSetExecutor()
-        success = statefulset_executor.delete_statefulset(job_id, use_ngc=True)
+        success = ExecutionHandler.delete_with_handler(job_id)
 
         if success:
             if is_orphaned:
