@@ -1,6 +1,8 @@
 // Global variables
 def TAO_VERSION = params.TAO_VERSION ?: "6.25.9"
 def BUILD_TYPE = "rc"
+def FORCE_REBUILD = params.FORCE_REBUILD ?: false
+def SKIP_PROD_PROMOTE = params.SKIP_PROD_PROMOTE ?: false
 
 // Normalize patch segment if TAO_VERSION is provided via params (e.g., 6.25.09 -> 6.25.9)
 if (params.TAO_VERSION) {
@@ -115,37 +117,138 @@ spec:
         stage ('checkout') {
           gitlabCommitStatus(name: "checkout", connection: gitLabConnection('git-lab-master')) {
             checkout scm
+            sh "git config --global --add safe.directory \$WORKSPACE && ls -lrt"
           }
         }
 
-        stage ('patch_build_files') {
-          gitlabCommitStatus(name: "patch_build_files", connection: gitLabConnection('git-lab-master')) {
-            sh "python3 release/update_version.py --version ${TAO_VERSION}"
-            echo "Build files patched with version ${TAO_VERSION}"
-          }
-        }
-
-        // Functional tests only for RC builds
-        if (params.RC) {
-          stage ("functional_tests") {
-            withCredentials([string(credentialsId: 'NGC_FTMS_API_KEY', variable: 'NGC_CLI_API_KEY')]) {
-              script{
-                env.NGC_KEY=NGC_CLI_API_KEY
-                env.NGC_PATH='ea-tlt/tao_ea/pretrained_dino_imagenet:fan_hybrid_tiny'
+        stage ('detect_skip_build') {
+          gitlabCommitStatus(name: "detect_code_changes", connection: gitLabConnection('git-lab-master')) {
+            script {
+              echo "=== Detecting Code Changes ==="
+              
+              // Get current build information
+              def currentSha = sh(script: 'git rev-parse HEAD', returnStdout: true).trim()
+              def currentBuildType = params.RC ? 'RC' : 'Final'
+              def currentVersion = TAO_VERSION
+              
+              echo "Current SHA: ${currentSha}"
+              echo "Current Version: ${currentVersion}"
+              echo "Current Build Type: ${currentBuildType}"
+              
+              // Initialize skip flag
+              env.SKIP_BUILD = 'false'
+              
+              // Check for force rebuild parameter
+              if (FORCE_REBUILD) {
+                echo "⚠️ FORCE_REBUILD parameter is set - skipping code change detection"
+                echo "Build will proceed regardless of code changes"
+                echo "=== Skip Build Decision: ${env.SKIP_BUILD} (forced) ==="
+                return
               }
+              
+              // Try to fetch last successful build's metadata
+              def lastSuccessfulBuild = currentBuild.getPreviousSuccessfulBuild()
+              
+              if (lastSuccessfulBuild != null) {
+                echo "Last successful build: #${lastSuccessfulBuild.number}"
+                
+                try {
+                  // Use Python script to download, validate, and compare metadata
+                  def lastBuildNumber = lastSuccessfulBuild.number
+                  def artifactUrl = "${lastSuccessfulBuild.absoluteUrl}artifact/release_metadata.json"
+                  def shouldSkip = false
+                  
+                  withCredentials([usernamePassword(credentialsId: 'jenkins-api-token', 
+                                                    usernameVariable: 'JENKINS_USER', 
+                                                    passwordVariable: 'JENKINS_TOKEN')]) {
+                    def output = sh(script: """
+                      export JENKINS_USER="\${JENKINS_USER}"
+                      export JENKINS_TOKEN="\${JENKINS_TOKEN}"
+                      python3 ci/detect_skip_build.py \
+                        --artifact-url '${artifactUrl}' \
+                        --current-sha '${currentSha}' \
+                        --current-version '${currentVersion}' \
+                        --current-build-type '${currentBuildType}'
+                    """, returnStdout: true).trim()
+                    
+                    echo output
+                    shouldSkip = output.contains('SHOULD_SKIP=true')
+                  }
+                  
+                  if (shouldSkip) {
+                    echo "✓ No code changes detected - reusing previous build artifacts"
+                    env.SKIP_BUILD = 'true'
+                    
+                    // Update metadata for skipped build
+                    def timestamp = sh(script: 'date -u +"%Y-%m-%dT%H:%M:%SZ"', returnStdout: true).trim()
+                    def buildDuration = currentBuild.duration ?: 0
+                    def triggeredBy = env.BUILD_USER_ID ?: 'automated'
+                    
+                    sh """
+                      python3 ci/update_skipped_metadata.py \
+                        --input previous_release_metadata.json \
+                        --output release_metadata.json \
+                        --timestamp '${timestamp}' \
+                        --build-number '${BUILD_NUMBER}' \
+                        --build-url '${BUILD_URL}' \
+                        --triggered-by '${triggeredBy}' \
+                        --skip-prod-promote '${SKIP_PROD_PROMOTE}' \
+                        --duration-ms ${buildDuration} \
+                        --previous-build-number '${lastBuildNumber}' \
+                        --previous-build-url '${lastSuccessfulBuild.absoluteUrl}'
+                    """
+                    
+                    // Archive the updated metadata
+                    archiveArtifacts artifacts: 'release_metadata.json', fingerprint: true
+                    
+                    echo "=== Build Skip Summary ==="
+                    echo "Reusing artifacts from build #${lastBuildNumber}"
+                  }
+                  
+                } catch (Exception e) {
+                  echo "⚠ Exception while checking previous build: ${e.message}"
+                  echo "Proceeding with full build"
+                }
+              } else {
+                echo "⚠ No previous successful build found - proceeding with full build"
+              }
+              
+              echo "=== Skip Build Decision: ${env.SKIP_BUILD} ==="
             }
-            gitlabCommitStatus(name: "functional_tests", connection: gitLabConnection('git-lab-master')) {
-              sh "pip install pytest-cov"
-              sh "CPUCOUNT=1 pip install . && pytest --cov=nvidia_tao_core --cov-report=xml:coverage.xml --cov-report=term"
-              // Archive the coverage report
-              archiveArtifacts artifacts: 'coverage.xml', fingerprint: true, allowEmptyArchive: true
+          }
+        }
+
+        // Only run build stages if not skipping
+        if (env.SKIP_BUILD != 'true') {
+          stage ('patch_build_files') {
+            gitlabCommitStatus(name: "patch_build_files", connection: gitLabConnection('git-lab-master')) {
+              sh "python3 release/update_version.py --version ${TAO_VERSION}"
+              echo "Build files patched with version ${TAO_VERSION}"
+            }
+          }
+
+          // Functional tests only for RC builds
+          if (params.RC) {
+            stage ("functional_tests") {
+              withCredentials([string(credentialsId: 'NGC_FTMS_API_KEY', variable: 'NGC_CLI_API_KEY')]) {
+                script{
+                  env.NGC_KEY=NGC_CLI_API_KEY
+                  env.NGC_PATH='ea-tlt/tao_ea/pretrained_dino_imagenet:fan_hybrid_tiny'
+                }
+              }
+              gitlabCommitStatus(name: "functional_tests", connection: gitLabConnection('git-lab-master')) {
+                sh "pip install pytest-cov"
+                sh "CPUCOUNT=1 pip install . && pytest --cov=nvidia_tao_core --cov-report=xml:coverage.xml --cov-report=term"
+                // Archive the coverage report
+                archiveArtifacts artifacts: 'coverage.xml', fingerprint: true, allowEmptyArchive: true
+              }
             }
           }
         }
       }
       
       // SonarQube analysis for RC builds only - run in sonar container
-      if (params.RC) {
+      if (params.RC && env.SKIP_BUILD != 'true') {
         container('sonar') {
           stage ('sonarqube_analysis') {
             catchError(buildResult: 'SUCCESS', stageResult: 'FAILURE') {
@@ -170,23 +273,24 @@ spec:
       
       // Continue with remaining stages in pyt container
       container('pyt') {
-        stage ('build_wheel') {
-          gitlabCommitStatus(name: "build_wheel", connection: gitLabConnection('git-lab-master')) {
-            if (params.RC) {
-              sh "echo '${PATCH_NUMBER}${BUILD_TYPE}${BUILD_NUMBER}' > build.info"
-            } else {
-              // Use the patch number from TAO_VERSION for consistent versioning
-              sh "echo '${PATCH_NUMBER}' > build.info"
+        if (env.SKIP_BUILD != 'true') {
+          stage ('build_wheel') {
+            gitlabCommitStatus(name: "build_wheel", connection: gitLabConnection('git-lab-master')) {
+              if (params.RC) {
+                sh "echo '${PATCH_NUMBER}${BUILD_TYPE}${BUILD_NUMBER}' > build.info"
+              } else {
+                // Use the patch number from TAO_VERSION for consistent versioning
+                sh "echo '${PATCH_NUMBER}' > build.info"
+              }
+              
+              sh "bash release/python/build_wheel.sh"
             }
-            
-            sh "bash release/python/build_wheel.sh"
           }
-        }
-        
-        stage ('publish_wheel') {
-          gitlabCommitStatus(name: "publish_wheel", connection: gitLabConnection('git-lab-master')) {
-            withCredentials([usernamePassword(credentialsId: 'tao-artifactory-tkn-christwang', passwordVariable: 'JFROG_PASSWORD', usernameVariable: 'JFROG_USERNAME')]) {
-              sh "bash release/python/install_jfrog.sh"
+          
+          stage ('publish_wheel') {
+            gitlabCommitStatus(name: "publish_wheel", connection: gitLabConnection('git-lab-master')) {
+              withCredentials([usernamePassword(credentialsId: 'tao-artifactory-tkn-christwang', passwordVariable: 'JFROG_PASSWORD', usernameVariable: 'JFROG_USERNAME')]) {
+                sh "bash release/python/install_jfrog.sh"
               
               // Upload RC version wheel if this is an RC build
               if (params.RC) {
@@ -195,68 +299,120 @@ spec:
                 sh "jf rt u --url=https://urm.nvidia.com/artifactory/ --user=\${JFROG_USERNAME} --password=\${JFROG_PASSWORD} --target-props '${PROP}' ${SRC} ${TARGET}"
               }
               
-              // Upload final version wheel (runs for both RC and non-RC)
-              echo "=== Uploading final version wheel ==="
-              def FINAL_VER = "${MAJOR_MINOR}.${PATCH_NUMBER}"
-              def FINAL_SRC = "dist/nvidia_tao_core-${FINAL_VER}-py3-none-any.whl"
-              def FINAL_TARGET = "sw-tao-pypi-local/nvidia-tao-core/${FINAL_VER}/${PYTHON_VERSION}/"
-              def FINAL_PROP = "component_name=nvidia-tao-core;arch=x86_64;os=linux;build_source=None;version=${FINAL_VER};branch=release;release_approver=vpraveen"
-              
-              // For RC builds, rebuild wheel with non-RC version for correct internal metadata
-              if (params.RC) {
-                echo "Rebuilding wheel with non-RC version for final release..."
-                sh "rm -rf dist/*"
-                sh "echo '${PATCH_NUMBER}' > build.info"
-                sh "bash release/python/build_wheel.sh"
-                echo "Built final wheel: ${FINAL_SRC}"
-              }
-              
-              // Check and remove existing final version wheel
-              echo "Checking for existing final version wheel..."
-              def finalWheelPattern = "${FINAL_TARGET}dist/nvidia_tao_core-${FINAL_VER}-py3-none-any.whl"
-              echo "Searching for pattern: ${finalWheelPattern}"
-              
-              def searchStatus = sh(script: "jf rt s --url=https://urm.nvidia.com/artifactory/ --user=\${JFROG_USERNAME} --password=\${JFROG_PASSWORD} '${finalWheelPattern}' --count", returnStatus: true)
-              def count = 0
-              if (searchStatus == 0) {
-                count = Integer.parseInt(sh(script: "jf rt s --url=https://urm.nvidia.com/artifactory/ --user=\${JFROG_USERNAME} --password=\${JFROG_PASSWORD} '${finalWheelPattern}' --count", returnStdout: true).trim())
-              } else {
-                echo "Search command returned non-zero (status=${searchStatus}). Treating as no existing wheel."
-              }
-
-              if (count > 0) {
-                echo "Found ${count} existing wheel(s). Removing..."
-                try {
-                  sh "jf rt del --url=https://urm.nvidia.com/artifactory/ --user=\${JFROG_USERNAME} --password=\${JFROG_PASSWORD} '${finalWheelPattern}' --quiet"
-                  echo "Successfully removed existing wheel"
-                } catch (Exception e) {
-                  echo "Warning: Failed to delete existing wheel: ${e.getMessage()}"
-                  echo "Continuing with upload..."
+              // Upload final version wheel (runs for both RC and non-RC) - skip if SKIP_PROD_PROMOTE is true
+              if (!SKIP_PROD_PROMOTE) {
+                echo "=== Uploading final version wheel ==="
+                def FINAL_VER = "${MAJOR_MINOR}.${PATCH_NUMBER}"
+                def FINAL_SRC = "dist/nvidia_tao_core-${FINAL_VER}-py3-none-any.whl"
+                def FINAL_TARGET = "sw-tao-pypi-local/nvidia-tao-core/${FINAL_VER}/${PYTHON_VERSION}/"
+                def FINAL_PROP = "component_name=nvidia-tao-core;arch=x86_64;os=linux;build_source=None;version=${FINAL_VER};branch=release;release_approver=vpraveen"
+                
+                // For RC builds, rebuild wheel with non-RC version for correct internal metadata
+                if (params.RC) {
+                  echo "Rebuilding wheel with non-RC version for final release..."
+                  sh "rm -rf dist/*"
+                  sh "echo '${PATCH_NUMBER}' > build.info"
+                  sh "bash release/python/build_wheel.sh"
+                  echo "Built final wheel: ${FINAL_SRC}"
                 }
+                
+                // Check and remove existing final version wheel
+                echo "Checking for existing final version wheel..."
+                def finalWheelPattern = "${FINAL_TARGET}dist/nvidia_tao_core-${FINAL_VER}-py3-none-any.whl"
+                echo "Searching for pattern: ${finalWheelPattern}"
+                
+                def searchStatus = sh(script: "jf rt s --url=https://urm.nvidia.com/artifactory/ --user=\${JFROG_USERNAME} --password=\${JFROG_PASSWORD} '${finalWheelPattern}' --count", returnStatus: true)
+                def count = 0
+                if (searchStatus == 0) {
+                  count = Integer.parseInt(sh(script: "jf rt s --url=https://urm.nvidia.com/artifactory/ --user=\${JFROG_USERNAME} --password=\${JFROG_PASSWORD} '${finalWheelPattern}' --count", returnStdout: true).trim())
+                } else {
+                  echo "Search command returned non-zero (status=${searchStatus}). Treating as no existing wheel."
+                }
+
+                if (count > 0) {
+                  echo "Found ${count} existing wheel(s). Removing..."
+                  try {
+                    sh "jf rt del --url=https://urm.nvidia.com/artifactory/ --user=\${JFROG_USERNAME} --password=\${JFROG_PASSWORD} '${finalWheelPattern}' --quiet"
+                    echo "Successfully removed existing wheel"
+                  } catch (Exception e) {
+                    echo "Warning: Failed to delete existing wheel: ${e.getMessage()}"
+                    echo "Continuing with upload..."
+                  }
+                } else {
+                  echo "No existing wheel found (search count: ${count})"
+                }
+                
+                echo "Uploading final wheel: ${FINAL_SRC} to ${FINAL_TARGET}"
+                sh "jf rt u --url=https://urm.nvidia.com/artifactory/ --user=\${JFROG_USERNAME} --password=\${JFROG_PASSWORD} --target-props '${FINAL_PROP}' ${FINAL_SRC} ${FINAL_TARGET}"
+                
+                echo "Successfully published final version wheel"
               } else {
-                echo "No existing wheel found (search count: ${count})"
+                echo "⏭ Skipping final version wheel upload (SKIP_PROD_PROMOTE = true)"
               }
-              
-              echo "Uploading final wheel: ${FINAL_SRC} to ${FINAL_TARGET}"
-              sh "jf rt u --url=https://urm.nvidia.com/artifactory/ --user=\${JFROG_USERNAME} --password=\${JFROG_PASSWORD} --target-props '${FINAL_PROP}' ${FINAL_SRC} ${FINAL_TARGET}"
-              
-              echo "Successfully published wheels"
+              }
             }
           }
-        }
-
-
-
-        stage ('clean_up'){
-          gitlabCommitStatus(name: "clean_up", connection: gitLabConnection('git-lab-master')) {
-            sh """
-              echo "Clearing build and dists"
-              python setup.py clean --all
-              echo "Clearing pycache and pycs"
-              find . | grep -E '(__pycache__|[.]pyc|[.]pyo\$)' | xargs rm -rf
-            """
+          
+          stage ('clean_up'){
+            gitlabCommitStatus(name: "clean_up", connection: gitLabConnection('git-lab-master')) {
+              sh """
+                echo "Clearing build and dists"
+                python setup.py clean --all
+                echo "Clearing pycache and pycs"
+                find . | grep -E '(__pycache__|[.]pyc|[.]pyo\$)' | xargs rm -rf
+              """
+            }
           }
-        }
+          
+          stage ('archive_metadata') {
+            gitlabCommitStatus(name: "archive_metadata", connection: gitLabConnection('git-lab-master')) {
+              script {
+                echo "=== Generating Release Metadata ==="
+              
+              // Capture build metadata
+              def timestamp = sh(script: 'date -u +"%Y-%m-%dT%H:%M:%SZ"', returnStdout: true).trim()
+              def buildDuration = currentBuild.duration ?: 0
+              def buildResult = currentBuild.result ?: 'SUCCESS'
+              def triggeredBy = env.BUILD_USER_ID ?: 'automated'
+              
+              // Construct artifact URLs
+              def wheelUrl = "https://urm.nvidia.com/ui/packages/pypi:%2F%2Fnvidia-tao/${VER}/"
+              def finalWheelUrl = "https://urm.nvidia.com/ui/packages/pypi:%2F%2Fnvidia-tao/${MAJOR_MINOR}.${PATCH_NUMBER}/"
+              def wheelInstallLoc = "https://urm.nvidia.com/artifactory/sw-tao-pypi-local/nvidia-tao-core/${VER}/${PYTHON_VERSION}/dist/nvidia_tao_core-${VER}-py3-none-any.whl"
+              def finalWheelInstallLoc = "https://urm.nvidia.com/artifactory/sw-tao-pypi-local/nvidia-tao-core/${MAJOR_MINOR}.${PATCH_NUMBER}/${PYTHON_VERSION}/dist/nvidia_tao_core-${MAJOR_MINOR}.${PATCH_NUMBER}-py3-none-any.whl"
+              
+              // Generate metadata using Python script (script handles all git operations internally)
+              sh """
+                python3 ci/generate_build_metadata.py \
+                  --timestamp '${timestamp}' \
+                  --job-name '${JOB_NAME}' \
+                  --build-number '${BUILD_NUMBER}' \
+                  --build-url '${BUILD_URL}' \
+                  --build-type '${params.RC ? 'RC' : 'Final'}' \
+                  --tao-version '${TAO_VERSION}' \
+                  --wheel-version '${VER}' \
+                  --rc-build '${params.RC ? 'True' : 'False'}' \
+                  --force-rebuild '${FORCE_REBUILD ? 'True' : 'False'}' \
+                  --skip-prod-promote '${SKIP_PROD_PROMOTE ? 'True' : 'False'}' \
+                  --triggered-by '${triggeredBy}' \
+                  --build-result '${buildResult}' \
+                  --duration-ms ${buildDuration} \
+                  --wheel-url '${wheelUrl}' \
+                  --final-wheel-url '${finalWheelUrl}' \
+                  --wheel-install-location '${wheelInstallLoc}' \
+                  --final-wheel-install-location '${finalWheelInstallLoc}' \
+                  --python-version '${PYTHON_VERSION}' \
+                  --workspace '${WORKSPACE}'
+              """
+              
+              // Archive the metadata file
+              archiveArtifacts artifacts: 'release_metadata.json', fingerprint: true
+              
+              echo "✓ Release metadata archived successfully"
+              }
+            }
+          }
+        }  // End of if (env.SKIP_BUILD != 'true')
       }  // End of pyt container
     }  // End of node
   }
