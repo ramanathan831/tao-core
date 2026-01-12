@@ -375,11 +375,17 @@ spec:
               def buildResult = currentBuild.result ?: 'SUCCESS'
               def triggeredBy = env.BUILD_USER_ID ?: 'automated'
               
-              // Construct artifact URLs
-              def wheelUrl = "https://urm.nvidia.com/ui/packages/pypi:%2F%2Fnvidia-tao/${VER}/"
-              def finalWheelUrl = "https://urm.nvidia.com/ui/packages/pypi:%2F%2Fnvidia-tao/${MAJOR_MINOR}.${PATCH_NUMBER}/"
+              // Construct artifact URLs for metadata
+              def wheelUrl = "https://urm.nvidia.com/ui/packages/pypi:%2F%2Fnvidia-tao-core/${VER}/"
               def wheelInstallLoc = "https://urm.nvidia.com/artifactory/sw-tao-pypi-local/nvidia-tao-core/${VER}/${PYTHON_VERSION}/dist/nvidia_tao_core-${VER}-py3-none-any.whl"
-              def finalWheelInstallLoc = "https://urm.nvidia.com/artifactory/sw-tao-pypi-local/nvidia-tao-core/${MAJOR_MINOR}.${PATCH_NUMBER}/${PYTHON_VERSION}/dist/nvidia_tao_core-${MAJOR_MINOR}.${PATCH_NUMBER}-py3-none-any.whl"
+              
+              // Only set final wheel URLs if we're going to publish them
+              def finalWheelUrl = ""
+              def finalWheelInstallLoc = ""
+              if (!SKIP_PROD_PROMOTE) {
+                finalWheelUrl = "https://urm.nvidia.com/ui/packages/pypi:%2F%2Fnvidia-tao-core/${MAJOR_MINOR}.${PATCH_NUMBER}/"
+                finalWheelInstallLoc = "https://urm.nvidia.com/artifactory/sw-tao-pypi-local/nvidia-tao-core/${MAJOR_MINOR}.${PATCH_NUMBER}/${PYTHON_VERSION}/dist/nvidia_tao_core-${MAJOR_MINOR}.${PATCH_NUMBER}-py3-none-any.whl"
+              }
               
               // Generate metadata using Python script (script handles all git operations internally)
               sh """
