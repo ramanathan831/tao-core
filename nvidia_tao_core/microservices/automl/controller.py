@@ -70,6 +70,9 @@ from nvidia_tao_core.microservices.utils.automl_job_utils import (
     on_cancel_automl_job
 )
 from nvidia_tao_core.microservices.enum_constants import Backend
+
+# Initialize to None to avoid possibly-used-before-assignment
+overwrite_job_logs_from_bcp = None
 if BACKEND == Backend.NVCF:
     from nvidia_tao_core.microservices.dgx_controller import overwrite_job_logs_from_bcp
 

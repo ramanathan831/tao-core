@@ -26,6 +26,8 @@ else:
 
 logger = logging.getLogger(__name__)
 
+# Initialize docker_client at module level to avoid possibly-used-before-assignment
+docker_client = None
 if os.getenv("BACKEND") == "local-docker":
     from docker import from_env
     try:

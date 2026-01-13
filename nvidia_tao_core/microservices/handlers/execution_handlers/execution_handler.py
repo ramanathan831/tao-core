@@ -15,6 +15,7 @@
 """Base execution handler class for all backends"""
 
 from abc import ABC
+import base64
 import json
 import logging
 import os
@@ -29,6 +30,7 @@ from nvidia_tao_core.microservices.utils.stateless_handler_utils import (
     get_handler_id,
     get_handler_kind,
     get_handler_metadata,
+    get_handler_job_metadata,
     get_automl_controller_info,
     save_dnn_status,
     update_job_message,
@@ -56,6 +58,498 @@ class ExecutionHandler(ABC):
         """Initialize base execution handler with logging"""
         self.logger = logging.getLogger(self.__class__.__name__)
         self.backend_type = backend_type
+
+    # ============================================================================
+    # Image Pull Status Utilities
+    # ============================================================================
+
+    @staticmethod
+    def format_bytes_human_readable(size_bytes):
+        """Convert bytes to human readable string.
+
+        Args:
+            size_bytes: Size in bytes
+
+        Returns:
+            str: Human readable size string (e.g., "5.2 GB")
+        """
+        if size_bytes is None or size_bytes < 0:
+            return "unknown size"
+
+        for unit in ['B', 'KB', 'MB', 'GB', 'TB']:
+            if size_bytes < 1024.0:
+                return f"{size_bytes:.1f} {unit}"
+            size_bytes /= 1024.0
+        return f"{size_bytes:.1f} PB"
+
+    @staticmethod
+    def parse_docker_image_string(image_string):
+        """Parse a Docker image string into registry, repository, and tag.
+
+        Args:
+            image_string (str): Docker image string (e.g., "nvcr.io/nvidia/tao/tao-toolkit:5.0.0-pyt")
+
+        Returns:
+            tuple: (registry, repository, tag)
+
+        Examples:
+            >>> ExecutionHandler.parse_docker_image_string("nvcr.io/nvidia/tao/tao-toolkit:5.0.0-pyt")
+            ("nvcr.io", "nvidia/tao/tao-toolkit", "5.0.0-pyt")
+            >>> ExecutionHandler.parse_docker_image_string("ubuntu:20.04")
+            ("docker.io", "ubuntu", "20.04")
+        """
+        if not image_string:
+            raise ValueError("Image string cannot be empty")
+
+        # Split by tag (after last colon)
+        if ':' in image_string:
+            parts = image_string.split(':')
+            if len(parts) == 2:
+                repository_part, tag = parts
+            else:
+                # Complex case: registry:port/repository:tag
+                for i in range(len(parts) - 1, 0, -1):
+                    if not parts[i].isdigit():
+                        repository_part = ':'.join(parts[:i])
+                        tag = ':'.join(parts[i:])
+                        break
+                else:
+                    repository_part = ':'.join(parts[:-1])
+                    tag = parts[-1]
+        else:
+            repository_part = image_string
+            tag = "latest"
+
+        # Split repository by first slash to separate registry from image path
+        if '/' in repository_part:
+            first_part = repository_part.split('/')[0]
+            if '.' in first_part or first_part == 'localhost':
+                registry = first_part
+                repository = '/'.join(repository_part.split('/')[1:])
+            else:
+                registry = "docker.io"
+                repository = repository_part
+        else:
+            registry = "docker.io"
+            repository = repository_part
+
+        return registry, repository, tag
+
+    @staticmethod
+    def get_ngc_image_size(registry, repository, tag, ngc_api_key=None):
+        """Get the compressed image size from NGC registry.
+
+        Queries the NGC registry API to get the manifest and calculate the total
+        compressed size of all layers.
+
+        Args:
+            registry (str): Registry URL (e.g., "nvcr.io")
+            repository (str): Image repository (e.g., "nvidia/tao/tao-toolkit")
+            tag (str): Image tag (e.g., "5.0.0-pyt")
+            ngc_api_key (str, optional): NGC API key for authentication
+
+        Returns:
+            dict: Dictionary containing:
+                - compressed_size: Total compressed size in bytes
+                - layer_count: Number of layers
+                - error: Error message if failed, None otherwise
+        """
+        logger = logging.getLogger(__name__)
+        result = {
+            "compressed_size": None,
+            "layer_count": 0,
+            "error": None
+        }
+
+        if registry != "nvcr.io":
+            result["error"] = f"Image size query only supported for nvcr.io registry, got: {registry}"
+            return result
+
+        try:
+            # Get NGC API key if not provided
+            if not ngc_api_key:
+                from nvidia_tao_core.microservices.utils.core_utils import get_admin_key
+                ngc_api_key = get_admin_key()
+
+            if not ngc_api_key:
+                result["error"] = "NGC API key not available"
+                return result
+
+            # NGC Registry API endpoint for manifest
+            # Format: https://nvcr.io/v2/{repository}/manifests/{tag}
+            manifest_url = f"https://{registry}/v2/{repository}/manifests/{tag}"
+
+            headers = {
+                "Accept": "application/vnd.docker.distribution.manifest.v2+json, "
+                          "application/vnd.oci.image.manifest.v1+json"
+            }
+
+            # First, get an auth token using Basic auth with $oauthtoken
+            # NGC uses Docker registry v2 auth flow
+            auth_string = base64.b64encode(f"$oauthtoken:{ngc_api_key}".encode()).decode()
+            auth_url = f"https://authn.nvidia.com/token?scope=repository:{repository}:pull&service=registry"
+            auth_headers = {"Authorization": f"Basic {auth_string}"}
+
+            auth_response = requests.get(auth_url, headers=auth_headers, timeout=30)
+            if auth_response.status_code != 200:
+                result["error"] = f"Failed to authenticate with NGC: {auth_response.status_code}"
+                logger.warning(f"NGC auth failed: {auth_response.status_code} - {auth_response.text[:200]}")
+                return result
+
+            auth_json = auth_response.json()
+            token = auth_json.get("token") or auth_json.get("access_token")
+            if not token:
+                result["error"] = "Failed to get authentication token from NGC"
+                logger.warning("NGC auth response had no token")
+                return result
+
+            # Now get the manifest with the token
+            headers["Authorization"] = f"Bearer {token}"
+            manifest_response = requests.get(manifest_url, headers=headers, timeout=30)
+
+            if manifest_response.status_code != 200:
+                result["error"] = f"Failed to get manifest: {manifest_response.status_code}"
+                logger.warning(f"NGC manifest failed: {manifest_response.status_code} - {manifest_response.text[:200]}")
+                return result
+
+            manifest = manifest_response.json()
+
+            # Calculate total compressed size from layers
+            total_size = 0
+            layers = manifest.get("layers", [])
+
+            # Handle manifest list (multi-arch images)
+            if manifest.get("mediaType") == "application/vnd.docker.distribution.manifest.list.v2+json":
+                # For multi-arch, get the first amd64 manifest
+                manifests = manifest.get("manifests", [])
+                for m in manifests:
+                    if m.get("platform", {}).get("architecture") == "amd64":
+                        # Fetch this specific manifest
+                        digest = m.get("digest")
+                        if digest:
+                            arch_manifest_url = f"https://{registry}/v2/{repository}/manifests/{digest}"
+                            arch_response = requests.get(arch_manifest_url, headers=headers, timeout=30)
+                            if arch_response.status_code == 200:
+                                manifest = arch_response.json()
+                                layers = manifest.get("layers", [])
+                        break
+
+            for layer in layers:
+                layer_size = layer.get("size", 0)
+                total_size += layer_size
+
+            # Also add config size if present
+            config = manifest.get("config", {})
+            total_size += config.get("size", 0)
+
+            result["compressed_size"] = total_size
+            result["layer_count"] = len(layers)
+            logger.info(f"NGC image size calculated: {total_size} bytes, {len(layers)} layers")
+
+        except requests.exceptions.Timeout:
+            result["error"] = "Timeout while querying NGC registry"
+        except requests.exceptions.RequestException as e:
+            result["error"] = f"Network error querying NGC registry: {str(e)}"
+        except Exception as e:
+            logger.warning(f"Failed to get image size from NGC: {e}")
+            result["error"] = f"Failed to get image size: {str(e)}"
+
+        return result
+
+    @classmethod
+    def get_image_pull_status_message(cls, image_string, pull_phase, ngc_api_key=None, error_message=None):
+        """Generate user-friendly image pull status message.
+
+        Args:
+            image_string (str): Full Docker image string
+            pull_phase (str): Current phase - "checking", "pulling", "extracting",
+                             "complete", "error", "not_found", "already_exists",
+                             "auth_error", "not_exists_in_registry"
+            ngc_api_key (str, optional): NGC API key for size queries
+            error_message (str, optional): Error message if phase is "error"
+
+        Returns:
+            dict: Message dictionary with 'status' and 'message' keys
+        """
+        try:
+            registry, repository, tag = cls.parse_docker_image_string(image_string)
+        except ValueError:
+            registry, repository, tag = "unknown", image_string, "latest"
+
+        image_short = f"{repository}:{tag}"
+        if pull_phase == "checking":
+            return {
+                "status": "RUNNING",
+                "message": f"Checking if Docker image '{image_short}' exists locally..."
+            }
+
+        if pull_phase == "not_found":
+            # Image doesn't exist locally, need to pull
+            message = f"Docker image '{image_short}' not found locally. Preparing to pull from registry..."
+            if registry == "nvcr.io":
+                size_info = cls.get_ngc_image_size(registry, repository, tag, ngc_api_key)
+                if size_info["compressed_size"]:
+                    compressed_size = cls.format_bytes_human_readable(size_info["compressed_size"])
+                    estimated_uncompressed = cls.format_bytes_human_readable(size_info["compressed_size"] * 2)
+                    message = (
+                        f"Docker image '{image_short}' not found locally. "
+                        f"Starting download from NGC registry. "
+                        f"Compressed size: ~{compressed_size} ({size_info['layer_count']} layers). "
+                        f"Note: After download, layers will be extracted. "
+                        f"Estimated size after extraction: ~{estimated_uncompressed}. "
+                        f"This process may take several minutes depending on network speed."
+                    )
+            return {
+                "status": "RUNNING",
+                "message": message
+            }
+
+        if pull_phase == "pulling":
+            message = f"Pulling Docker image '{image_short}' from {registry}. This may take several minutes..."
+            if registry == "nvcr.io":
+                size_info = cls.get_ngc_image_size(registry, repository, tag, ngc_api_key)
+                if size_info["compressed_size"]:
+                    compressed_size = cls.format_bytes_human_readable(size_info["compressed_size"])
+                    estimated_uncompressed = cls.format_bytes_human_readable(size_info["compressed_size"] * 2)
+                    message = (
+                        f"Pulling Docker image '{image_short}' from NGC registry. "
+                        f"Downloading {size_info['layer_count']} compressed layers (~{compressed_size}). "
+                        f"After download completes, layers will be extracted to ~{estimated_uncompressed}. "
+                        f"Please wait, this process may take 5-15 minutes on first run."
+                    )
+            return {
+                "status": "RUNNING",
+                "message": message
+            }
+
+        if pull_phase == "extracting":
+            message = f"Download complete. Extracting Docker image layers for '{image_short}'..."
+            if registry == "nvcr.io":
+                size_info = cls.get_ngc_image_size(registry, repository, tag, ngc_api_key)
+                if size_info["compressed_size"]:
+                    estimated_uncompressed = cls.format_bytes_human_readable(size_info["compressed_size"] * 2)
+                    message = (
+                        f"Image size: {size_info['compressed_size']} bytes. download complete. "
+                        f"Extracting {size_info['layer_count']} layers for '{image_short}'. "
+                        f"Estimated extracted size: ~{estimated_uncompressed}. "
+                        f"Extraction may take a few minutes..."
+                    )
+            return {
+                "status": "RUNNING",
+                "message": message
+            }
+
+        if pull_phase == "complete":
+            return {
+                "status": "RUNNING",
+                "message": f"Docker image '{image_short}' is ready. Starting container..."
+            }
+
+        if pull_phase == "already_exists":
+            return {
+                "status": "RUNNING",
+                "message": f"Docker image '{image_short}' found locally. Starting container..."
+            }
+
+        if pull_phase == "error":
+            error_msg = error_message or "Unknown error"
+            return {
+                "status": "FAILURE",
+                "message": f"Failed to pull Docker image '{image_short}': {error_msg}"
+            }
+
+        if pull_phase == "auth_error":
+            return {
+                "status": "FAILURE",
+                "message": (
+                    f"Authentication failed for Docker image '{image_short}'. "
+                    f"Please ensure your NGC API key is valid and has access to this image."
+                )
+            }
+
+        if pull_phase == "not_exists_in_registry":
+            return {
+                "status": "FAILURE",
+                "message": (
+                    f"Docker image '{image_short}' does not exist in the registry. "
+                    f"Please verify the image name and tag are correct."
+                )
+            }
+
+        return {
+            "status": "RUNNING",
+            "message": f"Processing Docker image '{image_short}'..."
+        }
+
+    def update_image_pull_status(self, job_id, image, pull_phase, error_message=None):
+        """Update job message with image pull status.
+
+        This is an instance method that uses self.logger and can be called by
+        subclasses (DockerHandler, KubernetesHandler) to update job status
+        during image pull operations.
+
+        Args:
+            job_id (str): Job ID to update
+            image (str): Docker image string
+            pull_phase (str): Current pull phase
+            error_message (str, optional): Error message if phase is error
+        """
+        try:
+            self.logger.debug(
+                f"[IMAGE_PULL_STATUS] Entry: job_id={job_id}, image={image}, "
+                f"pull_phase={pull_phase}, error={error_message}"
+            )
+
+            from nvidia_tao_core.microservices.utils.core_utils import get_admin_key
+            ngc_api_key = get_admin_key()
+            status_msg = self.get_image_pull_status_message(
+                image,
+                pull_phase,
+                ngc_api_key=ngc_api_key,
+                error_message=error_message
+            )
+
+            self.logger.debug(
+                f"[IMAGE_PULL_STATUS] Generated status message: status={status_msg['status']}, "
+                f"message={status_msg['message'][:100]}..."
+            )
+
+            # Detect if this is an AutoML experiment job
+            # AutoML experiment jobs have a parent_id that points to the brain job
+            is_automl_experiment = False
+            brain_job_id = None
+            experiment_number = "0"
+
+            self.logger.debug(f"[IMAGE_PULL_STATUS] Looking up job metadata for job_id={job_id}")
+            job_metadata = get_handler_job_metadata(job_id)
+
+            if not job_metadata:
+                self.logger.debug(
+                    f"[IMAGE_PULL_STATUS] No job metadata found for job_id={job_id}, "
+                    "treating as regular job"
+                )
+            else:
+                self.logger.debug(
+                    f"[IMAGE_PULL_STATUS] Found job metadata for job_id={job_id}, "
+                    f"keys={list(job_metadata.keys())}"
+                )
+
+                parent_id = job_metadata.get('parent_id')
+                self.logger.debug(
+                    f"[IMAGE_PULL_STATUS] Job parent_id={parent_id} "
+                    f"({'found' if parent_id else 'not found'})"
+                )
+
+                if parent_id:
+                    # This job has a parent, check if parent is an AutoML brain job
+                    # by looking for it in the automl_jobs collection
+                    self.logger.debug(
+                        f"[IMAGE_PULL_STATUS] Checking if parent_id={parent_id} is an AutoML brain job"
+                    )
+
+                    controller_info = get_automl_controller_info(parent_id)
+
+                    if not controller_info:
+                        self.logger.debug(
+                            f"[IMAGE_PULL_STATUS] Parent {parent_id} is NOT an AutoML brain job "
+                            "(no controller_info found), treating as regular job"
+                        )
+                    else:
+                        self.logger.debug(
+                            f"[IMAGE_PULL_STATUS] Parent {parent_id} IS an AutoML brain job! "
+                            f"Found {len(controller_info)} experiments in controller_info"
+                        )
+
+                        # This is an AutoML experiment job!
+                        # Find the experiment number by matching job_id in controller_info
+                        self.logger.debug(
+                            f"[IMAGE_PULL_STATUS] Searching for job_id={job_id} in controller_info "
+                            f"to find experiment number"
+                        )
+
+                        for idx, rec in enumerate(controller_info):
+                            rec_job_id = rec.get('job_id')
+                            self.logger.debug(
+                                f"[IMAGE_PULL_STATUS] Checking experiment {idx}: "
+                                f"rec_job_id={rec_job_id}, status={rec.get('status')}, "
+                                f"match={rec_job_id == job_id}"
+                            )
+
+                            if rec_job_id == job_id:
+                                is_automl_experiment = True
+                                brain_job_id = parent_id
+                                experiment_number = str(idx)
+                                self.logger.info(
+                                    f"[IMAGE_PULL_STATUS] ✓ DETECTED AutoML experiment job: "
+                                    f"job_id={job_id}, brain_job_id={brain_job_id}, "
+                                    f"experiment_number={experiment_number}"
+                                )
+                                break
+
+                        if not is_automl_experiment:
+                            self.logger.warning(
+                                f"[IMAGE_PULL_STATUS] Job {job_id} has AutoML parent {parent_id} "
+                                f"but was NOT found in controller_info recommendations. "
+                                f"This might indicate the controller hasn't saved state yet. "
+                                f"Treating as regular job for now."
+                            )
+                else:
+                    self.logger.debug(
+                        f"[IMAGE_PULL_STATUS] Job {job_id} has no parent_id, treating as regular job"
+                    )
+
+            # Use internal_job_status_update for consistent status handling
+            if is_automl_experiment:
+                # For AutoML experiment jobs, use the brain job ID and experiment number
+                self.logger.debug(
+                    f"[IMAGE_PULL_STATUS] Calling internal_job_status_update with: "
+                    f"job_id={brain_job_id}, automl=True, experiment_number={experiment_number}"
+                )
+
+                internal_job_status_update(
+                    job_id=brain_job_id,
+                    automl=True,
+                    automl_experiment_number=experiment_number,
+                    message=status_msg["message"],
+                    status=status_msg["status"]
+                )
+
+                self.logger.info(
+                    f"[IMAGE_PULL_STATUS] ✓ Updated AutoML experiment: job_id={job_id}, "
+                    f"brain={brain_job_id}, exp={experiment_number}, phase={pull_phase}"
+                )
+            else:
+                # For regular jobs, use the job_id directly
+                self.logger.debug(
+                    f"[IMAGE_PULL_STATUS] Calling internal_job_status_update with: "
+                    f"job_id={job_id}, automl=False"
+                )
+
+                internal_job_status_update(
+                    job_id=job_id,
+                    automl=False,
+                    message=status_msg["message"],
+                    status=status_msg["status"]
+                )
+
+                self.logger.info(
+                    f"[IMAGE_PULL_STATUS] ✓ Updated regular job: job_id={job_id}, "
+                    f"phase={pull_phase}"
+                )
+
+        except Exception as e:
+            # Don't fail the operation if status update fails
+            self.logger.error(
+                f"[IMAGE_PULL_STATUS] ✗ FAILED to update image pull status for job {job_id}: "
+                f"{type(e).__name__}: {e}"
+            )
+            self.logger.debug(
+                f"[IMAGE_PULL_STATUS] Exception traceback:\n{traceback.format_exc()}"
+            )
+
+    # ============================================================================
+    # End Image Pull Status Utilities
+    # ============================================================================
 
     def get_job_name(self, job_id):
         """Generate standardized job name
@@ -996,7 +1490,6 @@ class ExecutionHandler(ABC):
 
         # Handle NVCF backend
         elif BACKEND == Backend.NVCF:
-            from nvidia_tao_core.microservices.utils.stateless_handler_utils import get_handler_job_metadata
             # For NVCF, check job metadata status
             while poll_count < max_polls:
                 job_metadata = get_handler_job_metadata(job_id)
@@ -1131,7 +1624,6 @@ class ExecutionHandler(ABC):
 
         # Handle NVCF backend
         elif self.backend_type == Backend.NVCF:
-            from nvidia_tao_core.microservices.utils.stateless_handler_utils import get_handler_job_metadata
             # For NVCF, check job metadata status
             while poll_count < max_polls:
                 job_metadata = get_handler_job_metadata(job_id)

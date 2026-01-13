@@ -219,11 +219,60 @@ class KubernetesHandler(ExecutionHandler):
             api_instance.create_namespaced_job(
                 body=job,
                 namespace=name_space)
+
+            # Update job message with initial status (checking for image)
+            if job_name:
+                self.update_image_pull_status(job_name, image, "checking")
+
             return
         except Exception as e:
             self.logger.error(f"Exception thrown in executor create is {str(e)}")
             self.logger.error(traceback.format_exc())
             return
+
+    def check_and_update_job_image_pull_status(self, job_name, namespace=None):
+        """Check image pull status for a K8s Job and update job message.
+
+        This method can be called from the workflow to monitor image pull status
+        during job execution.
+
+        Args:
+            job_name (str): Name of the K8s Job
+            namespace (str, optional): Kubernetes namespace
+
+        Returns:
+            str: Current status - "pulling", "complete", "error", "waiting", or "unknown"
+        """
+        try:
+            if namespace is None:
+                namespace = self.get_namespace()
+
+            core_v1 = client.CoreV1Api()
+
+            # Find pods belonging to this job
+            pods = core_v1.list_namespaced_pod(
+                namespace=namespace,
+                label_selector=f"job-name={job_name}"
+            )
+
+            if not pods.items:
+                return "waiting"
+
+            # Check first pod
+            pod = pods.items[0]
+            status, image, error_msg = self._get_pod_image_pull_status(
+                pod.metadata.name, namespace
+            )
+
+            # Update job message based on status
+            if status in ("pulling", "extracting", "complete", "error", "auth_error", "not_exists_in_registry"):
+                self.update_image_pull_status(job_name, image, status, error_message=error_msg)
+
+            return status
+
+        except Exception as e:
+            self.logger.warning(f"Error checking job image pull status: {e}")
+            return "unknown"
 
     def delete_job(self, job_name):
         """Deletes a kubernetes job
@@ -401,10 +450,177 @@ class KubernetesHandler(ExecutionHandler):
         except Exception as e:
             self.logger.error(f"Failed to delete K8s microservice: {e}")
 
-    def wait_for_statefulset_ready(self, statefulset_name, name_space):
-        """Wait for the statefulset to be ready"""
+    def _get_pod_image_pull_status(self, pod_name, namespace):
+        """Get the image pull status from a pod's events and container statuses.
+
+        Args:
+            pod_name (str): Name of the pod
+            namespace (str): Kubernetes namespace
+
+        Returns:
+            tuple: (status, image, error_message)
+                status: "pulling", "extracting", "complete", "error", "waiting", "unknown"
+                image: Docker image being pulled
+                error_message: Error message if any
+        """
+        try:
+            core_v1 = client.CoreV1Api()
+            pod = core_v1.read_namespaced_pod(name=pod_name, namespace=namespace)
+
+            # Get image from pod spec
+            image = None
+            if pod.spec.containers:
+                image = pod.spec.containers[0].image
+
+            # Check container statuses for image pull state
+            if pod.status.container_statuses:
+                for container_status in pod.status.container_statuses:
+                    if container_status.state.waiting:
+                        reason = container_status.state.waiting.reason
+                        message = container_status.state.waiting.message or ""
+
+                        if reason == "ContainerCreating":
+                            # Could be pulling or extracting
+                            return ("pulling", image, None)
+                        if reason == "ImagePullBackOff":
+                            return ("error", image, f"Image pull failed: {message}")
+                        if reason == "ErrImagePull":
+                            return ("error", image, f"Failed to pull image: {message}")
+                        if reason == "ImageInspectError":
+                            return ("error", image, f"Image inspection failed: {message}")
+                        if reason == "InvalidImageName":
+                            return ("not_exists_in_registry", image, f"Invalid image name: {message}")
+                        if reason in ["ErrImageNeverPull", "RegistryUnavailable"]:
+                            return ("error", image, f"{reason}: {message}")
+
+                    elif container_status.state.running:
+                        return ("complete", image, None)
+
+            # Check pod events for more details
+            events = core_v1.list_namespaced_event(
+                namespace=namespace,
+                field_selector=f"involvedObject.name={pod_name}"
+            )
+
+            for event in events.items:
+                reason = event.reason
+                message = event.message or ""
+
+                if reason == "Pulling":
+                    return ("pulling", image, None)
+                if reason == "Pulled":
+                    return ("complete", image, None)
+                if reason == "Failed":
+                    if "ImagePullBackOff" in message or "ErrImagePull" in message:
+                        return ("error", image, message)
+                    if "unauthorized" in message.lower():
+                        return ("auth_error", image, message)
+
+            return ("waiting", image, None)
+
+        except ApiException as e:
+            if e.status == 404:
+                return ("waiting", None, None)
+            self.logger.warning(f"Error getting pod status: {e}")
+            return ("unknown", None, str(e))
+        except Exception as e:
+            self.logger.warning(f"Error getting pod image pull status: {e}")
+            return ("unknown", None, str(e))
+
+    def _monitor_statefulset_image_pull(self, statefulset_name, namespace, job_id, timeout_seconds=600):
+        """Monitor a StatefulSet's pods for image pull events and update job status.
+
+        Args:
+            statefulset_name (str): Name of the StatefulSet
+            namespace (str): Kubernetes namespace
+            job_id (str): Job ID for status updates
+            timeout_seconds (int): Maximum time to wait for image pull
+
+        Returns:
+            bool: True if image pull completed successfully, False otherwise
+        """
+        core_v1 = client.CoreV1Api()
+        start_time = time.time()
+        last_status = None
+        image = None
+
+        self.logger.info(f"Monitoring image pull for StatefulSet {statefulset_name} (job_id={job_id})")
+
+        while time.time() - start_time < timeout_seconds:
+            try:
+                # Find pods belonging to this StatefulSet
+                pods = core_v1.list_namespaced_pod(
+                    namespace=namespace,
+                    label_selector=f"job-id={job_id}"
+                )
+
+                if not pods.items:
+                    # No pods yet, might still be creating
+                    if last_status != "waiting":
+                        last_status = "waiting"
+                        self.update_image_pull_status(job_id, image or "unknown", "checking")
+                    time.sleep(5)
+                    continue
+
+                # Check first pod (master node)
+                pod = pods.items[0]
+                pod_name = pod.metadata.name
+                status, pod_image, error_msg = self._get_pod_image_pull_status(pod_name, namespace)
+
+                if pod_image:
+                    image = pod_image
+
+                # Only update if status changed
+                if status != last_status:
+                    last_status = status
+
+                    if status == "pulling":
+                        self.update_image_pull_status(job_id, image, "pulling")
+                    elif status == "complete":
+                        self.update_image_pull_status(job_id, image, "complete")
+                        return True
+                    elif status == "error":
+                        self.update_image_pull_status(job_id, image, "error", error_message=error_msg)
+                        return False
+                    elif status == "auth_error":
+                        self.update_image_pull_status(job_id, image, "auth_error", error_message=error_msg)
+                        return False
+                    elif status == "not_exists_in_registry":
+                        self.update_image_pull_status(job_id, image, "not_exists_in_registry", error_message=error_msg)
+                        return False
+
+                # If complete or error, return
+                if status in ("complete", "error", "auth_error", "not_exists_in_registry"):
+                    return status == "complete"
+
+                time.sleep(5)
+
+            except Exception as e:
+                self.logger.warning(f"Error monitoring image pull: {e}")
+                time.sleep(5)
+
+        # Timeout
+        self.logger.warning(f"Timeout waiting for image pull for job {job_id}")
+        self.update_image_pull_status(job_id, image, "error", error_message="Image pull timeout")
+        return False
+
+    def wait_for_statefulset_ready(self, statefulset_name, name_space, job_id=None, image=None):
+        """Wait for the statefulset to be ready.
+
+        Args:
+            statefulset_name (str): Name of the StatefulSet
+            name_space (str): Kubernetes namespace
+            job_id (str, optional): Job ID for status updates
+            image (str, optional): Docker image being used
+        """
         api_instance = client.AppsV1Api()
         stateful_set_ready = False
+        image_pull_monitored = False
+
+        # Start monitoring image pull if job_id provided
+        if job_id and image:
+            self.update_image_pull_status(job_id, image, "checking")
+
         while not stateful_set_ready:
             statefulset_response = api_instance.read_namespaced_stateful_set(
                 statefulset_name,
@@ -413,6 +629,27 @@ class KubernetesHandler(ExecutionHandler):
             if statefulset_response:
                 desired_replicas = statefulset_response.spec.replicas
                 ready_replicas = statefulset_response.status.ready_replicas or 0
+
+                # If job_id provided and image not yet pulled, monitor image pull
+                if job_id and not image_pull_monitored:
+                    # Check pod status for image pulling
+                    pods = client.CoreV1Api().list_namespaced_pod(
+                        namespace=name_space,
+                        label_selector=f"statefulset={statefulset_name}"
+                    )
+                    if pods.items:
+                        pod = pods.items[0]
+                        status, _, error_msg = self._get_pod_image_pull_status(
+                            pod.metadata.name, name_space
+                        )
+                        if status == "pulling":
+                            self.update_image_pull_status(job_id, image, "pulling")
+                        elif status == "complete":
+                            self.update_image_pull_status(job_id, image, "complete")
+                            image_pull_monitored = True
+                        elif status in ("error", "auth_error", "not_exists_in_registry"):
+                            self.update_image_pull_status(job_id, image, status, error_message=error_msg)
+
                 if desired_replicas == ready_replicas:
                     self.logger.info(f"Statefulset {statefulset_name} is ready with {ready_replicas} replicas")
                     stateful_set_ready = True
@@ -709,8 +946,8 @@ echo "Starting Inference Microservice..." &&
                 namespace=name_space,
                 body=stateful_set
             )
-            # Ensure the statefulset is ready
-            self.wait_for_statefulset_ready(statefulset_name, name_space)
+            # Ensure the statefulset is ready, monitoring image pull status
+            self.wait_for_statefulset_ready(statefulset_name, name_space, job_id=job_id, image=image)
             return True
         except Exception as e:
             self.logger.error(f"Exception thrown in create_statefulset is {str(e)}")
