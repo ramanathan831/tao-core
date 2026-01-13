@@ -23,30 +23,37 @@ import os
 from pathlib import Path
 
 
-def download_metadata(artifact_url, username, password, output_file='previous_release_metadata.json'):
+def download_metadata(artifact_url, output_file='previous_release_metadata.json'):
     """Download metadata artifact from Jenkins using authenticated curl.
+    
+    Credentials are read from JENKINS_USER and JENKINS_TOKEN environment variables
+    to avoid exposing them in process lists.
     
     Args:
         artifact_url: Full URL to the artifact
-        username: Jenkins username
-        password: Jenkins API token
         output_file: Where to save the downloaded file
         
     Returns:
         bool: True if download and validation succeeded
     """
     try:
-        # Download using curl
+        # Read credentials from environment (already validated by caller)
+        username = os.environ['JENKINS_USER']
+        password = os.environ['JENKINS_TOKEN']
+        
+        # Use curl with config file via stdin to avoid credential exposure
+        curl_config = f"user = \"{username}:{password}\""
+        
         cmd = [
             'curl',
-            '--user', f'{username}:{password}',
+            '--config', '-',  # Read config from stdin
             '-f',  # Fail silently on HTTP errors
             '-s',  # Silent mode
             '-o', output_file,
             artifact_url
         ]
         
-        result = subprocess.run(cmd, capture_output=True, text=True, check=False)
+        result = subprocess.run(cmd, input=curl_config, capture_output=True, text=True, check=False)
         
         if result.returncode != 0:
             print(f"⚠ Failed to download metadata (curl exit code: {result.returncode})", file=sys.stderr)
@@ -138,8 +145,6 @@ def main():
     output_file = 'previous_release_metadata.json'
     download_success = download_metadata(
         args.artifact_url,
-        jenkins_user,
-        jenkins_token,
         output_file
     )
     
