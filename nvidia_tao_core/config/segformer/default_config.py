@@ -37,6 +37,7 @@ from nvidia_tao_core.config.common.common_config import (
     TrtConfig,
     CalibrationConfig
 )
+from nvidia_tao_core.config.common.quantization import ModelQuantizationConfig
 
 
 @dataclass
@@ -332,6 +333,18 @@ class DataPathFormat:
 
 
 @dataclass
+class QuantCalibrationDataset:
+    """Quantization calibration dataset config."""
+
+    images_dir: str = STR_FIELD(
+        value="",
+        default_value="",
+        display_name="images directory",
+        description="Path to images directory for quantization calibration",
+    )
+
+
+@dataclass
 class SFDatasetSegmentConfig:
     """Segmentation Dataset Config."""
 
@@ -410,6 +423,10 @@ class SFDatasetSegmentConfig:
         ],
         description="Palette, be careful of label_transform, if norm then RGB value from 0~1, else 0~255",
         display_name="Palette"
+    )
+    quant_calibration_dataset: QuantCalibrationDataset = DATACLASS_FIELD(
+        QuantCalibrationDataset(),
+        description="Configurable parameters for the quantization calibration dataset.",
     )
 
 
@@ -580,6 +597,10 @@ class ExperimentConfig(CommonExperimentConfig):
     inference: SFInferenceExpConfig = DATACLASS_FIELD(SFInferenceExpConfig())
     export: SFExportExpConfig = DATACLASS_FIELD(SFExportExpConfig())
     gen_trt_engine: SFGenTrtEngineExpConfig = DATACLASS_FIELD(SFGenTrtEngineExpConfig())
+    quantize: ModelQuantizationConfig = DATACLASS_FIELD(
+        ModelQuantizationConfig(),
+        description="Configurable parameters to run model quantization for a SegFormer experiment.",
+    )
 
     def __post_init__(self):
         """Set default model name for SegFormer."""

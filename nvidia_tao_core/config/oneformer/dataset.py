@@ -109,6 +109,18 @@ class AugmentationConfig:
 
 
 @dataclass
+class QuantCalibrationDataset:
+    """Quantization calibration dataset config."""
+
+    images_dir: str = STR_FIELD(
+        value="",
+        default_value="",
+        display_name="images directory",
+        description="Path to images directory for quantization calibration",
+    )
+
+
+@dataclass
 class OneFormerDatasetConfig:
     """Data config."""
 
@@ -211,4 +223,8 @@ class OneFormerDatasetConfig:
         value=0.0,
         description="Cutmix probability",
         display_name="cutmix probability"
+    )
+    quant_calibration_dataset: QuantCalibrationDataset = DATACLASS_FIELD(
+        QuantCalibrationDataset(),
+        description="Configurable parameters for the quantization calibration dataset.",
     )

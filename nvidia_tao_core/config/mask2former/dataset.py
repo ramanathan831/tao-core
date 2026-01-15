@@ -145,6 +145,18 @@ class AugmentationConfig:
 
 
 @dataclass
+class QuantCalibrationDataset:
+    """Quantization calibration dataset config."""
+
+    images_dir: str = STR_FIELD(
+        value="",
+        default_value="",
+        display_name="images directory",
+        description="Path to images directory for quantization calibration",
+    )
+
+
+@dataclass
 class Mask2FormerDatasetConfig:
     """Data config."""
 
@@ -192,4 +204,8 @@ class Mask2FormerDatasetConfig:
         default_value="",
         display_name="label map",
         description="A path to label map file"
+    )
+    quant_calibration_dataset: QuantCalibrationDataset = DATACLASS_FIELD(
+        QuantCalibrationDataset(),
+        description="Configurable parameters for the quantization calibration dataset.",
     )
