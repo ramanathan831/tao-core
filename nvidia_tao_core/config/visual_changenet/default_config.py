@@ -39,6 +39,7 @@ from nvidia_tao_core.config.common.common_config import (
 
 from nvidia_tao_core.config.common.quantization import ModelQuantizationConfig
 
+
 @dataclass
 class CNOptimConfig:
     """Optimizer config."""
