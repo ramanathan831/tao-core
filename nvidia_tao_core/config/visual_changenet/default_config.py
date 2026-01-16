@@ -390,9 +390,6 @@ class DataPathFormat:
 
 
 @dataclass
-
-
-@dataclass
 class QuantCalibrationDataset:
     """Quantization calibration dataset config."""
 
@@ -403,6 +400,8 @@ class QuantCalibrationDataset:
         description="Path to images directory for quantization calibration",
     )
 
+
+@dataclass
 class CNDatasetClassifyConfig:
     """Classification Dataset Config."""
 
