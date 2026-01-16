@@ -15,6 +15,7 @@
 """Spec handler module for managing specification schemas"""
 import os
 import logging
+import traceback
 
 from nvidia_tao_core.microservices.utils.stateless_handler_utils import (
     check_read_access,
@@ -362,11 +363,19 @@ class SpecHandler:
                   - 404: If GPUs cannot be retrieved for the specified backend.
         """
         workspace_metadata = get_handler_metadata(workspace_id, "workspaces")
-        handler = ExecutionHandler.create_handler(
-            workspace_metadata=workspace_metadata,
-            backend=BACKEND,
-        )
-        available_instances = handler.get_available_instances(user_id=user_id)
-        if available_instances:
-            return Code(200, available_instances, "Retrieved available GPU info")
+        try:
+            handler = ExecutionHandler.create_handler(
+                workspace_metadata=workspace_metadata,
+                backend=BACKEND,
+            )
+            if handler:
+                available_instances = handler.get_available_instances()
+                if available_instances:
+                    return Code(200, available_instances, "Retrieved available GPU info")
+            else:
+                logger.error(f"Unable to determine appropriate handler for backend '{BACKEND}' and workspace_metadata")
+        except Exception as e:
+            logger.error("Exception thrown in get_gpu_types is %s", str(e))
+            logger.error("Unable to get GPU types for the deployed backend")
+            logger.error(traceback.format_exc())
         return Code(404, [], f"GPU types can't be retrieved for deployed Backend {BACKEND}")
