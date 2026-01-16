@@ -37,7 +37,10 @@ from nvidia_tao_core.config.common.common_config import (
     CalibrationConfig
 )
 
-from nvidia_tao_core.config.common.quantization import ModelQuantizationConfig
+from nvidia_tao_core.config.common.quantization import (
+    ModelQuantizationConfig,
+    QuantCalibrationDataset,
+)
 
 
 @dataclass
@@ -388,18 +391,6 @@ class DataPathFormat:
 
     csv_path: str = STR_FIELD(value="", default_value="", description="Path to csv file for dataset")
     images_dir: str = STR_FIELD(value="", default_value="", description="Path to images directory for dataset")
-
-
-@dataclass
-class QuantCalibrationDataset:
-    """Quantization calibration dataset config."""
-
-    images_dir: str = STR_FIELD(
-        value="",
-        default_value="",
-        display_name="images directory",
-        description="Path to images directory for quantization calibration",
-    )
 
 
 @dataclass

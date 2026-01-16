@@ -446,3 +446,15 @@ class ModelQuantizationConfig:
         ),
         display_name="Calibration device",
     )
+
+
+@dataclass
+class QuantCalibrationDataset:
+    """Quantization calibration dataset config."""
+
+    images_dir: str = STR_FIELD(
+        value="",
+        default_value="",
+        display_name="images directory",
+        description="Path to images directory for quantization calibration",
+    )

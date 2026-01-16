@@ -24,6 +24,7 @@ from nvidia_tao_core.config.utils.types import (
     LIST_FIELD,
     DATACLASS_FIELD
 )
+from nvidia_tao_core.config.common.quantization import QuantCalibrationDataset
 
 
 @dataclass
@@ -141,18 +142,6 @@ class AugmentationConfig:
         description="The maximum resize size for test",
         automl_enabled="TRUE",
         display_name="Test max size"
-    )
-
-
-@dataclass
-class QuantCalibrationDataset:
-    """Quantization calibration dataset config."""
-
-    images_dir: str = STR_FIELD(
-        value="",
-        default_value="",
-        display_name="images directory",
-        description="Path to images directory for quantization calibration",
     )
 
 
