@@ -388,16 +388,17 @@ class ActionPipeline:
                 backend=BACKEND,
                 job_id=self.job_name
             )
-            available_instances = handler.get_available_instances()
-            if available_instances:
-                nv_job_metadata["workspace_ids"] = list(self.workspace_ids)
-            if available_instances and self.platform_id in available_instances:
-                nv_job_metadata["backend_details"] = {
-                    "cluster": available_instances[self.platform_id]["cluster"],
-                    "gpu_type": available_instances[self.platform_id]["gpu_type"],
-                }
-            else:
-                logger.error(f"No available instances found for platform {self.platform_id}")
+            if handler:
+                available_instances = handler.get_available_instances()
+                if available_instances:
+                    nv_job_metadata["workspace_ids"] = list(self.workspace_ids)
+                if available_instances and self.platform_id in available_instances:
+                    nv_job_metadata["backend_details"] = {
+                        "cluster": available_instances[self.platform_id]["cluster"],
+                        "gpu_type": available_instances[self.platform_id]["gpu_type"],
+                    }
+                else:
+                    logger.error(f"No available instances found for platform {self.platform_id}")
 
         if BACKEND == Backend.NVCF:
             nv_job_metadata["workspace_ids"] = list(self.workspace_ids)

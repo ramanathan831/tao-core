@@ -48,7 +48,11 @@ class KubernetesHandler(ExecutionHandler):
 
     def get_available_instances(self):
         """Get available GPUs in the K8s cluster"""
-        return get_available_local_k8s_gpus()
+        local_k8s_gpus = get_available_local_k8s_gpus()
+        if local_k8s_gpus:
+            return local_k8s_gpus
+        self.logger.error("No available GPUs found in the K8s cluster")
+        return {}
 
     def get_namespace(self):
         """Get the namespace of the environment"""
@@ -508,8 +512,9 @@ class KubernetesHandler(ExecutionHandler):
                 env_vars = [client.V1EnvVar(name="JOB_ID", value=job_id or "")]
 
             # Add custom environment variables if provided
-            if custom_env_vars:
-                env_vars.extend(custom_env_vars)
+            if custom_env_vars and isinstance(custom_env_vars, dict):
+                for key, value in custom_env_vars.items():
+                    env_vars.append(client.V1EnvVar(name=key, value=str(value)))
 
             # Configure ports
             if statefulset_type == "inference_microservice":
@@ -576,7 +581,7 @@ echo "Starting Inference Microservice..." &&
             image_pull_secret = os.getenv('IMAGEPULLSECRET', default='imagepullsecret')
             node_selector = None
             if accelerator:
-                available_gpus = self.get_available_local_k8s_gpus()
+                available_gpus = self.get_available_instances()
                 gpu_to_be_run_on = None
                 if available_gpus:
                     gpu_to_be_run_on = available_gpus.get(accelerator, {}).get("gpu_type")
