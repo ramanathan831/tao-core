@@ -152,88 +152,98 @@ podTemplate(cloud: TaoConfig.kubernetes.cloud, yaml: PodTemplates.generate(
             }
         }
         
-        // ============================================================================
-        // ARM TESTS - DISABLED
-        // TODO: Re-enable ARM tests once we have ARM nodes (GB200-ARM) infrastructure
-        // ============================================================================
-        // "arm_tests": {
-        //     node('GB200-ARM') {
-        //         try {
-        //             stage('checkout_arm') {
-        //                 withGitLabStatus('checkout_arm') {
-        //                     checkoutWithSafeDirectory()
-        //                 }
-        //             }
-        //
-        //             stage('functional_tests_arm') {
-        //                 withGitLabStatus('functional_tests_arm') {
-        //                     withCredentials([string(credentialsId: TaoConfig.credentials.NGC_CLI_KEY, variable: 'NGC_CLI_API_KEY')]) {
-        //                         script {
-        //                             // Use the same Docker image as x86, but run on ARM node
-        //                             def dockerImage = TaoConfig.images.PYTORCH_BASE
-        //                             
-        //                             // Create unique container name for this pipeline run
-        //                             def containerName = "tao-arm-${BUILD_NUMBER}-${env.JOB_NAME.replaceAll('/', '-')}"
-        //                             
-        //                             // Set NGC environment variables
-        //                             env.NGC_KEY = NGC_CLI_API_KEY
-        //                             env.NGC_PATH = 'ea-tlt/tao_ea/pretrained_dino_imagenet:fan_hybrid_tiny'
-        //                             
-        //                             sh """
-        //                                 set -e
-        //                                 echo "Running functional tests on ARM using Docker"
-        //                                 
-        //                                 DOCKER_IMAGE="${dockerImage}"
-        //                                 CONTAINER_NAME="${containerName}"
-        //                                 
-        //                                 docker pull \$DOCKER_IMAGE
-        //                                 
-        //                                 docker run --rm --gpus all \\
-        //                                     --user \$(id -u):\$(id -g) \\
-        //                                     --name \$CONTAINER_NAME \\
-        //                                     --label "pipeline=tao-core-arm" \\
-        //                                     --label "build=${BUILD_NUMBER}" \\
-        //                                     --label "job=${env.JOB_NAME}" \\
-        //                                     -v \$(pwd):/tao-core \\
-        //                                     -w /tao-core \\
-        //                                     -e HOME=/tao-core \\
-        //                                     -e NGC_CLI_API_KEY=\$NGC_CLI_API_KEY \\
-        //                                     -e NGC_KEY=\$NGC_CLI_API_KEY \\
-        //                                     -e NGC_PATH='ea-tlt/tao_ea/pretrained_dino_imagenet:fan_hybrid_tiny' \\
-        //                                     \$DOCKER_IMAGE \\
-        //                                     bash -c "set -e; pip install . && pytest"
-        //                             """
-        //                         }
-        //                     }
-        //                 }
-        //             }
-        //         } finally {
-        //             stage('cleanup_arm') {
-        //                 catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
-        //                     echo "Cleaning up ARM node workspace and pipeline-specific Docker resources"
-        //                     sh """
-        //                         # Clean up containers for this pipeline run
-        //                         PIPELINE_CONTAINERS=\$(docker ps -a --filter "label=pipeline=tao-core-arm" --filter "label=build=${BUILD_NUMBER}" --format "{{.ID}}" 2>/dev/null || echo "")
-        //                         if [ ! -z "\$PIPELINE_CONTAINERS" ]; then
-        //                             docker rm -f \$PIPELINE_CONTAINERS || echo "Some containers already removed"
-        //                         fi
-        //                         
-        //                         # Clean up exited containers from this job
-        //                         JOB_CONTAINERS=\$(docker ps -a --filter "label=job=${JOB_NAME}" --filter "status=exited" --format "{{.ID}}" 2>/dev/null || echo "")
-        //                         if [ ! -z "\$JOB_CONTAINERS" ]; then
-        //                             docker rm \$JOB_CONTAINERS || echo "Some job containers already removed"
-        //                         fi
-        //                         
-        //                         # Clean dangling images
-        //                         docker image prune -f --filter "dangling=true" || true
-        //                         
-        //                         # Remove workspace contents
-        //                         rm -rf "${WORKSPACE}"/*
-        //                     """
-        //                 }
-        //             }
-        //         }
-        //     }
-        // }
-    )
+    // Disabling ARM tests to unblock MRs until we get ARM nodes to test on. #TODO: Re-enable once we have the infra
+    // "arm_tests": {
+    //   node('GB200-ARM') {
+    //     try {
+    //       stage('checkout_arm') {
+    //         gitlabCommitStatus(name: "checkout_arm", connection: gitLabConnection('git-lab-master')) {
+    //           checkout scm
+    //         }
+    //       }
+    //
+    //       stage('functional_tests_arm') {
+    //         gitlabCommitStatus(name: "functional_tests_arm", connection: gitLabConnection('git-lab-master')) {
+    //           withCredentials([string(credentialsId: 'NGC_FTMS_API_KEY', variable: 'NGC_CLI_API_KEY')]) {
+    //             script {
+    //               // Use the same Docker image as x86, but run on ARM node
+    //               def dockerImage = "nvcr.io/nvidia/pytorch:24.03-py3"
+    //               
+    //               // Create unique container name for this pipeline run to avoid conflicts
+    //               def containerName = "tao-arm-${BUILD_NUMBER}-${env.JOB_NAME.replaceAll('/', '-')}"
+    //               
+    //               // Set NGC environment variables (same as x86)
+    //               env.NGC_KEY=NGC_CLI_API_KEY
+    //               env.NGC_PATH='ea-tlt/tao_ea/pretrained_dino_imagenet:fan_hybrid_tiny'
+    //               
+    //               sh """
+    //                 set -e
+    //                 echo "Running functional tests on ARM using Docker"
+    //                 
+    //                 # Set variables for the shell script
+    //                 DOCKER_IMAGE="${dockerImage}"
+    //                 CONTAINER_NAME="${containerName}"
+    //                 
+    //                 # Pull the multi-arch Docker image
+    //                 docker pull \$DOCKER_IMAGE
+    //                 
+    //                 # Run the same test logic as x86 but in Docker container on ARM
+    //                 # Use pipeline-specific labels for safe cleanup
+    //                 docker run --rm --gpus all \
+    //                   --user \$(id -u):\$(id -g) \
+    //                   --name \$CONTAINER_NAME \
+    //                   --label "pipeline=tao-core-arm" \
+    //                   --label "build=${BUILD_NUMBER}" \
+    //                   --label "job=${env.JOB_NAME}" \
+    //                   -v \$(pwd):/tao-core \
+    //                   -w /tao-core \
+    //                   -e HOME=/tao-core \
+    //                   -e NGC_CLI_API_KEY=\$NGC_CLI_API_KEY \
+    //                   -e NGC_KEY=\$NGC_CLI_API_KEY \
+    //                   -e NGC_PATH='ea-tlt/tao_ea/pretrained_dino_imagenet:fan_hybrid_tiny' \
+    //                   \$DOCKER_IMAGE \
+    //                   bash -c \"set -e; pip install . && pytest\"
+    //               """
+    //             }
+    //           }
+    //         }
+    //       }
+    //     } finally {
+    //       stage('cleanup_arm') {
+    //         catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
+    //           echo "Cleaning up ARM node workspace and pipeline-specific Docker resources"
+    //           sh """
+    //             # Only clean up Docker resources specific to this pipeline run (safe for concurrent pipelines)
+    //             echo "Cleaning up containers for this pipeline run..."
+    //             PIPELINE_CONTAINERS=\$(docker ps -a --filter "label=pipeline=tao-core-arm" --filter "label=build=${BUILD_NUMBER}" --format "{{.ID}}" 2>/dev/null || echo "")
+    //             if [ ! -z "\$PIPELINE_CONTAINERS" ]; then
+    //               echo "Removing pipeline-specific containers: \$PIPELINE_CONTAINERS"
+    //               docker rm -f \$PIPELINE_CONTAINERS || echo "Some containers already removed"
+    //             else
+    //               echo "No pipeline-specific containers to clean up"
+    //             fi
+    //             
+    //             # Clean up any containers with our specific job label that are exited (broader safety net)
+    //             JOB_CONTAINERS=\$(docker ps -a --filter "label=job=${JOB_NAME}" --filter "status=exited" --format "{{.ID}}" 2>/dev/null || echo "")
+    //             if [ ! -z "\$JOB_CONTAINERS" ]; then
+    //               echo "Removing exited containers from this job: \$JOB_CONTAINERS"
+    //               docker rm \$JOB_CONTAINERS || echo "Some job containers already removed"
+    //             else
+    //               echo "No exited job containers to clean up"
+    //             fi
+    //             
+    //             echo "Cleaning up dangling images only (safe for concurrent pipelines)..."
+    //             docker image prune -f --filter "dangling=true" || echo "No dangling images to clean up"
+    //             
+    //             # Remove workspace contents
+    //             rm -rf "${WORKSPACE}"/*
+    //             
+    //             echo "ARM cleanup completed (pipeline-specific, safe for concurrent runs)"
+    //           """
+    //         }
+    //       }
+    //     }
+    //   }
+    // }
+  )
 }
