@@ -36,7 +36,7 @@ class MicroserviceExecutor():
             microservice_pod_id="", nvcf_helm="", num_gpu=-1,
             microservice_container="", org_name="", handler_id="",
             handler_kind="", accelerator=None, docker_env_vars={}, num_nodes=1,
-            resource_shape=None, dedicated_node_group=None):
+            resource_shape=None, dedicated_node_group=None, backend_details=None):
         """Create a DNN container microservice pod and send request to the POD IP"""
         from nvidia_tao_core.microservices.handlers.execution_handlers.execution_handler import ExecutionHandler
         # Use the base class implementation
@@ -65,5 +65,6 @@ class MicroserviceExecutor():
             accelerator=accelerator,
             nvcf_helm=nvcf_helm,
             resource_shape=resource_shape,
-            dedicated_node_group=dedicated_node_group
+            dedicated_node_group=dedicated_node_group,
+            backend_details=backend_details
         )

@@ -185,8 +185,8 @@ def create_cs_instance_with_decrypted_metadata(decrypted_metadata):
             ssh_key_path = os.getenv('SSH_KEY_PATH')
             if not ssh_key_path or not os.path.exists(ssh_key_path):
                 # Try common locations for SSH keys
-                for candidate in ["/home/www-data/.ssh/id_ed25519", "/root/.ssh/id_ed25519",
-                                  "/home/www-data/.ssh/id_rsa", "/root/.ssh/id_rsa"]:
+                for candidate in ["/root/.ssh/id_ed25519", "/root/.ssh/id_rsa",
+                                  "/home/www-data/.ssh/id_ed25519", "/home/www-data/.ssh/id_rsa"]:
                     if os.path.exists(candidate):
                         ssh_key_path = candidate
                         logger.info(f"Auto-detected SSH key: {ssh_key_path}")
@@ -297,8 +297,8 @@ def create_cs_instance(workspace_metadata):
             ssh_key_path = os.getenv('SSH_KEY_PATH')
             if not ssh_key_path or not os.path.exists(ssh_key_path):
                 # Try common locations for SSH keys
-                for candidate in ["/home/www-data/.ssh/id_ed25519", "/root/.ssh/id_ed25519",
-                                  "/home/www-data/.ssh/id_rsa", "/root/.ssh/id_rsa"]:
+                for candidate in ["/root/.ssh/id_ed25519", "/root/.ssh/id_rsa",
+                                  "/home/www-data/.ssh/id_ed25519", "/home/www-data/.ssh/id_rsa"]:
                     if os.path.exists(candidate):
                         ssh_key_path = candidate
                         logger.info(f"Auto-detected SSH key: {ssh_key_path}")

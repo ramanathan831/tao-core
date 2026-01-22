@@ -700,12 +700,34 @@ def monitor_and_upload(local_path, cloud_storage, exit_event, seek_position=0,
             if exit_event.is_set():
                 # Check if this is a graceful pause (signal file exists) or normal completion
                 signal_file = os.path.join(local_path, ".graceful_termination_signal")
+                # Read signal file content if it exists to determine if it's from early stop
+                is_early_stop_signal = False
                 if os.path.exists(signal_file):
-                    # Graceful pause: exit immediately, snapshot upload will handle remaining files
-                    logger.info("Continuous upload monitor stopped by graceful pause signal")
+                    try:
+                        with open(signal_file, 'r', encoding='utf-8') as f:
+                            content = f.read()
+                            # Early stop signals have format "early_stop_epoch_N"
+                            is_early_stop_signal = "early_stop_epoch_" in content
+                    except Exception:
+                        pass
+
+                # If signal exists but it's just an early stop marker (not graceful pause),
+                # we should still do final upload since training completed
+                if os.path.exists(signal_file) and not is_early_stop_signal:
+                    # True graceful pause: exit immediately, snapshot upload will handle remaining files
+                    logger.info("[CLOUD-HANDLERS][UTILS] Continuous upload monitor stopped by graceful pause signal")
                 else:
-                    # Normal completion: do final upload to ensure all files are uploaded
-                    logger.info("Continuous upload monitor stopped, performing final upload")
+                    # Normal completion or early stop completion: do final upload to ensure all files are uploaded
+                    if is_early_stop_signal:
+                        logger.info(
+                            "[CLOUD-HANDLERS][UTILS] Continuous upload monitor stopped "
+                            "(training completed with early stop), performing final upload"
+                        )
+                    else:
+                        logger.info(
+                            "[CLOUD-HANDLERS][UTILS] Continuous upload monitor stopped, "
+                            "performing final upload"
+                        )
 
                     # Count ALL files that need to be uploaded in this final pass
                     files_to_upload = []

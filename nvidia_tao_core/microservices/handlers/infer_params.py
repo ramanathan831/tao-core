@@ -31,7 +31,7 @@ from nvidia_tao_core.microservices.utils.cloud_utils import create_cs_instance
 from nvidia_tao_core.microservices.utils.stateless_handler_utils import (
     get_handler_root, get_jobs_root, get_handler_job_metadata,
     get_handler_metadata, get_handler_kind, get_base_experiment_metadata,
-    get_automl_brain_info, get_workspace_string_identifier
+    get_workspace_string_identifier
 )
 
 # Configure logging
@@ -314,7 +314,51 @@ def infer_automl_assign_ptm(job_context, handler_metadata, job_root, rec_number,
 
 
 def infer_automl_resume_model(job_context, handler_metadata, job_root, rec_number, exp_job_id):
-    """Returns path of the checkpoint file for the automl recommendation to resume on"""
+    """Returns path of the checkpoint file for the automl recommendation to resume on
+
+    For PBT, if a member is replaced by another, it should resume from the
+    source member's checkpoint, not its own. This is indicated by resume_from_job_id in controller info.
+    """
+    # Check if this job should resume from another job's checkpoint (PBT replacement)
+    from nvidia_tao_core.microservices.utils.stateless_handler_utils import get_automl_controller_info
+    logger.info(f"PBT: Checking resume model for job {exp_job_id}, member #{rec_number}")
+
+    # Get controller info which contains resume_from_job_id for each recommendation
+    brain_job_id = job_context.parent_id if job_context.parent_id else job_context.id
+    controller_info = get_automl_controller_info(brain_job_id)
+
+    source_job_id = None
+    if controller_info and isinstance(controller_info, list):
+        # Find the recommendation for this member
+        for recommendation in controller_info:
+            if recommendation.get("id") == rec_number:
+                source_job_id = recommendation.get("resume_from_job_id", None)
+                logger.info(
+                    f"PBT: Found resume_from_job_id = {source_job_id} in controller info "
+                    f"for member {rec_number} (brain: {brain_job_id})"
+                )
+                break
+
+    if not controller_info:
+        logger.warning(
+            f"PBT: No controller info found for brain job {brain_job_id}, "
+            f"member #{rec_number} will use own checkpoint"
+        )
+
+    if source_job_id:
+        # This member was replaced, use source member's checkpoint
+        logger.info(
+            f"PBT: Member #{rec_number} (job {exp_job_id}) will resume "
+            f"from source job {source_job_id}'s checkpoint"
+        )
+        # Override exp_job_id to query source job's folder
+        exp_job_id = source_job_id
+    else:
+        logger.info(
+            f"PBT: No resume_from_job_id found, member #{rec_number} "
+            f"will use own checkpoint from job {exp_job_id}"
+        )
+
     expt_root = infer_automl_output_dir(
         job_context,
         handler_metadata,
@@ -355,16 +399,6 @@ def infer_automl_ptm_if_no_resume_model(job_context, handler_metadata, job_root,
         resume_model = f"{workspace_identifier}/{resume_model[0]}"
         return resume_model
     return infer_ptm(job_context, handler_metadata)
-
-
-def infer_automl_assign_resume_epoch(job_context, handler_metadata, job_root, rec_number, exp_job_id):
-    """Returns path automl spec file"""
-    additional_epoch = 1  # epoch numbers indexed by 1
-    resume_epoch_number = 0 + additional_epoch
-    if infer_automl_resume_model(job_context, handler_metadata, job_root, rec_number, exp_job_id):
-        brain_dict = get_automl_brain_info(job_context.id)
-        resume_epoch_number = int(brain_dict.get("resume_epoch_number", -1)) + additional_epoch
-    return resume_epoch_number
 
 
 def infer_parent_model_evaluate(job_context, handler_metadata):
@@ -518,7 +552,6 @@ CLI_CONFIG_TO_FUNCTIONS = {"output_dir": infer_output_dir,
                            "automl_assign_ptm": infer_automl_assign_ptm,
                            "automl_resume_model": infer_automl_resume_model,
                            "automl_ptm_if_no_resume_model": infer_automl_ptm_if_no_resume_model,
-                           "automl_assign_resume_epoch": infer_automl_assign_resume_epoch,
                            "framework": infer_framework_evaluate,
                            "framework_storetrue": infer_framework_evaluate_storetrue,
                            "verbose": infer_verbose,

@@ -384,7 +384,14 @@ def process_mapping_path_and_transforms(mapping, source_root, source_ds, dataset
         return None
 
     # Get the path value
-    value = os.path.join(source_root, mapping["path"]) if mapping.get("path") else source_root
+    if mapping.get("path"):
+        path = mapping["path"]
+        # Resolve tar file to folder if tar doesn't exist but folder does
+        source_ds_metadata = get_handler_metadata(source_ds, kind="datasets")
+        resolved_path = resolve_tar_or_folder_path(source_ds_metadata, source_root, path)
+        value = os.path.join(source_root, resolved_path)
+    else:
+        value = source_root
 
     # Apply any transforms
     if "transform" in mapping:
@@ -746,6 +753,14 @@ def apply_data_source_config(config, job_context, handler_metadata):
                 # User specified direct path, skip inference
                 already_configured_paths.add(config_path)
                 continue
+            # Handle absolute paths without protocol (e.g., /lustre/fsw/...)
+            # These are user-provided paths that should be preserved
+            if isinstance(existing_value, str) and existing_value.startswith('/'):
+                logger.info(
+                    f"Absolute path detected for {config_path}: {existing_value}, preserving user-provided value"
+                )
+                already_configured_paths.add(config_path)
+                continue
             # Handle lists with potential direct paths
             if isinstance(existing_value, list):
                 has_direct_paths = any(isinstance(v, str) and is_direct_path(v) for v in existing_value)
@@ -810,7 +825,9 @@ def apply_data_source_config(config, job_context, handler_metadata):
                     # Build the results path template for the transform
                     value = f"/results/{dataset_convert_job_id}/{path}"
                 else:
-                    value = os.path.join(source_root, path)
+                    # Resolve tar file to folder if tar doesn't exist but folder does
+                    resolved_path = resolve_tar_or_folder_path(source_ds_metadata, source_root, path)
+                    value = os.path.join(source_root, resolved_path)
                 value = apply_transforms(
                     value, source_config.get("transform", []),
                     source_root, source_datasets[0], dataset_convert_action,
@@ -848,7 +865,9 @@ def apply_data_source_config(config, job_context, handler_metadata):
                 else:
                     continue
 
-                value = os.path.join(source_root, path)
+                # Resolve tar file to folder if tar doesn't exist but folder does
+                resolved_path = resolve_tar_or_folder_path(source_ds_metadata, source_root, path)
+                value = os.path.join(source_root, resolved_path)
                 if path_type == "source":
                     value = apply_transforms(
                         value, source_config.get("transform", []),
@@ -890,7 +909,12 @@ def apply_data_source_config(config, job_context, handler_metadata):
                         result_list.append(entry)
                 else:
                     path = source_config.get("path", "")
-                    value = source_root if path == "" else os.path.join(source_root, path)
+                    if path:
+                        # Resolve tar file to folder if tar doesn't exist but folder does
+                        resolved_path = resolve_tar_or_folder_path(source_ds_metadata, source_root, path)
+                        value = os.path.join(source_root, resolved_path)
+                    else:
+                        value = source_root
                     result_list.append(value)
 
             if result_list:
@@ -924,8 +948,14 @@ def apply_data_source_config(config, job_context, handler_metadata):
                     set_nested_config_value(config, config_path, result)
             else:
                 path = source_config.get("path", "")
-                value = (source_root if path == "" else
-                         (path if dataset_convert_downloaded_locally else os.path.join(source_root, path)))
+                if path and not dataset_convert_downloaded_locally:
+                    # Resolve tar file to folder if tar doesn't exist but folder does
+                    resolved_path = resolve_tar_or_folder_path(source_ds_metadata, source_root, path)
+                    value = os.path.join(source_root, resolved_path)
+                elif path:
+                    value = path
+                else:
+                    value = source_root
 
                 value = apply_transforms(
                     value, source_config.get("transform", []),
@@ -966,6 +996,72 @@ def check_file_exists(root_path, file_path):
     """Check if a file exists in the given root path."""
     full_path = os.path.join(root_path, file_path)
     return os.path.exists(full_path)
+
+
+def resolve_tar_or_folder_path(source_ds_metadata, source_root, file_path):
+    """Resolve tar file path to folder path if tar doesn't exist but folder does.
+
+    Args:
+        source_ds_metadata (dict): Dataset metadata
+        source_root (str): Root path of the dataset
+        file_path (str): Relative file path (e.g., "images.tar.gz")
+
+    Returns:
+        str: Original file_path or resolved folder path if tar doesn't exist
+    """
+    # Check if this is a tar file path
+    if not (file_path.endswith('.tar.gz') or file_path.endswith('.tar')):
+        return file_path
+
+    extracted_dir = file_path.replace('.tar.gz', '').replace('.tar', '')
+
+    # Try cloud storage check first (includes SLURM via SSH)
+    if source_ds_metadata.get('workspace'):
+        try:
+            from nvidia_tao_core.microservices.utils.cloud_utils import create_cs_instance
+            workspace_metadata = get_handler_metadata(source_ds_metadata.get('workspace'), kind="workspace")
+            if workspace_metadata:
+                cloud_type = workspace_metadata.get('cloud_type', '')
+                cloud_instance, _ = create_cs_instance(workspace_metadata)
+                if cloud_instance:
+                    cloud_file_path = source_ds_metadata.get('cloud_file_path', '')
+                    # For SLURM, preserve absolute paths; for cloud storage, strip leading slash
+                    if cloud_type == 'slurm':
+                        cloud_path = f"{cloud_file_path}/{file_path}" if cloud_file_path else file_path
+                        extracted_path = f"{cloud_file_path}/{extracted_dir}" if cloud_file_path else extracted_dir
+                    else:
+                        cloud_path = f"{cloud_file_path.strip('/')}/{file_path}" if cloud_file_path else file_path
+                        stripped = cloud_file_path.strip('/') if cloud_file_path else ''
+                        extracted_path = f"{stripped}/{extracted_dir}" if stripped else extracted_dir
+
+                    # Check if tar file exists
+                    if cloud_instance.is_file(cloud_path):
+                        return file_path
+
+                    # If tar doesn't exist, check for extracted folder
+                    if cloud_instance.is_folder(extracted_path):
+                        logger.info(f"Using extracted folder {extracted_dir} instead of tar file {file_path}")
+                        return extracted_dir
+
+                    # Neither exists, return original path
+                    return file_path
+        except Exception as e:
+            logger.warning(f"Cloud storage check failed during path resolution: {e}")
+            return file_path
+
+    # Fallback to local check
+    cleaned_source_root = source_root.replace('slurm://', '').replace('aws://', '').replace('azure://', '')
+    full_tar_path = os.path.join(cleaned_source_root, file_path)
+    full_dir_path = full_tar_path.replace('.tar.gz', '').replace('.tar', '')
+
+    if os.path.isfile(full_tar_path):
+        return file_path
+    if os.path.isdir(full_dir_path):
+        logger.info(f"Using extracted folder {extracted_dir} instead of tar file {file_path}")
+        return extracted_dir
+
+    # Neither exists, return original path
+    return file_path
 
 
 def check_file_exists_in_cloud(source_ds_metadata, source_root, file_path):

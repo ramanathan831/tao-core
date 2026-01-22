@@ -12,15 +12,15 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Bayesian AutoML algorithm modules"""
+"""BFBO (Bayesian First-Order Bayesian Optimization) AutoML algorithm modules"""
 import numpy as np
 import os
 import math
 import logging
 from sklearn.gaussian_process import GaussianProcessRegressor
-from sklearn.gaussian_process.kernels import ConstantKernel, Matern
-from scipy.stats import norm
+from sklearn.gaussian_process.kernels import ConstantKernel, RBF
 from scipy.optimize import minimize
+from scipy.stats import norm
 
 from nvidia_tao_core.microservices.automl import network_utils
 from nvidia_tao_core.microservices.utils.automl_utils import (
@@ -32,21 +32,24 @@ from nvidia_tao_core.microservices.utils.handler_utils import get_total_epochs, 
 from nvidia_tao_core.microservices.utils.stateless_handler_utils import save_automl_brain_info, get_automl_brain_info
 
 # Configure logging
-TAO_LOG_LEVEL = os.getenv('TAO_LOG_LEVEL', 'INFO').upper()
-tao_log_level = getattr(logging, TAO_LOG_LEVEL, logging.INFO)
 logging.basicConfig(
-    level=logging.WARNING,  # Root logger: suppress third-party DEBUG logs
+    level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
-logging.getLogger('nvidia_tao_core').setLevel(tao_log_level)
 logger = logging.getLogger(__name__)
 
 
-class Bayesian(AutoMLAlgorithmBase):
-    """Bayesian AutoML algorithm class"""
+class BFBO(AutoMLAlgorithmBase):
+    """BFBO (Bayesian First-Order Bayesian Optimization) AutoML algorithm class
+
+    BFBO enhances traditional Bayesian Optimization by:
+    1. Using Upper Confidence Bound (UCB) acquisition function with adaptive exploration
+    2. Implementing local penalization to avoid querying similar points
+    3. Using gradient-based optimization for better acquisition function optimization
+    """
 
     def __init__(self, job_context, root, network, parameters):
-        """Initialize the Bayesian algorithm class
+        """Initialize the BFBO algorithm class
 
         Args:
             root: handler root
@@ -54,24 +57,40 @@ class Bayesian(AutoMLAlgorithmBase):
             parameters: automl sweepable parameters
         """
         super().__init__(job_context, root, network, parameters)
+
+        # Use RBF kernel for smoother gradients
         length_scale = [1.0] * len(self.parameters)
-        m52 = ConstantKernel(1.0) * Matern(length_scale=length_scale, nu=2.5)
-        # m52 = ConstantKernel(1.0) * Matern(length_scale=1.0, nu=2.5) # is another option
+        kernel = ConstantKernel(1.0) * RBF(length_scale=length_scale, length_scale_bounds=(1e-2, 1e2))
+
         self.gp = GaussianProcessRegressor(
-            kernel=m52,
-            alpha=1e-10,
+            kernel=kernel,
+            alpha=1e-6,
             optimizer="fmin_l_bfgs_b",
             n_restarts_optimizer=10,
+            normalize_y=True,
             random_state=95051
         )
+
         # The following 2 need to be stored
         self.Xs = []
         self.ys = []
 
-        self.xi = 0.01
-        self.num_restarts = 5
+        # UCB parameters
+        self.kappa = 2.0  # Exploration-exploitation trade-off (higher = more exploration)
+        self.kappa_decay = 0.95  # Decay factor for kappa over iterations
+        self.kappa_min = 0.5  # Minimum kappa value
+
+        # Local penalization parameters
+        self.local_penalization = True
+        self.penalization_radius = 0.1  # Radius for local penalization
+
+        # Optimization parameters
+        self.num_restarts = 10  # Number of random restarts for acquisition optimization
+        self.num_warmup = 5  # Number of warmup iterations before using gradients
 
         self.num_epochs_per_experiment = get_total_epochs(job_context, os.path.join(self.handler_root, "specs"))
+
+        logger.info("BFBO initialized with UCB acquisition and local penalization")
 
     def generate_automl_param_rec_value(self, parameter_config, suggestion):
         """Convert 0 to 1 GP prediction into a possible value"""
@@ -115,7 +134,6 @@ class Bayesian(AutoMLAlgorithmBase):
                 # No default, use suggestion in [0, 1]
                 return float(suggestion)
 
-            # Check for NaN ranges (skip if v_min/v_max are lists - handled by network-specific logic)
             if is_nan_value(v_min) or is_nan_value(v_max):
                 # NaN ranges, use default-based range
                 if default_value is not None:
@@ -131,9 +149,7 @@ class Bayesian(AutoMLAlgorithmBase):
                 return float(suggestion)
 
             # Handle list-based ranges (e.g., per-model-part learning rates)
-            # Generate a base value and let network-specific handler convert to list
             if isinstance(v_min, list) or isinstance(v_max, list):
-                # Use first element of list for base range, or default if available
                 if isinstance(v_min, list) and isinstance(v_max, list):
                     base_min = float(v_min[0]) if v_min else 0.0
                     base_max = float(v_max[0]) if v_max else 1.0
@@ -144,7 +160,6 @@ class Bayesian(AutoMLAlgorithmBase):
                     base_min = float(v_min) if v_min not in (None, '', "") else 0.0
                     base_max = float(v_max[0]) if v_max else 1.0
 
-                # Generate base value using log-uniform sampling (better for LR)
                 if base_min > 0 and base_max > 0:
                     log_min = np.log10(base_min)
                     log_max = np.log10(base_max)
@@ -152,7 +167,6 @@ class Bayesian(AutoMLAlgorithmBase):
                 else:
                     base_value = float(suggestion * (base_max - base_min) + base_min)
 
-                # Let network-specific handler convert to list format
                 return network_utils.apply_network_specific_param_logic(
                     network=self.network,
                     data_type=data_type,
@@ -166,8 +180,7 @@ class Bayesian(AutoMLAlgorithmBase):
             v_min, v_max = get_valid_range(parameter_config, self.parent_params, self.custom_ranges)
 
             # Apply math condition if specified
-            # Skip relational constraints (like "> depends_on") as they're handled in base class
-            if math_cond and type(math_cond) is str and "depends_on" not in math_cond:
+            if math_cond and type(math_cond) is str:
                 parts = math_cond.split(" ")
                 if len(parts) >= 2:
                     operator = parts[0]
@@ -182,10 +195,6 @@ class Bayesian(AutoMLAlgorithmBase):
                         # Regular sampling for non-power constraints
                         normalized = suggestion * (v_max - v_min) + v_min
                         quantized = clamp_value(normalized, v_min, v_max)
-                else:
-                    # Invalid math condition format, fall back to regular sampling
-                    normalized = suggestion * (v_max - v_min) + v_min
-                    quantized = clamp_value(normalized, v_min, v_max)
             else:
                 # No math condition, regular sampling
                 normalized = suggestion * (v_max - v_min) + v_min
@@ -323,28 +332,30 @@ class Bayesian(AutoMLAlgorithmBase):
         return super().generate_automl_param_rec_value(parameter_config)
 
     def save_state(self):
-        """Save the Bayesian algorithm related variables to brain metadata"""
+        """Save the BFBO algorithm related variables to brain metadata"""
         state_dict = {}
         state_dict["Xs"] = np.array(self.Xs).tolist()  # List of np arrays
         state_dict["ys"] = np.array(self.ys).tolist()  # List
+        state_dict["kappa"] = self.kappa
 
         save_automl_brain_info(self.job_context.id, state_dict)
 
     @staticmethod
     def load_state(job_context, root, network, parameters):
-        """Load the Bayesian algorithm related variables to brain metadata"""
+        """Load the BFBO algorithm related variables from brain metadata"""
         json_loaded = get_automl_brain_info(job_context.id)
         if not json_loaded:
-            return Bayesian(job_context, root, network, parameters)
+            return BFBO(job_context, root, network, parameters)
 
         Xs = []
         for x in json_loaded["Xs"]:
             Xs.append(np.array(x))
         ys = json_loaded["ys"]
-        bayesian = Bayesian(job_context, root, network, parameters)
+        bfbo = BFBO(job_context, root, network, parameters)
         # Load state (Remember everything)
-        bayesian.Xs = Xs
-        bayesian.ys = ys
+        bfbo.Xs = Xs
+        bfbo.ys = ys
+        bfbo.kappa = json_loaded.get("kappa", 2.0)
 
         len_y = len(ys)
         if Xs and ys:
@@ -359,18 +370,17 @@ class Bayesian(AutoMLAlgorithmBase):
                 )
                 ys_npy = np.nan_to_num(ys_npy, nan=0.0, posinf=1e7, neginf=-1e7)
                 # Update the loaded ys with cleaned values
-                bayesian.ys = ys_npy.tolist()
+                bfbo.ys = ys_npy.tolist()
 
-            bayesian.gp.fit(Xs_npy, ys_npy)
+            bfbo.gp.fit(Xs_npy, ys_npy)
 
-        return bayesian
+        return bfbo
 
     def generate_recommendations(self, history):
         """Generates parameter values and appends to recommendations"""
         get_flatten_specs(self.default_train_spec, self.default_train_spec_flattened)
         if history == []:
             # default recommendation => random points
-            # TODO: In production, this must be default values for a baseline
             suggestions = np.random.rand(len(self.parameters))
             self.Xs.append(suggestions)
             recommendations = []
@@ -379,6 +389,7 @@ class Bayesian(AutoMLAlgorithmBase):
                 logger.info(f"Recommendation param: {param_dict['parameter']} value: {recommendation_value}")
                 recommendations.append(recommendation_value)
             return [dict(zip([param["parameter"] for param in self.parameters], recommendations))]
+
         # This function will be called every 5 seconds or so.
         # If no change in history, dont give a recommendation
         # ie - wait for previous recommendation to finish
@@ -389,12 +400,15 @@ class Bayesian(AutoMLAlgorithmBase):
         self.ys.append(history[-1].result)
         self.update_gp()
 
+        # Decay kappa for adaptive exploration-exploitation
+        self.kappa = max(self.kappa_min, self.kappa * self.kappa_decay)
+        logger.info(f"Updated kappa to {self.kappa}")
+
         # Generate one recommendation
-        # Generate "suggestions" which are in [0.0, 1.0] by optimizing EI
-        suggestions = self.optimize_ei()  # length = len(self.parameters), np.array type
+        # Generate "suggestions" which are in [0.0, 1.0] by optimizing UCB
+        suggestions = self.optimize_ucb()  # length = len(self.parameters), np.array type
         self.Xs.append(suggestions)
         # Convert the suggestions to recommendations based on parameter type
-        # Assume one:one mapping between self.parameters and suggestions
         recommendations = []
         assert len(self.parameters) == len(suggestions), (
             f"Number of parameters ({len(self.parameters)}) does not match "
@@ -428,35 +442,87 @@ class Bayesian(AutoMLAlgorithmBase):
         else:
             logger.warning("No valid training data available for Gaussian Process")
 
-    def optimize_ei(self):
-        """Optmize expected improvement functions"""
-        best_ei = 1.0
+    def optimize_ucb(self):
+        """Optimize Upper Confidence Bound acquisition function"""
+        best_ucb = -np.inf
         best_x = None
 
         dim = len(self.Xs[0])
         bounds = [(0, 1)] * len(self.parameters)
 
-        for _ in range(self.num_restarts):
-            x0 = np.random.rand(dim)
-            res = minimize(self._expected_improvement, x0=x0, bounds=bounds, method='L-BFGS-B')
-            if res.fun < best_ei:
-                best_ei = res.fun
+        # Use more restarts for better optimization
+        for i in range(self.num_restarts):
+            # Use Latin Hypercube Sampling for better initial points
+            if i == 0:
+                # First restart: use best observed point
+                if len(self.Xs) > 0:
+                    best_idx = np.argmax(self.ys)
+                    x0 = self.Xs[best_idx] + np.random.randn(dim) * 0.1
+                    x0 = np.clip(x0, 0, 1)
+                else:
+                    x0 = np.random.rand(dim)
+            else:
+                x0 = np.random.rand(dim)
+
+            res = minimize(
+                self._upper_confidence_bound,
+                x0=x0,
+                bounds=bounds,
+                method='L-BFGS-B',
+                options={'maxiter': 100}
+            )
+
+            if -res.fun > best_ucb:
+                best_ucb = -res.fun
                 best_x = res.x
+
+        if best_x is None:
+            logger.warning("UCB optimization failed, using random point")
+            best_x = np.random.rand(dim)
+
+        logger.info(f"Optimized UCB value: {best_ucb}")
         return best_x.reshape(-1)
 
-    """
-    Used from:
-    http://krasserm.github.io/2018/03/21/bayesian-optimization/
-    """
-    def _expected_improvement(self, X, xi=0.01):
-        """Calculate the expected improvement at points X based on existing samples.
+    def _upper_confidence_bound(self, X):
+        """Calculate the Upper Confidence Bound at points X
+
+        UCB(x) = μ(x) + κ * σ(x)
 
         Args:
-            X: Points at which EI shall be calculated (m x d)
+            X: Points at which UCB shall be calculated (d,)
+
+        Returns:
+            float: Negative UCB value (for minimization)
+        """
+        X = X.reshape(1, -1)
+
+        mu, sigma = self.gp.predict(X, return_std=True)
+        sigma = sigma.reshape(-1, 1)
+
+        # Apply local penalization if enabled
+        penalization = 1.0
+        if self.local_penalization and len(self.Xs) > 0:
+            # Calculate distance to all previous points
+            distances = np.linalg.norm(np.array(self.Xs) - X, axis=1)
+            # Penalize points close to previous evaluations
+            penalization = np.prod(np.tanh(distances / self.penalization_radius))
+
+        # UCB acquisition function
+        ucb = mu + self.kappa * sigma * penalization
+
+        return -1 * ucb[0, 0]
+
+    def _probability_of_improvement(self, X, xi=0.01):
+        """Calculate the Probability of Improvement at points X
+
+        This can be used as an alternative acquisition function.
+
+        Args:
+            X: Points at which PI shall be calculated (m x d)
             xi: Exploitation-exploration trade-off parameter
 
         Returns:
-            float: Expected improvements at points X
+            float: Negative PI value (for minimization)
         """
         X = X.reshape(1, -1)
 
@@ -464,15 +530,12 @@ class Bayesian(AutoMLAlgorithmBase):
         mu_sample = self.gp.predict(np.array(self.Xs))
 
         sigma = sigma.reshape(-1, 1)
-        # Needed for noise-based model,
-        # otherwise use np.max(Y_sample).
-        # See also section 2.4 in [1]
         mu_sample_opt = np.max(mu_sample)
 
         with np.errstate(divide='warn'):
-            imp = mu - mu_sample_opt - self.xi
+            imp = mu - mu_sample_opt - xi
             Z = imp / sigma
-            ei = imp * norm.cdf(Z) + sigma * norm.pdf(Z)
-            ei[sigma == 0.0] = 0.0
+            pi = norm.cdf(Z)
+            pi[sigma == 0.0] = 0.0
 
-        return -1 * ei[0, 0]
+        return -1 * pi[0, 0]

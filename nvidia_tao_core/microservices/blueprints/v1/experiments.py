@@ -2249,6 +2249,10 @@ def experiment_job_resume(org_name, experiment_id, job_id):
         f"[BLUEPRINT-RESUME] ExperimentHandler.resume_experiment_job completed: "
         f"job_id={job_id}, response_code={response.code}"
     )
+    logger.debug(
+        f"[BLUEPRINT-RESUME] ExperimentHandler.resume_experiment_job completed: "
+        f"job_id={job_id}, response_code={response.code}"
+    )
     # Get schema
     if response.code == 200:
         schema = MessageOnly()

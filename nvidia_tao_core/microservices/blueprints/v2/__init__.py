@@ -73,6 +73,7 @@ from .schemas import (
     MissingFile,
     NVCFReq,
     PaginationInfo,
+    ParameterRange,
     PublishModel,
     ParameterRange,
     Stats,
