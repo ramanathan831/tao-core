@@ -331,12 +331,23 @@ def upload_files(local_path, cloud_storage, file_last_modified=None,
 
     # Filter files to upload (apply all skip conditions)
     files_to_upload = []
+    backend = os.getenv("TAO_EXECUTION_BACKEND", "")
+    skip_log_files = backend in ("local-k8s", "local-docker")
+
     for rel_path in file_snapshot:
         file_path = os.path.join(local_path, rel_path)
         filename = os.path.basename(file_path)
 
         # Skip if file doesn't exist or is not a regular file
         if not (os.path.exists(file_path) and os.path.isfile(file_path)):
+            continue
+
+        # Skip log files for k8s/docker backends (server streams logs directly)
+        if skip_log_files and filename == "microservices_log.txt":
+            logger.debug(
+                f"Skipping log file upload for backend={backend}: {file_path}. "
+                "Server-side log streaming is enabled."
+            )
             continue
 
         # Skip checkpoint and tmp files

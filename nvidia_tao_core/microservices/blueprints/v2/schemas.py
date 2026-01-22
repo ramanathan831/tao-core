@@ -324,6 +324,19 @@ class MessageOnly(Schema):
     message = fields.Str(allow_none=True, format="regex", regex=r'.*', validate=fields.validate.Length(max=1000))
 
 
+class JobEventsRsp(Schema):
+    """Class defining job events response schema"""
+
+    class Meta:
+        """Class enabling sorting field values by the order in which they are declared"""
+
+        ordered = True
+        unknown = EXCLUDE
+
+    job_id = fields.Str(format="uuid", validate=fields.validate.Length(max=36))
+    events = fields.List(fields.Dict(), validate=validate.Length(max=sys.maxsize))
+
+
 class MissingFile(Schema):
     """Schema for individual missing file entries"""
 
