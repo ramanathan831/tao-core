@@ -1,287 +1,323 @@
-// Global variables
-def TAO_VERSION = params.TAO_VERSION ?: "6.25.9"
+@Library('tao-jenkins-shared-library') _
+import org.tao.PodTemplates
+import org.tao.TaoConfig
+
+// ============================================================================
+// PROJECT INITIALIZATION
+// ============================================================================
+
+TaoConfig.init([
+    projectName: 'tao-core',
+    
+    // CI author info
+    ciAuthorName: 'TAO CI Bot',
+    ciAuthorEmail: 'christwang@nvidia.com',
+    podLabelPrefix: 'tao-core-release',
+    
+    // Registries
+    registries: [
+        NGC: [
+            url: 'https://nvcr.io',
+            host: 'nvcr.io'
+        ],
+        GITLAB: [
+            url: 'https://gitlab-master.nvidia.com',
+            connection: 'git-lab-master'
+        ],
+        ARTIFACTORY: [
+            url: 'https://urm.nvidia.com/artifactory/',
+            pypiRepo: 'sw-tao-pypi-local'
+        ]
+    ],
+    
+    // Credentials
+    credentials: [
+        NGC_API_KEY: 'NGC_FTMS_API_KEY',
+        NGC_CLI_KEY: 'NGC_FTMS_API_KEY',
+        ARTIFACTORY: 'tao-artifactory-tkn-christwang',
+        JIRA_TOKEN: 'TAO-jira-token',
+        JENKINS_API_TOKEN: 'jenkins-api-token'
+    ],
+    
+    // Docker images
+    images: [
+        PYTORCH_BASE: 'nvcr.io/nvidia/pytorch:24.03-py3',
+        SONAR_SCANNER: 'sonarsource/sonar-scanner-cli:11'
+    ],
+    
+    // Kubernetes
+    kubernetes: [
+        cloud: 'sc-ipp-blossom-prod',
+        imagePullSecrets: ['tltimagepullsecret']
+    ],
+    
+    // Jira configuration
+    jira: [
+        server: 'https://jirasw.nvidia.com/',
+        projectKey: 'TLT',
+        username: 'hqtran@nvidia.com'
+    ],
+    
+    // GitLab project
+    gitlab: [
+        projectId: '140075'
+    ]
+])
+
+// Initialize PodTemplates
+PodTemplates.init([
+    imagePullSecrets: TaoConfig.kubernetes.imagePullSecrets,
+    
+    containers: [
+        'sonar': [
+            image: TaoConfig.images.SONAR_SCANNER,
+            command: ['cat'],
+            tty: true
+        ],
+        'pyt': [
+            image: TaoConfig.images.PYTORCH_BASE,
+            privileged: true,
+            command: ['cat'],
+            tty: true,
+            resources: [
+                requests: ['nvidia.com/gpu': 1, memory: '16Gi'],
+                limits: ['nvidia.com/gpu': 1, memory: '32Gi']
+            ]
+        ]
+    ],
+    
+    affinityPools: [
+        'tao-gpu-pool': [
+            gpuTypes: ['A100_PCIE_40GB', 'A40', 'L40', 'A100_80GB_PCIe', 'TITAN_V'],
+            driverVersions: ['580.35', '570.41', '570.14', '560.35.03', '550.54.15', '535.104.05', '535.74', '525.60.13', '510.41'],
+            os: 'linux',
+            arch: 'amd64'
+        ]
+    ]
+])
+
+// ============================================================================
+// PIPELINE PARAMETERS
+// ============================================================================
+
+def TAO_VERSION = normalizeVersion(params.TAO_VERSION ?: "6.25.9")
 def BUILD_TYPE = "rc"
+def FORCE_REBUILD = params.FORCE_REBUILD ?: false
+def SKIP_PROD_PROMOTE = params.SKIP_PROD_PROMOTE ?: false
 
-// Normalize patch segment if TAO_VERSION is provided via params (e.g., 6.25.09 -> 6.25.9)
-if (params.TAO_VERSION) {
-  def _parts = TAO_VERSION.split('\\.')
-  if (_parts.length >= 3) {
-    def _patchNorm = _parts[-1]
+// ============================================================================
+// PIPELINE EXECUTION
+// ============================================================================
+
+podTemplate(cloud: TaoConfig.kubernetes.cloud, yaml: PodTemplates.generate(
+    label: 'tao-core-release',
+    containers: ['sonar', 'pyt'],
+    affinityPool: 'tao-gpu-pool'
+)) {
     try {
-      _patchNorm = Integer.parseInt(_patchNorm).toString()
-    } catch (Exception ignore) {
-      // leave as-is if not numeric
-    }
-    TAO_VERSION = "${_parts[0]}.${_parts[1]}.${_patchNorm}"
-  }
-}
-
-podTemplate (cloud:'sc-ipp-blossom-prod', yaml : """
-apiVersion: v1
-kind: Pod
-metadata:
-    labels:
-        some-label: tao-core-release
-spec:
-    imagePullSecrets:
-      - name: tltimagepullsecret
-    containers:
-    - name: sonar
-      image: sonarsource/sonar-scanner-cli:11
-      command:
-      - cat
-      tty: true
-    - name: pyt
-      image: nvcr.io/nvidia/pytorch:24.03-py3
-      securityContext:
-        privileged: true
-      command:
-      - cat
-      resources:
-        requests:
-          nvidia.com/gpu: 1
-          memory: "16Gi"
-        limits:
-          nvidia.com/gpu: 1
-          memory: "32Gi"
-      tty: true
-    restartPolicy: Never
-    backoffLimit: 4
-    affinity:
-      nodeAffinity:
-        requiredDuringSchedulingIgnoredDuringExecution:
-          nodeSelectorTerms:
-          - matchExpressions:
-            - key: nvidia.com/gpu_type
-              operator: In
-              values:
-              - A100_PCIE_40GB
-              - A40
-              - L40
-              - A100_80GB_PCIe
-              - TITAN_V
-            - key: nvidia.com/driver_version
-              operator: In
-              values:
-              - 580.35
-              - 570.41
-              - 570.14
-              - 560.35.03
-              - 550.54.15
-              - 535.104.05
-              - 535.74
-              - 525.60.13
-              - 510.41
-            - key: kubernetes.io/os
-              operator: In
-              values:
-              - linux
-    """
-)
-{
-  try {
-    node(POD_LABEL) {
-      // Extract major.minor from TAO_VERSION and construct VER to be PEP 440 compliant
-      def VERSION_PARTS = TAO_VERSION.split('\\.')
-      def MAJOR_MINOR = "${VERSION_PARTS[0]}.${VERSION_PARTS[1]}"
-      def PATCH_NUMBER = VERSION_PARTS[-1]
-      
-      def VER
-      if (params.RC) {
-        // RC builds: major.minor.patchbuildtypebuildnumber (no dot before rc per PEP 440)
-        VER = "${MAJOR_MINOR}.${PATCH_NUMBER}${BUILD_TYPE}${BUILD_NUMBER}"
-      } else {
-        // Non-RC builds: major.minor.patch (e.g., "6.25.7")
-        VER = "${MAJOR_MINOR}.${PATCH_NUMBER}"
-      }
-      
-      def PYTHON_VERSION
-      def SRC
-      def TARGET
-      def PROP
-      
-      // GitLab Related
-      def GITLAB_PROJECT_ID = "140075" 
-      def TAG_NAME = "v${VER}"
-      def RELEASE_NAME = "Release ${VER}"
-      def RELEASE_DESCRIPTION = "Release ${VER} with third-party packages"
-      
-      container('pyt') {
-        PYTHON_VERSION=sh(script: 'python -c "import platform; print(platform.python_version())"', returnStdout: true).trim()
-        SRC="dist/nvidia_tao_core-${VER}-py3-none-any.whl"
-        TARGET="sw-tao-pypi-local/nvidia-tao-core/${VER}/${PYTHON_VERSION}/"
-        PROP="component_name=nvidia-tao-core;arch=x86_64;os=linux;build_source=None;version=${VER};branch=release;release_approver=vpraveen"
-        
-        stage ('checkout') {
-          gitlabCommitStatus(name: "checkout", connection: gitLabConnection('git-lab-master')) {
-            checkout scm
-          }
-        }
-
-        stage ('patch_build_files') {
-          gitlabCommitStatus(name: "patch_build_files", connection: gitLabConnection('git-lab-master')) {
-            sh "python3 release/update_version.py --version ${TAO_VERSION}"
-            echo "Build files patched with version ${TAO_VERSION}"
-          }
-        }
-
-        // Functional tests only for RC builds
-        if (params.RC) {
-          stage ("functional_tests") {
-            withCredentials([string(credentialsId: 'NGC_FTMS_API_KEY', variable: 'NGC_CLI_API_KEY')]) {
-              script{
-                env.NGC_KEY=NGC_CLI_API_KEY
-                env.NGC_PATH='ea-tlt/tao_ea/pretrained_dino_imagenet:fan_hybrid_tiny'
-              }
-            }
-            gitlabCommitStatus(name: "functional_tests", connection: gitLabConnection('git-lab-master')) {
-              sh "pip install pytest-cov"
-              sh "CPUCOUNT=1 pip install . && pytest --cov=nvidia_tao_core --cov-report=xml:coverage.xml --cov-report=term"
-              // Archive the coverage report
-              archiveArtifacts artifacts: 'coverage.xml', fingerprint: true, allowEmptyArchive: true
-            }
-          }
-        }
-      }
-      
-      // SonarQube analysis for RC builds only - run in sonar container
-      if (params.RC) {
-        container('sonar') {
-          stage ('sonarqube_analysis') {
-            catchError(buildResult: 'SUCCESS', stageResult: 'FAILURE') {
-              gitlabCommitStatus(name: "sonarqube_analysis", connection: gitLabConnection('git-lab-master')) {
-                def branchName = params.GITLAB_BRANCH ?: params.BRANCH_NAME ?: env.BRANCH_NAME ?: env.GIT_BRANCH?.replaceFirst(/^origin\//, '') ?: 'main'
-                echo "Analyzing branch: ${branchName}"
-                echo "Available parameters: GITLAB_BRANCH=${params.GITLAB_BRANCH}, BRANCH_NAME=${params.BRANCH_NAME}"
-                echo "Available env vars: BRANCH_NAME=${env.BRANCH_NAME}, GIT_BRANCH=${env.GIT_BRANCH}"
-                
-                // Verify coverage file exists and show its location
-                sh "pwd && ls -la coverage.xml || echo 'Coverage file not found!'"
-                
-                withSonarQubeEnv() {
-                  sh "sonar-scanner -Dsonar.python.coverage.reportPaths=\${PWD}/coverage.xml -Dsonar.sources=nvidia_tao_core -Dsonar.tests=nvidia_tao_core/tests -Dsonar.exclusions=nvidia_tao_core/tests/** -Dsonar.branch.name=${branchName}"
-                }
-                echo "SonarQube analysis completed successfully"
-              }
-            }
-          }
-        }
-      }
-      
-      // Continue with remaining stages in pyt container
-      container('pyt') {
-        stage ('build_wheel') {
-          gitlabCommitStatus(name: "build_wheel", connection: gitLabConnection('git-lab-master')) {
+        node(POD_LABEL) {
+            // Parse version components
+            def versionInfo = normalizeVersion.parse(TAO_VERSION)
+            def MAJOR_MINOR = versionInfo.majorMinor
+            def PATCH_NUMBER = versionInfo.patch
+            
+            // Construct version string
+            def VER
             if (params.RC) {
-              sh "echo '${PATCH_NUMBER}${BUILD_TYPE}${BUILD_NUMBER}' > build.info"
+                VER = "${MAJOR_MINOR}.${PATCH_NUMBER}${BUILD_TYPE}${BUILD_NUMBER}"
             } else {
-              // Use the patch number from TAO_VERSION for consistent versioning
-              sh "echo '${PATCH_NUMBER}' > build.info"
+                VER = "${MAJOR_MINOR}.${PATCH_NUMBER}"
             }
             
-            sh "bash release/python/build_wheel.sh"
-          }
-        }
-        
-        stage ('publish_wheel') {
-          gitlabCommitStatus(name: "publish_wheel", connection: gitLabConnection('git-lab-master')) {
-            withCredentials([usernamePassword(credentialsId: 'tao-artifactory-tkn-christwang', passwordVariable: 'JFROG_PASSWORD', usernameVariable: 'JFROG_USERNAME')]) {
-              sh "bash release/python/install_jfrog.sh"
-              
-              // Upload RC version wheel if this is an RC build
-              if (params.RC) {
-                echo "=== Uploading RC version wheel ==="
-                echo "Uploading wheel: ${SRC} to ${TARGET}"
-                sh "jf rt u --url=https://urm.nvidia.com/artifactory/ --user=\${JFROG_USERNAME} --password=\${JFROG_PASSWORD} --target-props '${PROP}' ${SRC} ${TARGET}"
-              }
-              
-              // Upload final version wheel (runs for both RC and non-RC)
-              echo "=== Uploading final version wheel ==="
-              def FINAL_VER = "${MAJOR_MINOR}.${PATCH_NUMBER}"
-              def FINAL_SRC = "dist/nvidia_tao_core-${FINAL_VER}-py3-none-any.whl"
-              def FINAL_TARGET = "sw-tao-pypi-local/nvidia-tao-core/${FINAL_VER}/${PYTHON_VERSION}/"
-              def FINAL_PROP = "component_name=nvidia-tao-core;arch=x86_64;os=linux;build_source=None;version=${FINAL_VER};branch=release;release_approver=vpraveen"
-              
-              // For RC builds, rebuild wheel with non-RC version for correct internal metadata
-              if (params.RC) {
-                echo "Rebuilding wheel with non-RC version for final release..."
-                sh "rm -rf dist/*"
-                sh "echo '${PATCH_NUMBER}' > build.info"
-                sh "bash release/python/build_wheel.sh"
-                echo "Built final wheel: ${FINAL_SRC}"
-              }
-              
-              // Check and remove existing final version wheel
-              echo "Checking for existing final version wheel..."
-              def finalWheelPattern = "${FINAL_TARGET}dist/nvidia_tao_core-${FINAL_VER}-py3-none-any.whl"
-              echo "Searching for pattern: ${finalWheelPattern}"
-              
-              def searchStatus = sh(script: "jf rt s --url=https://urm.nvidia.com/artifactory/ --user=\${JFROG_USERNAME} --password=\${JFROG_PASSWORD} '${finalWheelPattern}' --count", returnStatus: true)
-              def count = 0
-              if (searchStatus == 0) {
-                count = Integer.parseInt(sh(script: "jf rt s --url=https://urm.nvidia.com/artifactory/ --user=\${JFROG_USERNAME} --password=\${JFROG_PASSWORD} '${finalWheelPattern}' --count", returnStdout: true).trim())
-              } else {
-                echo "Search command returned non-zero (status=${searchStatus}). Treating as no existing wheel."
-              }
-
-              if (count > 0) {
-                echo "Found ${count} existing wheel(s). Removing..."
-                try {
-                  sh "jf rt del --url=https://urm.nvidia.com/artifactory/ --user=\${JFROG_USERNAME} --password=\${JFROG_PASSWORD} '${finalWheelPattern}' --quiet"
-                  echo "Successfully removed existing wheel"
-                } catch (Exception e) {
-                  echo "Warning: Failed to delete existing wheel: ${e.getMessage()}"
-                  echo "Continuing with upload..."
+            def PYTHON_VERSION
+            
+            container('pyt') {
+                PYTHON_VERSION = sh(script: 'python -c "import platform; print(platform.python_version())"', returnStdout: true).trim()
+                
+                stage('checkout') {
+                    withGitLabStatus('checkout') {
+                        checkoutWithSafeDirectory()
+                    }
                 }
-              } else {
-                echo "No existing wheel found (search count: ${count})"
-              }
-              
-              echo "Uploading final wheel: ${FINAL_SRC} to ${FINAL_TARGET}"
-              sh "jf rt u --url=https://urm.nvidia.com/artifactory/ --user=\${JFROG_USERNAME} --password=\${JFROG_PASSWORD} --target-props '${FINAL_PROP}' ${FINAL_SRC} ${FINAL_TARGET}"
-              
-              echo "Successfully published wheels"
+                
+                stage('detect_skip_build') {
+                    withGitLabStatus('detect_code_changes') {
+                        script {
+                            def skipResult = detectSkipBuild.checkAndSetEnv(
+                                taoVersion: TAO_VERSION,
+                                isRC: params.RC,
+                                forceRebuild: FORCE_REBUILD,
+                                skipProdPromote: SKIP_PROD_PROMOTE
+                            )
+                        }
+                    }
+                }
+                
+                // Only run build stages if not skipping
+                if (env.SKIP_BUILD != 'true') {
+                    stage('patch_build_files') {
+                        withGitLabStatus('patch_build_files') {
+                            patchVersion(TAO_VERSION)
+                        }
+                    }
+                    
+                    // Functional tests only for RC builds
+                    if (params.RC) {
+                        stage('functional_tests') {
+                            withCredentials([string(credentialsId: TaoConfig.credentials.NGC_CLI_KEY, variable: 'NGC_CLI_API_KEY')]) {
+                                script {
+                                    env.NGC_KEY = NGC_CLI_API_KEY
+                                    env.NGC_PATH = 'ea-tlt/tao_ea/pretrained_dino_imagenet:fan_hybrid_tiny'
+                                }
+                            }
+                            withGitLabStatus('functional_tests') {
+                                sh "pip install pytest-cov"
+                                sh "CPUCOUNT=1 pip install . && pytest --cov=nvidia_tao_core --cov-report=xml:coverage.xml --cov-report=term"
+                                archiveArtifacts artifacts: 'coverage.xml', fingerprint: true, allowEmptyArchive: true
+                            }
+                        }
+                    }
+                }
             }
-          }
-        }
-
-
-
-        stage ('clean_up'){
-          gitlabCommitStatus(name: "clean_up", connection: gitLabConnection('git-lab-master')) {
-            sh """
-              echo "Clearing build and dists"
-              python setup.py clean --all
-              echo "Clearing pycache and pycs"
-              find . | grep -E '(__pycache__|[.]pyc|[.]pyo\$)' | xargs rm -rf
-            """
-          }
-        }
-      }  // End of pyt container
-    }  // End of node
-  }
-  catch (Exception e) {
-    // Mark build as failed.
-    currentBuild.result = 'FAILURE'
-    node(POD_LABEL) {
-      container('pyt') {
-        stage("Jira Notification on Failure") {
-          withCredentials([string(credentialsId: 'TAO-jira-token', variable: 'jira_token')]) {
-            sh """
-               python3 -m pip install jira
-               python3 ci/create_jira_issue.py --jira_server "https://jirasw.nvidia.com/" \\
-               --username "hqtran@nvidia.com" \\
-               --api_token "${jira_token}" \\
-               --project_key "TLT" \\
-               --summary "Pipeline '${JOB_NAME}' Failure" \\
-               --description \$'The pipeline "${JOB_NAME}" has failed.\nLink to the build: https://prod.blsm.nvidia.com/metropolis-iva-tlt-jenkins/view/tao-pytorch/job/${JOB_NAME}' \\
-               --issue_type "Bug"
-            """
-          }
-        }
-      }
+            
+            // SonarQube analysis for RC builds only - run in sonar container
+            if (params.RC && env.SKIP_BUILD != 'true') {
+                container('sonar') {
+                    stage('sonarqube_analysis') {
+                        catchError(buildResult: 'SUCCESS', stageResult: 'FAILURE') {
+                            withGitLabStatus('sonarqube_analysis') {
+                                runSonarQubeAnalysis(
+                                    sources: 'nvidia_tao_core',
+                                    tests: 'nvidia_tao_core/tests',
+                                    coverageReport: "${env.PWD}/coverage.xml",
+                                    additionalProps: [
+                                        'sonar.exclusions': 'nvidia_tao_core/tests/**'
+                                    ],
+                                    failOnError: false
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+            
+            // Continue with remaining stages in pyt container
+            container('pyt') {
+                if (env.SKIP_BUILD != 'true') {
+                    // Store wheel install locations for metadata
+                    def rcWheelInstallLocation = ""
+                    def finalWheelInstallLocation = ""
+                    
+                    // RC Wheel Stage - Build and publish RC version wheel (only for RC builds)
+                    if (params.RC) {
+                        stage('rc_wheel') {
+                            withGitLabStatus('rc_wheel') {
+                                script {
+                                    // Build RC wheel with pyarmor obfuscation
+                                    def rcBuildResult = buildObfuscatedWheel(
+                                        version: TAO_VERSION,
+                                        buildType: BUILD_TYPE,
+                                        isRC: true,
+                                        packageName: 'nvidia_tao_core',
+                                        pyarmorRegFile: 'release/python/pyarmor-regfile-1219.zip',
+                                        obfuscateFile: 'telemetry/metrics.py',
+                                        cleanBefore: true
+                                    )
+                                    
+                                    // Publish RC wheel and capture install location
+                                    def rcPublishResult = publishWheel(
+                                        version: rcBuildResult.wheelVersion,
+                                        componentName: 'nvidia-tao-core'
+                                    )
+                                    rcWheelInstallLocation = rcPublishResult.wheelInstallLocation
+                                    
+                                    echo "✓ RC wheel published: ${rcBuildResult.wheelVersion}"
+                                }
+                            }
+                        }
+                    }
+                    
+                    // Final Wheel Stage - Build and publish final version wheel
+                    if (!SKIP_PROD_PROMOTE) {
+                        stage('final_wheel') {
+                            withGitLabStatus('final_wheel') {
+                                script {
+                                    def FINAL_VER = "${MAJOR_MINOR}.${PATCH_NUMBER}"
+                                    
+                                    // Build final wheel (non-RC version) with pyarmor obfuscation
+                                    // Need to rebuild if we already built RC wheel
+                                    if (params.RC) {
+                                        sh "rm -rf dist/*"
+                                    }
+                                    
+                                    buildObfuscatedWheel(
+                                        version: TAO_VERSION,
+                                        isRC: false,
+                                        packageName: 'nvidia_tao_core',
+                                        pyarmorRegFile: 'release/python/pyarmor-regfile-1219.zip',
+                                        obfuscateFile: 'telemetry/metrics.py',
+                                        cleanBefore: params.RC ? false : true  // Only clean if we haven't built RC
+                                    )
+                                    
+                                    // Publish final wheel and capture install location
+                                    def finalPublishResult = publishWheel(
+                                        version: FINAL_VER,
+                                        componentName: 'nvidia-tao-core',
+                                        overwrite: true  // Delete existing wheel before upload
+                                    )
+                                    finalWheelInstallLocation = finalPublishResult.wheelInstallLocation
+                                    
+                                    echo "✓ Final wheel published: ${FINAL_VER}"
+                                }
+                            }
+                        }
+                    } else {
+                        echo "⏭ Skipping final version wheel (SKIP_PROD_PROMOTE = true)"
+                    }
+                    
+                    stage('clean_up') {
+                        withGitLabStatus('clean_up') {
+                            cleanPythonBuild(
+                                setupFile: 'setup.py',
+                                removeDist: true,
+                                removePycache: true,
+                                removeEggInfo: true
+                            )
+                        }
+                    }
+                    
+                    stage('archive_metadata') {
+                        withGitLabStatus('archive_metadata') {
+                            archiveReleaseMetadata(
+                                taoVersion: TAO_VERSION,
+                                wheelVersion: VER,
+                                isRC: params.RC,
+                                forceRebuild: FORCE_REBUILD,
+                                skipProdPromote: SKIP_PROD_PROMOTE,
+                                componentName: 'nvidia-tao-core',
+                                pythonVersion: PYTHON_VERSION,
+                                wheelInstallLocation: rcWheelInstallLocation,
+                                finalWheelInstallLocation: finalWheelInstallLocation
+                            )
+                        }
+                    }
+                }  // End of if (env.SKIP_BUILD != 'true')
+            }  // End of pyt container
+        }  // End of node
     }
-    // Rethrow the error so the build is marked as failed.
-    throw e
-  }
-} 
+    catch (Exception e) {
+        currentBuild.result = 'FAILURE'
+        node(POD_LABEL) {
+            container('pyt') {
+                stage('Jira Notification on Failure') {
+                    createJiraIssue(
+                        summary: "Pipeline '${env.JOB_NAME}' Failure",
+                        description: "The pipeline \"${env.JOB_NAME}\" has failed.\nLink to the build: ${env.BUILD_URL}",
+                        issueType: 'Bug'
+                    )
+                }
+            }
+        }
+        throw e
+    }
+}
