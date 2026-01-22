@@ -204,6 +204,10 @@ podTemplate(cloud: TaoConfig.kubernetes.cloud, yaml: PodTemplates.generate(
             // Continue with remaining stages in pyt container
             container('pyt') {
                 if (env.SKIP_BUILD != 'true') {
+                    // Store wheel install locations for metadata
+                    def rcWheelInstallLocation = ""
+                    def finalWheelInstallLocation = ""
+                    
                     // RC Wheel Stage - Build and publish RC version wheel (only for RC builds)
                     if (params.RC) {
                         stage('rc_wheel') {
@@ -220,11 +224,12 @@ podTemplate(cloud: TaoConfig.kubernetes.cloud, yaml: PodTemplates.generate(
                                         cleanBefore: true
                                     )
                                     
-                                    // Publish RC wheel
-                                    publishWheel(
+                                    // Publish RC wheel and capture install location
+                                    def rcPublishResult = publishWheel(
                                         version: rcBuildResult.wheelVersion,
                                         componentName: 'nvidia-tao-core'
                                     )
+                                    rcWheelInstallLocation = rcPublishResult.wheelInstallLocation
                                     
                                     echo "✓ RC wheel published: ${rcBuildResult.wheelVersion}"
                                 }
@@ -254,12 +259,13 @@ podTemplate(cloud: TaoConfig.kubernetes.cloud, yaml: PodTemplates.generate(
                                         cleanBefore: params.RC ? false : true  // Only clean if we haven't built RC
                                     )
                                     
-                                    // Publish final wheel (overwrite existing if present)
-                                    publishWheel(
+                                    // Publish final wheel and capture install location
+                                    def finalPublishResult = publishWheel(
                                         version: FINAL_VER,
                                         componentName: 'nvidia-tao-core',
                                         overwrite: true  // Delete existing wheel before upload
                                     )
+                                    finalWheelInstallLocation = finalPublishResult.wheelInstallLocation
                                     
                                     echo "✓ Final wheel published: ${FINAL_VER}"
                                 }
@@ -289,7 +295,9 @@ podTemplate(cloud: TaoConfig.kubernetes.cloud, yaml: PodTemplates.generate(
                                 forceRebuild: FORCE_REBUILD,
                                 skipProdPromote: SKIP_PROD_PROMOTE,
                                 componentName: 'nvidia-tao-core',
-                                pythonVersion: PYTHON_VERSION
+                                pythonVersion: PYTHON_VERSION,
+                                wheelInstallLocation: rcWheelInstallLocation,
+                                finalWheelInstallLocation: finalWheelInstallLocation
                             )
                         }
                     }
