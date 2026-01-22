@@ -707,7 +707,8 @@ class DockerHandler(ExecutionHandler):
         except Exception as e:
             self.logger.error(traceback.format_exc())
             self.logger.error(f"Error creating docker microservice {job_id}: {e}")
-            return False
+            # Re-raise exception with clear message so caller can handle it
+            raise RuntimeError(f"Failed to create microservice: {e}") from e
 
     def get_job_logs(self, job_id, tail_lines=None):
         """Get logs directly from Docker container using Docker Python client.
