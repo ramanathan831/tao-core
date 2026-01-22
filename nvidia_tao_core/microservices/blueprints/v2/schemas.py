@@ -1513,6 +1513,13 @@ class InferenceMicroserviceReq(Schema):
         allow_none=True,
         required=False
     )
+    hf_model = fields.Str(
+        validate=fields.validate.Length(max=2048),
+        description="HuggingFace model name (e.g., meta-llama/Llama-3-8B-Instruct, Qwen/Qwen-VL-Chat)",
+        example="meta-llama/Llama-3-8B-Instruct",
+        allow_none=True,
+        required=False
+    )
     enable_lora = fields.Bool(
         description="Enable LoRA for inference",
         default=False
@@ -1521,6 +1528,20 @@ class InferenceMicroserviceReq(Schema):
         description="Base model path (e.g., hf_model://nvidia/Cosmos-Reason1-7B)",
         required=False,
         allow_none=True
+    )
+    torch_dtype = fields.Str(
+        validate=fields.validate.Length(max=50),
+        description="PyTorch data type for HuggingFace models (auto, float16, bfloat16, float32)",
+        example="auto",
+        allow_none=True,
+        required=False
+    )
+    device_map = fields.Str(
+        validate=fields.validate.Length(max=50),
+        description="Device mapping strategy for HuggingFace models (auto, cuda, cpu)",
+        example="auto",
+        allow_none=True,
+        required=False
     )
     docker_image = fields.Str(
         validate=fields.validate.Length(max=2048),
@@ -1540,7 +1561,7 @@ class InferenceMicroserviceReq(Schema):
     )
     workspace = fields.Str(format="uuid", validate=fields.validate.Length(max=36), allow_none=True)
     docker_env_vars = fields.Dict(
-        keys=EnumField(AllowedDockerEnvVariables),
+        keys=fields.Str(validate=validate.OneOf([e.value for e in AllowedDockerEnvVariables])),
         values=fields.Str(
             format="regex",
             regex=r'.*',
@@ -1564,7 +1585,32 @@ class InferenceMicroserviceReq(Schema):
             allow_none=True
         )
     )
-    network_arch = EnumField(ExperimentNetworkArch, allow_none=False)
+    network_arch = EnumField(ExperimentNetworkArch, allow_none=True)
+    custom_pipeline_loader = fields.Str(
+        validate=fields.validate.Length(max=10000),
+        description=(
+            "Python code string defining a load_pipeline(model_name, **kwargs) "
+            "function for custom model loading"
+        ),
+        example=(
+            "def load_pipeline(model_name, **kwargs):\n"
+            "    from diffusers import WanPipeline\n"
+            "    return WanPipeline.from_pretrained(model_name), 'diffusion'"
+        ),
+        allow_none=True,
+        required=False
+    )
+    custom_inference_fn = fields.Str(
+        validate=fields.validate.Length(max=10000),
+        description="Python code string defining a run_inference(pipeline, **kwargs) function for custom inference",
+        example=(
+            "def run_inference(pipeline, **kwargs):\n"
+            "    output = pipeline(kwargs['prompt'])\n"
+            "    return {'response': 'done', 'frames': output.frames}"
+        ),
+        allow_none=True,
+        required=False
+    )
 
 
 class InferenceMicroserviceRsp(Schema):
@@ -1613,16 +1659,54 @@ class InferenceReq(Schema):
         required=False,
         allow_none=True
     )
+    images = fields.List(
+        fields.Str(
+            description="Image paths/URLs for VLM inference",
+            required=False
+        ),
+        allow_none=True
+    )
     model = fields.Str(
         description="Model identifier (e.g. nvidia/nvdino-v2)",
         required=False,
         allow_none=True
     )
     prompt = fields.Str(
-        description="Text prompt for VLM inference",
+        description="Text prompt for LLM/VLM inference",
         required=False,
         allow_none=True,
         default=""
+    )
+    system_prompt = fields.Str(
+        description="System prompt for chat models",
+        required=False,
+        allow_none=True
+    )
+    max_new_tokens = fields.Int(
+        format="int64",
+        validate=validate.Range(min=1, max=32768),
+        description="Maximum number of new tokens to generate",
+        default=512,
+        allow_none=True
+    )
+    temperature = fields.Float(
+        validate=validate.Range(min=0.0, max=2.0),
+        description="Sampling temperature (0.0 = deterministic, higher = more random)",
+        default=0.7,
+        allow_none=True
+    )
+    top_p = fields.Float(
+        validate=validate.Range(min=0.0, max=1.0),
+        description="Nucleus sampling parameter",
+        default=0.9,
+        allow_none=True
+    )
+    top_k = fields.Int(
+        format="int64",
+        validate=validate.Range(min=1, max=1000),
+        description="Top-k sampling parameter",
+        default=50,
+        allow_none=True
     )
     enable_lora = fields.Bool(
         description="Enable LoRA for inference",
@@ -1632,6 +1716,52 @@ class InferenceReq(Schema):
     base_model_path = fields.Str(
         description="Base model path (e.g., hf_model://nvidia/Cosmos-Reason1-7B)",
         required=False,
+        allow_none=True
+    )
+    # Diffusion model parameters (for Cosmos-Predict2, Stable Diffusion, etc.)
+    negative_prompt = fields.Str(
+        description="Negative prompt for diffusion models (what to avoid in generation)",
+        required=False,
+        allow_none=True
+    )
+    num_inference_steps = fields.Int(
+        format="int64",
+        validate=validate.Range(min=1, max=1000),
+        description="Number of denoising steps for diffusion models (default: 50)",
+        default=50,
+        allow_none=True
+    )
+    guidance_scale = fields.Float(
+        validate=validate.Range(min=0.0, max=50.0),
+        description="Classifier-free guidance scale for diffusion models (default: 7.5)",
+        default=7.5,
+        allow_none=True
+    )
+    width = fields.Int(
+        format="int64",
+        validate=validate.Range(min=64, max=4096),
+        description="Output image width for diffusion models",
+        required=False,
+        allow_none=True
+    )
+    height = fields.Int(
+        format="int64",
+        validate=validate.Range(min=64, max=4096),
+        description="Output image height for diffusion models",
+        required=False,
+        allow_none=True
+    )
+    seed = fields.Int(
+        format="int64",
+        description="Random seed for reproducible diffusion generation",
+        required=False,
+        allow_none=True
+    )
+    num_images = fields.Int(
+        format="int64",
+        validate=validate.Range(min=1, max=16),
+        description="Number of images to generate (default: 1)",
+        default=1,
         allow_none=True
     )
 

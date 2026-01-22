@@ -86,18 +86,38 @@ def inference_microservice_start(org_name):
         # Validate request with InferenceMicroserviceReq schema
         schema = InferenceMicroserviceReq()
         validated_data = schema.load(request_data)
-        # Create experiment request dict with only the fields needed
+
+        # Determine network_arch - use "huggingface" if hf_model is provided
+        hf_model = validated_data.get("hf_model")
         network_arch = validated_data.get("network_arch")
+
+        if hf_model and not network_arch:
+            # Default to "huggingface" network_arch for HuggingFace models
+            network_arch = "huggingface"
+            validated_data["network_arch"] = network_arch
+
+        # Convert enum to string value if needed
+        if hasattr(network_arch, 'value'):
+            network_arch = network_arch.value
+
+        # Create experiment request dict with only the fields needed
         experiment_request = {
-            "network_arch": network_arch.value if hasattr(network_arch, 'value') else network_arch,
+            "network_arch": network_arch,
         }
         if validated_data.get("workspace"):
             experiment_request["workspace"] = validated_data.get("workspace")
         user_id = authentication.get_user_id(request.headers.get('Authorization', ''), org_name)
+        logger.info(f"User ID: {user_id}")
+        logger.info(f"Org Name: {org_name}")
+        logger.info(f"Experiment request: {experiment_request}")
+        logger.info(f"experiment_id: {experiment_id}")
         experiment_response = ExperimentHandler.create_experiment(
             user_id, org_name, experiment_request, experiment_id=experiment_id)
         if experiment_response.code != 200:
             schema = ErrorRsp()
+            logger.error(f"Experiment response: {experiment_response}")
+            logger.error(f"Experiment response code: {experiment_response.code}")
+            logger.error(f"Experiment response data: {experiment_response.data}")
             metadata = {"error_desc": 'Failed to start Inference Microservice', "error_code": 1}
             schema_dict = schema.dump(schema.load(metadata))
             return make_response(jsonify(schema_dict), 500)
@@ -200,7 +220,7 @@ def inference_microservice_inference(org_name, job_id):
         request_dict = schema.dump(schema.load(request_data))
 
         # Process Inference Microservice inference via direct StatefulSet call
-        result = InferenceMicroserviceHandler.process_inference_microservice_request_direct(job_id, request_dict)
+        result = InferenceMicroserviceHandler.process_inference_microservice_request(job_id, request_dict)
         if result.get("status") != "error":
             return make_response(jsonify(result), 200)
         schema = ErrorRsp()

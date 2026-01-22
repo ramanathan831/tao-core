@@ -193,7 +193,8 @@ def check_imports_exist(file_path, imports_list):
     optional_deps = [
         'hydra', 'clearml', 'wandb',
         'pytorch_lightning', 'tensorflow', 'mpi4py',
-        'pycuda', 'pycuda.driver', 'torch'
+        'pycuda', 'pycuda.driver', 'torch',
+        'diffusers', 'imageio', 'release'
     ]
 
     for imp in imports_list:

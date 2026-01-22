@@ -26,9 +26,8 @@ else:
 
 logger = logging.getLogger(__name__)
 
-# Initialize docker_client at module level to avoid "possibly used before assignment" errors
+# Initialize docker_client at module level to avoid possibly-used-before-assignment
 docker_client = None
-
 if os.getenv("BACKEND") == "local-docker":
     import docker
     try:
@@ -292,10 +291,32 @@ class GPUManager:
                         f"keeping GPU assignment (cleanup in progress)"
                     )
             else:
-                logger.debug(
-                    f"GPU {gpu_id} assigned to job {assigned_job_id} "
-                    f"in non-terminal state '{job_status}', keeping assignment"
-                )
+                # Job is in non-terminal state (e.g., Running, Pending)
+                # But we MUST verify the container actually exists!
+                # If DB says "Running" but container is gone, reclaim the GPU
+                container_running = self._is_container_running(assigned_job_id)
+                if container_running:
+                    logger.debug(
+                        f"GPU {gpu_id} assigned to job {assigned_job_id} "
+                        f"in non-terminal state '{job_status}', container running - keeping assignment"
+                    )
+                else:
+                    # Container doesn't exist but DB says job is running - stale entry!
+                    logger.warning(
+                        f"[GPU_RELEASE] GPU {gpu_id} assigned to job {assigned_job_id}: "
+                        f"DB status '{job_status}' but container NOT running (crashed/removed). "
+                        f"Reason: Non-terminal state but container gone "
+                        f"(sentinel: {self.RELEASE_NO_STATUS_NO_CONTAINER})"
+                    )
+                    self.mongo_handler.upsert(
+                        {"id": gpu_id},
+                        {"id": gpu_id, "status": "available", "job_id": self.RELEASE_NO_STATUS_NO_CONTAINER}
+                    )
+                    logger.debug(
+                        f"[GPU_RELEASE] GPU {gpu_id} → AVAILABLE "
+                        f"(was: assigned to {assigned_job_id}, sentinel: {self.RELEASE_NO_STATUS_NO_CONTAINER})"
+                    )
+                    reclaimed_count += 1
 
         if reclaimed_count > 0:
             logger.debug(f"Reclaimed {reclaimed_count} GPU(s) from completed/failed containers")

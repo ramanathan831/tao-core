@@ -13,8 +13,11 @@
 # limitations under the License.
 
 """Inference Microservice handler using StatefulSets for long-lived inference"""
+import base64
+import json
 import logging
 import requests
+import shlex
 from datetime import datetime, timezone
 from typing import Dict, Any
 import os
@@ -57,40 +60,69 @@ class InferenceMicroserviceHandler:
         """Starts a long-lived Inference Microservice using StatefulSet
 
         The network architecture is automatically determined from the experiment metadata.
+        If hf_model is provided, uses the HuggingFace inference microservice instead.
         """
         from nvidia_tao_core.microservices.utils.stateless_handler_utils import write_job_metadata
         from nvidia_tao_core.microservices.utils import get_admin_key
 
         logger.info("Starting Inference Microservice %s for experiment %s", job_id, experiment_id)
 
-        # Get experiment metadata to determine network architecture
+        # Check if HuggingFace model is specified - this takes precedence over network_arch
+        hf_model = job_config.get("hf_model")
+        use_huggingface = hf_model is not None and hf_model.strip() != ""
+
+        if use_huggingface:
+            logger.info("HuggingFace model specified: %s - using HuggingFace inference microservice", hf_model)
+            network_arch = "huggingface"  # Virtual network arch for HuggingFace models
+        else:
+            # Get experiment metadata to determine network architecture
+            experiment_metadata = get_handler_metadata(experiment_id, kind="experiments")
+            network_arch = job_config.get("network_arch")
+            if hasattr(network_arch, 'value'):
+                network_arch = network_arch.value
+            if not network_arch:
+                network_arch = experiment_metadata.get("network_arch", "vila")
+            logger.info("Network architecture from experiment metadata: %s", network_arch)
+
+        # Get experiment metadata (needed for workspace and other settings)
         experiment_metadata = get_handler_metadata(experiment_id, kind="experiments")
-        network_arch = experiment_metadata.get("network_arch", "vila")  # Default to vila if not found
-        logger.info("Network architecture from experiment metadata: %s", network_arch)
 
         folder_path_function = "parent_model"
-        # Read network config to get docker image name
-        try:
-            network_config = read_network_config(network_arch.lower())
 
-            if network_config:
-                image_key = network_config.get('api_params', {}).get('image', network_arch.upper())
-                image = DOCKER_IMAGE_MAPPER.get(image_key, "nvcr.io/nvidia/tao/tao-toolkit:6.0.0-pyt")
-                logger.info("Using Docker image: %s (from network_arch: %s)", image, network_arch)
-                folder_path_function = network_config.get('spec_params', {}).get('inference', {}).get('model_path', "")
-            else:
-                # Fallback if network config is empty
+        # Determine Docker image based on model type
+        if use_huggingface:
+            # Use TAO_PYTORCH image for HuggingFace models (has transformers installed)
+            image = job_config.get("docker_image") or DOCKER_IMAGE_MAPPER.get(
+                "TAO_PYTORCH", "nvcr.io/nvidia/tao/tao-toolkit:6.0.0-pyt"
+            )
+            logger.info("Using Docker image for HuggingFace model: %s", image)
+        else:
+            # Read network config to get docker image name
+            try:
+                network_config = read_network_config(network_arch.lower())
+
+                if network_config:
+                    image_key = network_config.get('api_params', {}).get('image', network_arch.upper())
+                    image = DOCKER_IMAGE_MAPPER.get(image_key, "nvcr.io/nvidia/tao/tao-toolkit:6.0.0-pyt")
+                    logger.info("Using Docker image: %s (from network_arch: %s)", image, network_arch)
+                    folder_path_function = (
+                        network_config.get('spec_params', {})
+                        .get('inference', {})
+                        .get('model_path', "")
+                    )
+                else:
+                    # Fallback if network config is empty
+                    image = DOCKER_IMAGE_MAPPER.get(network_arch.upper(), "nvcr.io/nvidia/tao/tao-toolkit:6.0.0-pyt")
+                    logger.info("Using fallback Docker image: %s", image)
+            except Exception as e:
+                logger.warning("Could not read network config for %s: %s. Using default image.", network_arch, str(e))
                 image = DOCKER_IMAGE_MAPPER.get(network_arch.upper(), "nvcr.io/nvidia/tao/tao-toolkit:6.0.0-pyt")
                 logger.info("Using fallback Docker image: %s", image)
-        except Exception as e:
-            logger.warning("Could not read network config for %s: %s. Using default image.", network_arch, str(e))
-            image = DOCKER_IMAGE_MAPPER.get(network_arch.upper(), "nvcr.io/nvidia/tao/tao-toolkit:6.0.0-pyt")
-            logger.info("Using fallback Docker image: %s", image)
 
         # Build command for Inference Microservice integrated into TAO container
         parent_id = job_config.get("parent_job_id", job_config.get("parent_id", ""))
 
-        # Check if parent job is in Done state
+        # Check if parent job is in Done state (skip for HuggingFace models without parent)
         if parent_id:
             from nvidia_tao_core.microservices.utils.stateless_handler_utils import (
                 get_handler_job_metadata
@@ -112,17 +144,28 @@ class InferenceMicroserviceHandler:
                 logger.error(error_msg)
                 return Code(400, {}, error_msg)
 
-        folder_path = "folder" in folder_path_function
-        model_path = job_config.get("model_path", get_model_results_path(experiment_metadata, parent_id, folder_path))
-        logger.info("Using model path: %s", model_path)
+        # Determine model path
+        if use_huggingface:
+            # For HuggingFace models, model_path is the HuggingFace model name
+            model_path = hf_model
+            logger.info("Using HuggingFace model: %s", model_path)
+        else:
+            folder_path = "folder" in folder_path_function
+            model_path = job_config.get(
+                "model_path",
+                get_model_results_path(experiment_metadata, parent_id, folder_path)
+            )
+            logger.info("Using model path: %s", model_path)
+
         if not model_path:
-            return Code(400, {}, "Model path is required for Inference Microservice")
+            return Code(400, {}, "Model path or hf_model is required for Inference Microservice")
 
         # cli_args = convert_dict_to_cli_args(job_config)
         # cli_args = " ".join(cli_args)
         # logger.info("Using CLI args: %s", cli_args)
 
-        docker_env_vars = experiment_metadata.get("docker_env_vars", {})
+        # Get docker_env_vars from request (job_config), not from experiment_metadata
+        docker_env_vars = job_config.get("docker_env_vars", {})
         docker_env_vars["TAO_EXECUTION_BACKEND"] = BACKEND.value
         docker_env_vars["TAO_API_JOB_ID"] = job_id
 
@@ -153,11 +196,26 @@ class InferenceMicroserviceHandler:
         }
 
         # Propagate additional parameters from job_config to specs
-        # These include enable_lora, base_model_path, and any other user-provided configs
+        # These include enable_lora, base_model_path, torch_dtype, device_map, and any other user-provided configs
+        # NOTE: docker_env_vars must be excluded - it's handled separately and contains URLs that would
+        # be incorrectly parsed as cloud storage paths by download_files_from_spec
+        excluded_keys = ["parent_id", "parent_job_id", "model_path", "hf_model", "network_arch", "docker_env_vars"]
         for key, value in job_config.items():
-            if key not in ["parent_id", "parent_job_id", "model_path"]:
+            if key not in excluded_keys:
+                # Convert enum values to their string representation
+                if hasattr(value, 'value'):
+                    value = value.value
                 specs[key] = value
                 logger.info(f"Propagating parameter to specs: {key} = {value}")
+
+        # For HuggingFace models, ensure HF-specific parameters are in specs
+        if use_huggingface:
+            specs["hf_model"] = hf_model
+            # Set default torch_dtype and device_map if not provided
+            if "torch_dtype" not in specs:
+                specs["torch_dtype"] = "auto"
+            if "device_map" not in specs:
+                specs["device_map"] = "auto"
 
         job_metadata = {
             "job_id": job_id,
@@ -166,12 +224,42 @@ class InferenceMicroserviceHandler:
             "neural_network_name": network_arch,
         }
 
+        # Base64 encode custom function strings to avoid shell escaping issues
+        # These contain Python code with quotes, parentheses, etc. that break bash parsing
+        if specs.get("custom_pipeline_loader"):
+            specs["custom_pipeline_loader"] = base64.b64encode(
+                specs["custom_pipeline_loader"].encode()
+            ).decode()
+            specs["custom_pipeline_loader_encoded"] = True
+        if specs.get("custom_inference_fn"):
+            specs["custom_inference_fn"] = base64.b64encode(
+                specs["custom_inference_fn"].encode()
+            ).decode()
+            specs["custom_inference_fn_encoded"] = True
+
+        # Determine the inference microservice command based on model type
+        if use_huggingface:
+            # Use the HuggingFace inference microservice from tao-core
+            inference_command = (
+                "python -m nvidia_tao_core.microservices.handlers"
+                ".huggingface_inference_microservice_server"
+            )
+            logger.info("Using HuggingFace inference microservice")
+        else:
+            # Use the network-specific inference microservice
+            inference_command = f"{network_arch}-inference-microservice"
+            logger.info("Using network-specific inference microservice: %s", inference_command)
+
+        # Serialize job_metadata to JSON and shell-escape it for safe bash execution
+        job_metadata_json = json.dumps(job_metadata)
+        docker_env_vars_json = json.dumps(docker_env_vars)
+
         # Clean TAO-compliant StatefulSet setup: Pure container_handler.py approach
         run_command = f"""
 umask 0 &&
 
 
-{network_arch}-inference-microservice --job "{str(job_metadata)}" --docker_env_vars "{str(docker_env_vars)}"
+{inference_command} --job {shlex.quote(job_metadata_json)} --docker_env_vars {shlex.quote(docker_env_vars_json)}
         """
         logger.info("Using run command: %s", run_command)
         run_command = ["/bin/bash", "-c", run_command]
@@ -181,13 +269,34 @@ umask 0 &&
             # IMPORTANT: This overrides the default container entrypoint (e.g., "flask run")
             # with our custom command that starts the persistent model server + container_handler.py
             from nvidia_tao_core.microservices.handlers.execution_handlers.execution_handler import ExecutionHandler
-            success = ExecutionHandler.create_microservice(
-                job_id=job_id,
-                image=image,
-                custom_command=run_command,
-                api_port=api_port,
-                inference_microservice=True
+            execution_handler = ExecutionHandler.create_handler(
+                backend=BACKEND,
+                container_image=image,
+                job_id=job_id
             )
+            # Get number of GPUs from job config (default to 1)
+            num_gpus = job_config.get("num_gpus", 1)
+            if num_gpus == 0:
+                num_gpus = 1  # Inference requires at least 1 GPU
+
+            try:
+                success = execution_handler.create_microservice(
+                    job_id=job_id,
+                    image=image,
+                    custom_command=run_command,
+                    api_port=api_port,
+                    num_gpu=num_gpus,
+                    inference_microservice=True,
+                    docker_env_vars=docker_env_vars  # Pass env vars to container
+                )
+            except RuntimeError as e:
+                error_msg = str(e)
+                # Extract GPU-specific error messages for better user feedback
+                if "GPU" in error_msg or "gpu" in error_msg:
+                    logger.error("GPU allocation failed: %s", error_msg)
+                    return Code(503, {}, f"Insufficient GPU resources: {error_msg}")
+                logger.error("Microservice creation failed: %s", error_msg)
+                return Code(500, {}, f"Failed to create Inference Microservice: {error_msg}")
 
             if not success:
                 return Code(500, {}, "Failed to create Inference Microservice StatefulSet")
@@ -221,7 +330,7 @@ umask 0 &&
                 "user_id": experiment_metadata.get("user_id"),
                 "network": network_arch,
                 "parent_id": job_config.get("parent_id", ""),
-                "num_gpu": 1,
+                "num_gpu": num_gpus,
                 "platform_id": None,
                 "kind": "experiment",
                 "specs": {},

@@ -372,7 +372,8 @@ class KubernetesHandler(ExecutionHandler):
             return True
         except Exception as e:
             self.logger.error(f"Failed to create K8s microservice: {e}")
-            return False
+            # Re-raise exception with clear message so caller can handle it
+            raise RuntimeError(f"Failed to create K8s microservice: {e}") from e
 
     def send_request_to_microservice(
         self,
