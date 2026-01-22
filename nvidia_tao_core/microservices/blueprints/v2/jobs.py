@@ -50,7 +50,8 @@ from .schemas import (
     LoadAirgappedExperimentsReq,
     LoadAirgappedExperimentsRsp,
     MessageOnly,
-    PublishModel
+    PublishModel,
+    JobEventsRsp
 )
 
 logger = logging.getLogger(__name__)
@@ -2312,6 +2313,112 @@ def job_logs(org_name, job_id):
     schema = ErrorRsp()
     schema_dict = schema.dump(schema.load(response.data))
     return make_response(jsonify(schema_dict), 400)
+
+
+@jobs_bp_v2.route('/orgs/<org_name>/jobs/<job_id>:events', methods=['GET'])
+def job_events(org_name, job_id):
+    """Get all job status events.
+
+    ---
+    get:
+      tags:
+      - JOB
+      summary: Get all job status events
+      description: Returns all status event lines for a given job
+      parameters:
+      - name: org_name
+        in: path
+        description: Org Name
+        required: true
+        schema:
+          type: string
+          maxLength: 255
+          pattern: '^[a-zA-Z0-9_-]+$'
+      - name: job_id
+        in: path
+        description: Job ID
+        required: true
+        schema:
+          type: string
+          format: uuid
+          maxLength: 36
+      - name: automl_experiment_number
+        in: query
+        description: Optional filter to retrieve events from specific autoML experiment
+        required: false
+        schema:
+          type: string
+      responses:
+        200:
+          description: Returned Job Events
+          content:
+            application/json:
+              schema: JobEventsRsp
+          headers:
+            Access-Control-Allow-Origin:
+              $ref: '#/components/headers/Access-Control-Allow-Origin'
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/X-RateLimit-Limit'
+        400:
+          description: Invalid request (e.g. invalid job ID)
+          content:
+            application/json:
+              schema: ErrorRsp
+          headers:
+            Access-Control-Allow-Origin:
+              $ref: '#/components/headers/Access-Control-Allow-Origin'
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/X-RateLimit-Limit'
+        404:
+          description: Job not exist or events not found.
+          content:
+            application/json:
+              schema: ErrorRsp
+          headers:
+            Access-Control-Allow-Origin:
+              $ref: '#/components/headers/Access-Control-Allow-Origin'
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/X-RateLimit-Limit'
+    """
+    message = validate_uuid(job_id=job_id)
+    if message:
+        metadata = {"error_desc": message, "error_code": 1}
+        schema = ErrorRsp()
+        schema_dict = schema.dump(schema.load(metadata))
+        return make_response(jsonify(schema_dict), 400)
+    handler_id, kind = get_handler_id_and_kind(job_id)
+    if kind not in ['experiment', 'dataset']:
+        metadata = {
+            "error_desc": (f"Invalid job type for job_id {job_id}. "
+                           "Job must be associated with an experiment or dataset."),
+            "error_code": 1
+        }
+        schema = ErrorRsp()
+        schema_dict = schema.dump(schema.load(metadata))
+        return make_response(jsonify(schema_dict), 400)
+    experiment_id = None
+    dataset_id = None
+    if kind == 'experiment':
+        experiment_id = handler_id
+    else:
+        dataset_id = handler_id
+    response = JobHandler.get_job_events(
+        org_name,
+        experiment_id if kind == 'experiment' else dataset_id,
+        job_id,
+        kind,
+        request.args.get('automl_experiment_number', "0")
+    )
+    if response.code == 200:
+        schema = JobEventsRsp()
+        response_data = {
+            "job_id": job_id,
+            "events": response.data
+        }
+        return make_response(jsonify(schema.dump(schema.load(response_data))), 200)
+    schema = ErrorRsp()
+    schema_dict = schema.dump(schema.load(response.data))
+    return make_response(jsonify(schema_dict), response.code)
 
 
 @jobs_bp_v2.route('/orgs/<org_name>/jobs/<job_id>:log_update', methods=['POST'])
