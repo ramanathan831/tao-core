@@ -300,6 +300,12 @@ class AutoMLAlgorithm(Enum):
 
     bayesian = "bayesian"
     hyperband = "hyperband"
+    bohb = "bohb"
+    bfbo = "bfbo"
+    asha = "asha"
+    pbt = "pbt"
+    dehb = "dehb"
+    hyperband_es = "hyperband_es"
 
 
 class SourceType(Enum):
@@ -1152,32 +1158,141 @@ class JobResume(Schema):
     specs = fields.Raw(allow_none=True)
 
 
+# Algorithm-specific parameter schemas (nested structure)
+class AutoMLBayesianParams(Schema):
+    """Schema for Bayesian and BFBO algorithm parameters"""
+
+    class Meta:
+        """Marshmallow schema configuration"""
+
+        ordered = True
+        unknown = EXCLUDE
+
+    automl_max_recommendations = fields.Int(
+        format="int64", validate=validate.Range(min=1, max=sys.maxsize), required=True
+    )
+
+
+class AutoMLHyperbandParams(Schema):
+    """Schema for Hyperband algorithm parameters"""
+
+    class Meta:
+        """Marshmallow schema configuration"""
+
+        ordered = True
+        unknown = EXCLUDE
+
+    automl_max_epochs = fields.Int(format="int64", validate=validate.Range(min=2, max=sys.maxsize), required=True)
+    automl_reduction_factor = fields.Int(format="int64", validate=validate.Range(min=2, max=sys.maxsize), required=True)
+    epoch_multiplier = fields.Int(format="int64", validate=validate.Range(min=1, max=sys.maxsize), required=True)
+
+
+class AutoMLBOHBParams(AutoMLHyperbandParams):
+    """Schema for BOHB algorithm parameters"""
+
+    automl_kde_samples = fields.Int(format="int64", validate=validate.Range(min=1, max=sys.maxsize), allow_none=True)
+    automl_top_n_percent = fields.Float(validate=validate.Range(min=0.0, max=100.0), allow_none=True)
+    automl_min_points_in_model = fields.Int(
+        format="int64", validate=validate.Range(min=1, max=sys.maxsize), allow_none=True
+    )
+
+
+class AutoMLASHAParams(AutoMLHyperbandParams):
+    """Schema for ASHA algorithm parameters"""
+
+    automl_max_concurrent = fields.Int(format="int64", validate=validate.Range(min=1, max=sys.maxsize), required=True)
+    automl_max_trials = fields.Int(format="int64", validate=validate.Range(min=1, max=sys.maxsize), allow_none=True)
+
+
+class AutoMLDEHBParams(AutoMLHyperbandParams):
+    """Schema for DEHB algorithm parameters"""
+
+    automl_mutation_factor = fields.Float(validate=validate.Range(min=0.0, max=2.0), allow_none=True)
+    automl_crossover_prob = fields.Float(validate=validate.Range(min=0.0, max=1.0), allow_none=True)
+
+
+class AutoMLHyperBandESParams(AutoMLHyperbandParams):
+    """Schema for HyperBand with Early Stopping algorithm parameters"""
+
+    automl_early_stop_threshold = fields.Float(validate=validate.Range(min=0.0, max=1.0), allow_none=True)
+    automl_min_early_stop_epochs = fields.Int(
+        format="int64", validate=validate.Range(min=1, max=sys.maxsize), allow_none=True
+    )
+
+
+class AutoMLPBTParams(Schema):
+    """Schema for Population-Based Training algorithm parameters"""
+
+    class Meta:
+        """Marshmallow schema configuration"""
+
+        ordered = True
+        unknown = EXCLUDE
+
+    automl_population_size = fields.Int(format="int64", validate=validate.Range(min=1, max=sys.maxsize), required=True)
+    automl_eval_interval = fields.Int(format="int64", validate=validate.Range(min=1, max=sys.maxsize), required=True)
+    automl_perturbation_factor = fields.Float(validate=validate.Range(min=1.0, max=10.0), allow_none=True)
+
+
 class AutoML(Schema):
-    """Class defining automl parameters in a schema"""
+    """AutoML schema with nested algorithm-specific parameters"""
 
     class Meta:
         """Class enabling sorting field values by the order in which they are declared"""
 
         ordered = True
         unknown = EXCLUDE
+
     automl_enabled = fields.Bool(allow_none=True)
     automl_algorithm = EnumField(AutoMLAlgorithm, allow_none=True)
-    automl_max_recommendations = fields.Int(
-        format="int64",
-        validate=validate.Range(min=0, max=sys.maxsize),
-        allow_none=True
-    )
     automl_delete_intermediate_ckpt = fields.Bool(allow_none=True)
     override_automl_disabled_params = fields.Bool(allow_none=True)
-    automl_R = fields.Int(format="int64", validate=validate.Range(min=0, max=sys.maxsize), allow_none=True)
-    automl_nu = fields.Int(format="int64", validate=validate.Range(min=0, max=sys.maxsize), allow_none=True)
-    epoch_multiplier = fields.Int(format="int64", validate=validate.Range(min=0, max=sys.maxsize), allow_none=True)
     automl_hyperparameters = fields.Str(
-        format="regex",
-        regex=r'\[.*\]',
-        validate=fields.validate.Length(max=5000),
-        allow_none=True
+        format="regex", regex=r'\[.*\]', validate=fields.validate.Length(max=5000), allow_none=True
     )
+    # Nested algorithm-specific parameters
+    algorithm_specific_params = fields.Field(allow_none=True)
+
+    @validates_schema
+    def validate_algorithm_specific_params(self, data, **kwargs):
+        """Validate algorithm-specific parameters based on algorithm type"""
+        if not data.get('automl_enabled', False):
+            return
+
+        algorithm = data.get('automl_algorithm')
+        if not algorithm:
+            raise ValidationError('automl_algorithm is required when automl_enabled is True')
+
+        # Convert enum to string if needed
+        algo_str = algorithm.value if hasattr(algorithm, 'value') else str(algorithm)
+
+        # Select appropriate schema based on algorithm
+        if algo_str in ('bayesian', 'b', 'bfbo'):
+            schema = AutoMLBayesianParams()
+        elif algo_str in ('hyperband', 'h'):
+            schema = AutoMLHyperbandParams()
+        elif algo_str == 'bohb':
+            schema = AutoMLBOHBParams()
+        elif algo_str == 'asha':
+            schema = AutoMLASHAParams()
+        elif algo_str == 'dehb':
+            schema = AutoMLDEHBParams()
+        elif algo_str in ('hyperband_es', 'hes'):
+            schema = AutoMLHyperBandESParams()
+        elif algo_str == 'pbt':
+            schema = AutoMLPBTParams()
+        else:
+            raise ValidationError(f'Unknown automl_algorithm: {algo_str}')
+
+        # Validate algorithm-specific parameters
+        params = data.get('algorithm_specific_params', {})
+        if params:
+            try:
+                schema.load(params, unknown=EXCLUDE)
+            except ValidationError:
+                raise
+            except Exception as e:
+                raise fields.ValidationError(str(e))
 
 
 class BaseExperimentMetadata(Schema):

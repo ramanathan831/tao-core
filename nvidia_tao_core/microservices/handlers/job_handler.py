@@ -706,8 +706,11 @@ class JobHandler:
             try:
                 # Delete job (K8s pod or Docker container)
                 update_job_status(handler_id, job_id, status="Canceling", kind=kind + "s")
+                logger.debug(f"[CANCEL] Job status updated to Canceling: job_id={job_id}")
+                logger.debug(f"[CANCEL] Deleting statefulset for running job: job_id={job_id}, use_ngc={use_ngc}")
                 from nvidia_tao_core.microservices.handlers.execution_handlers.execution_handler import ExecutionHandler
                 ExecutionHandler.delete_with_handler(job_id)
+                logger.debug(f"[CANCEL] Waiting for K8s job termination: job_id={job_id}")
                 k8s_status = ExecutionHandler.get_job_status_with_handler(
                     job_name=job_id,
                     workspace_metadata=workspace_metadata,
@@ -899,7 +902,10 @@ class JobHandler:
 
                 # Abrupt pause (or fallback if graceful pause failed)
                 from nvidia_tao_core.microservices.handlers.execution_handlers.execution_handler import ExecutionHandler
+                logger.debug(f"[PAUSE] Performing abrupt pause: job_id={job_id}")
+                logger.debug(f"[PAUSE] Deleting statefulset for running job: job_id={job_id}, use_ngc={use_ngc}")
                 ExecutionHandler.delete_with_handler(job_id)
+                logger.debug(f"[PAUSE] Waiting for K8s job termination: job_id={job_id}")
                 k8s_status = ExecutionHandler.get_job_status_with_handler(
                     job_name=job_id,
                     workspace_metadata=workspace_metadata,

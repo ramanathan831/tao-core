@@ -539,7 +539,8 @@ class ActionPipeline:
             docker_env_vars=self.job_env_variables,
             num_nodes=self.num_nodes,
             resource_shape=resource_shape,
-            dedicated_node_group=dedicated_node_group
+            dedicated_node_group=dedicated_node_group,
+            backend_details=self.job_context.backend_details,
         )
         if response and not response.ok:
             update_job_details_with_microservices_response(response.json().get("error", ""), job_id, self.job_name)
@@ -883,7 +884,8 @@ class ActionPipeline:
                     nv_job_metadata=nv_job_metadata,
                     local_cluster=self.local_cluster,
                     automl_brain=False,
-                    automl_exp_job=False
+                    automl_exp_job=False,
+                    backend_details=self.job_context.backend_details
                 )
             self.detailed_print("Job created", self.job_name)
 
@@ -1359,11 +1361,13 @@ class AutoMLPipeline(ActionPipeline):
                 experiment_number=str(self.rec_number)
             ) or (BACKEND == Backend.NVCF and k8s_status == "Running"):
                 break
-            job_metadata = get_handler_job_metadata(self.automl_brain_job_id)
+            job_metadata = get_handler_job_metadata(self.automl_brain_job_id) or {}
             detailed_message = (
-                job_metadata.get("job_details", {})
+                (job_metadata.get("job_details") or {})
                 .get(self.job_name, {})
-                .get("detailed_status", {})
+            )
+            detailed_message = (
+                (detailed_message.get("detailed_status") or {})
                 .get("message", "")
             )
             if "Invalid schema" in detailed_message:
@@ -1388,7 +1392,8 @@ class AutoMLPipeline(ActionPipeline):
                         docker_env_vars=self.job_env_variables,
                         nv_job_metadata=nv_job_metadata,
                         automl_brain=False,
-                        automl_exp_job=True
+                        automl_exp_job=True,
+                        backend_details=self.job_context.backend_details
                     )
             k8s_status = ExecutionHandler.get_job_status_with_handler(
                 job_name=self.job_name,
@@ -1454,7 +1459,8 @@ class AutoMLPipeline(ActionPipeline):
                     docker_env_vars=self.job_env_variables,
                     nv_job_metadata=nv_job_metadata,
                     automl_brain=False,
-                    automl_exp_job=False
+                    automl_exp_job=False,
+                    backend_details=self.job_context.backend_details
                 )
             self.detailed_print(
                 f"AutoML recommendation with experiment id {self.rec_number} "

@@ -26,6 +26,7 @@ from nvidia_tao_core.microservices.utils.handler_utils import (
 from nvidia_tao_core.microservices.utils.stateless_handler_utils import get_handler_metadata, BACKEND
 from nvidia_tao_core.microservices.utils.core_utils import read_network_config
 from nvidia_tao_core.microservices.enum_constants import Backend
+from nvidia_tao_core.microservices.handlers.execution_handlers.kubernetes_handler import KubernetesHandler
 
 
 # Configure logging
@@ -196,7 +197,6 @@ umask 0 &&
             logger.info("Waiting for Inference Microservice service %s to be ready", service_id)
 
             if BACKEND == Backend.LOCAL_K8S:
-                from .execution_handlers.kubernetes_handler import KubernetesHandler
                 kubernetes_handler = KubernetesHandler()
                 service_status = kubernetes_handler.wait_for_service(job_id, service_name=service_id)
                 if service_status != "Running":
@@ -308,6 +308,93 @@ umask 0 &&
         except Exception as e:
             logger.error("Error %s Inference Microservice %s: %s", action.lower(), job_id, str(e))
             return Code(500, {"error": str(e)}, f"Error {action.lower()} Inference Microservice")
+
+    @staticmethod
+    def get_inference_microservice_status(job_id: str) -> Code:
+        """Gets the status of a Inference Microservice StatefulSet"""
+        statefulset_name = f"ims-{job_id}"
+
+        try:
+            stat_dict = KubernetesHandler().get_statefulset_status(
+                statefulset_name, replicas=1, resource_type="Inference Microservice"
+            )
+            status = stat_dict.get("status", "Unknown")
+
+            return Code(200, {
+                "job_id": job_id,
+                "service_name": statefulset_name,
+                "status": status,
+                "replicas": stat_dict.get("replicas", {}),
+                "pods": []
+            }, f"Inference Microservice status: {status}")
+
+        except Exception as e:
+            logger.error("Error getting Inference Microservice status: %s", str(e))
+            return Code(500, {}, f"Failed to get service status: {str(e)}")
+
+    @staticmethod
+    def check_inference_microservice_model_readiness(job_id: str, api_port: int = 8080) -> dict:
+        """Check if Inference Microservice model is ready in StatefulSet containers
+
+        Args:
+            job_id: Job ID for the microservice
+            api_port: Port number for the microservice
+
+        Returns:
+            Dictionary with readiness status and progress information
+        """
+        try:
+            statefulset_name = f"ims-{job_id}"
+
+            # Check if StatefulSet pods exist and are running
+            try:
+                stat_dict = KubernetesHandler().get_statefulset_status(
+                    statefulset_name, replicas=1, resource_type="Inference Microservice"
+                )
+                statefulset_status = stat_dict.get("status", "Unknown")
+
+                # If StatefulSet is running, get detailed status from the microservice
+                if statefulset_status == "Running":
+                    try:
+                        # Get detailed status including progress
+                        status_response = InferenceMicroserviceHandler.get_inference_microservice_status_direct(
+                            job_id, api_port
+                        )
+                        return {
+                            "job_id": job_id,
+                            "status": "ready" if status_response.get("model_loaded") else "loading",
+                            "loaded": status_response.get("model_loaded", False),
+                            "loading": status_response.get("model_loading", False),
+                            "initializing": status_response.get("server_initializing", False),
+                            "statefulset_status": statefulset_status,
+                            "progress": status_response.get("progress", {})
+                        }
+                    except Exception as status_err:
+                        logger.warning(f"Could not get detailed status for {job_id}: {status_err}")
+                        # Fallback to basic response
+                        return {
+                            "job_id": job_id,
+                            "status": "ready",
+                            "loaded": True,
+                            "statefulset_status": statefulset_status
+                        }
+                return {
+                    "job_id": job_id,
+                    "status": "not_ready",
+                    "loaded": False,
+                    "statefulset_status": statefulset_status
+                }
+            except Exception:
+                return {
+                    "job_id": job_id,
+                    "status": "not_found",
+                    "loaded": False,
+                    "statefulset_status": "NotFound"
+                }
+
+        except Exception as e:
+            logger.error(f"Error checking Inference Microservice model readiness: {e}")
+            return {"status": "error", "error": str(e), "loaded": False}
 
     @staticmethod
     def get_inference_microservice_url(job_id: str, endpoint: str = "inference", api_port: int = 8080) -> str:
@@ -499,4 +586,33 @@ umask 0 &&
                     "remaining_steps": [],
                     "details": {"error": str(e)}
                 }
+            }
+
+    @staticmethod
+    def get_inference_microservice_status_detailed(job_id: str) -> dict:
+        """Get Inference Microservice service status with model readiness information"""
+        try:
+            statefulset_name = f"ims-{job_id}"
+            stat_dict = KubernetesHandler().get_statefulset_status(
+                statefulset_name, replicas=1, resource_type="Inference Microservice"
+            )
+
+            # Check model readiness
+            model_state = InferenceMicroserviceHandler.check_inference_microservice_model_readiness(job_id)
+
+            return {
+                "job_id": job_id,
+                "service_name": statefulset_name,
+                "status": stat_dict.get("status", "Unknown"),
+                "replicas": stat_dict.get("replicas", {}),
+                "model_loaded": model_state.get("loaded", False),
+                "model_status": model_state.get("status", "unknown")
+            }
+
+        except Exception as e:
+            logger.error(f"Error getting Inference Microservice service status: {e}")
+            return {
+                "job_id": job_id,
+                "status": "error",
+                "error": str(e)
             }

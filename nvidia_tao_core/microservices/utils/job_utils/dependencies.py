@@ -210,7 +210,11 @@ def dependency_check_gpu(job_context, dependency):
         f"requires {num_gpu} GPU(s), calling dependency_check()..."
     )
 
-    gpu_available, available_gpu_count = dependency_check(num_gpu=num_gpu, accelerator=dependency.name)
+    gpu_available, available_gpu_count = dependency_check(
+        num_gpu=num_gpu,
+        accelerator=dependency.name,
+        job_id=job_context.id
+    )
     message = ""
     if not gpu_available:
         if available_gpu_count >= 0:

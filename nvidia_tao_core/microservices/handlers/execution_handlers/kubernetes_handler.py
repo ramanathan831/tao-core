@@ -128,6 +128,16 @@ class KubernetesHandler(ExecutionHandler):
             mount_path="/dev/shm")
         volume_mounts.append(dshm_volume_mount)
 
+        # Add SSH volume mount for AutoML brain jobs
+        if automl_brain:
+            host_ssh_path = os.getenv('HOST_SSH_PATH')
+            if host_ssh_path:
+                ssh_volume_mount = client.V1VolumeMount(
+                    name="ssh-keys",
+                    mount_path="/root/.ssh",
+                    read_only=True)
+                volume_mounts.append(ssh_volume_mount)
+
         resources = client.V1ResourceRequirements(
             limits={
                 'nvidia.com/gpu': str(num_gpu)
@@ -188,6 +198,21 @@ class KubernetesHandler(ExecutionHandler):
         dshm_volume = client.V1Volume(
             name="dshm",
             empty_dir=client.V1EmptyDirVolumeSource(medium='Memory'))
+
+        # Define volumes list with dshm
+        volumes = [dshm_volume]
+
+        # Add SSH volume for AutoML brain jobs
+        if automl_brain:
+            host_ssh_path = os.getenv('HOST_SSH_PATH')
+            if host_ssh_path:
+                ssh_volume = client.V1Volume(
+                    name="ssh-keys",
+                    host_path=client.V1HostPathVolumeSource(
+                        path=host_ssh_path,
+                        type="Directory"))
+                volumes.append(ssh_volume)
+
         restart_policy = "Always"
         if automl_brain:
             restart_policy = "Never"
@@ -198,7 +223,7 @@ class KubernetesHandler(ExecutionHandler):
             spec=client.V1PodSpec(
                 image_pull_secrets=[client.V1LocalObjectReference(name=image_pull_secret)],
                 containers=[container],
-                volumes=[dshm_volume],
+                volumes=volumes,
                 node_selector=node_selector,
                 restart_policy=restart_policy))
         spec = client.V1JobSpec(

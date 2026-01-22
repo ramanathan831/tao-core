@@ -26,6 +26,7 @@ from nvidia_tao_core.microservices.utils.stateless_handler_utils import (
     is_request_automl
 )
 from nvidia_tao_core.microservices.utils.handler_utils import Code
+from nvidia_tao_core.microservices.utils.specs_utils import csv_to_json_schema
 from nvidia_tao_core.microservices.utils.stateless_handler_utils import BACKEND
 from nvidia_tao_core.microservices.utils.core_utils import (
     merge_nested_dicts,
@@ -34,7 +35,6 @@ from nvidia_tao_core.microservices.utils.core_utils import (
 )
 from nvidia_tao_core.scripts.generate_schema import generate_schema, validate_and_clean_merged_spec
 from nvidia_tao_core.microservices.handlers.execution_handlers.execution_handler import ExecutionHandler
-from nvidia_tao_core.microservices.utils.specs_utils.csv_to_json_schema import convert
 
 from ..utils.basic_utils import resolve_metadata
 
@@ -118,7 +118,7 @@ class SpecHandler:
                 )
                 if not os.path.exists(CSV_PATH):
                     return Code(404, {}, "Default specs do not exist for action")
-            json_schema = convert(CSV_PATH)
+            json_schema = csv_to_json_schema.convert(CSV_PATH)
 
         if "default" in json_schema and base_experiment_spec:
             # Merge the base experiment spec with the default schema
@@ -190,7 +190,7 @@ class SpecHandler:
                 )
                 if not os.path.exists(CSV_PATH):
                     return Code(404, {}, "Default specs do not exist for action")
-            json_schema = convert(CSV_PATH)
+            json_schema = csv_to_json_schema.convert(CSV_PATH)
 
         json_schema["default"] = job_specs
         if "popular" in json_schema and job_specs:
@@ -265,7 +265,7 @@ class SpecHandler:
                                     f"{base_experiment_network} - {action}.csv")
             if not os.path.exists(CSV_PATH):
                 return Code(404, {}, "Default specs do not exist for action")
-            json_schema = convert(CSV_PATH)
+            json_schema = csv_to_json_schema.convert(CSV_PATH)
         if "default" in json_schema and base_experiment_spec:
             # Merge the base experiment spec with the default schema
             merged_default = merge_nested_dicts(json_schema["default"], base_experiment_spec)
@@ -342,7 +342,7 @@ class SpecHandler:
                 if not os.path.exists(CSV_PATH):
                     return Code(404, {}, "Default specs do not exist for action")
 
-            json_schema = convert(CSV_PATH)
+            json_schema = csv_to_json_schema.convert(CSV_PATH)
         return Code(200, json_schema, "Schema retrieved")
 
     @staticmethod

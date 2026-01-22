@@ -148,11 +148,11 @@ def vlm_launch(neural_network_name, action, specs, job_id=""):
     if neural_network_name == "cosmos-rl" and action in ["train", "evaluate"]:
         # Handle custom training script if provided by user
         if action == "train":
-            handle_custom_script(specs, "custom_script", target_script_path="scripts/custom_sft.py")
+            handle_custom_script(specs, "custom_script", target_script_path="/opt/cosmos_rl/custom_sft.py")
 
         train_args = ""
         if action == "train":
-            train_args = f"{lepton_args} scripts/custom_sft.py"
+            train_args = f"{lepton_args} /opt/cosmos_rl/custom_sft.py"
         # Use TAO_API_RESULTS_DIR for SLURM compatibility, fallback to /results
         results_base = os.getenv('TAO_API_RESULTS_DIR', '/results')
         logger.info(f"results_base: {results_base}")

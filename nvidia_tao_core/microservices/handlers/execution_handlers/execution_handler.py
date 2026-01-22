@@ -550,6 +550,7 @@ class ExecutionHandler(ABC):
                     'automl_exp_job': automl_exp_job,
                     'authorized_party_nca_id': authorized_party_nca_id
                 }
+
             elif handler and handler.backend_type in [Backend.SLURM, Backend.LEPTON]:
                 # Cloud handlers need: results_dir, workspace_metadata
                 kwargs = {
@@ -590,7 +591,8 @@ class ExecutionHandler(ABC):
         automl_brain=False,
         automl_exp_job=False,
         local_cluster=False,
-        backend=None
+        backend=None,
+        backend_details=None
     ):
         """Factory method to create a job using the appropriate handler
 
@@ -667,6 +669,9 @@ class ExecutionHandler(ABC):
             if handler.backend_type in [Backend.SLURM, Backend.LEPTON]:
                 # Cloud handlers implement create_job with different signature
                 if hasattr(handler, 'create_job'):
+                    partition = None
+                    if backend_details and backend_details.get('backend_type') == Backend.SLURM.value:
+                        partition = backend_details.get('partition', "")
                     handler.create_job(
                         image=image,
                         network="",  # Will be extracted from command
@@ -676,7 +681,8 @@ class ExecutionHandler(ABC):
                         job_id=job_name,
                         docker_env_vars=docker_env_vars or {},
                         num_gpus=num_gpu,
-                        num_nodes=num_nodes
+                        num_nodes=num_nodes,
+                        partition=partition
                     )
                 return
 
@@ -703,7 +709,7 @@ class ExecutionHandler(ABC):
                     if host_ssh_path:
                         volumes = [
                             '/var/run/docker.sock:/var/run/docker.sock',
-                            f'{host_ssh_path}:/home/www-data/.ssh:ro'
+                            f'{host_ssh_path}:/root/.ssh:ro'
                         ]
                     else:
                         volumes = ['/var/run/docker.sock:/var/run/docker.sock']
@@ -789,6 +795,7 @@ class ExecutionHandler(ABC):
         microservice_container="",
         resource_shape=None,
         dedicated_node_group=None,
+        backend_details={},
         docker_env_vars={},
         num_nodes=1,
         accelerator=None,
@@ -859,6 +866,9 @@ class ExecutionHandler(ABC):
                     self.logger.info(f"Dedicated node group: {dedicated_node_group}")
                 # Create job using the handler
                 if hasattr(handler, 'create_job'):
+                    partition = None
+                    if backend_details and backend_details.get('backend_type') == Backend.SLURM.value:
+                        partition = backend_details.get('partition', "")
                     output = handler.create_job(
                         image=microservice_container,
                         network=network,
@@ -870,7 +880,8 @@ class ExecutionHandler(ABC):
                         num_gpus=num_gpu,
                         num_nodes=num_nodes,
                         resource_shape=resource_shape,
-                        dedicated_node_group=dedicated_node_group
+                        dedicated_node_group=dedicated_node_group,
+                        partition=partition
                     )
                     job_id = microservice_pod_id
                     if handler.backend_type == Backend.SLURM and output:
