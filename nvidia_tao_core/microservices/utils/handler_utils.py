@@ -621,6 +621,12 @@ class StatusParser:
         result: value from status_parser.update_results()
         returns: the metric requested in normalized float
         """
+        logger.debug(f"results: {results}")
+        logger.debug(
+            f"metric: {metric}, automl_algorithm: {automl_algorithm}, "
+            f"automl_brain_job_id: {automl_brain_job_id}, "
+            f"brain_epoch_number: {brain_epoch_number}"
+        )
         metric_value = 0.0
         try:
             for result_type in ("graphical", "kpi"):
@@ -636,12 +642,15 @@ class StatusParser:
 
                     if log["metric"] == criterion:
                         if log["values"]:
+                            logger.debug(f"log['values']: {log['values']}")
                             values_to_search = self.trim_list(
                                 metric_list=log["values"].items(),
                                 automl_algorithm=automl_algorithm,
                                 brain_epoch_number=brain_epoch_number
                             )
-                            if automl_algorithm in ("hyperband", "h"):
+                            logger.debug(f"values_to_search: {values_to_search}")
+                            # Hyperband-like algorithms use bracket/sh_iter structure
+                            if automl_algorithm in ("hyperband", "h", "bohb", "asha", "dehb", "hyperband_es", "hes"):
                                 brain_dict = get_automl_brain_info(automl_brain_job_id)
                                 bracket_key = str(brain_dict.get("bracket", 0))
                                 ni_list = brain_dict.get("ni", [str(float('-inf'))])[bracket_key]
@@ -1746,6 +1755,7 @@ def resolve_checkpoint_root_and_search(handler_metadata, job_id, folder=False, r
     files, action, res_root, workspace_id = get_files_from_cloud(
         handler_metadata, job_id, automl=automl, automl_experiment_id=automl_experiment_id
     )
+    logger.info("files for job %s: %s", job_id, files)
     network = handler_metadata.get("network_arch", "")
 
     if action == "retrain":

@@ -48,7 +48,11 @@ class KubernetesHandler(ExecutionHandler):
 
     def get_available_instances(self):
         """Get available GPUs in the K8s cluster"""
-        return get_available_local_k8s_gpus()
+        local_k8s_gpus = get_available_local_k8s_gpus()
+        if local_k8s_gpus:
+            return local_k8s_gpus
+        self.logger.error("No available GPUs found in the K8s cluster")
+        return {}
 
     def get_namespace(self):
         """Get the namespace of the environment"""
@@ -124,6 +128,16 @@ class KubernetesHandler(ExecutionHandler):
             mount_path="/dev/shm")
         volume_mounts.append(dshm_volume_mount)
 
+        # Add SSH volume mount for AutoML brain jobs
+        if automl_brain:
+            host_ssh_path = os.getenv('HOST_SSH_PATH')
+            if host_ssh_path:
+                ssh_volume_mount = client.V1VolumeMount(
+                    name="ssh-keys",
+                    mount_path="/root/.ssh",
+                    read_only=True)
+                volume_mounts.append(ssh_volume_mount)
+
         resources = client.V1ResourceRequirements(
             limits={
                 'nvidia.com/gpu': str(num_gpu)
@@ -184,6 +198,21 @@ class KubernetesHandler(ExecutionHandler):
         dshm_volume = client.V1Volume(
             name="dshm",
             empty_dir=client.V1EmptyDirVolumeSource(medium='Memory'))
+
+        # Define volumes list with dshm
+        volumes = [dshm_volume]
+
+        # Add SSH volume for AutoML brain jobs
+        if automl_brain:
+            host_ssh_path = os.getenv('HOST_SSH_PATH')
+            if host_ssh_path:
+                ssh_volume = client.V1Volume(
+                    name="ssh-keys",
+                    host_path=client.V1HostPathVolumeSource(
+                        path=host_ssh_path,
+                        type="Directory"))
+                volumes.append(ssh_volume)
+
         restart_policy = "Always"
         if automl_brain:
             restart_policy = "Never"
@@ -194,7 +223,7 @@ class KubernetesHandler(ExecutionHandler):
             spec=client.V1PodSpec(
                 image_pull_secrets=[client.V1LocalObjectReference(name=image_pull_secret)],
                 containers=[container],
-                volumes=[dshm_volume],
+                volumes=volumes,
                 node_selector=node_selector,
                 restart_policy=restart_policy))
         spec = client.V1JobSpec(
@@ -392,7 +421,8 @@ class KubernetesHandler(ExecutionHandler):
             return True
         except Exception as e:
             self.logger.error(f"Failed to create K8s microservice: {e}")
-            return False
+            # Re-raise exception with clear message so caller can handle it
+            raise RuntimeError(f"Failed to create K8s microservice: {e}") from e
 
     def send_request_to_microservice(
         self,
@@ -760,8 +790,9 @@ class KubernetesHandler(ExecutionHandler):
                 env_vars = [client.V1EnvVar(name="JOB_ID", value=job_id or "")]
 
             # Add custom environment variables if provided
-            if custom_env_vars:
-                env_vars.extend(custom_env_vars)
+            if custom_env_vars and isinstance(custom_env_vars, dict):
+                for key, value in custom_env_vars.items():
+                    env_vars.append(client.V1EnvVar(name=key, value=str(value)))
 
             # Configure ports
             if statefulset_type == "inference_microservice":
@@ -828,7 +859,7 @@ echo "Starting Inference Microservice..." &&
             image_pull_secret = os.getenv('IMAGEPULLSECRET', default='imagepullsecret')
             node_selector = None
             if accelerator:
-                available_gpus = self.get_available_local_k8s_gpus()
+                available_gpus = self.get_available_instances()
                 gpu_to_be_run_on = None
                 if available_gpus:
                     gpu_to_be_run_on = available_gpus.get(accelerator, {}).get("gpu_type")

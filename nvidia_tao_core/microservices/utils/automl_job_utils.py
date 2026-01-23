@@ -96,7 +96,7 @@ def on_new_automl_job(automl_context, recommendation):
         'handler_id': automl_context.handler_id,
         'created_on': automl_context.created_on,
         'last_modified': automl_context.last_modified,
-        'specs': get_job_specs(automl_brain_job_id),  # Specs are stored under brain job ID
+        'specs': get_job_specs(automl_context.id, automl=True, automl_experiment_id=str(recommendation_id)),
         'dependencies': deps,
         'retain_checkpoints_for_resume': automl_context.retain_checkpoints_for_resume,
         'early_stop_epoch': automl_context.early_stop_epoch,
@@ -114,7 +114,14 @@ def on_new_automl_job(automl_context, recommendation):
 
 
 def on_delete_automl_job(job_id):
-    """Dequeue the automl experiment job"""
+    """Dequeue the automl job
+
+    Args:
+        job_id: Can be either the brain's job ID or an experiment's job ID
+
+    Returns:
+        bool: True if successful, False if job not found
+    """
     # AutoML handler stop would handle this
     # job_id can be either brain job ID or experiment job ID
     # Brain jobs are NOT in the workflow queue, so we skip dequeuing for them
@@ -124,7 +131,7 @@ def on_delete_automl_job(job_id):
     # Brain jobs don't have user_id, num_gpu, network, handler_id, workflow_status
     if not job_metadata or 'user_id' not in job_metadata or 'handler_id' not in job_metadata:
         logger.debug(f"Skipping dequeue for job {job_id} - appears to be a brain job or missing required fields")
-        return
+        return False
 
     job_dict = {
         'user_id': job_metadata.get("user_id"),
@@ -149,6 +156,7 @@ def on_delete_automl_job(job_id):
     from .job_utils.workflow import Workflow, Job
     job = Job(**job_dict)
     Workflow.dequeue(job)
+    return True
 
 
 def on_cancel_automl_job(job_id):

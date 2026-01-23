@@ -68,21 +68,67 @@ def validate_automl_settings(automl_settings):
         return f"validation input automl_settings must be a dict, instead is {type(automl_settings)}"
     automl_enabled = automl_settings.get("automl_enabled", False)
     if automl_enabled:
-        if automl_settings.get("automl_algorithm", "") in ("hyperband", "h"):
-            r = automl_settings.get("automl_R", 27)
-            nu = automl_settings.get("automl_nu", 3)
-            epoch_multiplier = automl_settings.get("epoch_multiplier", 1)
-            if r <= 1 or nu <= 1:
-                return "automl_R, automl_nu must be greater than 1"
-            if nu > r:
-                return "automl_nu must be less than or equal to automl_R"
+        algorithm = automl_settings.get("automl_algorithm", "")
+        # Extract algorithm-specific parameters from nested structure
+        algo_params = automl_settings.get("algorithm_specific_params", {})
+
+        # Hyperband-like algorithms: Hyperband, BOHB, ASHA, DEHB, HyperBandES
+        if algorithm in ("hyperband", "h", "bohb", "asha", "dehb", "hyperband_es", "hes"):
+            max_epochs = algo_params.get("automl_max_epochs", 27)
+            reduction_factor = algo_params.get("automl_reduction_factor", 3)
+            epoch_multiplier = algo_params.get("epoch_multiplier", 1)
+            if max_epochs <= 1 or reduction_factor <= 1:
+                return "automl_max_epochs, automl_reduction_factor must be greater than 1"
+            if reduction_factor > max_epochs:
+                return "automl_reduction_factor must be less than or equal to automl_max_epochs"
             if epoch_multiplier <= 0:
                 return "epoch_multiplier must be greater than 0"
-        elif automl_settings.get("automl_algorithm", "") in ("bayesian", "b"):
-            if automl_settings.get("automl_max_recommendations", 20) <= 0:
+
+            # ASHA-specific validation
+            if algorithm == "asha":
+                max_concurrent = algo_params.get("automl_max_concurrent", 4)
+                if max_concurrent < 1:
+                    return "automl_max_concurrent must be at least 1"
+
+            # DEHB-specific validation
+            if algorithm == "dehb":
+                mutation_factor = algo_params.get("automl_mutation_factor", 0.5)
+                crossover_prob = algo_params.get("automl_crossover_prob", 0.5)
+                if not (0.0 <= mutation_factor <= 2.0):
+                    return "automl_mutation_factor must be between 0.0 and 2.0"
+                if not (0.0 <= crossover_prob <= 1.0):
+                    return "automl_crossover_prob must be between 0.0 and 1.0"
+
+            # HyperBandES-specific validation
+            if algorithm in ("hyperband_es", "hes"):
+                early_stop_threshold = algo_params.get("automl_early_stop_threshold", 0.1)
+                if not (0.0 <= early_stop_threshold <= 1.0):
+                    return "automl_early_stop_threshold must be between 0.0 and 1.0"
+
+        # Bayesian-like algorithms: Bayesian, BFBO
+        elif algorithm in ("bayesian", "b", "bfbo"):
+            max_recommendations = algo_params.get("automl_max_recommendations", 20)
+            if max_recommendations <= 0:
                 return "automl_max_recommendations must be greater than 0"
+
+        # PBT algorithm
+        elif algorithm == "pbt":
+            population_size = algo_params.get("automl_population_size", 10)
+            max_generations = algo_params.get("automl_max_generations", 20)
+            eval_interval = algo_params.get("automl_eval_interval", 10)
+            perturbation_factor = algo_params.get("automl_perturbation_factor", 1.2)
+
+            if population_size < 1:
+                return "automl_population_size must be at least 1"
+            if max_generations < 1:
+                return "automl_max_generations must be at least 1"
+            if eval_interval < 1:
+                return "automl_eval_interval must be at least 1"
+            if not (1.0 <= perturbation_factor <= 10.0):
+                return "automl_perturbation_factor must be between 1.0 and 10.0"
+
         else:
-            return "automl_algorithm must be 'hyperband' or 'bayesian'"
+            return "automl_algorithm must be one of: bayesian, hyperband, bohb, bfbo, asha, pbt, dehb, hyperband_es"
     return None
 
 

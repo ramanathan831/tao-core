@@ -52,7 +52,7 @@ class SimpleHandler:
             self.cloud_instance, _ = create_cs_instance(workspace_metadata)
 
     def check_for_file_existence(self, path, file_type="file", file_extension=""):
-        """Check for existence of file"""
+        """Check for existence of file or extracted folder (for tar files)"""
         if self.cloud_instance:
             # Use cloud_file_path for cloud operations, not local temp path
             # For SLURM, keep absolute paths; for other clouds, strip leading /
@@ -67,7 +67,15 @@ class SimpleHandler:
                 cloud_path = f"{base_path.rstrip('/')}/{path.lstrip('/')}"
 
             if file_type == "file":
-                return self.cloud_instance.is_file(cloud_path)
+                file_exists = self.cloud_instance.is_file(cloud_path)
+                # If tar file not found, check for extracted folder
+                if not file_exists and (cloud_path.endswith('.tar.gz') or cloud_path.endswith('.tar')):
+                    extracted_dir = cloud_path.replace('.tar.gz', '').replace('.tar', '')
+                    folder_exists = self.cloud_instance.is_folder(extracted_dir)
+                    if folder_exists:
+                        logger.debug(f"Tar file {cloud_path} not found, but extracted folder exists: {extracted_dir}")
+                        return True
+                return file_exists
             if file_type == "folder":
                 return self.cloud_instance.is_folder(cloud_path)
             if file_type == "regex":
@@ -79,7 +87,15 @@ class SimpleHandler:
                 return any(self.cloud_instance.glob_files(pattern))
         else:
             if file_type == "file":
-                return os.path.isfile(path)
+                file_exists = os.path.isfile(path)
+                # If tar file not found, check for extracted folder
+                if not file_exists and (path.endswith('.tar.gz') or path.endswith('.tar')):
+                    extracted_dir = path.replace('.tar.gz', '').replace('.tar', '')
+                    folder_exists = os.path.isdir(extracted_dir)
+                    if folder_exists:
+                        logger.debug(f"Tar file {path} not found, but extracted folder exists: {extracted_dir}")
+                        return True
+                return file_exists
             if file_type == "folder":
                 return os.path.isdir(path)
             if file_type == "regex":

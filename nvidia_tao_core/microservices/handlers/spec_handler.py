@@ -15,6 +15,7 @@
 """Spec handler module for managing specification schemas"""
 import os
 import logging
+import traceback
 
 from nvidia_tao_core.microservices.utils.stateless_handler_utils import (
     check_read_access,
@@ -25,6 +26,7 @@ from nvidia_tao_core.microservices.utils.stateless_handler_utils import (
     is_request_automl
 )
 from nvidia_tao_core.microservices.utils.handler_utils import Code
+from nvidia_tao_core.microservices.utils.specs_utils import csv_to_json_schema
 from nvidia_tao_core.microservices.utils.stateless_handler_utils import BACKEND
 from nvidia_tao_core.microservices.utils.core_utils import (
     merge_nested_dicts,
@@ -33,7 +35,6 @@ from nvidia_tao_core.microservices.utils.core_utils import (
 )
 from nvidia_tao_core.scripts.generate_schema import generate_schema, validate_and_clean_merged_spec
 from nvidia_tao_core.microservices.handlers.execution_handlers.execution_handler import ExecutionHandler
-from nvidia_tao_core.microservices.utils.specs_utils.csv_to_json_schema import convert
 
 from ..utils.basic_utils import resolve_metadata
 
@@ -117,7 +118,7 @@ class SpecHandler:
                 )
                 if not os.path.exists(CSV_PATH):
                     return Code(404, {}, "Default specs do not exist for action")
-            json_schema = convert(CSV_PATH)
+            json_schema = csv_to_json_schema.convert(CSV_PATH)
 
         if "default" in json_schema and base_experiment_spec:
             # Merge the base experiment spec with the default schema
@@ -189,7 +190,7 @@ class SpecHandler:
                 )
                 if not os.path.exists(CSV_PATH):
                     return Code(404, {}, "Default specs do not exist for action")
-            json_schema = convert(CSV_PATH)
+            json_schema = csv_to_json_schema.convert(CSV_PATH)
 
         json_schema["default"] = job_specs
         if "popular" in json_schema and job_specs:
@@ -264,7 +265,7 @@ class SpecHandler:
                                     f"{base_experiment_network} - {action}.csv")
             if not os.path.exists(CSV_PATH):
                 return Code(404, {}, "Default specs do not exist for action")
-            json_schema = convert(CSV_PATH)
+            json_schema = csv_to_json_schema.convert(CSV_PATH)
         if "default" in json_schema and base_experiment_spec:
             # Merge the base experiment spec with the default schema
             merged_default = merge_nested_dicts(json_schema["default"], base_experiment_spec)
@@ -341,7 +342,7 @@ class SpecHandler:
                 if not os.path.exists(CSV_PATH):
                     return Code(404, {}, "Default specs do not exist for action")
 
-            json_schema = convert(CSV_PATH)
+            json_schema = csv_to_json_schema.convert(CSV_PATH)
         return Code(200, json_schema, "Schema retrieved")
 
     @staticmethod
@@ -362,11 +363,19 @@ class SpecHandler:
                   - 404: If GPUs cannot be retrieved for the specified backend.
         """
         workspace_metadata = get_handler_metadata(workspace_id, "workspaces")
-        handler = ExecutionHandler.create_handler(
-            workspace_metadata=workspace_metadata,
-            backend=BACKEND,
-        )
-        available_instances = handler.get_available_instances(user_id=user_id)
-        if available_instances:
-            return Code(200, available_instances, "Retrieved available GPU info")
+        try:
+            handler = ExecutionHandler.create_handler(
+                workspace_metadata=workspace_metadata,
+                backend=BACKEND,
+            )
+            if handler:
+                available_instances = handler.get_available_instances()
+                if available_instances:
+                    return Code(200, available_instances, "Retrieved available GPU info")
+            else:
+                logger.error(f"Unable to determine appropriate handler for backend '{BACKEND}' and workspace_metadata")
+        except Exception as e:
+            logger.error("Exception thrown in get_gpu_types is %s", str(e))
+            logger.error("Unable to get GPU types for the deployed backend")
+            logger.error(traceback.format_exc())
         return Code(404, [], f"GPU types can't be retrieved for deployed Backend {BACKEND}")

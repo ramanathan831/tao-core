@@ -381,8 +381,9 @@ class TrainConfig:
         valid_max="inf",
         display_name="Learning rate",
         description="Learning rate for optimizer. Can be a single float (applied to whole model) "
-                    "or a list of 2 floats [llm_lr, vision_lr] for separate learning rates "
-                    "for language model and vision encoder during full SFT finetuning.",
+                    "or a list of 2-4 floats [llm_lr, vision_lr, projector_lr, lm_head_lr] for "
+                    "separate learning rates for each model part during full SFT finetuning. "
+                    "List length must match number of model parts (set via num_model_parts).",
         automl_enabled="TRUE"
     )
 
@@ -599,6 +600,14 @@ class ValidationConfig:
         valid_max="inf",
         display_name="Dataloader prefetch factor",
         description="Number of batches to prefetch per worker."
+    )
+
+    enable_dataset_cache: Optional[bool] = BOOL_FIELD(
+        value=False,
+        default_value=False,
+        display_name="Enable validation dataset cache",
+        description="Enable dataset caching for validation. Set to False (recommended) to avoid "
+                    "potential segfaults during validation. If not set, uses the training setting."
     )
 
 

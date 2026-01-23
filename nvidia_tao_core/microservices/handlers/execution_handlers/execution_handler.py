@@ -43,6 +43,16 @@ from nvidia_tao_core.microservices.utils.cloud_utils import create_cs_instance
 from nvidia_tao_core.microservices.handlers.container_handler import ContainerJobHandler
 from datetime import datetime, timezone
 
+# Configure logging
+TAO_LOG_LEVEL = os.getenv('TAO_LOG_LEVEL', 'INFO').upper()
+tao_log_level = getattr(logging, TAO_LOG_LEVEL, logging.INFO)
+logging.basicConfig(
+    level=logging.WARNING,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+)
+logging.getLogger('nvidia_tao_core').setLevel(tao_log_level)
+logger = logging.getLogger(__name__)
+
 
 class ExecutionHandler(ABC):
     """Base class for ALL execution handlers (K8s, Docker, Slurm, Lepton, NVCF)
@@ -56,7 +66,7 @@ class ExecutionHandler(ABC):
 
     def __init__(self, backend_type):
         """Initialize base execution handler with logging"""
-        self.logger = logging.getLogger(self.__class__.__name__)
+        self.logger = logging.getLogger(f"{self.__class__.__module__}.{self.__class__.__name__}")
         self.backend_type = backend_type
 
     # ============================================================================
@@ -940,9 +950,12 @@ class ExecutionHandler(ABC):
                 nvcf_backend_details = cloud_metadata.get('nvcf_backend_details', {})
                 if org_name and team_name and ngc_key:
                     return NvcfHandler(org_name, team_name, ngc_key, nvcf_backend_details)
-            raise ValueError(
-                "NVCF backend requires cloud_metadata with org_name, teamName, ngc_key, and nvcf_backend_details"
+            logger.error(
+                "NVCF backend requires cloud_metadata with org_name,"
+                "teamName, ngc_key, and nvcf_backend_details"
             )
+            return None
+
         if backend_type == Backend.LOCAL_DOCKER:
             # Import here to avoid circular dependencies
             from .docker_handler import DockerHandler
@@ -950,12 +963,13 @@ class ExecutionHandler(ABC):
                 return DockerHandler(container_image)
             if job_id:
                 return DockerHandler.get_handler_for_container(job_id)
-            raise ValueError("Docker backend requires container_image or job_id")
+            logger.error("Docker backend requires container_image or job_id")
+            return None
         if backend_type == Backend.LOCAL_K8S:
             from .kubernetes_handler import KubernetesHandler
             return KubernetesHandler()
-
-        raise ValueError(f"Unable to determine appropriate handler for backend '{backend_type}' and cloud_metadata")
+        logger.error(f"Unable to determine appropriate handler for backend '{backend_type}' and cloud_metadata")
+        return None
 
     @staticmethod
     def get_job_status_with_handler(
@@ -998,6 +1012,7 @@ class ExecutionHandler(ABC):
             str: Job status (Pending, Running, Done, Error, etc.)
         """
         # Get cloud metadata from workspace
+        job_backend = backend or BACKEND
         cloud_metadata = {}
         if workspace_metadata:
             cloud_metadata = {
@@ -1012,9 +1027,12 @@ class ExecutionHandler(ABC):
         try:
             handler = ExecutionHandler.create_handler(
                 cloud_metadata=cloud_metadata,
-                backend=backend or BACKEND,
+                backend=job_backend,
                 job_id=job_name
             )
+            if not handler:
+                logger.error(f"Unable to determine appropriate handler for backend {job_backend}")
+                return "Error"
 
             # Prepare kwargs based on handler type
             kwargs = {}
@@ -1027,6 +1045,7 @@ class ExecutionHandler(ABC):
                     'automl_exp_job': automl_exp_job,
                     'authorized_party_nca_id': authorized_party_nca_id
                 }
+
             elif handler and handler.backend_type in [Backend.SLURM, Backend.LEPTON]:
                 # Cloud handlers need: results_dir, workspace_metadata
                 kwargs = {
@@ -1048,7 +1067,6 @@ class ExecutionHandler(ABC):
             return status
 
         except Exception as e:
-            logger = logging.getLogger(__name__)
             logger.error(f"Error getting job status for {job_name}: {e}")
             logger.error(traceback.format_exc())
             return "Error"
@@ -1068,7 +1086,8 @@ class ExecutionHandler(ABC):
         automl_brain=False,
         automl_exp_job=False,
         local_cluster=False,
-        backend=None
+        backend=None,
+        backend_details=None
     ):
         """Factory method to create a job using the appropriate handler
 
@@ -1139,10 +1158,15 @@ class ExecutionHandler(ABC):
                 container_image=image,
                 job_id=job_name,
             )
-
+            if not handler:
+                logger.error(f"Unable to determine appropriate handler for backend '{backend_type}' and cloud_metadata")
+                return
             if handler.backend_type in [Backend.SLURM, Backend.LEPTON]:
                 # Cloud handlers implement create_job with different signature
                 if hasattr(handler, 'create_job'):
+                    partition = None
+                    if backend_details and backend_details.get('backend_type') == Backend.SLURM.value:
+                        partition = backend_details.get('partition', "")
                     handler.create_job(
                         image=image,
                         network="",  # Will be extracted from command
@@ -1152,7 +1176,8 @@ class ExecutionHandler(ABC):
                         job_id=job_name,
                         docker_env_vars=docker_env_vars or {},
                         num_gpus=num_gpu,
-                        num_nodes=num_nodes
+                        num_nodes=num_nodes,
+                        partition=partition
                     )
                 return
 
@@ -1179,7 +1204,7 @@ class ExecutionHandler(ABC):
                     if host_ssh_path:
                         volumes = [
                             '/var/run/docker.sock:/var/run/docker.sock',
-                            f'{host_ssh_path}:/home/www-data/.ssh:ro'
+                            f'{host_ssh_path}:/root/.ssh:ro'
                         ]
                     else:
                         volumes = ['/var/run/docker.sock:/var/run/docker.sock']
@@ -1212,7 +1237,6 @@ class ExecutionHandler(ABC):
             )
 
         except Exception as e:
-            logger = logging.getLogger(__name__)
             logger.error(f"Error creating job {job_name}: {e}")
             logger.error(traceback.format_exc())
             raise
@@ -1232,7 +1256,6 @@ class ExecutionHandler(ABC):
         Returns:
             bool: True if deletion successful, False otherwise
         """
-        logger = logging.getLogger(__name__)
         try:
             # Create appropriate handler based on workspace metadata
             handler = ExecutionHandler.create_handler(
@@ -1240,6 +1263,9 @@ class ExecutionHandler(ABC):
                 backend=BACKEND,
                 job_id=job_id
             )
+            if not handler:
+                logger.error(f"Unable to determine appropriate handler for backend '{BACKEND}' and job_id '{job_id}'")
+                return True
             handler.delete(job_id)
             return True
 
@@ -1264,6 +1290,7 @@ class ExecutionHandler(ABC):
         microservice_container="",
         resource_shape=None,
         dedicated_node_group=None,
+        backend_details={},
         docker_env_vars={},
         num_nodes=1,
         accelerator=None,
@@ -1334,6 +1361,9 @@ class ExecutionHandler(ABC):
                     self.logger.info(f"Dedicated node group: {dedicated_node_group}")
                 # Create job using the handler
                 if hasattr(handler, 'create_job'):
+                    partition = None
+                    if backend_details and backend_details.get('backend_type') == Backend.SLURM.value:
+                        partition = backend_details.get('partition', "")
                     output = handler.create_job(
                         image=microservice_container,
                         network=network,
@@ -1345,7 +1375,8 @@ class ExecutionHandler(ABC):
                         num_gpus=num_gpu,
                         num_nodes=num_nodes,
                         resource_shape=resource_shape,
-                        dedicated_node_group=dedicated_node_group
+                        dedicated_node_group=dedicated_node_group,
+                        partition=partition
                     )
                     job_id = microservice_pod_id
                     if handler.backend_type == Backend.SLURM and output:
@@ -1420,9 +1451,11 @@ class ExecutionHandler(ABC):
     @staticmethod
     def delete_job_with_handler(job_name):
         """Delete a job using the appropriate handler"""
-        logger = logging.getLogger(__name__)
         try:
             handler = ExecutionHandler.create_handler(backend=BACKEND, job_id=job_name)
+            if not handler:
+                logger.error(f"Unable to determine appropriate handler for backend '{BACKEND}' and job_id '{job_name}'")
+                return True
             if handler.backend_type == Backend.LOCAL_K8S:
                 from .kubernetes_handler import KubernetesHandler
                 k8s_handler = KubernetesHandler()

@@ -351,7 +351,9 @@ def get_job_logs_from_backend(
     workspace_id = handler_metadata.get("workspace", "")
     workspace_metadata = get_handler_metadata(workspace_id, "workspaces")
     handler = ExecutionHandler.create_handler(workspace_metadata=workspace_metadata, backend=BACKEND, job_id=job_id)
-
+    if not handler:
+        logger.error(f"Unable to determine appropriate handler for backend '{BACKEND}' and job_id '{job_id}'")
+        return None
     logs = handler.get_job_logs(job_id, tail_lines)
 
     if not logs:

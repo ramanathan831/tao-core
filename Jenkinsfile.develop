@@ -1,133 +1,157 @@
-// Global variables
+@Library('tao-jenkins-shared-library') _
+import org.tao.PodTemplates
+import org.tao.TaoConfig
+
+// ============================================================================
+// PROJECT INITIALIZATION
+// ============================================================================
+
+TaoConfig.init([
+    projectName: 'tao-core',
+    
+    // CI author info
+    ciAuthorName: 'TAO CI Bot',
+    ciAuthorEmail: 'tao-rc-interest@nvidia.com',
+    podLabelPrefix: 'tao-core-build',
+    
+    // Registries
+    registries: [
+        NGC: [
+            url: 'https://nvcr.io',
+            host: 'nvcr.io'
+        ],
+        GITLAB: [
+            url: 'https://gitlab-master.nvidia.com',
+            connection: 'git-lab-master'
+        ]
+    ],
+    
+    // Credentials
+    credentials: [
+        NGC_API_KEY: 'NGC_FTMS_API_KEY',
+        NGC_CLI_KEY: 'NGC_FTMS_API_KEY'
+    ],
+    
+    // Docker images
+    images: [
+        PYTORCH_BASE: 'nvcr.io/nvidia/pytorch:25.01-py3',
+        SONAR_SCANNER: 'sonarsource/sonar-scanner-cli:11'
+    ],
+    
+    // Kubernetes
+    kubernetes: [
+        cloud: 'sc-ipp-blossom-prod',
+        imagePullSecrets: ['tltimagepullsecret']
+    ]
+])
+
+// Initialize PodTemplates
+PodTemplates.init([
+    imagePullSecrets: TaoConfig.kubernetes.imagePullSecrets,
+    
+    containers: [
+        'sonar': [
+            image: TaoConfig.images.SONAR_SCANNER,
+            command: ['cat'],
+            tty: true
+        ],
+        'pyt': [
+            image: TaoConfig.images.PYTORCH_BASE,
+            privileged: true,
+            command: ['cat'],
+            tty: true,
+            resources: [
+                requests: ['nvidia.com/gpu': 1, memory: '16Gi'],
+                limits: ['nvidia.com/gpu': 1, memory: '32Gi']
+            ]
+        ]
+    ],
+    
+    affinityPools: [
+        'tao-gpu-pool': [
+            gpuTypes: ['A100_PCIE_40GB', 'A40', 'L40', 'A100_80GB_PCIe', 'TITAN_V'],
+            driverVersions: ['580.35', '570.41', '570.14', '560.35.03', '550.54.15', '535.104.05', '535.74', '525.60.13', '510.41'],
+            os: 'linux',
+            arch: 'amd64'
+        ]
+    ]
+])
+
+// ============================================================================
+// PIPELINE PARAMETERS
+// ============================================================================
+
 def TAO_VERSION = "6.25.9"
 def BUILD_TYPE = "dev"
 
-podTemplate (cloud:'sc-ipp-blossom-prod', yaml : """
-apiVersion: v1
-kind: Pod
-metadata:
-    labels:
-        some-label: tao-core-build
-spec:
-    imagePullSecrets:
-      - name: tltimagepullsecret
-    containers:
-    - name: sonar
-      image: sonarsource/sonar-scanner-cli:11
-      command:
-      - cat
-      tty: true
-    - name: pyt
-      image: nvcr.io/nvidia/pytorch:25.01-py3
-      securityContext:
-        privileged: true
-      command:
-      - cat
-      resources:
-        requests:
-          nvidia.com/gpu: 1
-          memory: "16Gi"
-        limits:
-          nvidia.com/gpu: 1
-          memory: "32Gi"
-      tty: true
-    restartPolicy: Never
-    backoffLimit: 4
-    affinity:
-      nodeAffinity:
-        requiredDuringSchedulingIgnoredDuringExecution:
-          nodeSelectorTerms:
-          - matchExpressions:
-            - key: nvidia.com/gpu_type
-              operator: In
-              values:
-              - A100_PCIE_40GB
-              - A40
-              - L40
-              - A100_80GB_PCIe
-              - TITAN_V
-            - key: nvidia.com/driver_version
-              operator: In
-              values:
-              - 580.35
-              - 570.41
-              - 570.14
-              - 560.35.03
-              - 550.54.15
-              - 535.104.05
-              - 535.74
-              - 525.60.13
-              - 510.41
-            - key: kubernetes.io/os
-              operator: In
-              values:
-              - linux
-    """
-)
-{
-  // Stage 1: Parallel execution of x86 and ARM tests
-  parallel (
-    "x86_tests": {
-      node(POD_LABEL) {
-        container('pyt') {
-          try {
-            stage ('checkout_x86') {
-              gitlabCommitStatus(name: "checkout_x86", connection: gitLabConnection('git-lab-master')) {
-                checkout scm
-              }
-            }
+// ============================================================================
+// PIPELINE EXECUTION
+// ============================================================================
 
-            stage ("functional_tests_x86") {
-              withCredentials([string(credentialsId: 'NGC_FTMS_API_KEY', variable: 'NGC_CLI_API_KEY')]) {
-                script{
-                  env.NGC_KEY=NGC_CLI_API_KEY
-                  env.NGC_PATH='ea-tlt/tao_ea/pretrained_dino_imagenet:fan_hybrid_tiny'
+podTemplate(cloud: TaoConfig.kubernetes.cloud, yaml: PodTemplates.generate(
+    label: 'tao-core-build',
+    containers: ['sonar', 'pyt'],
+    affinityPool: 'tao-gpu-pool'
+)) {
+    // Stage 1: Parallel execution of x86 and ARM tests
+    parallel(
+        "x86_tests": {
+            node(POD_LABEL) {
+                container('pyt') {
+                    try {
+                        stage('checkout_x86') {
+                            withGitLabStatus('checkout_x86') {
+                                checkoutWithSafeDirectory()
+                            }
+                        }
+
+                        stage('functional_tests_x86') {
+                            withCredentials([string(credentialsId: TaoConfig.credentials.NGC_CLI_KEY, variable: 'NGC_CLI_API_KEY')]) {
+                                script {
+                                    env.NGC_KEY = NGC_CLI_API_KEY
+                                    env.NGC_PATH = 'ea-tlt/tao_ea/pretrained_dino_imagenet:fan_hybrid_tiny'
+                                }
+                            }
+                            withGitLabStatus('functional_tests_x86') {
+                                sh "pip install pytest-cov"
+                                sh "CPUCOUNT=1 pip install . && pytest --cov=nvidia_tao_core --cov-report=xml:coverage.xml --cov-report=term"
+                                archiveArtifacts artifacts: 'coverage.xml', fingerprint: true, allowEmptyArchive: true
+                            }
+                        }
+                    } finally {
+                        stage('cleanup_x86') {
+                            catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
+                                cleanPythonBuild(
+                                    setupFile: 'setup.py',
+                                    removeDist: true,
+                                    removePycache: true
+                                )
+                            }
+                        }
+                    }
                 }
-              }
-              gitlabCommitStatus(name: "functional_tests_x86", connection: gitLabConnection('git-lab-master')) {
-                sh "pip install pytest-cov"
-                sh "CPUCOUNT=1 pip install . && pytest --cov=nvidia_tao_core --cov-report=xml:coverage.xml --cov-report=term"
-                // Archive the coverage report
-                archiveArtifacts artifacts: 'coverage.xml', fingerprint: true, allowEmptyArchive: true
-              }
+                
+                // Run SonarQube analysis in sonar container within the same node
+                container('sonar') {
+                    stage('sonarqube_analysis_x86') {
+                        catchError(buildResult: 'SUCCESS', stageResult: 'FAILURE') {
+                            withGitLabStatus('sonarqube_analysis_x86') {
+                                runSonarQubeAnalysis(
+                                    sources: 'nvidia_tao_core',
+                                    tests: 'nvidia_tao_core/tests',
+                                    coverageReport: "${env.PWD}/coverage.xml",
+                                    additionalProps: [
+                                        'sonar.exclusions': 'nvidia_tao_core/tests/**'
+                                    ],
+                                    failOnError: false
+                                )
+                            }
+                        }
+                    }
+                }
             }
-          } finally {
-            stage ('cleanup_x86') {
-              catchError(buildResult: 'SUCCESS', stageResult: 'UNSTABLE') {
-                sh """
-                  echo "Clearing build and dists"
-                  python setup.py clean --all
-                  echo "Clearing pycache and pycs"
-                  find . | grep -E '(__pycache__|[.]pyc|[.]pyo\$)' | xargs rm -rf
-                """
-              }
-            }
-          }
         }
         
-        // Run SonarQube analysis in sonar container within the same node
-        container('sonar') {
-          stage ('sonarqube_analysis_x86') {
-            catchError(buildResult: 'SUCCESS', stageResult: 'FAILURE') {
-              gitlabCommitStatus(name: "sonarqube_analysis_x86", connection: gitLabConnection('git-lab-master')) {
-                def branchName = params.GITLAB_BRANCH ?: params.BRANCH_NAME ?: env.BRANCH_NAME ?: env.GIT_BRANCH?.replaceFirst(/^origin\//, '') ?: 'main'
-                echo "Analyzing branch: ${branchName}"
-                echo "Available parameters: GITLAB_BRANCH=${params.GITLAB_BRANCH}, BRANCH_NAME=${params.BRANCH_NAME}"
-                echo "Available env vars: BRANCH_NAME=${env.BRANCH_NAME}, GIT_BRANCH=${env.GIT_BRANCH}"
-                
-                // Verify coverage file exists and show its location
-                sh "pwd && ls -la coverage.xml || echo 'Coverage file not found!'"
-                
-                withSonarQubeEnv() {
-                  sh "sonar-scanner -Dsonar.python.coverage.reportPaths=\${PWD}/coverage.xml -Dsonar.sources=nvidia_tao_core -Dsonar.tests=nvidia_tao_core/tests -Dsonar.exclusions=nvidia_tao_core/tests/** -Dsonar.branch.name=${branchName}"
-                }
-                echo "SonarQube analysis completed successfully"
-              }
-            }
-          }
-        }
-      }
-    }
     // Disabling ARM tests to unblock MRs until we get ARM nodes to test on. #TODO: Re-enable once we have the infra
     // "arm_tests": {
     //   node('GB200-ARM') {

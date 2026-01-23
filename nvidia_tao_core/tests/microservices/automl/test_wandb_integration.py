@@ -14,10 +14,16 @@
 
 """Unit tests for wandb integration in automl controller"""
 
+import os
 from unittest.mock import Mock, patch
 
-from nvidia_tao_core.microservices.automl.controller import Controller
-from nvidia_tao_core.microservices.utils.automl_utils import Recommendation
+# Enable test mode to use mongomock instead of real MongoDB (avoid 120s timeout)
+# Must be set before importing modules that use MongoDB
+os.environ["TAO_TEST_MODE"] = "true"
+
+from nvidia_tao_core.microservices.automl.controller import Controller  # noqa: E402
+from nvidia_tao_core.microservices.automl_start import AlgorithmParams  # noqa: E402
+from nvidia_tao_core.microservices.utils.automl_utils import Recommendation  # noqa: E402
 
 
 class TestWandBGroupName:
@@ -36,15 +42,19 @@ class TestWandBGroupName:
         brain = Mock()
         brain.reverse_sort = True
 
+        algorithm_settings = AlgorithmParams(
+            automl_max_recommendations=10,
+            automl_max_epochs=81,
+            automl_reduction_factor=3,
+            epoch_multiplier=1
+        )
+
         controller = Controller(
             root="/test/root",
             network="image_classification",
             brain=brain,
             automl_context=automl_context,
-            max_recommendations=10,
-            automl_R=81,
-            automl_nu=3,
-            epoch_multiplier=1,
+            automl_algorithm_settings=algorithm_settings,
             delete_intermediate_ckpt="false",
             metric="mAP",
             automl_algorithm="bayesian",
@@ -70,15 +80,19 @@ class TestWandBGroupName:
         brain = Mock()
         brain.reverse_sort = True
 
+        algorithm_settings = AlgorithmParams(
+            automl_max_recommendations=10,
+            automl_max_epochs=81,
+            automl_reduction_factor=3,
+            epoch_multiplier=1
+        )
+
         controller = Controller(
             root="/test/root",
             network="image_classification",
             brain=brain,
             automl_context=automl_context,
-            max_recommendations=10,
-            automl_R=81,
-            automl_nu=3,
-            epoch_multiplier=1,
+            automl_algorithm_settings=algorithm_settings,
             delete_intermediate_ckpt="false",
             metric="mAP",
             automl_algorithm="bayesian",
@@ -108,15 +122,19 @@ class TestWandBInitialization:
             brain = Mock()
             brain.reverse_sort = True
 
+            algorithm_settings = AlgorithmParams(
+                automl_max_recommendations=10,
+                automl_max_epochs=81,
+                automl_reduction_factor=3,
+                epoch_multiplier=1
+            )
+
             controller = Controller(
                 root="/test/root",
                 network="image_classification",
                 brain=brain,
                 automl_context=automl_context,
-                max_recommendations=10,
-                automl_R=81,
-                automl_nu=3,
-                epoch_multiplier=1,
+                automl_algorithm_settings=algorithm_settings,
                 delete_intermediate_ckpt="false",
                 metric="mAP",
                 automl_algorithm="bayesian",
@@ -295,15 +313,19 @@ class TestWandBInitialization:
         brain = Mock()
         brain.reverse_sort = True
 
+        algorithm_settings = AlgorithmParams(
+            automl_max_recommendations=10,
+            automl_max_epochs=81,
+            automl_reduction_factor=3,
+            epoch_multiplier=2
+        )
+
         controller = Controller(
             root="/test/root",
             network="image_classification",
             brain=brain,
             automl_context=automl_context,
-            max_recommendations=10,
-            automl_R=81,
-            automl_nu=3,
-            epoch_multiplier=2,
+            automl_algorithm_settings=algorithm_settings,
             delete_intermediate_ckpt="false",
             metric="mAP",
             automl_algorithm="hyperband",
@@ -323,8 +345,8 @@ class TestWandBInitialization:
         # Verify config includes hyperband-specific fields
         call_kwargs = mock_wandb_init.call_args[1]
         assert call_kwargs["config"]["algorithm"] == "hyperband"
-        assert call_kwargs["config"]["automl_R"] == 81
-        assert call_kwargs["config"]["automl_nu"] == 3
+        assert call_kwargs["config"]["max_epochs"] == 81
+        assert call_kwargs["config"]["reduction_factor"] == 3
         assert call_kwargs["config"]["epoch_multiplier"] == 2
 
 
@@ -346,15 +368,19 @@ class TestWandBTableCreation:
             brain = Mock()
             brain.reverse_sort = True
 
+            algorithm_settings = AlgorithmParams(
+                automl_max_recommendations=10,
+                automl_max_epochs=81,
+                automl_reduction_factor=3,
+                epoch_multiplier=1
+            )
+
             controller = Controller(
                 root="/test/root",
                 network="image_classification",
                 brain=brain,
                 automl_context=automl_context,
-                max_recommendations=10,
-                automl_R=81,
-                automl_nu=3,
-                epoch_multiplier=1,
+                automl_algorithm_settings=algorithm_settings,
                 delete_intermediate_ckpt="false",
                 metric="mAP",
                 automl_algorithm="bayesian",
@@ -420,15 +446,19 @@ class TestWandBTableUpdate:
             brain = Mock()
             brain.reverse_sort = True
 
+            algorithm_settings = AlgorithmParams(
+                automl_max_recommendations=10,
+                automl_max_epochs=81,
+                automl_reduction_factor=3,
+                epoch_multiplier=1
+            )
+
             controller = Controller(
                 root="/test/root",
                 network="image_classification",
                 brain=brain,
                 automl_context=automl_context,
-                max_recommendations=10,
-                automl_R=81,
-                automl_nu=3,
-                epoch_multiplier=1,
+                automl_algorithm_settings=algorithm_settings,
                 delete_intermediate_ckpt="false",
                 metric="mAP",
                 automl_algorithm="bayesian",
@@ -657,6 +687,9 @@ class TestWandBTableUpdate:
 class TestWandBGroupInSpecs:
     """Test wandb group name update in job specs"""
 
+    @patch('nvidia_tao_core.microservices.automl.controller.update_job_status')
+    @patch('nvidia_tao_core.microservices.automl.controller.write_job_metadata')
+    @patch('nvidia_tao_core.microservices.automl.controller.get_handler_job_metadata')
     @patch('nvidia_tao_core.microservices.automl.controller.update_job_message')
     @patch('nvidia_tao_core.microservices.automl.controller.create_cs_instance_with_decrypted_metadata')
     @patch('nvidia_tao_core.microservices.automl.controller.save_job_specs')
@@ -664,10 +697,12 @@ class TestWandBGroupInSpecs:
     @patch('nvidia_tao_core.microservices.automl.controller.report_health_beat')
     def test_start_updates_wandb_group_in_specs(
         self, mock_report_health, mock_get_job_specs, mock_save_job_specs, mock_cs_instance,
-        mock_update_job_message
+        mock_update_job_message, mock_get_handler_job_metadata, mock_write_job_metadata,
+        mock_update_job_status
     ):
         """Test that start() updates wandb group in job specs"""
         mock_cs_instance.return_value = (Mock(), None)
+        mock_get_handler_job_metadata.return_value = {"job_details": {}}
 
         automl_context = Mock()
         automl_context.id = "test_job_123"
@@ -677,15 +712,19 @@ class TestWandBGroupInSpecs:
         brain = Mock()
         brain.reverse_sort = True
 
+        algorithm_settings = AlgorithmParams(
+            automl_max_recommendations=10,
+            automl_max_epochs=81,
+            automl_reduction_factor=3,
+            epoch_multiplier=1
+        )
+
         controller = Controller(
             root="/test/root",
             network="image_classification",
             brain=brain,
             automl_context=automl_context,
-            max_recommendations=10,
-            automl_R=81,
-            automl_nu=3,
-            epoch_multiplier=1,
+            automl_algorithm_settings=algorithm_settings,
             delete_intermediate_ckpt="false",
             metric="mAP",
             automl_algorithm="bayesian",
@@ -703,13 +742,12 @@ class TestWandBGroupInSpecs:
         # Ensure update_job_message doesn't block
         mock_update_job_message.return_value = None
 
-        # Mock other dependencies to prevent full execution
+        # Mock other dependencies to prevent full execution and make test fast
         with patch.object(controller, '_initialize_wandb_for_automl'), \
-             patch.object(controller, '_execute_loop', side_effect=Exception("Stop execution")):
-            try:
-                controller.start()
-            except Exception:
-                pass  # Expected to stop execution
+             patch.object(controller, '_execute_loop'), \
+             patch.object(controller, 'cancel_recommendation_jobs'), \
+             patch.object(controller, '_get_experiment_results_path', return_value="/fake/path"):
+            controller.start()
 
         # Verify get_job_specs was called
         mock_get_job_specs.assert_called()
@@ -733,15 +771,19 @@ class TestWandBGroupInSpecs:
         brain = Mock()
         brain.reverse_sort = True
 
+        algorithm_settings = AlgorithmParams(
+            automl_max_recommendations=10,
+            automl_max_epochs=81,
+            automl_reduction_factor=3,
+            epoch_multiplier=1
+        )
+
         controller = Controller(
             root="/test/root",
             network="image_classification",
             brain=brain,
             automl_context=automl_context,
-            max_recommendations=10,
-            automl_R=81,
-            automl_nu=3,
-            epoch_multiplier=1,
+            automl_algorithm_settings=algorithm_settings,
             delete_intermediate_ckpt="false",
             metric="mAP",
             automl_algorithm="bayesian",

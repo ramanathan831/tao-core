@@ -52,7 +52,8 @@ from .schemas import (
     LstInt,
     PublishModel,
     BulkOpsRsp,
-    MessageOnly
+    MessageOnly,
+    JobEventsRsp
 )
 
 logger = logging.getLogger(__name__)
@@ -2249,6 +2250,10 @@ def experiment_job_resume(org_name, experiment_id, job_id):
         f"[BLUEPRINT-RESUME] ExperimentHandler.resume_experiment_job completed: "
         f"job_id={job_id}, response_code={response.code}"
     )
+    logger.debug(
+        f"[BLUEPRINT-RESUME] ExperimentHandler.resume_experiment_job completed: "
+        f"job_id={job_id}, response_code={response.code}"
+    )
     # Get schema
     if response.code == 200:
         schema = MessageOnly()
@@ -3538,6 +3543,111 @@ def experiment_job_log_update(org_name, experiment_id, job_id):
     schema = ErrorRsp()
     schema_dict = schema.dump(schema.load(response.data))
     return make_response(jsonify(schema_dict), response.code)
+
+
+@experiments_bp_v1.route('/orgs/<org_name>/experiments/<experiment_id>/jobs/<job_id>:events', methods=['GET'])
+def experiment_job_events(org_name, experiment_id, job_id):
+    """Get all job status events.
+
+    ---
+    get:
+      tags:
+      - EXPERIMENT
+      summary: Get all job status events
+      description: |
+        Returns all status event lines for a given job. This endpoint:
+        - Validates the experiment exists and user has access
+        - Validates the job exists
+        - Retrieves all status events from storage
+        - Returns the complete event history
+      parameters:
+      - name: org_name
+        in: path
+        description: Org Name
+        required: true
+        schema:
+          type: string
+          maxLength: 255
+          pattern: '^[a-zA-Z0-9_-]+$'
+      - name: experiment_id
+        in: path
+        description: ID of Experiment
+        required: true
+        schema:
+          type: string
+          format: uuid
+          maxLength: 36
+      - name: job_id
+        in: path
+        description: Job ID
+        required: true
+        schema:
+          type: string
+          format: uuid
+          maxLength: 36
+      - name: automl_experiment_number
+        in: query
+        description: Optional filter to retrieve events from specific autoML experiment
+        required: false
+        schema:
+          type: string
+      responses:
+        200:
+          description: Returned Job Events
+          content:
+            application/json:
+              schema: JobEventsRsp
+          headers:
+            Access-Control-Allow-Origin:
+              $ref: '#/components/headers/Access-Control-Allow-Origin'
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/X-RateLimit-Limit'
+        400:
+          description: Invalid request (e.g. invalid experiment ID, job ID)
+          content:
+            application/json:
+              schema: ErrorRsp
+          headers:
+            Access-Control-Allow-Origin:
+              $ref: '#/components/headers/Access-Control-Allow-Origin'
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/X-RateLimit-Limit'
+        404:
+          description: Job not exist or events not found.
+          content:
+            application/json:
+              schema: ErrorRsp
+          headers:
+            Access-Control-Allow-Origin:
+              $ref: '#/components/headers/Access-Control-Allow-Origin'
+            X-RateLimit-Limit:
+              $ref: '#/components/headers/X-RateLimit-Limit'
+    """
+    message = validate_uuid(experiment_id=experiment_id, job_id=job_id)
+    if message:
+        metadata = {"error_desc": message, "error_code": 1}
+        schema = ErrorRsp()
+        response = make_response(jsonify(schema.dump(schema.load(metadata))), 400)
+        return response
+    # Get response
+    response = JobHandler.get_job_events(
+        org_name,
+        experiment_id,
+        job_id,
+        "experiment",
+        request.args.get('automl_experiment_number', "0")
+    )
+    if response.code == 200:
+        schema = JobEventsRsp()
+        response_data = {
+            "job_id": job_id,
+            "events": response.data
+        }
+        return make_response(jsonify(schema.dump(schema.load(response_data))), 200)
+    # Handle errors
+    schema = ErrorRsp()
+    response = make_response(jsonify(schema.dump(schema.load(response.data))), response.code)
+    return response
 
 
 @experiments_bp_v1.route('/orgs/<org_name>/experiments/<experiment_id>/jobs/<job_id>:status_update', methods=['POST'])
