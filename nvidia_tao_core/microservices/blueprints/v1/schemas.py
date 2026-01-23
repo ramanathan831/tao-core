@@ -205,6 +205,8 @@ class AllowedDockerEnvVariables(Enum):
     RETAIN_CHECKPOINTS_FOR_RESUME = "RETAIN_CHECKPOINTS_FOR_RESUME"
     EARLY_STOP_EPOCH = "EARLY_STOP_EPOCH"
 
+    DEBUG_ENABLED = "DEBUG_ENABLED"
+
     TAO_TELEMETRY_SERVER = "TAO_TELEMETRY_SERVER"
     TAO_CLIENT_TYPE = "TAO_CLIENT_TYPE"  # Client type: container, api, cli, sdk, ui, etc.
     TAO_AUTOML_TRIGGERED = "TAO_AUTOML_TRIGGERED"  # Whether job is triggered by AutoML

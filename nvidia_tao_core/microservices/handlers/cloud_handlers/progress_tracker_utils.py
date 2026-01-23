@@ -88,6 +88,11 @@ def send_progress_status_callback(message):
     Args:
         message (str): Progress message to send
     """
+    # Skip callbacks when DEBUG_ENABLED is set (for local debugging)
+    if os.getenv("DEBUG_ENABLED", "").lower() == "true":
+        logger.info("DEBUG_ENABLED=True: Skipping progress status callback. Message: %s", message)
+        return
+
     try:
         # Notify inference microservice progress bridge (if registered)
         try:
