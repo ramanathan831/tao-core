@@ -136,8 +136,48 @@ def execute_job(job_context):
     """
     # CRITICAL FIX: Pre-assign GPUs BEFORE starting async thread
     # This prevents race condition where job is dequeued before we discover GPUs aren't available
+    # NOTE: Skip GPU pre-assignment for SLURM jobs as SLURM manages its own GPU scheduling
     from nvidia_tao_core.microservices.utils.stateless_handler_utils import BACKEND
-    if BACKEND == "local-docker":
+
+    # Check if this job is using a SLURM workspace
+    is_slurm_job = False
+    try:
+        from nvidia_tao_core.microservices.utils.stateless_handler_utils import (
+            get_handler_job_metadata
+        )
+        job_metadata = get_handler_job_metadata(str(job_context.id))
+        if job_metadata:
+            # Try to get workspace_id - could be in either field
+            workspace_id = job_metadata.get("workspace_id") or job_metadata.get("platform_id")
+
+            # If not in job metadata, check handler/experiment metadata
+            if not workspace_id:
+                handler_id = job_metadata.get("experiment_id") or job_metadata.get("handler_id")
+                kind = job_metadata.get("kind", "experiment")
+                if handler_id:
+                    handler_metadata = get_handler_metadata(handler_id, kind + "s")
+                    if handler_metadata:
+                        workspace_id = handler_metadata.get("workspace") or handler_metadata.get("platform_id")
+
+            if workspace_id:
+                workspace_metadata = get_handler_metadata(workspace_id, "workspaces")
+                if workspace_metadata:
+                    # Check both top-level and nested cloud_type (for robustness)
+                    cloud_type = workspace_metadata.get("cloud_type")
+                    if not cloud_type:
+                        # Fallback: check inside cloud_specific_details
+                        cloud_type = workspace_metadata.get("cloud_specific_details", {}).get("cloud_type")
+
+                    if cloud_type == "slurm":
+                        is_slurm_job = True
+                        logger.debug(
+                            f"[WORKFLOW] Job {job_context.id} is using SLURM workspace, "
+                            f"skipping GPU pre-assignment (SLURM manages its own scheduling)"
+                        )
+    except Exception as e:
+        logger.debug(f"[WORKFLOW] Could not check workspace cloud_type for job {job_context.id}: {e}")
+
+    if BACKEND == "local-docker" and not is_slurm_job:
         # Check if this job needs GPUs
         gpu_dependency = None
         for dep in job_context.dependencies:
@@ -371,8 +411,9 @@ def scan_for_jobs():
             for dep in job.dependencies:
                 if dep.type == "automl":
                     recommendation_id = dep.name
-                    # Map recommendation_id to actual job_id
-                    automl_experiment_job_id = get_automl_experiment_job_id(job.id, recommendation_id)
+                    # Map recommendation_id to actual job_id using parent_id (brain job ID)
+                    brain_job_id = job.parent_id if job.parent_id else job.id
+                    automl_experiment_job_id = get_automl_experiment_job_id(brain_job_id, recommendation_id)
                     break
 
             for dep in job.dependencies:

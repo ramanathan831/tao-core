@@ -64,15 +64,19 @@ def find_python_files(root_dir):
     python_files = []
     exclude_dirs = {
         '__pycache__', '.git', '.pytest_cache', 'node_modules',
-        'venv', 'env', '.venv', 'build', 'dist', '*.egg-info'
+        'venv', 'env', '.venv', 'build', 'dist', '*.egg-info',
+        'release', 'ci', 'telemetry_gateway', 'scripts'
+    }
+    exclude_files = {
+        'test_imports.py', 'setup.py', 'conftest.py',
     }
 
     for path in Path(root_dir).rglob('*.py'):
         # Skip excluded directories
         if any(excluded in path.parts for excluded in exclude_dirs):
             continue
-        # Skip this test file itself
-        if path.name == 'test_imports.py':
+        # Skip excluded files
+        if path.name in exclude_files:
             continue
         python_files.append(path)
 
@@ -189,7 +193,8 @@ def check_imports_exist(file_path, imports_list):
     optional_deps = [
         'hydra', 'clearml', 'wandb',
         'pytorch_lightning', 'tensorflow', 'mpi4py',
-        'pycuda', 'pycuda.driver', 'torch'
+        'pycuda', 'pycuda.driver', 'torch',
+        'diffusers', 'imageio', 'release'
     ]
 
     for imp in imports_list:

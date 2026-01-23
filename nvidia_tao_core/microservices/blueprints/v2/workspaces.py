@@ -543,9 +543,11 @@ def workspace_create(org_name):
               $ref: '#/components/headers/X-RateLimit-Limit'
     """
     schema = WorkspaceReq()
+    logger.info(f"Request: {request.get_json(force=True)}")
     request_dict = schema.dump(schema.load(request.get_json(force=True)))
-
+    logger.info(f"Request dict: {request_dict}")
     user_id = authentication.get_user_id(request.headers.get('Authorization', ''), org_name)
+    logger.info(f"User ID: {user_id}")
     # Get response
     response = WorkspaceHandler.create_workspace(user_id, org_name, request_dict)
     # Get schema
@@ -554,6 +556,8 @@ def workspace_create(org_name):
         schema = WorkspaceRsp()
     else:
         schema = ErrorRsp()
+    logger.info(f"Response code: {response.code}")
+    logger.info(f"Response: {response.data}")
     # Load metadata in schema and return
     schema_dict = schema.dump(schema.load(response.data))
 

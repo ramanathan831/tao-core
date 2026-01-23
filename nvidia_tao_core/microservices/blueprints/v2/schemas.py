@@ -207,6 +207,7 @@ class AllowedDockerEnvVariables(Enum):
     TAO_EXECUTION_BACKEND = "TAO_EXECUTION_BACKEND"
     AUTOML_EXPERIMENT_NUMBER = "AUTOML_EXPERIMENT_NUMBER"
     JOB_ID = "JOB_ID"
+    TAO_API_RESULTS_DIR = "TAO_API_RESULTS_DIR"
     TAO_API_JOB_ID = "TAO_API_JOB_ID"  # Automl brain job id
     RETAIN_CHECKPOINTS_FOR_RESUME = "RETAIN_CHECKPOINTS_FOR_RESUME"
     EARLY_STOP_EPOCH = "EARLY_STOP_EPOCH"
@@ -297,6 +298,12 @@ class AutoMLAlgorithm(Enum):
 
     bayesian = "bayesian"
     hyperband = "hyperband"
+    bohb = "bohb"
+    bfbo = "bfbo"
+    asha = "asha"
+    pbt = "pbt"
+    dehb = "dehb"
+    hyperband_es = "hyperband_es"
 
 
 class SourceType(Enum):
@@ -315,6 +322,19 @@ class MessageOnly(Schema):
     """Class defining dataset upload schema"""
 
     message = fields.Str(allow_none=True, format="regex", regex=r'.*', validate=fields.validate.Length(max=1000))
+
+
+class JobEventsRsp(Schema):
+    """Class defining job events response schema"""
+
+    class Meta:
+        """Class enabling sorting field values by the order in which they are declared"""
+
+        ordered = True
+        unknown = EXCLUDE
+
+    job_id = fields.Str(format="uuid", validate=fields.validate.Length(max=36))
+    events = fields.List(fields.Dict(), validate=validate.Length(max=sys.maxsize))
 
 
 class MissingFile(Schema):
@@ -1303,37 +1323,146 @@ class AutoMLUpdateParameterRangesReq(Schema):
     )
 
 
+# Algorithm-specific parameter schemas (nested structure)
+class AutoMLBayesianParams(Schema):
+    """Schema for Bayesian and BFBO algorithm parameters"""
+
+    class Meta:
+        """Marshmallow schema configuration"""
+
+        ordered = True
+        unknown = EXCLUDE
+
+    automl_max_recommendations = fields.Int(
+        format="int64", validate=validate.Range(min=1, max=sys.maxsize), required=True
+    )
+
+
+class AutoMLHyperbandParams(Schema):
+    """Schema for Hyperband algorithm parameters"""
+
+    class Meta:
+        """Marshmallow schema configuration"""
+
+        ordered = True
+        unknown = EXCLUDE
+
+    automl_max_epochs = fields.Int(format="int64", validate=validate.Range(min=2, max=sys.maxsize), required=True)
+    automl_reduction_factor = fields.Int(format="int64", validate=validate.Range(min=2, max=sys.maxsize), required=True)
+    epoch_multiplier = fields.Int(format="int64", validate=validate.Range(min=1, max=sys.maxsize), required=True)
+
+
+class AutoMLBOHBParams(AutoMLHyperbandParams):
+    """Schema for BOHB algorithm parameters"""
+
+    automl_kde_samples = fields.Int(format="int64", validate=validate.Range(min=1, max=sys.maxsize), allow_none=True)
+    automl_top_n_percent = fields.Float(validate=validate.Range(min=0.0, max=100.0), allow_none=True)
+    automl_min_points_in_model = fields.Int(
+        format="int64", validate=validate.Range(min=1, max=sys.maxsize), allow_none=True
+    )
+
+
+class AutoMLASHAParams(AutoMLHyperbandParams):
+    """Schema for ASHA algorithm parameters"""
+
+    automl_max_concurrent = fields.Int(format="int64", validate=validate.Range(min=1, max=sys.maxsize), required=True)
+    automl_max_trials = fields.Int(format="int64", validate=validate.Range(min=1, max=sys.maxsize), allow_none=True)
+
+
+class AutoMLDEHBParams(AutoMLHyperbandParams):
+    """Schema for DEHB algorithm parameters"""
+
+    automl_mutation_factor = fields.Float(validate=validate.Range(min=0.0, max=2.0), allow_none=True)
+    automl_crossover_prob = fields.Float(validate=validate.Range(min=0.0, max=1.0), allow_none=True)
+
+
+class AutoMLHyperBandESParams(AutoMLHyperbandParams):
+    """Schema for HyperBand with Early Stopping algorithm parameters"""
+
+    automl_early_stop_threshold = fields.Float(validate=validate.Range(min=0.0, max=1.0), allow_none=True)
+    automl_min_early_stop_epochs = fields.Int(
+        format="int64", validate=validate.Range(min=1, max=sys.maxsize), allow_none=True
+    )
+
+
+class AutoMLPBTParams(Schema):
+    """Schema for Population-Based Training algorithm parameters"""
+
+    class Meta:
+        """Marshmallow schema configuration"""
+
+        ordered = True
+        unknown = EXCLUDE
+
+    automl_population_size = fields.Int(format="int64", validate=validate.Range(min=1, max=sys.maxsize), required=True)
+    automl_eval_interval = fields.Int(format="int64", validate=validate.Range(min=1, max=sys.maxsize), required=True)
+    automl_perturbation_factor = fields.Float(validate=validate.Range(min=1.0, max=10.0), allow_none=True)
+
+
 class AutoML(Schema):
-    """Class defining automl parameters in a schema"""
+    """AutoML schema with nested algorithm-specific parameters"""
 
     class Meta:
         """Class enabling sorting field values by the order in which they are declared"""
 
         ordered = True
         unknown = EXCLUDE
+
     automl_enabled = fields.Bool(allow_none=True)
     automl_algorithm = EnumField(AutoMLAlgorithm, allow_none=True)
-    automl_max_recommendations = fields.Int(
-        format="int64",
-        validate=validate.Range(min=0, max=sys.maxsize),
-        allow_none=True
-    )
     automl_delete_intermediate_ckpt = fields.Bool(allow_none=True)
     override_automl_disabled_params = fields.Bool(allow_none=True)
-    automl_R = fields.Int(format="int64", validate=validate.Range(min=0, max=sys.maxsize), allow_none=True)
-    automl_nu = fields.Int(format="int64", validate=validate.Range(min=0, max=sys.maxsize), allow_none=True)
-    epoch_multiplier = fields.Int(format="int64", validate=validate.Range(min=0, max=sys.maxsize), allow_none=True)
     automl_hyperparameters = fields.Str(
-        format="regex",
-        regex=r'\[.*\]',
-        validate=fields.validate.Length(max=5000),
-        allow_none=True
+        format="regex", regex=r'\[.*\]', validate=fields.validate.Length(max=5000), allow_none=True
     )
     automl_range_override = fields.List(
         fields.Nested(ParameterRange),
         validate=validate.Length(max=sys.maxsize),
         allow_none=True
     )
+    # Nested algorithm-specific parameters
+    algorithm_specific_params = fields.Field(allow_none=True)
+
+    @validates_schema
+    def validate_algorithm_specific_params(self, data, **kwargs):
+        """Validate algorithm-specific parameters based on algorithm type"""
+        if not data.get('automl_enabled', False):
+            return
+
+        algorithm = data.get('automl_algorithm')
+        if not algorithm:
+            raise ValidationError('automl_algorithm is required when automl_enabled is True')
+
+        # Convert enum to string if needed
+        algo_str = algorithm.value if hasattr(algorithm, 'value') else str(algorithm)
+
+        # Select appropriate schema based on algorithm
+        if algo_str in ('bayesian', 'b', 'bfbo'):
+            schema = AutoMLBayesianParams()
+        elif algo_str in ('hyperband', 'h'):
+            schema = AutoMLHyperbandParams()
+        elif algo_str == 'bohb':
+            schema = AutoMLBOHBParams()
+        elif algo_str == 'asha':
+            schema = AutoMLASHAParams()
+        elif algo_str == 'dehb':
+            schema = AutoMLDEHBParams()
+        elif algo_str in ('hyperband_es', 'hes'):
+            schema = AutoMLHyperBandESParams()
+        elif algo_str == 'pbt':
+            schema = AutoMLPBTParams()
+        else:
+            raise ValidationError(f'Unknown automl_algorithm: {algo_str}')
+
+        # Validate algorithm-specific parameters
+        params = data.get('algorithm_specific_params', {})
+        if params:
+            try:
+                schema.load(params, unknown=EXCLUDE)
+            except ValidationError:
+                raise
+            except Exception as e:
+                raise fields.ValidationError(str(e))
 
 
 class BaseExperimentMetadata(Schema):
@@ -1399,6 +1528,13 @@ class InferenceMicroserviceReq(Schema):
         allow_none=True,
         required=False
     )
+    hf_model = fields.Str(
+        validate=fields.validate.Length(max=2048),
+        description="HuggingFace model name (e.g., meta-llama/Llama-3-8B-Instruct, Qwen/Qwen-VL-Chat)",
+        example="meta-llama/Llama-3-8B-Instruct",
+        allow_none=True,
+        required=False
+    )
     enable_lora = fields.Bool(
         description="Enable LoRA for inference",
         default=False
@@ -1407,6 +1543,20 @@ class InferenceMicroserviceReq(Schema):
         description="Base model path (e.g., hf_model://nvidia/Cosmos-Reason1-7B)",
         required=False,
         allow_none=True
+    )
+    torch_dtype = fields.Str(
+        validate=fields.validate.Length(max=50),
+        description="PyTorch data type for HuggingFace models (auto, float16, bfloat16, float32)",
+        example="auto",
+        allow_none=True,
+        required=False
+    )
+    device_map = fields.Str(
+        validate=fields.validate.Length(max=50),
+        description="Device mapping strategy for HuggingFace models (auto, cuda, cpu)",
+        example="auto",
+        allow_none=True,
+        required=False
     )
     docker_image = fields.Str(
         validate=fields.validate.Length(max=2048),
@@ -1426,7 +1576,7 @@ class InferenceMicroserviceReq(Schema):
     )
     workspace = fields.Str(format="uuid", validate=fields.validate.Length(max=36), allow_none=True)
     docker_env_vars = fields.Dict(
-        keys=EnumField(AllowedDockerEnvVariables),
+        keys=fields.Str(validate=validate.OneOf([e.value for e in AllowedDockerEnvVariables])),
         values=fields.Str(
             format="regex",
             regex=r'.*',
@@ -1450,7 +1600,32 @@ class InferenceMicroserviceReq(Schema):
             allow_none=True
         )
     )
-    network_arch = EnumField(ExperimentNetworkArch, allow_none=False)
+    network_arch = EnumField(ExperimentNetworkArch, allow_none=True)
+    custom_pipeline_loader = fields.Str(
+        validate=fields.validate.Length(max=10000),
+        description=(
+            "Python code string defining a load_pipeline(model_name, **kwargs) "
+            "function for custom model loading"
+        ),
+        example=(
+            "def load_pipeline(model_name, **kwargs):\n"
+            "    from diffusers import WanPipeline\n"
+            "    return WanPipeline.from_pretrained(model_name), 'diffusion'"
+        ),
+        allow_none=True,
+        required=False
+    )
+    custom_inference_fn = fields.Str(
+        validate=fields.validate.Length(max=10000),
+        description="Python code string defining a run_inference(pipeline, **kwargs) function for custom inference",
+        example=(
+            "def run_inference(pipeline, **kwargs):\n"
+            "    output = pipeline(kwargs['prompt'])\n"
+            "    return {'response': 'done', 'frames': output.frames}"
+        ),
+        allow_none=True,
+        required=False
+    )
 
 
 class InferenceMicroserviceRsp(Schema):
@@ -1499,16 +1674,54 @@ class InferenceReq(Schema):
         required=False,
         allow_none=True
     )
+    images = fields.List(
+        fields.Str(
+            description="Image paths/URLs for VLM inference",
+            required=False
+        ),
+        allow_none=True
+    )
     model = fields.Str(
         description="Model identifier (e.g. nvidia/nvdino-v2)",
         required=False,
         allow_none=True
     )
     prompt = fields.Str(
-        description="Text prompt for VLM inference",
+        description="Text prompt for LLM/VLM inference",
         required=False,
         allow_none=True,
         default=""
+    )
+    system_prompt = fields.Str(
+        description="System prompt for chat models",
+        required=False,
+        allow_none=True
+    )
+    max_new_tokens = fields.Int(
+        format="int64",
+        validate=validate.Range(min=1, max=32768),
+        description="Maximum number of new tokens to generate",
+        default=512,
+        allow_none=True
+    )
+    temperature = fields.Float(
+        validate=validate.Range(min=0.0, max=2.0),
+        description="Sampling temperature (0.0 = deterministic, higher = more random)",
+        default=0.7,
+        allow_none=True
+    )
+    top_p = fields.Float(
+        validate=validate.Range(min=0.0, max=1.0),
+        description="Nucleus sampling parameter",
+        default=0.9,
+        allow_none=True
+    )
+    top_k = fields.Int(
+        format="int64",
+        validate=validate.Range(min=1, max=1000),
+        description="Top-k sampling parameter",
+        default=50,
+        allow_none=True
     )
     enable_lora = fields.Bool(
         description="Enable LoRA for inference",
@@ -1518,6 +1731,52 @@ class InferenceReq(Schema):
     base_model_path = fields.Str(
         description="Base model path (e.g., hf_model://nvidia/Cosmos-Reason1-7B)",
         required=False,
+        allow_none=True
+    )
+    # Diffusion model parameters (for Cosmos-Predict2, Stable Diffusion, etc.)
+    negative_prompt = fields.Str(
+        description="Negative prompt for diffusion models (what to avoid in generation)",
+        required=False,
+        allow_none=True
+    )
+    num_inference_steps = fields.Int(
+        format="int64",
+        validate=validate.Range(min=1, max=1000),
+        description="Number of denoising steps for diffusion models (default: 50)",
+        default=50,
+        allow_none=True
+    )
+    guidance_scale = fields.Float(
+        validate=validate.Range(min=0.0, max=50.0),
+        description="Classifier-free guidance scale for diffusion models (default: 7.5)",
+        default=7.5,
+        allow_none=True
+    )
+    width = fields.Int(
+        format="int64",
+        validate=validate.Range(min=64, max=4096),
+        description="Output image width for diffusion models",
+        required=False,
+        allow_none=True
+    )
+    height = fields.Int(
+        format="int64",
+        validate=validate.Range(min=64, max=4096),
+        description="Output image height for diffusion models",
+        required=False,
+        allow_none=True
+    )
+    seed = fields.Int(
+        format="int64",
+        description="Random seed for reproducible diffusion generation",
+        required=False,
+        allow_none=True
+    )
+    num_images = fields.Int(
+        format="int64",
+        validate=validate.Range(min=1, max=16),
+        description="Number of images to generate (default: 1)",
+        default=1,
         allow_none=True
     )
 

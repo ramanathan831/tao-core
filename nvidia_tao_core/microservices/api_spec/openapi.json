@@ -22,7 +22,7 @@
         "schemas": {
             "AutoML": {
                 "properties": {
-                    "automl_R": {
+                    "automl_max_epochs": {
                         "format": "int64",
                         "maximum": 9223372036854775807,
                         "minimum": 0,
@@ -58,7 +58,7 @@
                         "nullable": true,
                         "type": "integer"
                     },
-                    "automl_nu": {
+                    "automl_reduction_factor": {
                         "format": "int64",
                         "maximum": 9223372036854775807,
                         "minimum": 0,

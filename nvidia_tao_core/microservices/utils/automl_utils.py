@@ -85,9 +85,16 @@ def get_valid_range(parameter_config, parent_params, custom_ranges=None):
         Tuple of (v_min, v_max)
     """
     parameter_name = parameter_config.get("parameter", "")
-    v_min = float(parameter_config.get("valid_min"))
-    v_max = float(parameter_config.get("valid_max"))
-    default_value = float(parameter_config.get("default_value"))
+
+    # Handle empty strings and None values for numeric parameters
+    valid_min = parameter_config.get("valid_min")
+    valid_max = parameter_config.get("valid_max")
+    default_val = parameter_config.get("default_value")
+
+    # Convert to float, handling empty strings and None
+    v_min = float(valid_min) if valid_min not in (None, '', "") else 0.0
+    v_max = float(valid_max) if valid_max not in (None, '', "") else float('inf')
+    default_value = float(default_val) if default_val not in (None, '', "") else 0.0
     if math.isinf(v_min):
         v_min = default_value
     if math.isinf(v_max):
@@ -253,6 +260,13 @@ class Recommendation:
         self.result = 0.0
         self.best_epoch_number = ""
         self.metric = metric
+        self.resume_from_job_id = None  # For PBT: job ID to resume checkpoint from
+        self.early_stop_epoch = None  # For PBT/Hyperband: epoch limit when this rec was launched
+
+        # Add timestamps for timeout tracking
+        current_time = datetime.datetime.now(tz=datetime.timezone.utc).isoformat()
+        self.created_on = current_time
+        self.last_modified = current_time
 
         # Add timestamps for timeout tracking
         current_time = datetime.datetime.now(tz=datetime.timezone.utc).isoformat()
@@ -297,15 +311,19 @@ class Recommendation:
 class ResumeRecommendation:
     """Recommendation class for Hyperband resume experiments"""
 
-    def __init__(self, identity, specs):
+    def __init__(self, identity, specs, job_id, resume_from_job_id=None):
         """Initialize the ResumeRecommendation class
 
         Args:
             identity: the id of the recommendation
             specs: the specs/config of the recommendation
+            job_id: the job id of the recommendation
+            resume_from_job_id: (PBT) the job id to resume checkpoint from if member was replaced
         """
         self.id = identity
         self.specs = specs
+        self.job_id = job_id
+        self.resume_from_job_id = resume_from_job_id
 
 
 class JobStates():

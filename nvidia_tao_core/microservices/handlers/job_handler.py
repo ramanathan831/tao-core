@@ -46,6 +46,7 @@ from nvidia_tao_core.microservices.utils.stateless_handler_utils import (
     is_request_automl,
     update_job_status,
     save_dnn_status,
+    get_dnn_status,
     save_job_specs,
     resolve_metadata,
     resolve_existence,
@@ -733,8 +734,11 @@ class JobHandler:
             try:
                 # Delete job (K8s pod or Docker container)
                 update_job_status(handler_id, job_id, status="Canceling", kind=kind + "s")
+                logger.debug(f"[CANCEL] Job status updated to Canceling: job_id={job_id}")
+                logger.debug(f"[CANCEL] Deleting statefulset for running job: job_id={job_id}, use_ngc={use_ngc}")
                 from nvidia_tao_core.microservices.handlers.execution_handlers.execution_handler import ExecutionHandler
                 ExecutionHandler.delete_with_handler(job_id)
+                logger.debug(f"[CANCEL] Waiting for K8s job termination: job_id={job_id}")
                 k8s_status = ExecutionHandler.get_job_status_with_handler(
                     job_name=job_id,
                     workspace_metadata=workspace_metadata,
@@ -926,7 +930,10 @@ class JobHandler:
 
                 # Abrupt pause (or fallback if graceful pause failed)
                 from nvidia_tao_core.microservices.handlers.execution_handlers.execution_handler import ExecutionHandler
+                logger.debug(f"[PAUSE] Performing abrupt pause: job_id={job_id}")
+                logger.debug(f"[PAUSE] Deleting statefulset for running job: job_id={job_id}, use_ngc={use_ngc}")
                 ExecutionHandler.delete_with_handler(job_id)
+                logger.debug(f"[PAUSE] Waiting for K8s job termination: job_id={job_id}")
                 k8s_status = ExecutionHandler.get_job_status_with_handler(
                     job_name=job_id,
                     workspace_metadata=workspace_metadata,
@@ -1483,3 +1490,64 @@ class JobHandler:
                     return Code(200, "Generating new recommendation for AutoML experiment.")
             return Code(404, {}, "Logs for the job are not available yet.")
         return Code(200, get_job_logs_util(log_file_path))
+
+    @staticmethod
+    def get_job_events(org_name, handler_id, job_id, kind, automl_experiment_number="0"):
+        """Retrieves all status events for a specific job.
+
+        Args:
+            org_name (str): The name of the organization.
+            handler_id (str): The UUID corresponding to the experiment or dataset.
+            job_id (str): The UUID of the job for which events are being retrieved.
+            kind (str): The type of handler, either 'experiment' or 'dataset'.
+            automl_experiment_number (str, optional): The experiment number for AutoML jobs.
+
+        Returns:
+            Code: A response object indicating the result of the operation.
+                - 200 with the list of all status events.
+                - 404 if the job or handler is not found, or if events are not found for requested IDs.
+        """
+        handler_metadata = resolve_metadata(kind, handler_id)
+        if not handler_metadata:
+            return Code(404, {"error_desc": f"{kind} not found.", "error_code": 1}, f"{kind} not found.")
+
+        user_id = handler_metadata.get("user_id")
+        if not check_read_access(user_id, org_name, handler_id, kind=kind + "s"):
+            return Code(404, {"error_desc": f"{kind} not found.", "error_code": 1}, f"{kind} not found.")
+
+        job_metadata = get_handler_job_metadata(job_id)
+        if not job_metadata:
+            return Code(404, {"error_desc": "Job not found.", "error_code": 1}, "Job not found.")
+
+        # Check if this is an AutoML job
+        automl_enabled = handler_metadata.get("automl_settings", {}).get("automl_enabled", False)
+        is_automl = automl_enabled and job_metadata.get("action", "") == "train"
+
+        # Validate AutoML experiment number if this is an AutoML job
+        if is_automl and automl_experiment_number != "0":
+            # Check if the requested AutoML experiment exists
+            controller_list = get_automl_controller_info(job_id)
+            valid_experiment_ids = [str(rec.get('id')) for rec in controller_list if rec.get('id') != ""]
+
+            # Special case: -1 is for brain job logs
+            if automl_experiment_number != "-1" and automl_experiment_number not in valid_experiment_ids:
+                valid_exp_list = ', '.join(valid_experiment_ids)
+                error_msg = (f"Events not found for the requested AutoML experiment number "
+                             f"'{automl_experiment_number}'. Valid experiment numbers: {valid_exp_list}")
+                logger.warning(f"AutoML experiment {automl_experiment_number} not found for job {job_id}")
+                return Code(404, {"error_desc": error_msg, "error_code": 1}, error_msg)
+
+        # Get all status events
+        status_events = get_dnn_status(job_id, automl=is_automl, experiment_number=automl_experiment_number)
+
+        if status_events is None or len(status_events) == 0:
+            if is_automl and automl_experiment_number != "0":
+                error_msg = (f"Events not found for the requested job ID '{job_id}' and AutoML experiment "
+                             f"number '{automl_experiment_number}'.")
+            else:
+                error_msg = f"Events not found for the requested job ID '{job_id}'."
+            logger.info(f"No events found for job {job_id}, automl_experiment_number={automl_experiment_number}")
+            return Code(404, {"error_desc": error_msg, "error_code": 1}, error_msg)
+
+        logger.info(f"Retrieved {len(status_events)} status events for job {job_id}")
+        return Code(200, status_events, "Job events retrieved successfully")

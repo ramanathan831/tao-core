@@ -24,6 +24,7 @@ import importlib
 import os
 import sys
 import threading
+import time
 import traceback
 import uuid
 import yaml
@@ -47,7 +48,7 @@ from nvidia_tao_core.microservices.handlers.cloud_handlers.utils import (
 from nvidia_tao_core.microservices.handlers.cloud_handlers.progress_tracker import ProgressTracker
 import nvidia_tao_core.loggers.logging as status_logging
 from nvidia_tao_core.api_utils.module_utils import entrypoint_paths, entry_points
-from nvidia_tao_core.microservices.utils.cloud_utils import create_cs_instance
+from nvidia_tao_core.microservices.utils.cloud_utils import create_cs_instance, NUM_RETRY
 from nvidia_tao_core.microservices.utils.stateless_handler_utils import (
     get_handler_id,
     get_handler_kind,
@@ -61,6 +62,7 @@ from nvidia_tao_core.microservices.utils.core_utils import (
     get_spec_backend_info
 )
 from nvidia_tao_core.microservices.utils.specs_utils import json_to_kitti, json_to_yaml, json_to_toml
+from nvidia_tao_core.microservices.utils.handler_utils import write_nested_dict
 # Configure logging
 TAO_LOG_LEVEL = os.getenv('TAO_LOG_LEVEL', 'INFO').upper()
 tao_log_level = getattr(logging, TAO_LOG_LEVEL, logging.INFO)
@@ -78,14 +80,27 @@ SPEC_BACKEND_TO_FUNCTIONS = {
     "toml": json_to_toml.toml_format
 }
 
+# IS_MASTER: Only true for rank-0 task on rank-0 node
+# For SLURM: Check both NODE_RANK (which node) and SLURM_LOCALID (which task on that node)
+# This ensures only ONE task per node does shared operations like downloads
 IS_MASTER = int(os.environ.get("NODE_RANK", 0)) == 0
+IS_LOCAL_MASTER = int(os.environ.get("SLURM_LOCALID", 0)) == 0  # Master task on current node
 
 # Graceful termination signal file name
 GRACEFUL_TERMINATION_SIGNAL_FILE = ".graceful_termination_signal"
 
 
 def prepare_data_before_job_run(job, docker_env_vars):
-    """Prepare data before job run"""
+    """Prepare data before job run.
+
+    For SLURM single-node multi-GPU jobs, only the local master task (SLURM_LOCALID=0)
+    performs downloads. Other tasks wait for downloads to complete.
+
+    Note: This issue is SLURM-specific because:
+    - SLURM single-node: Sets --ntasks-per-node=N, launching N parallel container_handler instances
+    - SLURM multi-node: Sets --ntasks=num_nodes, launching 1 task per node (already deduplicated)
+    - Kubernetes/Docker: Launch 1 container → 1 container_handler.py → torchrun spawns workers internally
+    """
     if docker_env_vars:
         os.environ.update(docker_env_vars)
 
@@ -101,9 +116,44 @@ def prepare_data_before_job_run(job, docker_env_vars):
     if not ngc_key:
         ngc_key = docker_env_vars.get("TAO_USER_KEY")
 
-    # Create results directory and download files
+    # Create results directory (all tasks need this)
     os.makedirs(specs["results_dir"], exist_ok=True)
     reprocess_files = []
+
+    # Check if this is the local master task (for multi-GPU SLURM jobs)
+    # Only local master (SLURM_LOCALID=0) on each node should download files
+    is_local_master = int(os.environ.get("SLURM_LOCALID", 0)) == 0
+
+    if not is_local_master:
+        logger.info(f"Non-master task (SLURM_LOCALID={os.environ.get('SLURM_LOCALID')}) - skipping downloads")
+        logger.info("Waiting for master task to complete downloads...")
+
+        # Wait for master task to finish downloads by checking for spec file
+        spec_backend, file_extension = get_spec_backend_info(job["neural_network_name"])
+        spec_path = os.path.join(specs["results_dir"], f"spec.{file_extension}")
+
+        # Wait up to 10 minutes for downloads to complete
+        max_wait_seconds = 600
+        wait_interval = 5
+        elapsed = 0
+
+        while not os.path.exists(spec_path) and elapsed < max_wait_seconds:
+            time.sleep(wait_interval)
+            elapsed += wait_interval
+            if elapsed % 30 == 0:  # Log every 30 seconds
+                logger.info(f"Still waiting for downloads... ({elapsed}s elapsed)")
+
+        if os.path.exists(spec_path):
+            logger.info(f"Downloads complete, proceeding with training (waited {elapsed}s)")
+        else:
+            logger.warning(f"Timeout waiting for downloads after {max_wait_seconds}s")
+            logger.warning("Proceeding anyway - downloads may still be in progress")
+
+        return cloud_storage, specs, spec_path
+
+    # This is the local master task - perform downloads
+    node_rank = os.environ.get('NODE_RANK', 0)
+    logger.info(f"Local master task (SLURM_LOCALID=0, NODE_RANK={node_rank}) - performing downloads")
 
     # Count total files to download before starting
     logger.info("Analyzing spec for download requirements...")
@@ -883,6 +933,21 @@ class ContainerJobHandler:
                             if not cleanup_already_done.is_set():
                                 monitor_thread.join(timeout=2)
 
+                                # Remove graceful termination signal if training completed naturally
+                                # This MUST happen BEFORE setting exit_event to avoid race condition
+                                # where upload thread checks signal before removal completes
+                                is_terminated = ContainerJobHandler.check_graceful_termination_signal(
+                                    specs["results_dir"]
+                                )
+                                if is_completed and is_terminated:
+                                    logger.info(
+                                        "Training completed naturally with early stop signal present. "
+                                        f"Removing signal to allow final uploads to complete for job {job['job_id']}"
+                                    )
+                                    ContainerJobHandler.remove_graceful_termination_signal(specs["results_dir"])
+                                    # Small delay to ensure file removal is complete before upload thread checks
+                                    time.sleep(5)
+
                                 status_file = status_file or ContainerJobHandler.get_status_file(
                                     specs["results_dir"],
                                     job["action_name"]
@@ -1318,6 +1383,163 @@ class ContainerJobHandler:
             return "continuous", None, None
 
 
+def auto_resume_checkpoint_inference(specs, job_id, network_name, action_name):
+    """Auto-detect and infer resume checkpoint parameters for SLURM requeue support.
+
+    This function works WITHOUT MongoDB access (container-level code):
+    - Uses direct filesystem operations to find checkpoints
+    - Handles both regular train jobs and AutoML train jobs
+    - Updates resume-related spec parameters based on found checkpoints
+    - Handles boolean flags (like cosmos-rl resume: true)
+
+    Args:
+        specs (dict): Job specs to update
+        job_id (str): Job ID
+        network_name (str): Network architecture name
+        action_name (str): Action name (should be 'train')
+
+    Returns:
+        dict: Updated specs with resume checkpoint paths if found
+    """
+    if action_name != "train":
+        logger.debug(f"Action is {action_name}, not train - skipping resume checkpoint detection")
+        return specs
+
+    logger.info("=" * 80)
+    logger.info("AUTO-RESUME CHECKPOINT DETECTION (Container-Level, No MongoDB)")
+    logger.info(f"Network: {network_name}, Job ID: {job_id}")
+    logger.info("=" * 80)
+
+    try:
+        # Get results directory from specs
+        results_dir = specs.get("results_dir")
+        if not results_dir:
+            logger.warning("No results_dir in specs - cannot detect checkpoints")
+            return specs
+
+        if not os.path.exists(results_dir):
+            logger.info(f"Results directory doesn't exist yet: {results_dir}")
+            logger.info("This is normal for first run - no checkpoint to resume")
+            return specs
+
+        logger.info(f"Searching for checkpoints in: {results_dir}")
+
+        # Check if this is an AutoML job
+        automl_experiment_number = os.environ.get("AUTOML_EXPERIMENT_NUMBER")
+        is_automl_job = automl_experiment_number is not None
+
+        logger.info(f"Job type: {'AutoML' if is_automl_job else 'Regular'}")
+        if is_automl_job:
+            logger.info(f"AutoML experiment number: {automl_experiment_number}")
+
+        # Read network config to get resume parameter names
+        network_config = read_network_config(network_name)
+
+        # Determine which config section to use
+        if is_automl_job:
+            if "automl_spec_params" not in network_config:
+                logger.info(f"No automl_spec_params in {network_name} config")
+                return specs
+            spec_params = network_config["automl_spec_params"]
+            param_section = "automl_spec_params"
+        else:
+            if "spec_params" not in network_config or "train" not in network_config["spec_params"]:
+                logger.info(f"No spec_params.train in {network_name} config")
+                return specs
+            spec_params = network_config["spec_params"]["train"]
+            param_section = "spec_params.train"
+
+        logger.info(f"Using config section: {param_section}")
+
+        # Find checkpoint files using glob patterns
+        # Common checkpoint patterns for TAO networks
+        checkpoint_patterns = [
+            "*.pth",
+            "*.ckpt",
+            "*.tlt",
+            "**/checkpoint*.pth",
+            "**/model*.pth",
+            "**/latest*.pth",
+            "**/best*.pth",
+            "**/epoch*.pth"
+        ]
+
+        found_checkpoints = []
+        for pattern in checkpoint_patterns:
+            search_pattern = os.path.join(results_dir, pattern)
+            matches = glob.glob(search_pattern, recursive=True)
+            found_checkpoints.extend(matches)
+
+        # Remove duplicates and sort by modification time (newest first)
+        found_checkpoints = list(set(found_checkpoints))
+        if found_checkpoints:
+            found_checkpoints.sort(key=os.path.getmtime, reverse=True)
+            logger.info(f"Found {len(found_checkpoints)} checkpoint file(s)")
+            for idx, ckpt in enumerate(found_checkpoints[:5]):  # Show first 5
+                logger.info(f"  [{idx + 1}] {os.path.relpath(ckpt, results_dir)}")
+            if len(found_checkpoints) > 5:
+                logger.info(f"  ... and {len(found_checkpoints) - 5} more")
+
+            # Use the newest checkpoint
+            latest_checkpoint = found_checkpoints[0]
+            logger.info(f"Selected checkpoint: {os.path.relpath(latest_checkpoint, results_dir)}")
+
+            # Update specs with checkpoint path
+            # Find resume-related parameters in spec_params
+            resume_path_params = []
+            resume_bool_params = []
+
+            for field_name, inference_fn in spec_params.items():
+                if isinstance(inference_fn, str):
+                    # Check if this looks like a resume parameter
+                    if "resume" in field_name.lower() and "path" in field_name.lower():
+                        resume_path_params.append(field_name)
+                    elif "resume" in field_name.lower() and ("bool" in inference_fn or field_name.endswith("resume")):
+                        resume_bool_params.append(field_name)
+
+            updated_params = {}
+
+            # Update path parameters
+            for param in resume_path_params:
+                write_nested_dict(specs, param, latest_checkpoint)
+                updated_params[param] = latest_checkpoint
+                logger.info(f"✓ Updated {param} = {latest_checkpoint}")
+
+            # Update boolean parameters (set to True when checkpoint exists)
+            for param in resume_bool_params:
+                write_nested_dict(specs, param, True)
+                updated_params[param] = True
+                logger.info(f"✓ Updated {param} = True")
+
+            if updated_params:
+                logger.info("=" * 80)
+                logger.info("✓ RESUME CHECKPOINT DETECTED")
+                logger.info(f"Job type: {'AutoML' if is_automl_job else 'Regular'}")
+                logger.info(f"Checkpoint: {latest_checkpoint}")
+                logger.info(f"Updated {len(updated_params)} parameter(s):")
+                for param, value in updated_params.items():
+                    logger.info(f"  - {param}: {value}")
+                logger.info("Training will resume from existing checkpoint")
+                logger.info("=" * 80)
+            else:
+                logger.warning("No resume parameters found in network config to update")
+                logger.warning(f"Check {param_section} in network config")
+        else:
+            logger.info("=" * 80)
+            logger.info("✗ No checkpoints found")
+            logger.info(f"Searched in: {results_dir}")
+            logger.info(f"Patterns: {checkpoint_patterns}")
+            logger.info("Training will start from scratch or use PTM")
+            logger.info("=" * 80)
+
+    except Exception as e:
+        logger.error(f"Error during auto-resume checkpoint detection: {e}")
+        logger.error(traceback.format_exc())
+        logger.warning("Proceeding with original specs (no resume applied)")
+
+    return specs
+
+
 def main():
     """Main CLI entry point"""
     parser = argparse.ArgumentParser(description="Run container jobs directly without microservices")
@@ -1372,27 +1594,71 @@ def main():
     args = parser.parse_args()
 
     def load_json_from_arg_or_file(json_str, file_path, default='{}'):
-        """Load JSON from string argument or file path."""
+        """Load JSON from string argument or file path with retry mechanism."""
+        logger.info("Path exists: %s", os.path.exists(file_path))
+        logger.info("File path: %s", file_path)
+        logger.info("JSON string: %s", json_str)
+        logger.info("Default: %s", default)
         if file_path:
-            # Load from file
-            try:
-                with open(file_path, 'r', encoding='utf-8') as f:
-                    return json.load(f)
-            except Exception as e:
-                logger.error(f"Failed to read JSON file {file_path}: {e}")
-                raise
-        elif json_str:
+            # Load from file with retry mechanism for distributed filesystems (e.g., Lustre/NFS)
+            last_exception = None
+            for attempt in range(NUM_RETRY):
+                try:
+                    if attempt > 0:
+                        logger.warning(f"Retrying JSON file read (attempt {attempt + 1}/{NUM_RETRY}): {file_path}")
+                        time.sleep(10)  # Wait 10 seconds between retries for filesystem sync
+                    with open(file_path, 'r', encoding='utf-8') as f:
+                        content = f.read()
+                        if not content.strip():
+                            raise ValueError("File is empty or contains only whitespace")
+                        return json.loads(content)
+                except Exception as e:
+                    last_exception = e
+                    logger.warning(f"Failed to read JSON file {file_path} (attempt {attempt + 1}/{NUM_RETRY}): {e}")
+                    if attempt == NUM_RETRY - 1:
+                        # Last attempt - log full error and raise
+                        logger.error(f"All {NUM_RETRY} retry attempts failed for JSON file {file_path}: {e}")
+                        logger.error(traceback.format_exc())
+                        raise
+            # This should not be reached, but just in case
+            raise last_exception
+        if json_str:
             # Parse as JSON string
             return json.loads(json_str)
-        else:
-            # Use default
-            return json.loads(default)
+        # Use default
+        return json.loads(default)
 
     try:
         specs = load_json_from_arg_or_file(args.specs, args.specs_file)
         docker_env_vars = load_json_from_arg_or_file(args.docker_env_vars, args.docker_env_vars_file, '{}')
         cloud_metadata = load_json_from_arg_or_file(args.cloud_metadata, args.cloud_metadata_file,
                                                     os.environ.get("CLOUD_METADATA", "{}"))
+
+        # Auto-detect resume checkpoint for SLURM requeue support
+        # Note: MongoDB is not available in containers, so we use filesystem-based detection
+        if args.action_name == "train":
+            try:
+                logger.info("Applying auto-resume checkpoint detection...")
+                specs = auto_resume_checkpoint_inference(
+                    specs,
+                    args.job_id,
+                    args.neural_network_name,
+                    args.action_name
+                )
+
+                # Update the specs file if it was loaded from file
+                # This makes the resume visible in logs and for debugging
+                if args.specs_file:
+                    try:
+                        with open(args.specs_file, 'w', encoding='utf-8') as f:
+                            json.dump(specs, f, indent=2)
+                        logger.info(f"Updated specs file with resume checkpoint: {args.specs_file}")
+                    except Exception as e:
+                        logger.warning(f"Could not update specs file: {e}")
+            except Exception as e:
+                logger.warning(f"Auto-resume detection failed: {e}")
+                logger.warning("Proceeding with original specs")
+                logger.debug(traceback.format_exc())
 
         job = {
             'job_id': args.job_id,
