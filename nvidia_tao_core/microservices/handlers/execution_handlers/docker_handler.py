@@ -296,15 +296,29 @@ class DockerHandler(ExecutionHandler):
 
         return registry, repository, tag
 
-    def pull(self):
-        """Pull the base docker."""
+    def pull(self, job_id=None):
+        """Pull the base docker.
+
+        Args:
+            job_id (str, optional): Job ID for status updates. If provided, job messages
+                                   will be updated with pull progress.
+        """
         logger.info(
             "Pulling the required container. This may take several minutes if you're doing this for the first time. "
             "Please wait here.\n...")
+
+        # Update job message: pulling phase
+        if job_id:
+            self.update_image_pull_status(job_id, self._docker_image, "pulling")
+
         self.login()
         try:
             repository = f"{self._docker_registry}/{self._image_name}"
             logger.info(f"Pulling from repository: {repository}")
+
+            # Track if we're in extraction phase
+            extracting_started = False
+
             response = self._api_client.pull(
                 repository=repository,
                 tag=self._docker_tag,
@@ -313,10 +327,34 @@ class DockerHandler(ExecutionHandler):
             )
             for line in response:
                 docker_pull_progress(line)
+
+                # Update job message when extraction starts
+                if job_id and not extracting_started and line.get('status') == 'Extracting':
+                    extracting_started = True
+                    self.update_image_pull_status(job_id, self._docker_image, "extracting")
+
         except docker.errors.APIError as e:
+            error_str = str(e)
             logger.error(f"Docker pull failed. {e}")
+
+            # Update job message with specific error
+            if job_id:
+                if "unauthorized" in error_str.lower() or "authentication" in error_str.lower():
+                    self.update_image_pull_status(job_id, self._docker_image, "auth_error", error_message=error_str)
+                elif "not found" in error_str.lower() or "manifest unknown" in error_str.lower():
+                    self.update_image_pull_status(
+                        job_id, self._docker_image, "not_exists_in_registry", error_message=error_str
+                    )
+                else:
+                    self.update_image_pull_status(job_id, self._docker_image, "error", error_message=error_str)
+
             raise e
+
         logger.info("Container pull complete.")
+
+        # Update job message: pull complete
+        if job_id:
+            self.update_image_pull_status(job_id, self._docker_image, "complete")
 
     @staticmethod
     def get_device_requests(gpu_ids=[]):
@@ -343,19 +381,35 @@ class DockerHandler(ExecutionHandler):
                                  If provided, skips GPU assignment and uses these directly.
 
         Args:
-            container_name: Name for the container
+            container_name: Name for the container (also used as job_id for status updates)
             docker_env_vars: Dictionary of environment variables
             command: Command to run in the container
             num_gpus: Number of GPUs to assign (-1 for all)
             volumes: Volume mounts for the container
         """
         try:
+            # Use container_name as job_id for status updates
+            job_id = container_name if container_name else None
+
+            # Update status: checking if image exists
+            if job_id:
+                self.update_image_pull_status(job_id, self._docker_image, "checking")
+
             # Check if the image exists locally. If not, pull it.
             if not self._check_image_exists():
                 logger.info(
                     "The required docker doesn't exist locally/the manifest has changed. "
                     "Pulling a new docker.")
-                self.pull()
+
+                # Update status: image not found, starting pull
+                if job_id:
+                    self.update_image_pull_status(job_id, self._docker_image, "not_found")
+
+                self.pull(job_id=job_id)
+            else:
+                # Image already exists locally
+                if job_id:
+                    self.update_image_pull_status(job_id, self._docker_image, "already_exists")
 
             # Check for pre-assigned GPUs in three places (in order of priority):
             # 1. Passed directly as parameter
