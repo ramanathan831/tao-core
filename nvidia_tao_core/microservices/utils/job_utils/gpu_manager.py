@@ -31,7 +31,9 @@ docker_client = None
 if os.getenv("BACKEND") == "local-docker":
     import docker
     try:
-        docker_client = docker.from_env() if os.getenv("DOCKER_HOST") else None
+        # Initialize docker client - from_env() uses DOCKER_HOST if set,
+        # otherwise falls back to default socket (/var/run/docker.sock)
+        docker_client = docker.from_env()
     except Exception as e:
         logger.error(f"Failed to initialize docker client: {e}")
         docker_client = None
@@ -44,14 +46,6 @@ class GPUManager:
     For SLURM and other cluster schedulers, GPU management is handled
     by the scheduler itself, not by this manager.
     """
-
-    # Sentinel values for tracking GPU release sources (for debugging)
-    RELEASE_INIT = -1              # Released during initialization
-    RELEASE_NO_JOB_ID = -2         # Released because GPU had no job_id
-    RELEASE_NO_STATUS_NO_CONTAINER = -3  # Released because no job status and container not running
-    RELEASE_TERMINAL_STATE = -4    # Released because job in terminal state and container stopped
-    RELEASE_PARTIAL_ASSIGN_FAIL = -5  # Released due to partial assignment failure
-    RELEASE_MANUAL = -6            # Released via manual release_gpus() call
 
     # Sentinel values for tracking GPU release sources (for debugging)
     RELEASE_INIT = -1              # Released during initialization
