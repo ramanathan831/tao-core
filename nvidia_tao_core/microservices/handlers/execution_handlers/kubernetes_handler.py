@@ -472,6 +472,28 @@ class KubernetesHandler(ExecutionHandler):
             if pod.spec.containers:
                 image = pod.spec.containers[0].image
 
+            # Check pod events first to determine if image was already pulled
+            events = core_v1.list_namespaced_event(
+                namespace=namespace,
+                field_selector=f"involvedObject.name={pod_name}"
+            )
+
+            has_pulled_event = False
+            has_pulling_event = False
+            for event in events.items:
+                reason = event.reason
+                message = event.message or ""
+
+                if reason == "Pulled":
+                    has_pulled_event = True
+                elif reason == "Pulling":
+                    has_pulling_event = True
+                elif reason == "Failed":
+                    if "ImagePullBackOff" in message or "ErrImagePull" in message:
+                        return ("error", image, message)
+                    if "unauthorized" in message.lower():
+                        return ("auth_error", image, message)
+
             # Check container statuses for image pull state
             if pod.status.container_statuses:
                 for container_status in pod.status.container_statuses:
@@ -480,7 +502,9 @@ class KubernetesHandler(ExecutionHandler):
                         message = container_status.state.waiting.message or ""
 
                         if reason == "ContainerCreating":
-                            # Could be pulling or extracting
+                            # If image was already pulled, we're now extracting
+                            if has_pulled_event:
+                                return ("extracting", image, None)
                             return ("pulling", image, None)
                         if reason == "ImagePullBackOff":
                             return ("error", image, f"Image pull failed: {message}")
@@ -496,25 +520,11 @@ class KubernetesHandler(ExecutionHandler):
                     elif container_status.state.running:
                         return ("complete", image, None)
 
-            # Check pod events for more details
-            events = core_v1.list_namespaced_event(
-                namespace=namespace,
-                field_selector=f"involvedObject.name={pod_name}"
-            )
-
-            for event in events.items:
-                reason = event.reason
-                message = event.message or ""
-
-                if reason == "Pulling":
-                    return ("pulling", image, None)
-                if reason == "Pulled":
-                    return ("complete", image, None)
-                if reason == "Failed":
-                    if "ImagePullBackOff" in message or "ErrImagePull" in message:
-                        return ("error", image, message)
-                    if "unauthorized" in message.lower():
-                        return ("auth_error", image, message)
+            # Use events to determine status if container status wasn't conclusive
+            if has_pulled_event:
+                return ("complete", image, None)
+            if has_pulling_event:
+                return ("pulling", image, None)
 
             return ("waiting", image, None)
 
@@ -576,6 +586,8 @@ class KubernetesHandler(ExecutionHandler):
 
                     if status == "pulling":
                         self.update_image_pull_status(job_id, image, "pulling")
+                    elif status == "extracting":
+                        self.update_image_pull_status(job_id, image, "extracting")
                     elif status == "complete":
                         self.update_image_pull_status(job_id, image, "complete")
                         return True
@@ -633,9 +645,10 @@ class KubernetesHandler(ExecutionHandler):
                 # If job_id provided and image not yet pulled, monitor image pull
                 if job_id and not image_pull_monitored:
                     # Check pod status for image pulling
+                    # Use job-id label which is set during StatefulSet creation
                     pods = client.CoreV1Api().list_namespaced_pod(
                         namespace=name_space,
-                        label_selector=f"statefulset={statefulset_name}"
+                        label_selector=f"job-id={job_id}"
                     )
                     if pods.items:
                         pod = pods.items[0]
@@ -644,6 +657,8 @@ class KubernetesHandler(ExecutionHandler):
                         )
                         if status == "pulling":
                             self.update_image_pull_status(job_id, image, "pulling")
+                        elif status == "extracting":
+                            self.update_image_pull_status(job_id, image, "extracting")
                         elif status == "complete":
                             self.update_image_pull_status(job_id, image, "complete")
                             image_pull_monitored = True

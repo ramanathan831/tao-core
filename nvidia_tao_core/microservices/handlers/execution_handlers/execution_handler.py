@@ -327,9 +327,10 @@ class ExecutionHandler(ABC):
             if registry == "nvcr.io":
                 size_info = cls.get_ngc_image_size(registry, repository, tag, ngc_api_key)
                 if size_info["compressed_size"]:
+                    compressed_size = cls.format_bytes_human_readable(size_info["compressed_size"])
                     estimated_uncompressed = cls.format_bytes_human_readable(size_info["compressed_size"] * 2)
                     message = (
-                        f"Image size: {size_info['compressed_size']} bytes. download complete. "
+                        f"Image size: ~{compressed_size}. Download complete. "
                         f"Extracting {size_info['layer_count']} layers for '{image_short}'. "
                         f"Estimated extracted size: ~{estimated_uncompressed}. "
                         f"Extraction may take a few minutes..."

@@ -31,7 +31,9 @@ docker_client = None
 if os.getenv("BACKEND") == "local-docker":
     from docker import from_env
     try:
-        docker_client = from_env() if os.getenv("DOCKER_HOST") else None
+        # Initialize docker client - from_env() uses DOCKER_HOST if set,
+        # otherwise falls back to default socket (/var/run/docker.sock)
+        docker_client = from_env()
     except Exception as e:
         logger.error(f"Failed to initialize docker client: {e}")
         docker_client = None
