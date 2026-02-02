@@ -756,7 +756,7 @@ def get_dataset_download_command(dataset_metadata):
             f"until wget --timeout=1 --tries=1 --retry-connrefused --no-verbose "
             f"--directory-prefix={temp_dir}/ {cloud_download_url}; do sleep 10; done"
         )
-    elif cloud_type in ("aws", "azure", "seaweedfs"):
+    elif cloud_type in ("aws", "azure", "seaweedfs", "lepton"):
         if cloud_file_path.startswith("/"):
             cloud_file_path = cloud_file_path[1:]
         logger.info("Downloading to %s", os.path.join(temp_dir, cloud_file_path))
@@ -1190,7 +1190,10 @@ def add_workspace_to_cloud_metadata(workspace_metadata, cloud_metadata):
     cloud_specific_details = workspace_metadata.get('cloud_specific_details', {})
     bucket_name = cloud_specific_details.get('cloud_bucket_name', '')
     access_key = cloud_specific_details.get('access_key', '')
+    account_name = cloud_specific_details.get('account_name', '')
     secret_key = cloud_specific_details.get('secret_key', '')
+    if not secret_key and account_name and access_key:
+        secret_key = access_key
     cloud_region = cloud_specific_details.get('cloud_region', '')
     endpoint_url = cloud_specific_details.get('endpoint_url', '')
     cloud_type = workspace_metadata.get("cloud_type")
@@ -1216,6 +1219,7 @@ def add_workspace_to_cloud_metadata(workspace_metadata, cloud_metadata):
     cloud_metadata[cloud_type][bucket_name] = {
         "cloud_region": cloud_region,
         "access_key": access_key,
+        "account_name": account_name,
         "secret_key": secret_key,
         "endpoint_url": endpoint_url,
     }

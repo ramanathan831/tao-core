@@ -16,6 +16,7 @@
 import os
 import copy
 import time
+import traceback
 import fsspec
 import logging
 import functools
@@ -126,6 +127,8 @@ def create_cs_instance_with_decrypted_metadata(decrypted_metadata):
     cloud_type = handler_metadata_copy.get("cloud_type", "aws")
     cloud_specific_details = handler_metadata_copy.get("cloud_specific_details", {})
     cloud_bucket_name = cloud_specific_details.get("cloud_bucket_name")
+    if 'container_name' in cloud_specific_details:
+        cloud_bucket_name = cloud_specific_details.get("container_name")
 
     # Original cloud providers
     cs_instance = None
@@ -151,13 +154,20 @@ def create_cs_instance_with_decrypted_metadata(decrypted_metadata):
         elif cloud_type == "seaweedfs":
             return _create_seaweedfs_instance(cloud_specific_details)
         elif cloud_type == "lepton":
-            # Lepton workspaces use AWS S3 for storage with the same credential structure as AWS
+            # Lepton workspaces use cloud storage
+            cloud_type = "aws"
+            key = cloud_specific_details.get("access_key")
+            secret = cloud_specific_details.get("secret_key")
+            if 'account_name' in cloud_specific_details:
+                cloud_type = "azure"
+                key = cloud_specific_details.get("account_name")
+                secret = cloud_specific_details.get("access_key")
             cs_instance = CloudStorage(
-                cloud_type="aws",
+                cloud_type=cloud_type,
                 bucket_name=cloud_bucket_name,
                 region=cloud_specific_details.get("cloud_region"),
-                key=cloud_specific_details.get("access_key"),
-                secret=cloud_specific_details.get("secret_key"),
+                key=key,
+                secret=secret,
                 client_kwargs={"endpoint_url": cloud_specific_details.get("endpoint_url")}
             )
         elif cloud_type == "slurm":
@@ -239,6 +249,8 @@ def create_cs_instance(workspace_metadata):
                     cloud_specific_details[key] = encryption.decrypt(encrypted_value)
 
     cloud_bucket_name = cloud_specific_details.get("cloud_bucket_name")
+    if 'container_name' in cloud_specific_details:
+        cloud_bucket_name = cloud_specific_details.get("container_name")
 
     cs_instance = None
     if cloud_specific_details:
@@ -264,12 +276,19 @@ def create_cs_instance(workspace_metadata):
             cs_instance, _ = _create_seaweedfs_instance(cloud_specific_details)
         elif cloud_type == "lepton":
             # Lepton workspaces use AWS S3 for storage with the same credential structure as AWS
+            cloud_type = "aws"
+            key = cloud_specific_details.get("access_key")
+            secret = cloud_specific_details.get("secret_key")
+            if 'account_name' in cloud_specific_details:
+                cloud_type = "azure"
+                key = cloud_specific_details.get("account_name")
+                secret = cloud_specific_details.get("access_key")
             cs_instance = CloudStorage(
-                cloud_type="aws",
+                cloud_type=cloud_type,
                 bucket_name=cloud_bucket_name,
                 region=cloud_specific_details.get("cloud_region"),
-                key=cloud_specific_details.get("access_key"),
-                secret=cloud_specific_details.get("secret_key"),
+                key=key,
+                secret=secret,
                 client_kwargs={"endpoint_url": cloud_specific_details.get("endpoint_url")}
             )
         elif cloud_type == "slurm":
@@ -404,8 +423,18 @@ class CloudStorage:
             self.fs = fsspec.filesystem('s3', **aws_kwargs)
             self.root = f'{bucket_name}/'
         elif cloud_type == 'azure':
+            # Azure requires account_name and account_key at the top level
+            # Extract credentials from kwargs
+            account_name = kwargs.pop('key', None)
+            account_key = kwargs.pop('secret', None)
+
             # Merge fsspec config with user kwargs
-            azure_kwargs = {**kwargs, **fsspec_config}
+            azure_kwargs = {
+                'account_name': account_name,
+                'account_key': account_key,
+                **kwargs,
+                **fsspec_config
+            }
             self.fs = fsspec.filesystem('az', **azure_kwargs)
             self.root = f'{bucket_name}/'
         elif cloud_type == 'seaweedfs':
@@ -493,9 +522,14 @@ class CloudStorage:
     def is_folder(self, cloud_path):
         """Check if the given cloud path is a folder."""
         full_path = self.root + cloud_path.strip('/') + '/'
+        # Azure specific path handling
+        if self.cloud_type == 'azure':
+            # For Azure, remove trailing slash and use isdir without it
+            full_path = full_path.rstrip('/')
         try:
             return self.fs.isdir(full_path)
         except Exception as e:
+            traceback.print_exc()
             logger.error(f"is_folder error: {e}")
             return False
 
@@ -516,6 +550,10 @@ class CloudStorage:
             # Normalize folder path
             folder_normalized = folder.strip('/')
             full_path = self.root + folder_normalized + '/' if folder_normalized else self.root
+
+            # Azure Blob Storage find() doesn't work well with trailing slashes
+            if self.cloud_type == 'azure' and full_path.endswith('/'):
+                full_path = full_path.rstrip('/')
 
             # Clear filesystem cache before operation for SeaweedFS
             if self.cloud_type == 'seaweedfs':
@@ -542,6 +580,7 @@ class CloudStorage:
             logger.info(f"Found {len(file_names)} files: {file_names[:5]}{'...' if len(file_names) > 5 else ''}")
             return file_names, []  # Details not available recursively
         except Exception as e:
+            traceback.print_exc()
             logger.error(f"list_files_in_folder error: {e}")
             return [], []
 
