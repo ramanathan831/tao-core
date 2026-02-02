@@ -16,11 +16,6 @@
 import os
 
 DOCKER_IMAGE_MAPPER = {
-    "MAXINE_DLDK": os.getenv('IMAGE_MAXINE_DLDK', default='nvcr.io/0544357712065245/maxine-dldk-trainer_ram:latest'),
-    "MAXINE_DEPLOY": os.getenv(
-        'IMAGE_MAXINE_DEPLOY',
-        default='nvcr.io/0544357712065245/maxine-dldk-trainer_ram:latest'
-    ),
     "TAO_PYTORCH": os.getenv('IMAGE_TAO_PYTORCH', default='nvcr.io/nvidia/tao/tao-toolkit:6.0.0-pyt'),
     "TAO_DEPLOY": os.getenv('IMAGE_TAO_DEPLOY', default='nvcr.io/nvidia/tao/tao-toolkit:6.0.0-deploy'),
     "": os.getenv('IMAGE_DEFAULT', default='nvcr.io/nvidia/tao/tao-toolkit:6.0.0-pyt'),  # Default

@@ -179,8 +179,7 @@ def _get_network_architectures(get_mapped: bool = False) -> Set[str]:
                                          "object_detection",
                                          "segmentation",
                                          "character_recognition",
-                                         "vlm",
-                                         "maxine_dataset"]:
+                                         "vlm"]:
                         architectures.add(arch_name)
                     else:
                         # Add networks from action mappings

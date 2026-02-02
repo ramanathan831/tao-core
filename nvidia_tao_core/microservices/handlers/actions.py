@@ -182,10 +182,7 @@ class ActionPipeline:
         # If current or parent action is gen_trt_engine or trtexec, then it'a a tao-deploy container action
         # Override version of image specific for networks
         if self.tao_deploy_actions:
-            team = "TAO"
-            if "maxine" in self.network:
-                team = "MAXINE"
-            self.image = DOCKER_IMAGE_MAPPER[f"{team}_DEPLOY"]
+            self.image = DOCKER_IMAGE_MAPPER["TAO_DEPLOY"]
         using_previous_version = False
         if self.network in DOCKER_IMAGE_VERSION.keys():
             self.tao_framework_version, self.tao_model_override_version = DOCKER_IMAGE_VERSION[self.network]
@@ -201,8 +198,6 @@ class ActionPipeline:
                 self.image = DOCKER_IMAGE_MAPPER[override_key]
         # This will be run inside a thread
         self.thread = None
-        # if self.network == "maxine_eye_contact":
-        # if self.action == "auto_labeling":
 
         # Parameters to launch a job and monitor status
         self.job_name = str(self.job_context.id)
@@ -240,9 +235,6 @@ class ActionPipeline:
         self.recursive_dataset_file_download = self.api_params.get("recursive_dataset_file_download", False)
         self.retain_checkpoints_for_resume = self.job_context.retain_checkpoints_for_resume
         self.early_stop_epoch = self.job_context.early_stop_epoch
-        # add an entry on the docker image mapper for trt engine generation MAXINE DEPLOY
-        # if action is trt engine generation and network is a maxine network, override image from docker image mapper
-        # TODO: robbie add image mpping fix for trt engine gen
         self.workspace_ids = []
 
     def _read_api_params(self):
@@ -429,10 +421,7 @@ class ActionPipeline:
                     break
 
             if self.tao_deploy_actions:
-                team = "TAO"
-                if "maxine" in self.network:
-                    team = "MAXINE"
-                nv_job_metadata["deployment_string"] = os.getenv(f'FUNCTION_{team}_DEPLOY')
+                nv_job_metadata["deployment_string"] = os.getenv('FUNCTION_TAO_DEPLOY')
             nv_job_metadata["network"] = self.network
             for key, value in self.job_env_variables.items():
                 nv_job_metadata[key] = value
@@ -1166,8 +1155,6 @@ class TrainVal(CLIPipeline):
                 self.action,
                 handler_metadata
             )
-            if action == "dataset_convert_gaze":
-                request_dict["format"] = "maxine_gaze"
             response = DatasetHandler.create_dataset(
                 self.job_context.user_id,
                 self.job_context.org_name,

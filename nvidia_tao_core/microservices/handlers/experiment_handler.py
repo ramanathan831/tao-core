@@ -24,7 +24,6 @@ from nvidia_tao_core.microservices.constants import (
     TENSORBOARD_DISABLED_NETWORKS,
     TENSORBOARD_EXPERIMENT_LIMIT,
     TAO_NETWORKS,
-    MAXINE_NETWORKS
 )
 from nvidia_tao_core.microservices.utils.airgapped_utils import AirgappedExperimentLoader
 from nvidia_tao_core.microservices.enum_constants import Backend, ExperimentNetworkArch
@@ -70,7 +69,6 @@ from ..utils.basic_utils import (
     get_org_experiments,
     get_user_experiments,
     get_experiment,
-    handler_level_access_control
 )
 
 # Configure logging
@@ -106,8 +104,7 @@ class ExperimentHandler:
                     handler_metadata["status"] = get_handler_status(handler_metadata)
                     metadatas.append(handler_metadata)
         if not user_only:
-            maxine_request = handler_level_access_control(user_id, org_name, base_experiment=True)
-            public_experiments_metadata = get_public_experiments(maxine=maxine_request)
+            public_experiments_metadata = get_public_experiments()
             metadatas += public_experiments_metadata
         return metadatas
 
@@ -120,8 +117,7 @@ class ExperimentHandler:
         """
         # Collect all metadatas
         metadatas = []
-        maxine_request = handler_level_access_control(user_id, org_name, base_experiment=True)
-        public_experiments_metadata = get_public_experiments(maxine=maxine_request)
+        public_experiments_metadata = get_public_experiments()
         metadatas += public_experiments_metadata
         return metadatas
 
@@ -290,9 +286,6 @@ class ExperimentHandler:
                     "experiment_actions": request_dict.get('experiment_actions', []),
                     "tags": list({t.lower(): t for t in request_dict.get("tags", [])}.values()),
                     }
-
-        if not handler_level_access_control(user_id, org_name, experiment_id, "experiments", handler_metadata=metadata):
-            return Code(403, {}, "Not allowed to work with this org")
 
         if metadata.get("automl_settings", {}).get("automl_enabled") and mdl_nw in AUTOML_DISABLED_NETWORKS:
             return Code(400, {}, "automl_enabled cannot be True for unsupported network")
@@ -559,8 +552,6 @@ class ExperimentHandler:
             return Code(400, {}, "Experiment does not exist")
 
         user_id = metadata.get("user_id")
-        if not handler_level_access_control(user_id, org_name, experiment_id, "experiments", handler_metadata=metadata):
-            return Code(403, {}, "Not allowed to work with this org")
         if not check_write_access(user_id, org_name, experiment_id, kind="experiments"):
             return Code(400, {}, "User doesn't have write access to experiment")
 
@@ -839,10 +830,6 @@ class ExperimentHandler:
         if action not in ("train", "distill", "quantize", "retrain"):
             logger.debug(f"[RESUME] Action not resumable: job_id={job_id}, action={action}")
             return Code(400, [], f"Action should be train, distill, quantize, retrain, not {action}")
-        network = handler_metadata.get("network_arch", None)
-        if network in MAXINE_NETWORKS:
-            logger.debug(f"[RESUME] Maxine network does not support resume: job_id={job_id}, network={network}")
-            return Code(400, [], "Maxine networks do not support resume.")
         if not user_id:
             logger.debug(f"[RESUME] User ID not found in metadata: experiment_id={experiment_id}")
             return Code(
