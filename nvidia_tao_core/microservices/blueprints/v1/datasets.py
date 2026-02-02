@@ -452,11 +452,7 @@ def dataset_create(org_name):
     # Load metadata in schema and return
     schema_dict = schema.dump(schema.load(response.data))
     if response.code != 200:
-        ds_format = request_dict.get("format", "")
-        log_type = (DataMonitorLogTypeEnum.medical_dataset
-                    if ds_format == "monai"
-                    else DataMonitorLogTypeEnum.tao_dataset)
-        log_api_error(user_id, org_name, schema_dict, log_type, action="creation")
+        log_api_error(user_id, org_name, schema_dict, DataMonitorLogTypeEnum.tao_dataset, action="creation")
 
     return make_response(jsonify(schema_dict), response.code)
 
@@ -1142,13 +1138,8 @@ def dataset_job_retry(org_name, dataset_id, job_id):
         return response
     # Get response
     response = JobHandler.job_retry(org_name, dataset_id, "dataset", job_id)
-    handler_metadata = resolve_metadata("dataset", dataset_id)
-    dataset_format = handler_metadata.get("format")
     # Get schema
     if response.code == 200:
-        # MONAI dataset jobs are sync jobs and the response should be returned directly.
-        if dataset_format == "monai":
-            return make_response(jsonify(response.data), response.code)
         if isinstance(response.data, str) and not validate_uuid(response.data):
             return make_response(jsonify(response.data), response.code)
         metadata = {"error_desc": "internal error: invalid job IDs", "error_code": 2}

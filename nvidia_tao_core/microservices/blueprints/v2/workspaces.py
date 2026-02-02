@@ -101,7 +101,7 @@ def workspace_list(org_name):
         required: false
         schema:
           type: string
-          enum: ["monai", "unet", "custom" ]
+          enum: ["unet", "custom"]
       - name: type
         in: query
         description: Optional type filter

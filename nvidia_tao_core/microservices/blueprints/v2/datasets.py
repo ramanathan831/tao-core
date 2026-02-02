@@ -444,11 +444,7 @@ def dataset_create(org_name):
     # Load metadata in schema and return
     schema_dict = schema.dump(schema.load(response.data))
     if response.code != 200:
-        ds_format = request_dict.get("format", "")
-        log_type = (DataMonitorLogTypeEnum.medical_dataset
-                    if ds_format == "monai"
-                    else DataMonitorLogTypeEnum.tao_dataset)
-        log_api_error(user_id, org_name, schema_dict, log_type, action="creation")
+        log_api_error(user_id, org_name, schema_dict, DataMonitorLogTypeEnum.tao_dataset, action="creation")
 
     if response.code == 200:
         response.code = 201

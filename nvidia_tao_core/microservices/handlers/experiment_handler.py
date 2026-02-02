@@ -243,8 +243,6 @@ class ExperimentHandler:
         if request_dict.get("public", False):
             add_public_experiment(experiment_id)
 
-        mdl_type = request_dict.get("type", "vision")
-
         # Create metadata dict and create some initial folders
         # Initially make datasets, base_experiment None
         metadata = {"id": experiment_id,
@@ -263,7 +261,6 @@ class ExperimentHandler:
                     "read_only": request_dict.get("read_only", False),
                     "public": request_dict.get("public", False),
                     "network_arch": mdl_nw,
-                    "type": mdl_type,
                     "dataset_type": read_network_config(mdl_nw)["api_params"]["dataset_type"],
                     "dataset_formats": read_network_config(mdl_nw)["api_params"].get(
                         "formats",

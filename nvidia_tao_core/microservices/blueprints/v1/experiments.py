@@ -115,13 +115,6 @@ def experiment_list(org_name):
           type: string
           maxLength: 5000
           pattern: '.*'
-      - name: type
-        in: query
-        description: Optional type filter
-        required: false
-        schema:
-          type: string
-          enum: ["vision", "medical"]
       - name: network_arch
         in: query
         description: Optional network architecture filter
@@ -295,13 +288,6 @@ def base_experiment_list(org_name):
           type: string
           maxLength: 5000
           pattern: '.*'
-      - name: type
-        in: query
-        description: Optional type filter
-        required: false
-        schema:
-          type: string
-          enum: ["vision", "medical"]
       - name: network_arch
         in: query
         description: Optional network architecture filter
@@ -746,10 +732,7 @@ def experiment_create(org_name):
     # Load metadata in schema and return
     schema_dict = schema.dump(schema.load(response.data))
     if response.code != 200:
-        mdl_nw = request_dict.get("network_arch", None)
-        is_medical = isinstance(mdl_nw, str) and mdl_nw.startswith("monai_")
-        log_type = DataMonitorLogTypeEnum.medical_experiment if is_medical else DataMonitorLogTypeEnum.tao_experiment
-        log_api_error(user_id, org_name, schema_dict, log_type, action="creation")
+        log_api_error(user_id, org_name, schema_dict, DataMonitorLogTypeEnum.tao_experiment, action="creation")
 
     return make_response(jsonify(schema_dict), response.code)
 
@@ -1342,11 +1325,9 @@ def experiment_job_run(org_name, experiment_id):
     if response.code != 200:
         try:
             handler_metadata = resolve_metadata("experiment", experiment_id)
-            is_medical = handler_metadata.get("type").lower() == "medical"
             user_id = handler_metadata.get("user_id", None)
             if user_id:
-                log_type = DataMonitorLogTypeEnum.medical_job if is_medical else DataMonitorLogTypeEnum.tao_job
-                log_api_error(user_id, org_name, schema_dict, log_type, action="creation")
+                log_api_error(user_id, org_name, schema_dict, DataMonitorLogTypeEnum.tao_job, action="creation")
         except Exception as e:
             logger.error(f"Exception thrown in experiment_job_run is {str(e)}")
             log_monitor(DataMonitorLogTypeEnum.api, "Cannot parse experiment info for job.")
@@ -1764,11 +1745,9 @@ def experiment_job_retry(org_name, experiment_id, job_id):
     if response.code != 200:
         try:
             handler_metadata = resolve_metadata("experiment", experiment_id)
-            is_medical = handler_metadata.get("type").lower() == "medical"
             user_id = handler_metadata.get("user_id", None)
             if user_id:
-                log_type = DataMonitorLogTypeEnum.medical_job if is_medical else DataMonitorLogTypeEnum.tao_job
-                log_api_error(user_id, org_name, schema_dict, log_type, action="creation")
+                log_api_error(user_id, org_name, schema_dict, DataMonitorLogTypeEnum.tao_job, action="creation")
         except Exception as e:
             logger.error(f"Exception thrown in experiment_job_retry is {str(e)}")
             log_monitor(DataMonitorLogTypeEnum.api, "Cannot parse experiment info for job.")

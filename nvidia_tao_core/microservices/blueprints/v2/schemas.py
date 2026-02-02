@@ -1937,14 +1937,7 @@ class ExperimentJobReq(Schema):
     public = fields.Bool()
     automl_settings = fields.Nested(AutoML, allow_none=True)
     metric = fields.Str(format="regex", regex=r'.*', validate=fields.validate.Length(max=100), allow_none=True)
-    realtime_infer = fields.Bool(default=False)
     model_params = fields.Dict(allow_none=True)
-    bundle_url = fields.Str(format="regex", regex=r'.*', validate=fields.validate.Length(max=1000), allow_none=True)
-    realtime_infer_request_timeout = fields.Int(
-        format="int64",
-        validate=validate.Range(min=0, max=sys.maxsize),
-        allow_none=True
-    )
     experiment_actions = fields.List(
         fields.Nested(ExperimentActions, allow_none=True),
         validate=validate.Length(max=sys.maxsize)
@@ -2041,7 +2034,7 @@ class ExperimentJobRsp(Schema):
         """Class enabling sorting field values by the order in which they are declared"""
 
         ordered = True
-        load_only = ("user_id", "docker_env_vars", "realtime_infer_endpoint", "realtime_infer_model_name")
+        load_only = ("user_id", "docker_env_vars")
         unknown = EXCLUDE
 
     id = fields.Str(format="uuid", validate=fields.validate.Length(max=36))
@@ -2143,27 +2136,7 @@ class ExperimentJobRsp(Schema):
     all_jobs_cancel_status = EnumField(JobStatusEnum, allow_none=True)
     automl_settings = fields.Nested(AutoML)
     metric = fields.Str(format="regex", regex=r'.*', validate=fields.validate.Length(max=100), allow_none=True)
-    realtime_infer = fields.Bool(allow_none=True)
-    realtime_infer_support = fields.Bool()
-    realtime_infer_endpoint = fields.Str(
-        format="regex",
-        regex=r'.*',
-        validate=fields.validate.Length(max=1000),
-        allow_none=True
-    )
-    realtime_infer_model_name = fields.Str(
-        format="regex",
-        regex=r'.*',
-        validate=fields.validate.Length(max=1000),
-        allow_none=True
-    )
     model_params = fields.Dict(allow_none=True)
-    realtime_infer_request_timeout = fields.Int(
-        format="int64",
-        validate=validate.Range(min=0, max=86400),
-        allow_none=True
-    )
-    bundle_url = fields.Str(format="regex", regex=r'.*', validate=fields.validate.Length(max=1000), allow_none=True)
     base_experiment_metadata = fields.Nested(BaseExperimentMetadata, allow_none=True)
     source_type = EnumField(SourceType, allow_none=True)
     experiment_actions = fields.List(
