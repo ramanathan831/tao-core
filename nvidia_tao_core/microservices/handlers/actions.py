@@ -37,7 +37,6 @@ from nvidia_tao_core.microservices.constants import (
 from nvidia_tao_core.microservices.utils.cloud_utils import create_cs_instance
 from nvidia_tao_core.microservices.utils.handler_utils import get_files_from_cloud
 from nvidia_tao_core.microservices.utils.ngc_utils import get_user_key
-from nvidia_tao_core.microservices.utils.nvcf_utils import get_available_nvcf_instances
 from .docker_images import DOCKER_IMAGE_MAPPER, DOCKER_IMAGE_VERSION
 from .infer_data_sources import apply_data_source_config
 from .infer_params import CLI_CONFIG_TO_FUNCTIONS
@@ -213,19 +212,14 @@ class ActionPipeline:
         # Extract platform_id from backend_details
         self.platform_id = None
         if (self.job_context.backend_details and
-                self.job_context.backend_details.get('backend_type') in ["nvcf", "lepton"]):
+                self.job_context.backend_details.get('backend_type') == "lepton"):
             self.platform_id = self.job_context.backend_details.get('platform_id')
-        if not self.platform_id:
-            if BACKEND == Backend.NVCF:
-                self.platform_id = "052fc221-ffaa-5c15-8d22-b663e7339349"
 
         self.run_command = ""
         self.logfile = os.path.join(self.handler_log_root, str(self.job_context.id) + ".txt")
         self.cloud_metadata = {}
         self.cs_instance = None  # initialized in run()
         self.ngc_runner = False
-        if BACKEND == Backend.NVCF:
-            self.ngc_runner = True
         self.local_cluster = False
         self.num_gpu = (
             self.job_context.specs.get("num_gpu", self.job_context.num_gpu)
@@ -294,17 +288,6 @@ class ActionPipeline:
     def generate_env_variables(self, automl_brain_job_id=None, experiment_number=None, automl_exp_job_id=None):
         """Generate env variables required for a job"""
         host_base_url = os.getenv("HOSTBASEURL", "no_url")
-        if HOST_PLATFORM == "NVCF":
-            function_version_string = os.getenv("FUNCTION_TAO_API")
-            if not function_version_string:
-                raise ValueError(
-                    "For HOST Platform NVCF, FUNCTION_TAO_API should be present in chart values "
-                    "in the form of function_id:version_id"
-                )
-            if BACKEND == Backend.LOCAL_K8S:
-                raise ValueError("For HOST Platform NVCF, Backend should also be NVCF")
-            self.job_env_variables["NVCF_HELM"] = function_version_string
-            host_base_url = "http://10.123.4.56:32080"  # Will not be used by DNN containers, just to match a URL format
         log_callback_job_id = self.job_context.id
         if automl_exp_job_id:
             log_callback_job_id = automl_exp_job_id
@@ -371,7 +354,6 @@ class ActionPipeline:
 
     def generate_nv_job_metadata(self, nv_job_metadata, workspace_metadata=None):
         """Convert run command generated into format that"""
-        nv_job_metadata["teamName"] = os.getenv("NVCF_DEPLOYMENT_TEAM_NAME", "no_team")
         nv_job_metadata["dockerImageName"] = self.image
 
         if workspace_metadata:
@@ -391,40 +373,6 @@ class ActionPipeline:
                     }
                 else:
                     logger.error(f"No available instances found for platform {self.platform_id}")
-
-        if BACKEND == Backend.NVCF:
-            nv_job_metadata["workspace_ids"] = list(self.workspace_ids)
-            nv_job_metadata["deployment_string"] = os.getenv(f'FUNCTION_{NETWORK_CONTAINER_MAPPING[self.network]}')
-
-            available_nvcf_instances = get_available_nvcf_instances(self.job_context.user_id, self.job_context.org_name)
-            # if not available_nvcf_instances:
-            available_nvcf_instances["052fc221-ffaa-5c15-8d22-b663e7339349"] = {
-                "cluster": "GFN",
-                "gpu_type": "L40S",
-                "instance_type": "gl40s_1x2.br25_4xlarge"
-            }
-            instance_type = available_nvcf_instances[self.platform_id]["instance_type"]
-            nv_job_metadata["nvcf_backend_details"] = {
-                "cluster": available_nvcf_instances[self.platform_id]["cluster"],
-                "gpu_type": available_nvcf_instances[self.platform_id]["gpu_type"],
-                "instance_type": instance_type,
-                "current_available": available_nvcf_instances[self.platform_id]["current_available"]
-            }
-            for gpu_postfix in ["2x", "4x", "8x"]:
-                if gpu_postfix in instance_type:
-                    dividing_factor = 1
-                    if available_nvcf_instances[self.platform_id]["cluster"] == "GFN":
-                        dividing_factor = 2
-                    nv_job_metadata["nvcf_backend_details"]["num_gpu_per_node"] = int(
-                        int(gpu_postfix[:-1]) / dividing_factor
-                    )
-                    break
-
-            if self.tao_deploy_actions:
-                nv_job_metadata["deployment_string"] = os.getenv('FUNCTION_TAO_DEPLOY')
-            nv_job_metadata["network"] = self.network
-            for key, value in self.job_env_variables.items():
-                nv_job_metadata[key] = value
 
     def get_handler_cloud_details(self):
         """Gather cloud details from various handlers associated for the job"""
@@ -1346,7 +1294,7 @@ class AutoMLPipeline(ActionPipeline):
                 self.automl_brain_job_id,
                 automl=True,
                 experiment_number=str(self.rec_number)
-            ) or (BACKEND == Backend.NVCF and k8s_status == "Running"):
+            ):
                 break
             job_metadata = get_handler_job_metadata(self.automl_brain_job_id) or {}
             detailed_message = (

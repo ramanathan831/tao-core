@@ -337,8 +337,7 @@ def get_job_logs_from_backend(
     """Get logs from the appropriate backend (Kubernetes, Docker, SLURM, or Lepton).
 
     This is a unified interface that automatically determines the backend
-    and retrieves logs accordingly. For other backends (like NVCF), returns None
-    so the caller can fallback to the traditional method.
+    and retrieves logs accordingly.
 
     Args:
         job_id (str): The job ID

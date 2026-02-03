@@ -188,11 +188,6 @@ def dependency_check_gpu(job_context, dependency):
     """Check if GPU dependency is met"""
     logger.debug(f"[GPU_DEP_CHECK] Starting GPU dependency check for job {job_context.id}")
 
-    # If BACKEND is NVCF, then we don't need to check for GPU availability if it's not a local job
-    local_job = (job_context.specs and "cluster" in job_context.specs and job_context.specs["cluster"] == "local")
-    if BACKEND == Backend.NVCF and not local_job:
-        return True, ""
-
     try:
         num_gpu = get_num_gpus_from_spec(
             job_context.specs, job_context.action, network=job_context.network, default=dependency.num

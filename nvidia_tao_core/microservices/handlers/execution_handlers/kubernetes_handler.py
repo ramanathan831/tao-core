@@ -73,7 +73,7 @@ class KubernetesHandler(ExecutionHandler):
             accelerator: Accelerator type
             docker_env_vars: Docker environment variables
             port: Port flag
-            nv_job_metadata: NVCF job metadata
+            nv_job_metadata: job metadata
             automl_brain: Whether this is an AutoML brain job
             automl_exp_job: Whether this is an AutoML experiment job
             local_cluster: Whether this is a local cluster
@@ -434,7 +434,6 @@ class KubernetesHandler(ExecutionHandler):
         job_id="",
         docker_env_vars={},
         port=8000,
-        nvcf_helm="",
         statefulset_replicas=1
     ):
         """Send a request to the K8s StatefulSet microservice
@@ -1030,20 +1029,6 @@ echo "Starting Inference Microservice..." &&
             config.load_kube_config()
         else:
             config.load_incluster_config()
-
-        if BACKEND == Backend.NVCF and use_ngc:
-            from .nvcf_handler import get_nvcf_handler_from_workspace
-
-            # Get NVCF handler from job metadata
-            job_metadata = get_handler_job_metadata(job_name)
-            workspace_id = job_metadata.get("workspace")
-            if workspace_id:
-                nvcf_handler = get_nvcf_handler_from_workspace(workspace_id)
-                if nvcf_handler:
-                    nvcf_handler.delete(job_name)
-                    return True
-            self.logger.warning(f"Could not get NVCF handler for job {job_name}")
-            return False
 
         api_instance = client.AppsV1Api()
         try:

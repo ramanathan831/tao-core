@@ -187,7 +187,6 @@ class AllowedDockerEnvVariables(Enum):
     CLEARML_API_SECRET_KEY = "CLEARML_API_SECRET_KEY"
 
     CLOUD_BASED = "CLOUD_BASED"
-    NVCF_HELM = "NVCF_HELM"
     TELEMETRY_OPT_OUT = "TELEMETRY_OPT_OUT"
     TAO_API_KEY = "TAO_API_KEY"
     TAO_USER_KEY = "TAO_USER_KEY"
@@ -208,43 +207,6 @@ class AllowedDockerEnvVariables(Enum):
     TAO_TELEMETRY_SERVER = "TAO_TELEMETRY_SERVER"
     TAO_CLIENT_TYPE = "TAO_CLIENT_TYPE"  # Client type: container, api, cli, sdk, ui, etc.
     TAO_AUTOML_TRIGGERED = "TAO_AUTOML_TRIGGERED"  # Whether job is triggered by AutoML
-
-
-class NVCFEndpoint(Enum):
-    """Class defining action type enum"""
-
-    login = 'login'
-    org_gpu_types = 'org_gpu_types'
-    workspace_retrieve_datasets = 'workspace_retrieve_datasets'
-    list = 'list'
-    retrieve = 'retrieve'
-    delete = 'delete'
-    bulk_delete = 'bulk_delete'
-    create = 'create'
-    update = 'update'
-    partial_update = 'partial_update'
-    specs_schema = 'specs_schema'
-    job_run = 'job_run'
-    job_retry = 'job_retry'
-    job_list = 'job_list'
-    job_retrieve = 'job_retrieve'
-    job_schema = 'job_schema'
-    job_logs = 'job_logs'
-    job_cancel = 'job_cancel'
-    job_delete = 'job_delete'
-    job_download = 'job_download'
-    job_pause = 'job_pause'
-    jobs_cancel = 'jobs_cancel'
-    bulk_cancel = 'bulk_cancel'
-    job_resume = 'job_resume'
-    automl_details = 'automl_details'
-    get_epoch_numbers = 'get_epoch_numbers'
-    model_publish = 'model_publish'
-    remove_published_model = 'remove_published_model'
-    status_update = 'status_update'
-    log_update = 'log_update'
-    container_job_run = 'container_job_run'
-    container_job_status = 'container_job_status'
 
 
 class CloudPullTypesEnum(Enum):
@@ -651,28 +613,8 @@ class LoginRsp(Schema):
     user_email = fields.Str(format="regex", regex=r'.*', validate=fields.validate.Length(max=1000), allow_none=True)
 
 
-class NVCFReq(Schema):
-    """Class defining login response schema"""
-
-    class Meta:
-        """Class enabling sorting field values by the order in which they are declared"""
-
-        ordered = True
-    ngc_org_name = fields.Str(format="regex", regex=r'.*', validate=fields.validate.Length(max=1000))
-    api_endpoint = EnumField(NVCFEndpoint)
-    kind = fields.Str(format="regex", regex=r'.*', validate=fields.validate.Length(max=1000))
-    handler_id = fields.Str(format="uuid", validate=fields.validate.Length(max=36))
-    is_base_experiment = fields.Bool()
-    is_job = fields.Bool()
-    job_id = fields.Str(format="uuid", validate=fields.validate.Length(max=36))
-    action = EnumField(ActionEnum)
-    request_body = fields.Raw()
-    ngc_key = fields.Str(format="regex", regex=r'.*', validate=fields.validate.Length(max=1000))
-    is_json_request = fields.Bool()
-
-
 class ContainerJob(Schema):
-    """Class defining NVCF request schema"""
+    """Class defining job request schema"""
 
     class Meta:
         """Class enabling sorting field values by the order in which they are declared"""
@@ -889,13 +831,6 @@ class SlurmBackendDetails(Schema):
     backend_type = fields.Constant("slurm")
     partition = fields.Str(validate=validate.Length(max=2048), allow_none=True)
     cluster_name = fields.Str(validate=validate.Length(max=2048), allow_none=True)
-
-
-class NVCFBackendDetails(Schema):
-    """Backend details for NVCF execution"""
-
-    backend_type = fields.Constant("nvcf")
-    platform_id = fields.Str(format="uuid", validate=fields.validate.Length(max=36), allow_none=True)
 
 
 class LeptonBackendDetails(Schema):

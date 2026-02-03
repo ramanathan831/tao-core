@@ -33,7 +33,7 @@ class MicroserviceExecutor():
 
     def create_microservice_and_send_request(
             self, api_endpoint, network, action, cloud_metadata={}, specs={},
-            microservice_pod_id="", nvcf_helm="", num_gpu=-1,
+            microservice_pod_id="", num_gpu=-1,
             microservice_container="", org_name="", handler_id="",
             handler_kind="", accelerator=None, docker_env_vars={}, num_nodes=1,
             resource_shape=None, dedicated_node_group=None, backend_details=None):
@@ -63,7 +63,6 @@ class MicroserviceExecutor():
             docker_env_vars=docker_env_vars,
             num_nodes=num_nodes,
             accelerator=accelerator,
-            nvcf_helm=nvcf_helm,
             resource_shape=resource_shape,
             dedicated_node_group=dedicated_node_group,
             backend_details=backend_details

@@ -26,7 +26,6 @@ from datetime import datetime, timezone
 from nvidia_tao_core.microservices.constants import (
     MISSING_EPOCH_FORMAT_NETWORKS
 )
-from nvidia_tao_core.microservices.utils.nvcf_utils import get_available_nvcf_instances
 from nvidia_tao_core.microservices.handlers.automl_handler import AutoMLHandler
 from nvidia_tao_core.microservices.utils.automl_utils import apply_automl_custom_param_ranges
 from nvidia_tao_core.microservices.utils.log_streaming_utils import get_job_logs_from_backend
@@ -136,7 +135,7 @@ class JobHandler:
         """
         # Extract platform_id from backend_details
         platform_id = None
-        if backend_details and backend_details.get('backend_type') in ["nvcf", "lepton"]:
+        if backend_details and backend_details.get('backend_type') == "lepton":
             platform_id = backend_details.get('platform_id')
 
         handler_metadata = resolve_metadata(kind, handler_id)
@@ -178,61 +177,6 @@ class JobHandler:
                     parent_handler_id = parent_job_metadata.get("experiment_id")
                 if not parent_handler_id:
                     return Code(404, [], f"Unable to identify {parent_kind} id for parent job {parent_job_id}")
-
-        if BACKEND == Backend.NVCF:
-            available_nvcf_instances = get_available_nvcf_instances(user_id, org_name)
-            if not available_nvcf_instances:
-                platform_id = "052fc221-ffaa-5c15-8d22-b663e7339349"
-            else:
-                if not platform_id:
-                    def get_powers_of_2(start: int):
-                        power = 1
-                        powers = []
-                        while power <= 8:
-                            if power >= start:
-                                powers.append(power)
-                            power *= 2
-                        return powers
-
-                    num_gpu = 1
-                    if specs:
-                        num_gpu = get_num_gpus_from_spec(specs, action, network=network_arch, default=1)
-                    gpu_based_subset = {}
-                    valid_gpu_counts = get_powers_of_2(num_gpu)
-                    for nvcf_instance_id, nvcf_instance_info in available_nvcf_instances.items():
-                        cluster = available_nvcf_instances[nvcf_instance_id].get('cluster', '')
-                        instance_type = available_nvcf_instances[nvcf_instance_id].get('instance_type', '')
-                        if cluster == 'GFN':
-                            instance_type = instance_type.replace("2x", "1x").replace("4x", "2x")
-                        for valid_gpu_count in valid_gpu_counts:
-                            if f"{valid_gpu_count}x" in instance_type:
-                                gpu_based_subset[nvcf_instance_id] = nvcf_instance_info
-
-                    if gpu_based_subset:
-                        sorted_platform_ids = sorted(
-                            gpu_based_subset,
-                            key=lambda x: gpu_based_subset[x]['current_available'],
-                            reverse=True
-                        )
-                    else:
-                        sorted_platform_ids = sorted(
-                            available_nvcf_instances,
-                            key=lambda x: available_nvcf_instances[x]['current_available'],
-                            reverse=True
-                        )
-                    platform_id = sorted_platform_ids[0]
-                if platform_id not in available_nvcf_instances:
-                    return Code(
-                        404, [],
-                        f"Requested NVCF resource {platform_id} not available. "
-                        f"Valid platform_id options are {str(available_nvcf_instances.keys())}"
-                    )
-                if available_nvcf_instances[platform_id]["current_available"] == 0:
-                    return Code(
-                        404, [],
-                        f"Requested NVCF resource {platform_id} maxed out. Choose other platform_id options, "
-                        f"valid options are: {str(available_nvcf_instances.keys())}"
-                    )
 
         try:
             job_id = job_id or str(uuid.uuid4())

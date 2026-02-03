@@ -437,7 +437,6 @@ class Backend(enum.Enum):
 
     LOCAL_K8S = "local-k8s"
     LOCAL_DOCKER = "local-docker"
-    NVCF = "NVCF"
     SLURM = "slurm"
     LEPTON = "lepton"
 

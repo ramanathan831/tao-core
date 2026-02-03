@@ -610,7 +610,6 @@ class DockerHandler(ExecutionHandler):
         job_id="",
         docker_env_vars={},
         port=8000,
-        nvcf_helm="",
         statefulset_replicas=1
     ):
         """Send a request to the Docker microservice (unified interface)

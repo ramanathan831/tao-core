@@ -172,7 +172,7 @@ class JobContext:
         self.backend_details = backend_details
         # Extract platform_id from backend_details for backward compatibility
         self.platform_id = None
-        if backend_details and backend_details.get('backend_type') in ["nvcf", "lepton"]:
+        if backend_details and backend_details.get('backend_type') == "lepton":
             self.platform_id = backend_details.get('platform_id')
         self.retain_checkpoints_for_resume = retain_checkpoints_for_resume
         self.early_stop_epoch = early_stop_epoch
@@ -1111,13 +1111,10 @@ def validate_num_gpu(num_gpu=None, action: str = ""):
         return 0, f"Requested number of GPUs ({num_gpu}) is invalid negative number."
 
     # Get maximum available number of GPUs
-    if BACKEND == Backend.NVCF:
-        max_num_gpu = 8
-    else:
-        num_gpu_per_node = os.getenv("NUM_GPU_PER_NODE")
-        if num_gpu_per_node is None:
-            return 0, "NUM_GPU_PER_NODE is not set in the environment. Assuming no GPU is available!"
-        max_num_gpu = int(num_gpu_per_node)
+    num_gpu_per_node = os.getenv("NUM_GPU_PER_NODE")
+    if num_gpu_per_node is None:
+        return 0, "NUM_GPU_PER_NODE is not set in the environment. Assuming no GPU is available!"
+    max_num_gpu = int(num_gpu_per_node)
 
     # Use all maximum number of GPUs if num_gpu is -1
     if num_gpu == -1:
@@ -1318,7 +1315,6 @@ def send_statefulset_request(
     cloud_metadata={},
     specs={},
     job_id="",
-    nvcf_helm="",
     docker_env_vars={},
     statefulset_replica_index=0,
     statefulset_replicas=1,
@@ -1332,7 +1328,6 @@ def send_statefulset_request(
         cloud_metadata (dict, optional): Cloud metadata. Defaults to {}.
         specs (dict, optional): Job specifications. Defaults to {}.
         job_id (str, optional): Job ID. Defaults to "".
-        nvcf_helm (str, optional): NVCF helm configuration. Defaults to "".
         docker_env_vars (dict, optional): Docker environment variables. Defaults to {}.
         statefulset_replicas (int, optional): StatefulSet replicas. Defaults to 1.
         statefulset_replica_index (int, optional): StatefulSet replica index. Defaults to 0.
