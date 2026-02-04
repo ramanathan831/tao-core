@@ -35,6 +35,19 @@ from nvidia_tao_core.config.common.common_config import (
     TrtConfig,
     CalibrationConfig
 )
+from nvidia_tao_core.config.common.quantization import ModelQuantizationConfig
+
+
+@dataclass
+class QuantCalibrationDataset:
+    """Quantization calibration dataset config."""
+
+    images_dir: str = STR_FIELD(
+        value="",
+        default_value="",
+        description="Path to the directory containing calibration images.",
+        display_name="calibration images directory"
+    )
 
 
 @dataclass
@@ -613,6 +626,10 @@ class OCDNetDataConfig:
         display_name="validate_dataset",
         description="Hyper parameters to configure the validation dataset."
     )
+    quant_calibration_dataset: QuantCalibrationDataset = DATACLASS_FIELD(
+        QuantCalibrationDataset(),
+        description="Configurable parameters for quantization calibration dataset.",
+    )
 
 
 @dataclass
@@ -969,6 +986,10 @@ class ExperimentConfig(CommonExperimentConfig):
     prune: OCDNetPruneExpConfig = DATACLASS_FIELD(
         OCDNetPruneExpConfig(),
         description="Configurable parameters to construct the pruner for an OCDNet experiment.",
+    )
+    quantize: ModelQuantizationConfig = DATACLASS_FIELD(
+        ModelQuantizationConfig(),
+        description="Configurable parameters for model quantization.",
     )
 
     def __post_init__(self):
