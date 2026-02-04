@@ -35,6 +35,9 @@ from nvidia_tao_core.config.grounding_dino.default_config import (
     GDINOExportExpConfig,
     GDINOGenTrtEngineExpConfig,
 )
+from nvidia_tao_core.config.common.quantization.default_config import (
+    ModelQuantizationConfig,
+)
 
 
 @dataclass
@@ -266,6 +269,11 @@ class ExperimentConfig(CommonExperimentConfig):
             "Configurable parameters to construct the TensorRT engine builder "
             "for a Mask Grounding DINO experiment."
         ),
+    )
+    quantize: ModelQuantizationConfig = DATACLASS_FIELD(
+        ModelQuantizationConfig(),
+        default_value={},
+        description="Configurable parameters to run model quantization for a Mask Grounding DINO experiment.",
     )
 
     def __post_init__(self):
