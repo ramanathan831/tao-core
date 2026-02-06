@@ -55,6 +55,12 @@ class DDModelConfig:
         display_name="pretrained backbone path",
         description="[Optional] Path to a pretrained backbone file.",
     )
+    dld_model_dir_path: Optional[str] = STR_FIELD(
+        value=None,
+        default_value="",
+        display_name="DLD model directory path",
+        description="Path to the directory exported by DLD for an edited model",
+    )
     backbone: str = STR_FIELD(
         value="resnet_50",
         default_value="resnet_50",
