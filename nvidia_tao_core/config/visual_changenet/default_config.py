@@ -37,6 +37,11 @@ from nvidia_tao_core.config.common.common_config import (
     CalibrationConfig
 )
 
+from nvidia_tao_core.config.common.quantization import (
+    ModelQuantizationConfig,
+    QuantCalibrationDataset,
+)
+
 
 @dataclass
 class CNOptimConfig:
@@ -549,6 +554,10 @@ class CNDatasetSegmentConfig:
     predict_split: str = STR_FIELD(value="test", default_value="test", description="Predict split folder name")
     label_suffix: str = STR_FIELD(value=".png", default_value=".png", description="Suffix of images")
     color_map: Optional[Dict[str, List[int]]] = DICT_FIELD(None, description="Class label index to RGB color mapping")
+    quant_calibration_dataset: QuantCalibrationDataset = DATACLASS_FIELD(
+        QuantCalibrationDataset(),
+        description="Configurable parameters for the quantization calibration dataset.",
+    )
 
 
 @dataclass
@@ -754,6 +763,10 @@ class ExperimentConfig(CommonExperimentConfig):
     inference: CNInferenceExpConfig = DATACLASS_FIELD(CNInferenceExpConfig())
     export: ExportConfig = DATACLASS_FIELD(ExportExpConfig())
     gen_trt_engine: CNGenTrtEngineExpConfig = DATACLASS_FIELD(CNGenTrtEngineExpConfig())
+    quantize: ModelQuantizationConfig = DATACLASS_FIELD(
+        ModelQuantizationConfig(),
+        description="Configurable parameters to run model quantization for a Visual ChangeNet experiment.",
+    )
     task: Optional[str] = STR_FIELD(
         value="segment",
         default_value="segment",

@@ -885,13 +885,22 @@ def get_cloud_storage_class_object(cloud_data, cloud_string):
         return None, cloud_file_path
 
     # Handle cloud protocols with credentials
+    account_name = cloud_data[csp_provider][bucket_name].get("account_name")
+    access_key = cloud_data[csp_provider][bucket_name].get("access_key")
+    secret_key = cloud_data[csp_provider][bucket_name].get("secret_key")
+    region = cloud_data[csp_provider][bucket_name].get("cloud_region")
+    endpoint_url = cloud_data[csp_provider][bucket_name].get("endpoint_url")
+    if account_name:
+        csp_provider = "azure"
+        access_key = account_name
+
     cloud_storage = initialize_cloud_storage(
         cloud_type=csp_provider,
         bucket_name=bucket_name,
-        region=cloud_data[csp_provider][bucket_name].get("cloud_region"),
-        access_key=cloud_data[csp_provider][bucket_name].get("access_key"),
-        secret_key=cloud_data[csp_provider][bucket_name].get("secret_key"),
-        endpoint_url=cloud_data[csp_provider][bucket_name].get("endpoint_url")
+        region=region,
+        access_key=access_key,
+        secret_key=secret_key,
+        endpoint_url=endpoint_url
     )
     while cloud_file_path.find("//") != -1:
         cloud_file_path = cloud_file_path.replace("//", "/")

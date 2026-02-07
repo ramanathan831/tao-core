@@ -829,7 +829,10 @@ class ExperimentConfig(CommonExperimentConfig):
     export: ExportExpConfig = DATACLASS_FIELD(ExportExpConfig())
     gen_trt_engine: GenTrtEngineExpConfig = DATACLASS_FIELD(GenTrtEngineExpConfig())
     distill: ClassDistillationConfig = DATACLASS_FIELD(ClassDistillationConfig())
-    quantize: ModelQuantizationConfig = DATACLASS_FIELD(ModelQuantizationConfig())
+    quantize: ModelQuantizationConfig = DATACLASS_FIELD(
+        ModelQuantizationConfig(),
+        default_value={},
+    )
 
     def __post_init__(self):
         """Set default model name for Classification PyTorch."""

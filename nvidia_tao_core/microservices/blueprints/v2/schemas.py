@@ -882,17 +882,42 @@ class BackendDetails(OneOfSchema):
         raise fields.ValidationError(f"Invalid backend type: {backend_type}")
 
 
-class LeptonCloudPull(AWSCredentialsFields, Schema):
+class LeptonCloudPull(Schema):
     """Class defining Lepton Cloud pull schema
 
-    Lepton workspaces use AWS S3 for storage, so they include AWS credentials
-    along with Lepton-specific authentication fields.
+    Lepton workspaces can use AWS S3 or Azure Blob storage.
+    Provide either AWS credentials (access_key, secret_key) or Azure credentials (account_name, access_key).
     """
 
     # Lepton-specific fields
     lepton_workspace_id = fields.Str(validate=validate.Length(max=2048), required=True)
     lepton_auth_token = fields.Str(validate=validate.Length(max=2048), required=True)
     cloud_type = fields.Constant(CloudPullTypesEnum.lepton.value)
+
+    # AWS fields (optional - required if using AWS storage)
+    access_key = fields.Str(validate=validate.Length(min=1, max=2048), allow_none=True)
+    secret_key = fields.Str(validate=validate.Length(min=1, max=2048), allow_none=True)
+
+    # Azure fields (optional - required if using Azure storage)
+    account_name = fields.Str(validate=validate.Length(min=1, max=2048), allow_none=True)
+
+    # Shared fields
+    cloud_region = fields.Str(validate=validate.Length(max=2048), allow_none=True)
+    endpoint_url = fields.Str(validate=[validate_endpoint_url, validate.Length(max=2048)], allow_none=True)
+    cloud_bucket_name = fields.Str(validate=validate.Length(min=1, max=2048), allow_none=True)
+
+    @validates_schema
+    def validate_storage_credentials(self, data, **kwargs):
+        """Ensure either AWS or Azure credentials are provided, but not both"""
+        has_aws = data.get('access_key') and data.get('secret_key')
+        has_azure = data.get('account_name') and data.get('access_key') and not data.get('secret_key')
+        has_lepton = data.get('lepton_workspace_id') and data.get('lepton_auth_token')
+
+        if not (has_aws or has_azure) or not has_lepton:
+            raise ValidationError(
+                'Must provide either AWS credentials (access_key, secret_key) '
+                'or Azure credentials (account_name, access_key) and Lepton workspace ID and auth token'
+            )
 
 
 class CloudSpecificDetails(OneOfSchema):

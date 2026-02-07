@@ -188,3 +188,22 @@ class DDTrainExpConfig(TrainConfig):
             "rather than storing activations."
         ),
     )
+    verbose: bool = BOOL_FIELD(
+        value=False,
+        display_name="enable verbose logs",
+        description=(
+            "Flag to enable printing of detailed learning rate scaling from the optimizer."
+        )
+    )
+    input_width: Optional[int] = INT_FIELD(
+        value=None,
+        description="Width of the input image tensor.",
+        display_name="input width",
+        valid_min=1,
+    )
+    input_height: Optional[int] = INT_FIELD(
+        value=None,
+        description="Height of the input image tensor.",
+        display_name="input height",
+        valid_min=1,
+    )

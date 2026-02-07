@@ -1595,7 +1595,7 @@ def main():
 
     def load_json_from_arg_or_file(json_str, file_path, default='{}'):
         """Load JSON from string argument or file path with retry mechanism."""
-        logger.info("Path exists: %s", os.path.exists(file_path))
+        logger.info("Path exists: %s", os.path.exists(file_path) if file_path else False)
         logger.info("File path: %s", file_path)
         logger.info("JSON string: %s", json_str)
         logger.info("Default: %s", default)
@@ -1674,6 +1674,7 @@ def main():
             os.environ.update(docker_env_vars)
         ContainerJobHandler.setup_and_run(job, docker_env_vars, sync=True)
     except Exception as e:
+        logger.error(traceback.format_exc())
         logger.error(f"Error running container job: {e}")
         sys.exit(1)
 
