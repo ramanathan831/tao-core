@@ -156,8 +156,9 @@ def vlm_launch(neural_network_name, action, specs, job_id=""):
         # Use TAO_API_RESULTS_DIR for SLURM compatibility, fallback to /results
         results_base = os.getenv('TAO_API_RESULTS_DIR', '/results')
         logger.info(f"results_base: {results_base}")
+        suffix = f"-{action}" if action != "train" else ""
         launch_cmd = (
-            f"{neural_network_name}-{action} --config {results_base}/{job_id}/spec.toml {train_args}"
+            f"{neural_network_name}{suffix} --config {results_base}/{job_id}/spec.toml {train_args}"
         )
         logger.info(f"launch_cmd: {launch_cmd}")
         command = ["/bin/bash", "-c", launch_cmd]
