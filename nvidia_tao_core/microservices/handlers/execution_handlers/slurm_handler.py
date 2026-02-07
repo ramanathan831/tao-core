@@ -1134,6 +1134,7 @@ class SlurmHandler(ExecutionHandler):
             command=command,
             docker_env_vars=docker_env_vars,
             exclusive=exclusive,
+            network=network,
         )
 
         # Write script to local temp file, submit it, then clean up
@@ -1489,6 +1490,7 @@ class SlurmHandler(ExecutionHandler):
             command,
             docker_env_vars,
             exclusive,
+            network=None,
     ):
         """Build the SLURM script content"""
         # Convert time to HH:MM:SS format
@@ -1497,11 +1499,14 @@ class SlurmHandler(ExecutionHandler):
         # Detect multi-node
         is_multi_node = num_nodes > 1
 
+        # cosmos-rl uses 1 task per node, others use num_gpus tasks per node
+        ntasks_per_node = 1 if network == "cosmos-rl" else num_gpus
+
         script_lines = [
             "#!/bin/bash -x",
             f"#SBATCH --nodes={num_nodes}",
             f"#SBATCH --gres=gpu:{num_gpus}",
-            "#SBATCH --ntasks-per-node=1",
+            f"#SBATCH --ntasks-per-node={ntasks_per_node}",
         ]
 
         # Adjust ntasks for multi-node
