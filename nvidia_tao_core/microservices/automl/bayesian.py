@@ -152,6 +152,16 @@ class Bayesian(AutoMLAlgorithmBase):
                 else:
                     base_value = float(suggestion * (base_max - base_min) + base_min)
 
+                # Check for disable_list option - if True, skip network-specific logic
+                # and return pure float value for Bayesian optimization
+                disable_list = parameter_config.get("disable_list", False)
+                if disable_list:
+                    logger.info(
+                        f"disable_list=True for {parameter_name}: "
+                        f"returning pure float {base_value} (skipping network-specific logic)"
+                    )
+                    return base_value
+
                 # Let network-specific handler convert to list format
                 return network_utils.apply_network_specific_param_logic(
                     network=self.network,
@@ -164,6 +174,13 @@ class Bayesian(AutoMLAlgorithmBase):
                 )
 
             v_min, v_max = get_valid_range(parameter_config, self.parent_params, self.custom_ranges)
+
+            # Check for disable_list option early - log the parameter config for debugging
+            disable_list = parameter_config.get("disable_list", False)
+            logger.debug(
+                f"[BAYESIAN] Parameter {parameter_name}: v_min={v_min}, v_max={v_max}, "
+                f"disable_list={disable_list}, parameter_config keys={list(parameter_config.keys())}"
+            )
 
             # Apply math condition if specified
             # Skip relational constraints (like "> depends_on") as they're handled in base class
@@ -196,6 +213,15 @@ class Bayesian(AutoMLAlgorithmBase):
                     isinstance(parent_param, bool) and parent_param
                 ):
                     self.parent_params[parameter_name] = quantized
+
+            # Check for disable_list option - if True, skip network-specific logic
+            # and return pure float value (works for both scalar and list ranges)
+            if disable_list:
+                logger.info(
+                    f"disable_list=True for {parameter_name}: "
+                    f"returning pure float {quantized} (skipping network-specific logic)"
+                )
+                return quantized
 
             # Apply network-specific parameter logic
             return network_utils.apply_network_specific_param_logic(

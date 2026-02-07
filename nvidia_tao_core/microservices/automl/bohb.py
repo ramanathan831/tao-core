@@ -332,6 +332,16 @@ class BOHB(AutoMLAlgorithmBase):
                 else:
                     base_value = float(suggestion * (base_max - base_min) + base_min)
 
+                # Check for disable_list option - if True, skip network-specific logic
+                # and return pure float value for optimization
+                disable_list = parameter_config.get("disable_list", False)
+                if disable_list:
+                    logger.info(
+                        f"disable_list=True for {parameter_name}: "
+                        f"returning pure float {base_value} (skipping network-specific logic)"
+                    )
+                    return base_value
+
                 return network_utils.apply_network_specific_param_logic(
                     network=self.network,
                     data_type=tp,
@@ -343,6 +353,13 @@ class BOHB(AutoMLAlgorithmBase):
                 )
 
             v_min, v_max = get_valid_range(parameter_config, self.parent_params, self.custom_ranges)
+
+            # Check for disable_list option early - log the parameter config for debugging
+            disable_list = parameter_config.get("disable_list", False)
+            logger.debug(
+                f"[BOHB] Parameter {parameter_name}: v_min={v_min}, v_max={v_max}, "
+                f"disable_list={disable_list}"
+            )
 
             # Apply math condition if specified
             if math_cond and type(math_cond) is str:
@@ -369,6 +386,14 @@ class BOHB(AutoMLAlgorithmBase):
                 if ((type(parent_param) is str and parent_param != "nan" and parent_param == "TRUE") or
                         (type(parent_param) is bool and parent_param)):
                     self.parent_params[parameter_config.get("parameter")] = random_float
+
+            # Check for disable_list option - if True, skip network-specific logic
+            if disable_list:
+                logger.info(
+                    f"disable_list=True for {parameter_name}: "
+                    f"returning pure float {random_float} (skipping network-specific logic)"
+                )
+                return random_float
 
             # Apply network-specific parameter logic
             return network_utils.apply_network_specific_param_logic(

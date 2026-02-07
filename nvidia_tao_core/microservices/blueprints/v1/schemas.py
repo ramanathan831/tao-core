@@ -18,7 +18,7 @@ import math
 import re
 import sys
 from datetime import datetime
-from marshmallow import Schema, fields, EXCLUDE, validates_schema, ValidationError, validate
+from marshmallow import Schema, fields, EXCLUDE, RAISE, validates_schema, ValidationError, validate
 from marshmallow_enum import EnumField, Enum
 
 from nvidia_tao_core.microservices.enum_constants import (
@@ -1256,7 +1256,7 @@ class AutoML(Schema):
         """Class enabling sorting field values by the order in which they are declared"""
 
         ordered = True
-        unknown = EXCLUDE
+        unknown = RAISE
 
     automl_enabled = fields.Bool(allow_none=True)
     automl_algorithm = EnumField(AutoMLAlgorithm, allow_none=True)
@@ -1267,6 +1267,7 @@ class AutoML(Schema):
     )
     # Nested algorithm-specific parameters
     algorithm_specific_params = fields.Field(allow_none=True)
+    metric = fields.Str(allow_none=True)
 
     @validates_schema
     def validate_algorithm_specific_params(self, data, **kwargs):
@@ -1299,15 +1300,14 @@ class AutoML(Schema):
         else:
             raise ValidationError(f'Unknown automl_algorithm: {algo_str}')
 
-        # Validate algorithm-specific parameters
-        params = data.get('algorithm_specific_params', {})
-        if params:
-            try:
-                schema.load(params, unknown=EXCLUDE)
-            except ValidationError:
-                raise
-            except Exception as e:
-                raise fields.ValidationError(str(e))
+        # Always validate algorithm-specific parameters (required fields will error if missing)
+        params = data.get('algorithm_specific_params') or {}
+        try:
+            schema.load(params, unknown=EXCLUDE)
+        except ValidationError:
+            raise
+        except Exception as e:
+            raise fields.ValidationError(str(e))
 
 
 class BaseExperimentMetadata(Schema):
@@ -1779,6 +1779,8 @@ class ParameterRangeSchema(Schema):
     math_cond = fields.Str(format="regex", regex=r'.*', validate=fields.validate.Length(max=100), allow_none=True)
     depends_on = fields.Str(format="regex", regex=r'.*', validate=fields.validate.Length(max=500), allow_none=True)
     parent_param = fields.Str(format="regex", regex=r'.*', validate=fields.validate.Length(max=500), allow_none=True)
+    # When True, skip network-specific logic and treat as pure float for optimization
+    disable_list = fields.Bool(allow_none=True)
 
 
 class AutoMLParameterDetail(Schema):

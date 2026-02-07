@@ -332,7 +332,7 @@ def apply_optm_lr_logic(parameter_name, lr_value, v_max, default_train_spec, par
     # 80% chance to use multi-part learning rates for vision-language models
     multi_lr_chance = np.random.random()
     logger.info(f"Multi-part learning rates chance: {multi_lr_chance}")
-    if multi_lr_chance < 0.8:
+    if multi_lr_chance < 0.5:
         # Check for per-part bounds from automl_range_override
         valid_min_list, valid_max_list, num_parts = get_optm_lr_range_override(default_train_spec)
 

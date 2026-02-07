@@ -216,9 +216,17 @@ class AutoMLAlgorithmBase:
 
         # Apply custom overrides if provided
         if self.custom_ranges and parameter_name in self.custom_ranges:
-            for override_key, override_value in self.custom_ranges[parameter_name].items():
+            custom_range = self.custom_ranges[parameter_name]
+            logger.debug(
+                f"[AUTOML-BASE] Applying custom range for {parameter_name}: {custom_range}"
+            )
+            for override_key, override_value in custom_range.items():
                 if override_value is not None:
                     parameter_config[override_key] = override_value
+                    if override_key == "disable_list":
+                        logger.info(
+                            f"[AUTOML-BASE] Applied disable_list={override_value} to {parameter_name}"
+                        )
 
         # Get potentially overridden values
         math_cond = parameter_config.get("math_cond", None)
@@ -280,6 +288,16 @@ class AutoMLAlgorithmBase:
                     base_value = float(10 ** np.random.uniform(log_min, log_max))
                 else:
                     base_value = float(np.random.uniform(base_min, base_max))
+
+                # Check for disable_list option - if True, skip network-specific logic
+                # and return pure float value for optimization
+                disable_list = parameter_config.get("disable_list", False)
+                if disable_list:
+                    logger.info(
+                        f"disable_list=True for {parameter_name}: "
+                        f"returning pure float {base_value} (skipping network-specific logic)"
+                    )
+                    return base_value
 
                 # Let network-specific handler convert to list format
                 return network_utils.apply_network_specific_param_logic(
