@@ -21,7 +21,6 @@ import os
 import re
 import sys
 import shlex
-import shutil
 import subprocess
 import threading
 from contextlib import contextmanager
@@ -71,41 +70,69 @@ def convert_dict_to_cli_args(data, parent_key=""):
     return cli_args
 
 
-def handle_custom_script(specs, custom_script_key, target_script_path="scripts/custom_sft.py"):
+def get_default_script_path(specs):
+    """Get the default dataloader hook script path based on finetuning mode.
+
+    Args:
+    - specs (dict): The specifications dictionary containing train config.
+
+    Returns:
+    - str: Path to the default script for the finetuning mode.
+    """
+    # Determine finetuning mode from train.train_policy.type
+    train_config = specs.get("train", {})
+    train_policy = train_config.get("train_policy", {})
+    policy_type = train_policy.get("type", "sft").lower()
+
+    # Map policy type to script path
+    script_paths = {
+        "sft": "/opt/cosmos_rl/tao_sft_example.py",
+        "grpo": "/opt/cosmos_rl/tao_rl_example.py",
+        "rl": "/opt/cosmos_rl/tao_rl_example.py",
+    }
+
+    script_path = script_paths.get(policy_type, script_paths["sft"])
+    logger.info(f"Detected finetuning mode: {policy_type}, using script: {script_path}")
+    return script_path
+
+
+def handle_custom_script(specs, custom_script_key, target_script_path=None):
     """Handle custom training script provided by user.
 
     Args:
     - specs (dict): The specifications dictionary that may contain custom_training_script.
     - custom_script_key (str): The key of the custom script in the specifications dictionary.
     - target_script_path (str): The target path where the custom script should be copied.
+        If None, uses the default script path based on finetuning mode.
 
     Returns:
-    - None. Modifies specs in place by removing the custom_training_script key if present.
+    - str: The script path to use (either user-provided or default).
     """
-    if custom_script_key in specs:
-        user_script_path = specs.pop(custom_script_key)
+    # Get user-provided script path if specified
+    user_script_path = specs.pop(custom_script_key, None) if custom_script_key in specs else None
 
-        if not user_script_path:
-            logger.warning(f"{custom_script_key} is empty, skipping custom script copy")
-            return
-
+    if user_script_path:
         if not os.path.exists(user_script_path):
             logger.error(f"Custom training script not found at: {user_script_path}")
             raise FileNotFoundError(f"Custom training script not found: {user_script_path}")
 
-        # Create the target directory if it doesn't exist
-        target_dir = os.path.dirname(target_script_path)
-        if target_dir and not os.path.exists(target_dir):
-            os.makedirs(target_dir, exist_ok=True)
-            logger.info(f"Created target directory: {target_dir}")
+        logger.info(f"Using user-provided custom script: {user_script_path}")
+        return user_script_path
 
-        # Copy the user-provided script to overwrite the container's script
-        try:
-            shutil.copy2(user_script_path, target_script_path)
-            logger.info(f"Successfully copied custom training script from {user_script_path} to {target_script_path}")
-        except Exception as e:
-            logger.error(f"Failed to copy custom training script: {e}")
-            raise
+    # Use default script based on finetuning mode
+    default_script = get_default_script_path(specs)
+    if os.path.exists(default_script):
+        logger.info(f"Using default script: {default_script}")
+        return default_script
+
+    # Fallback to legacy path if new path doesn't exist
+    legacy_script = "/opt/cosmos_rl/custom_sft.py"
+    if os.path.exists(legacy_script):
+        logger.warning(f"Default script not found, falling back to legacy: {legacy_script}")
+        return legacy_script
+
+    logger.warning("No dataloader hook script found, training may fail")
+    return None
 
 
 @contextmanager
@@ -146,13 +173,14 @@ def vlm_launch(neural_network_name, action, specs, job_id=""):
     else:
         lepton_args = ""
     if neural_network_name == "cosmos-rl" and action in ["train", "evaluate"]:
-        # Handle custom training script if provided by user
+        # Handle custom training script or use default based on finetuning mode
+        script_path = None
         if action == "train":
-            handle_custom_script(specs, "custom_script", target_script_path="/opt/cosmos_rl/custom_sft.py")
+            script_path = handle_custom_script(specs, "custom_script")
 
         train_args = ""
-        if action == "train":
-            train_args = f"{lepton_args} /opt/cosmos_rl/custom_sft.py"
+        if action == "train" and script_path:
+            train_args = f"{lepton_args} {script_path}"
         # Use TAO_API_RESULTS_DIR for SLURM compatibility, fallback to /results
         results_base = os.getenv('TAO_API_RESULTS_DIR', '/results')
         logger.info(f"results_base: {results_base}")

@@ -69,7 +69,7 @@ from .stateless_handler_utils import (
 )
 from nvidia_tao_core.microservices.enum_constants import Backend
 from .ngc_utils import validate_ptm_download
-from .core_utils import create_folder_with_permissions, get_monitoring_metric
+from .core_utils import create_folder_with_permissions, get_monitoring_metric, normalize_metric_config
 
 # Configure logging
 TAO_LOG_LEVEL = os.getenv('TAO_LOG_LEVEL', 'INFO').upper()
@@ -636,12 +636,19 @@ class StatusParser:
                         criterion = get_monitoring_metric(self.network)
                     else:
                         criterion = metric
+
+                    # Normalize criterion to list for consistent handling
+                    criterion_list = normalize_metric_config(criterion)
                     reverse_sort = True
-                    logger.info("Metric: %s, Criterion: %s in read_metric", metric, criterion)
-                    if metric == "loss" or criterion in ("loss", "evaluation_cost") or "loss" in criterion:
+                    logger.info("Metric: %s, Criterion(s): %s in read_metric", metric, criterion_list)
+
+                    # Check if criterion contains loss-related metrics
+                    criterion_str = str(criterion_list[0]) if criterion_list else ""
+                    if metric == "loss" or criterion_str in ("loss", "evaluation_cost") or "loss" in criterion_str:
                         reverse_sort = False
 
-                    if log["metric"] == criterion:
+                    # Check if log metric matches any criterion in the list
+                    if log["metric"] in criterion_list:
                         if log["values"]:
                             logger.debug(f"log['values']: {log['values']}")
                             values_to_search = self.trim_list(
@@ -677,10 +684,14 @@ class StatusParser:
             # Something went wrong inside...
             logger.error(traceback.format_exc())
             logger.warning("Requested metric not found, defaulting to 0.0")
-            if (
-                (metric == "kpi" and get_monitoring_metric(self.network) in ("loss", "evaluation_cost ")) or
-                (metric in ("loss", "evaluation_cost "))
-            ):
+            monitoring_metric = get_monitoring_metric(self.network)
+            monitoring_metric_list = normalize_metric_config(monitoring_metric)
+            # Check if any of the monitoring metrics indicate a loss-type metric
+            is_loss_metric = (
+                metric in ("loss", "evaluation_cost") or
+                any(m in ("loss", "evaluation_cost") or "loss" in str(m) for m in monitoring_metric_list)
+            )
+            if is_loss_metric:
                 metric_value = 1e7
             else:
                 metric_value = 1e-7
@@ -990,12 +1001,74 @@ def get_nested_dict_value(data, key_path):
     return current
 
 
+def _get_cosmos_rl_total_gpus(spec):
+    """Calculate total GPUs needed for cosmos-rl based on training mode.
+
+    For SFT mode: policy_tp_size × policy_dp_shard_size
+    For GRPO/RL mode: policy GPUs + rollout GPUs
+
+    Args:
+        spec: The specification dictionary
+
+    Returns:
+        int: Total number of GPUs required, or None if calculation fails
+    """
+    try:
+        # Get training policy type (sft or grpo/rl)
+        train_policy_type = get_nested_dict_value(spec, "train.train_policy.type")
+        if train_policy_type:
+            train_policy_type = train_policy_type.lower()
+        else:
+            train_policy_type = "sft"  # Default to SFT
+
+        # Get policy parallelism parameters
+        policy_tp_size = get_nested_dict_value(spec, "policy.parallelism.tp_size") or 1
+        policy_dp_shard_size = get_nested_dict_value(spec, "policy.parallelism.dp_shard_size") or 1
+        policy_n_init_replicas = get_nested_dict_value(spec, "policy.parallelism.n_init_replicas") or 1
+
+        # Calculate policy GPUs
+        policy_gpus = policy_tp_size * policy_dp_shard_size * policy_n_init_replicas
+
+        # For GRPO/RL, also add rollout GPUs
+        if train_policy_type in ("grpo", "rl"):
+            rollout_tp_size = get_nested_dict_value(spec, "rollout.parallelism.tp_size") or 1
+            rollout_n_init_replicas = get_nested_dict_value(spec, "rollout.parallelism.n_init_replicas") or 1
+            rollout_gpus = rollout_tp_size * rollout_n_init_replicas
+
+            total_gpus = policy_gpus + rollout_gpus
+            logger.debug(
+                f"[COSMOS-RL] GRPO mode: policy_gpus={policy_gpus} "
+                f"(tp={policy_tp_size} × dp_shard={policy_dp_shard_size} × replicas={policy_n_init_replicas}), "
+                f"rollout_gpus={rollout_gpus} (tp={rollout_tp_size} × replicas={rollout_n_init_replicas}), "
+                f"total={total_gpus}"
+            )
+        else:
+            total_gpus = policy_gpus
+            logger.debug(
+                f"[COSMOS-RL] SFT mode: policy_gpus={policy_gpus} "
+                f"(tp={policy_tp_size} × dp_shard={policy_dp_shard_size} × replicas={policy_n_init_replicas})"
+            )
+
+        return total_gpus
+    except Exception as e:
+        logger.warning(f"[COSMOS-RL] Failed to calculate total GPUs: {e}")
+        return None
+
+
 def get_num_gpus_from_spec(spec, action, network=None, default=0):
     """Validate the gpus requested"""
     if not isinstance(spec, dict):
         return default
 
     gpu_set_values = []
+
+    # Special handling for cosmos-rl to calculate total GPUs correctly
+    if network == "cosmos-rl":
+        cosmos_rl_gpus = _get_cosmos_rl_total_gpus(spec)
+        if cosmos_rl_gpus is not None and cosmos_rl_gpus > 0:
+            gpu_set_values.append(cosmos_rl_gpus)
+            # Return early for cosmos-rl since we have the exact calculation
+            return cosmos_rl_gpus
 
     # First check for network-specific GPU parameter using gpu_mapper
     if network and network in gpu_mapper:

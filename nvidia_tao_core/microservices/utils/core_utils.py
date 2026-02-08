@@ -214,7 +214,9 @@ def get_monitoring_metric(network):
         network (str): Name of the network
 
     Returns:
-        str: The monitoring metric for the network
+        str or list: The monitoring metric(s) for the network.
+            - If config has a single string, returns that string.
+            - If config has a list, returns the list (first available will be used).
         None: If network not found or has no monitoring metric defined
     """
     _dir_path = os.path.dirname(os.path.dirname(os.path.realpath(__file__)))
@@ -229,6 +231,53 @@ def get_monitoring_metric(network):
         logger.warning(f"Error reading config file for network {network}: {e}")
 
     return None
+
+
+def find_first_available_metric(metric_config, available_metrics):
+    """Find the first available metric from a metric configuration.
+
+    Args:
+        metric_config: Either a string (single metric) or list of metrics (priority order)
+        available_metrics: Set or list of metrics that are actually available in the data
+
+    Returns:
+        str: The first metric from metric_config that exists in available_metrics
+        None: If no matching metric found
+    """
+    if metric_config is None:
+        return None
+
+    # Handle single string metric
+    if isinstance(metric_config, str):
+        return metric_config if metric_config in available_metrics else None
+
+    # Handle list of metrics - return first one that exists
+    if isinstance(metric_config, list):
+        for metric in metric_config:
+            if metric in available_metrics:
+                return metric
+        # If none found but list is non-empty, return first as fallback
+        return metric_config[0] if metric_config else None
+
+    return None
+
+
+def normalize_metric_config(metric_config):
+    """Normalize metric config to always return a list for consistent handling.
+
+    Args:
+        metric_config: Either a string or list of metrics
+
+    Returns:
+        list: List of metric names
+    """
+    if metric_config is None:
+        return []
+    if isinstance(metric_config, str):
+        return [metric_config]
+    if isinstance(metric_config, list):
+        return metric_config
+    return []
 
 
 def find_closest_number(x, arr):
