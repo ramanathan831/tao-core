@@ -14,8 +14,6 @@
 
 """Tests for v1 schemas module."""
 
-import pytest
-
 from nvidia_tao_core.microservices.blueprints.v1.schemas import JobStatusEnum
 
 

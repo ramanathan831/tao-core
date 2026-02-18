@@ -14,7 +14,6 @@
 
 """Tests for filtering utilities."""
 
-import pytest
 from datetime import datetime, timezone
 
 

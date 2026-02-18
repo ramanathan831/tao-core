@@ -14,8 +14,6 @@
 
 """Tests for v2 schemas module."""
 
-import pytest
-
 
 class TestDatasetSchemas:
     """Tests for v2 dataset schemas."""
