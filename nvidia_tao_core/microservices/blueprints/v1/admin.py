@@ -18,7 +18,6 @@ import os
 import bson
 import shutil
 import logging
-import requests
 from flask import Blueprint, jsonify, make_response, render_template, send_file, request
 from flask import current_app
 

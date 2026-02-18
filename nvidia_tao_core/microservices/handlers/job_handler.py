@@ -48,14 +48,12 @@ from nvidia_tao_core.microservices.utils.stateless_handler_utils import (
     get_dnn_status,
     save_job_specs,
     resolve_metadata,
-    resolve_existence,
-    BACKEND
+    resolve_existence
 )
 from nvidia_tao_core.microservices.utils.handler_utils import (
     Code,
     download_log_from_cloud,
     get_files_from_cloud,
-    get_num_gpus_from_spec,
     send_microservice_request
 )
 from nvidia_tao_core.microservices.utils.job_utils.workflow_driver import create_job_context, on_delete_job, on_new_job
@@ -63,7 +61,6 @@ from nvidia_tao_core.microservices.utils.automl_job_utils import on_delete_autom
 from nvidia_tao_core.microservices.utils.core_utils import (
     check_and_convert
 )
-from nvidia_tao_core.microservices.enum_constants import Backend
 
 if os.getenv("BACKEND"):
     from .mongo_handler import MongoHandler
@@ -133,10 +130,9 @@ class JobHandler:
                   - 400: If job execution was unsuccessful.
                   - 404: If dataset/experiment/action not found or access is denied.
         """
-        # Extract platform_id from backend_details
-        platform_id = None
+        # Extract platform_id from backend_details (stored but not used in this function)
         if backend_details and backend_details.get('backend_type') == "lepton":
-            platform_id = backend_details.get('platform_id')
+            _ = backend_details.get('platform_id')
 
         handler_metadata = resolve_metadata(kind, handler_id)
         if not handler_metadata:

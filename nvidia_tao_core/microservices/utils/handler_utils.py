@@ -64,10 +64,8 @@ from .stateless_handler_utils import (
     experiment_update_handler_attributes,
     update_handler_with_jobs_info,
     get_workspace_string_identifier,
-    get_automl_experiment_job_id,
-    BACKEND
+    get_automl_experiment_job_id
 )
-from nvidia_tao_core.microservices.enum_constants import Backend
 from .ngc_utils import validate_ptm_download
 from .core_utils import create_folder_with_permissions, get_monitoring_metric
 

@@ -31,7 +31,6 @@ from nvidia_tao_core.microservices.utils.automl_utils import (
 from nvidia_tao_core.microservices.constants import (
     _DATA_GENERATE_ACTIONS,
     _DATA_SERVICES_ACTIONS,
-    NETWORK_CONTAINER_MAPPING,
     COPY_MODEL_PARAMS_FROM_TRAIN_NETWORKS
 )
 from nvidia_tao_core.microservices.utils.cloud_utils import create_cs_instance

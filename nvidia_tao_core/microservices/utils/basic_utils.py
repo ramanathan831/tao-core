@@ -16,7 +16,7 @@
 import os
 import logging
 
-from . import ngc_utils, stateless_handler_utils
+from . import stateless_handler_utils
 from .stateless_handler_utils import (
     resolve_metadata,
     get_user
@@ -193,4 +193,3 @@ def get_job_logs(log_file_path):
             if not log_line:
                 break
             yield log_line
-

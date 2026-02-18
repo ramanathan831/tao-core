@@ -33,11 +33,9 @@ from nvidia_tao_core.microservices.utils.stateless_handler_utils import (
     get_handler_metadata,
     get_base_experiment_metadata,
     get_job_specs,
-    get_automl_controller_info,
-    BACKEND
+    get_automl_controller_info
 )
 from nvidia_tao_core.microservices.utils.executor_utils import dependency_check
-from nvidia_tao_core.microservices.enum_constants import Backend
 # Configure logging
 TAO_LOG_LEVEL = os.getenv('TAO_LOG_LEVEL', 'INFO').upper()
 tao_log_level = getattr(logging, TAO_LOG_LEVEL, logging.INFO)

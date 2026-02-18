@@ -39,7 +39,6 @@ from .schemas import (
 )
 from nvidia_tao_core.microservices.utils.handler_utils import validate_uuid
 from nvidia_tao_core.microservices.utils.core_utils import DataMonitorLogTypeEnum, log_api_error
-from nvidia_tao_core.microservices.utils.stateless_handler_utils import resolve_metadata
 
 logger = logging.getLogger(__name__)
 

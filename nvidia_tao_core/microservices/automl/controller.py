@@ -61,8 +61,7 @@ from nvidia_tao_core.microservices.utils.stateless_handler_utils import (
     delete_dnn_status,
     update_automl_stats,
     report_health_beat,
-    delete_health_beat,
-    BACKEND
+    delete_health_beat
 )
 from nvidia_tao_core.microservices.utils.automl_job_utils import (
     on_new_automl_job,
