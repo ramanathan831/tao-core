@@ -1,4 +1,4 @@
-# Copyright (c) 2024, NVIDIA CORPORATION.  All rights reserved.
+# Copyright (c) 2026, NVIDIA CORPORATION.  All rights reserved.
 #
 # Licensed under the Apache License, Version 2.0 (the "License");
 # you may not use this file except in compliance with the License.
@@ -12,11 +12,4 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-# durations=0 will display all tests execution time, sorted in ascending order starting from from the slowest one.
-# -vv will also display tests with durration = 0.00s
-[pytest]
-addopts = --verbose --pyargs --durations=0
-markers =
-    ngc_handler: marks ngc api related tests
-    timeout: marks job timeout monitoring feature tests
-    cloud_integration: marks cloud integration tests (requires credentials from env vars)
+"""CLIP config module."""
