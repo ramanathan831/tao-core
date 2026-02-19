@@ -386,6 +386,13 @@ class ErrorRsp(Schema):
         validate=fields.validate.Range(min=-sys.maxsize - 1, max=sys.maxsize),
         format=sys_int_format()
     )
+    validation_details = fields.Dict(
+        allow_none=True,
+        metadata={
+            "description": "Detailed validation information including expected structure, "
+                           "actual structure, and missing files"
+        }
+    )
 
 
 class PaginationInfo(Schema):
@@ -1958,6 +1965,36 @@ class ExperimentJobReq(Schema):
         ),
         validate=validate.Length(max=sys.maxsize)
     )
+    # New fields for direct dataset paths (alternative to UUID-based dataset references)
+    train_dataset_paths = fields.List(
+        fields.Str(validate=fields.validate.Length(max=1000)),
+        validate=validate.Length(max=sys.maxsize),
+        allow_none=True,
+        metadata={"description": "List of dataset paths (aws://, azure://, lustre://, file://, or local)"}
+    )
+    eval_dataset_path = fields.Str(
+        validate=fields.validate.Length(max=1000),
+        allow_none=True,
+        metadata={"description": "Evaluation dataset path"}
+    )
+    inference_dataset_path = fields.Str(
+        validate=fields.validate.Length(max=1000),
+        allow_none=True,
+        metadata={"description": "Inference dataset path"}
+    )
+    calibration_dataset_path = fields.Str(
+        validate=fields.validate.Length(max=1000),
+        allow_none=True,
+        metadata={"description": "Calibration dataset path"}
+    )
+    dataset_format = fields.Str(
+        validate=fields.validate.Length(max=100),
+        allow_none=True,
+        metadata={
+            "description": "Dataset format (e.g., 'llava', 'coco', 'kitti'). "
+                           "If not specified, uses network's default format"
+        }
+    )
     read_only = fields.Bool()
     public = fields.Bool()
     automl_settings = fields.Nested(AutoML, allow_none=True)
@@ -1999,6 +2036,13 @@ class ExperimentJobReq(Schema):
         fields.Int(format="int64", validate=validate.Range(min=0, max=sys.maxsize)),
         validate=validate.Length(max=sys.maxsize),
         allow_none=True
+    )
+    skip_dataset_validation = fields.Bool(
+        allow_none=True,
+        metadata={
+            "description": "Skip dataset structure validation at job creation. "
+                           "Default: False. Set to True to bypass validation checks."
+        }
     )
     kind = fields.Constant(JobKindEnum.experiment.value)
 
@@ -2152,6 +2196,36 @@ class ExperimentJobRsp(Schema):
             validate=fields.validate.Length(max=36)
         ),
         validate=validate.Length(max=sys.maxsize)
+    )
+    # New fields for direct dataset paths (alternative to UUID-based dataset references)
+    train_dataset_paths = fields.List(
+        fields.Str(validate=fields.validate.Length(max=1000)),
+        validate=validate.Length(max=sys.maxsize),
+        allow_none=True,
+        metadata={"description": "List of dataset paths (aws://, azure://, lustre://, file://, or local)"}
+    )
+    eval_dataset_path = fields.Str(
+        validate=fields.validate.Length(max=1000),
+        allow_none=True,
+        metadata={"description": "Evaluation dataset path"}
+    )
+    inference_dataset_path = fields.Str(
+        validate=fields.validate.Length(max=1000),
+        allow_none=True,
+        metadata={"description": "Inference dataset path"}
+    )
+    calibration_dataset_path = fields.Str(
+        validate=fields.validate.Length(max=1000),
+        allow_none=True,
+        metadata={"description": "Calibration dataset path"}
+    )
+    dataset_format = fields.Str(
+        validate=fields.validate.Length(max=100),
+        allow_none=True,
+        metadata={
+            "description": "Dataset format (e.g., 'llava', 'coco', 'kitti'). "
+                           "If not specified, uses network's default format"
+        }
     )
     read_only = fields.Bool()
     public = fields.Bool()
