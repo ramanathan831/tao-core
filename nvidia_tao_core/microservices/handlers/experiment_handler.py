@@ -284,6 +284,11 @@ class ExperimentHandler:
                     "checkpoint_choose_method": request_dict.get("checkpoint_choose_method", "best_model"),
                     "checkpoint_epoch_number": request_dict.get("checkpoint_epoch_number", {}),
                     "calibration_dataset": None,
+                    # New fields for direct dataset paths
+                    "train_dataset_paths": request_dict.get("train_dataset_paths"),
+                    "eval_dataset_path": request_dict.get("eval_dataset_path"),
+                    "inference_dataset_path": request_dict.get("inference_dataset_path"),
+                    "calibration_dataset_path": request_dict.get("calibration_dataset_path"),
                     "base_experiment_ids": [],
                     "automl_settings": request_dict.get("automl_settings", {}),
                     "metric": request_dict.get("metric", "kpi"),
@@ -340,6 +345,53 @@ class ExperimentHandler:
         )
         if error_code:
             return error_code
+
+        # Dataset structure validation (checks for required files like annotations.json)
+        train_dataset_paths = request_dict.get("train_dataset_paths")
+        eval_dataset_path = request_dict.get("eval_dataset_path")
+        inference_dataset_path = request_dict.get("inference_dataset_path")
+        calibration_dataset_path = request_dict.get("calibration_dataset_path")
+        skip_validation = request_dict.get("skip_dataset_validation", False)
+
+        if any([
+            train_dataset_paths,
+            eval_dataset_path,
+            inference_dataset_path,
+            calibration_dataset_path
+        ]) and not skip_validation:
+            from nvidia_tao_core.microservices.utils.runtime_dataset_validator import (
+                validate_all_dataset_paths_structure
+            )
+
+            network_arch = request_dict.get("network_arch")
+            if not network_arch:
+                return Code(400, {}, "network_arch is required for dataset validation")
+
+            # Prepare metadata for validation
+            validation_metadata = {
+                "train_dataset_paths": train_dataset_paths,
+                "eval_dataset_path": eval_dataset_path,
+                "inference_dataset_path": inference_dataset_path,
+                "calibration_dataset_path": calibration_dataset_path,
+                "dataset_format": request_dict.get("dataset_format"),
+                "dataset_type": request_dict.get("dataset_type"),
+                "workspace": request_dict.get("workspace")
+            }
+
+            is_valid, error_msg, validation_details = validate_all_dataset_paths_structure(
+                validation_metadata,
+                network_arch,
+                skip_validation=False
+            )
+
+            if not is_valid:
+                # Return detailed validation error
+                return Code(400, validation_details, error_msg)
+
+            logger.info(
+                f"Dataset validation passed for experiment: "
+                f"{validation_details.get('message')}"
+            )
 
         def clean_on_error(experiment_id=experiment_id):
             mongo_experiments = MongoHandler("tao", "experiments")
@@ -619,6 +671,10 @@ class ExperimentHandler:
                     "eval_dataset",
                     "inference_dataset",
                     "calibration_dataset",
+                    "train_dataset_paths",
+                    "eval_dataset_path",
+                    "inference_dataset_path",
+                    "calibration_dataset_path",
                     "base_experiment_ids",
                     "checkpoint_choose_method",
                     "checkpoint_epoch_number"

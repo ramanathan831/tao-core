@@ -186,6 +186,100 @@ def job_create(org_name):
             schema_dict = schema.dump(schema.load(metadata))
             return make_response(jsonify(schema_dict), 400)
 
+        # Validate dataset paths if using direct paths (new approach)
+        train_dataset_paths = request_dict.get("train_dataset_paths")
+        eval_dataset_path = request_dict.get("eval_dataset_path")
+        inference_dataset_path = request_dict.get("inference_dataset_path")
+        calibration_dataset_path = request_dict.get("calibration_dataset_path")
+
+        if any([train_dataset_paths, eval_dataset_path, inference_dataset_path, calibration_dataset_path]):
+            # Get backend type for validation
+            backend_type = backend_details.get("backend_type") if backend_details else None
+
+            # Validate all dataset paths against backend restrictions
+            from nvidia_tao_core.microservices.utils.dataset_path_validator import validate_all_dataset_paths
+            validation_metadata = {
+                "train_dataset_paths": train_dataset_paths,
+                "eval_dataset_path": eval_dataset_path,
+                "inference_dataset_path": inference_dataset_path,
+                "calibration_dataset_path": calibration_dataset_path
+            }
+            is_valid, error_msg = validate_all_dataset_paths(validation_metadata, backend_type)
+            if not is_valid:
+                metadata = {"error_desc": error_msg, "error_code": 100}
+                schema = ErrorRsp()
+                schema_dict = schema.dump(schema.load(metadata))
+                return make_response(jsonify(schema_dict), 400)
+
+            # Verify workspace access if specified (required for cloud paths)
+            workspace_id = request_dict.get("workspace")
+            if workspace_id:
+                from nvidia_tao_core.microservices.utils.stateless_handler_utils import check_read_access
+                if not check_read_access(user_id, org_name, workspace_id, kind="workspaces"):
+                    metadata = {
+                        "error_desc": f"Workspace {workspace_id} not found or access denied",
+                        "error_code": 101
+                    }
+                    schema = ErrorRsp()
+                    schema_dict = schema.dump(schema.load(metadata))
+                    return make_response(jsonify(schema_dict), 404)
+
+            # Dataset structure validation (checks for required files like annotations.json)
+            skip_validation = request_dict.get("skip_dataset_validation", False)
+            logger.info(
+                f"Dataset structure validation: skip={skip_validation}, "
+                f"has_train={bool(train_dataset_paths)}, has_eval={bool(eval_dataset_path)}"
+            )
+
+            if not skip_validation:
+                from nvidia_tao_core.microservices.utils.runtime_dataset_validator import (
+                    validate_all_dataset_paths_structure
+                )
+
+                network_arch = request_dict.get("network_arch")
+                logger.info(f"Running dataset structure validation with network_arch={network_arch}")
+                if not network_arch:
+                    metadata = {
+                        "error_desc": "network_arch is required for dataset validation",
+                        "error_code": 102
+                    }
+                    schema = ErrorRsp()
+                    schema_dict = schema.dump(schema.load(metadata))
+                    return make_response(jsonify(schema_dict), 400)
+
+                # Prepare metadata for validation
+                validation_metadata = {
+                    "train_dataset_paths": train_dataset_paths,
+                    "eval_dataset_path": eval_dataset_path,
+                    "inference_dataset_path": inference_dataset_path,
+                    "calibration_dataset_path": calibration_dataset_path,
+                    "dataset_format": request_dict.get("dataset_format"),
+                    "dataset_type": request_dict.get("dataset_type"),
+                    "workspace": request_dict.get("workspace")
+                }
+
+                is_valid, error_msg, validation_details = validate_all_dataset_paths_structure(
+                    validation_metadata,
+                    network_arch,
+                    skip_validation=False
+                )
+
+                if not is_valid:
+                    # Return detailed validation error
+                    metadata = {
+                        "error_desc": error_msg,
+                        "error_code": 103,
+                        "validation_details": validation_details
+                    }
+                    schema = ErrorRsp()
+                    schema_dict = schema.dump(schema.load(metadata))
+                    return make_response(jsonify(schema_dict), 400)
+
+                logger.info(
+                    f"Dataset validation passed for experiment: "
+                    f"{validation_details.get('message')}"
+                )
+
         experiment_response = ExperimentHandler.create_experiment(user_id, org_name, request_dict)
         if experiment_response.code != 200:
             schema = ErrorRsp()

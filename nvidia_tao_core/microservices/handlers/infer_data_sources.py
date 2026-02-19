@@ -133,6 +133,57 @@ def create_storage_handler_for_protocol(protocol, path, workspace_metadata=None)
     return None, path
 
 
+def resolve_dataset_reference(value, workspace_metadata=None, backend_type=None):
+    """Resolves dataset reference - can be dataset_id (UUID) or direct path.
+
+    This function provides backward compatibility by supporting both the legacy
+    dataset_id approach and the new direct path approach.
+
+    Args:
+        value: Either UUID string (dataset_id) or path string (aws://bucket/path, lustre://path, etc.)
+        workspace_metadata: Workspace metadata for cloud credentials (optional)
+        backend_type: Backend type for validation (optional)
+
+    Returns:
+        str: Resolved path
+
+    Raises:
+        ValueError: If validation fails or dataset not found
+    """
+    # Check if it's a direct path (has protocol prefix)
+    if is_direct_path(value):
+        # Validate path against backend
+        from nvidia_tao_core.microservices.utils.dataset_path_validator import validate_dataset_path
+        is_valid, error = validate_dataset_path(value, backend_type)
+        if not is_valid:
+            raise ValueError(error)
+
+        # Parse and return formatted path
+        protocol, path = parse_direct_path(value)
+        _, formatted_path = create_storage_handler_for_protocol(
+            protocol, path, workspace_metadata
+        )
+        logger.info(f"Resolved direct path: {value} -> {formatted_path}")
+        return formatted_path
+
+    # Legacy path: Treat as dataset_id (UUID)
+    # This maintains backward compatibility with existing experiments
+    try:
+        dataset_metadata = get_handler_metadata(value, "datasets")
+        if not dataset_metadata:
+            raise ValueError(f"Dataset {value} not found")
+
+        # Use existing logic to resolve dataset path
+        workspace_id = dataset_metadata.get('workspace')
+        workspace_identifier = get_workspace_string_identifier(workspace_id, workspace_cache={})
+        source_root = get_source_root(dataset_metadata, workspace_identifier)
+        logger.info(f"Resolved dataset_id: {value} -> {source_root}")
+        return source_root
+    except Exception as e:
+        logger.error(f"Failed to resolve dataset reference '{value}': {str(e)}")
+        raise ValueError(f"Failed to resolve dataset reference '{value}': {str(e)}") from e
+
+
 def get_datasets_from_metadata(metadata, source_key):
     """Gets a list of datasets from metadata based on source key.
 
@@ -319,8 +370,105 @@ def get_source_root(source_ds_metadata, workspace_identifier):
     return f"{workspace_identifier}{cloud_file_path}"
 
 
-def get_dataset_metadata_and_paths(source_ds, workspace_cache, kind="datasets"):
-    """Helper function to get common dataset metadata and paths."""
+def get_dataset_metadata_and_paths(source_ds, workspace_cache, kind="datasets", handler_metadata=None):
+    """Helper function to get common dataset metadata and paths.
+
+    Args:
+        source_ds: Either a dataset UUID or a direct path (aws://, azure://, lustre://, etc.)
+        workspace_cache: Cache for workspace metadata
+        kind: Handler kind (default: "datasets")
+        handler_metadata: Optional experiment/job metadata (for getting workspace when using direct paths)
+
+    Returns:
+        tuple: (source_ds_metadata, workspace_identifier, source_root)
+    """
+    # Check if source_ds is a direct path (new approach)
+    if is_direct_path(source_ds):
+        logger.info(f"Processing direct path: {source_ds}")
+        protocol, path = parse_direct_path(source_ds)
+
+        # For cloud storage (aws, azure, lepton), we need workspace for credentials
+        workspace_id = None
+        workspace_identifier = ""
+        workspace_metadata = None
+
+        if protocol in ['aws', 's3', 'azure', 'lepton'] and handler_metadata:
+            workspace_id = handler_metadata.get("workspace")
+            if workspace_id:
+                workspace_identifier = get_workspace_string_identifier(workspace_id, workspace_cache)
+                # Get full workspace metadata for cloud credentials
+                workspace_metadata = get_handler_metadata(workspace_id, "workspaces")
+
+        # Format the path based on protocol
+        if protocol in ['lustre', 'file', 'local']:
+            # Local filesystems - just use the path directly (without protocol)
+            formatted_path = path
+        else:
+            # Cloud storage - get storage handler and format path
+            _, path_without_protocol = create_storage_handler_for_protocol(
+                protocol, path, workspace_metadata or {}
+            )
+
+            # IMPORTANT: For Lepton backend, use lepton:// protocol
+            # Detect Lepton from workspace cloud_type (same pattern as results_dir)
+            cloud_type = workspace_metadata.get('cloud_type', '') if workspace_metadata else ''
+            if cloud_type.lower() == 'lepton':
+                # Format: lepton://bucket/path (bucket is already in path_without_protocol)
+                formatted_path = f"lepton://{path_without_protocol}"
+                logger.info(f"Formatted Lepton path (cloud_type={cloud_type}): {formatted_path}")
+            else:
+                # For other backends, use original protocol
+                formatted_path = f"{protocol}://{path_without_protocol}"
+                logger.info(f"Formatted cloud path (cloud_type={cloud_type}): {formatted_path}")
+
+        # Return minimal metadata for direct paths
+        # Get dataset type and format from network config and user input
+        dataset_type = None
+        dataset_format = None
+
+        if handler_metadata:
+            # Get network config to extract dataset_type and default formats
+            network_arch = handler_metadata.get("network_arch")
+            if network_arch:
+                network_config = read_network_config(network_arch)
+                if network_config and "api_params" in network_config:
+                    api_params = network_config["api_params"]
+                    # Get dataset type from network config
+                    dataset_type = api_params.get("dataset_type")
+
+                    # Get format: user-specified takes priority, then fall back to network config
+                    # Check if user specified dataset_format in request
+                    user_dataset_format = handler_metadata.get("dataset_format")
+                    if user_dataset_format:
+                        dataset_format = user_dataset_format
+                    else:
+                        # Fall back to first format in network config
+                        formats = api_params.get("formats", [])
+                        if formats:
+                            dataset_format = formats[0] if isinstance(formats, list) else formats
+
+        # For cloud storage paths, extract cloud_file_path for check_file_exists_in_cloud()
+        # Path format: "bucket-name/path/to/data" -> bucket="bucket-name", cloud_file_path="path/to/data"
+        cloud_file_path = ""
+        if protocol in ['aws', 's3', 'azure', 'lepton']:
+            # Split path into bucket and file path
+            # path_without_protocol is in format "bucket-name/path/to/data"
+            parts = path_without_protocol.split('/', 1)
+            if len(parts) > 1:
+                cloud_file_path = parts[1]  # Everything after bucket name
+                logger.info(f"Extracted cloud_file_path for file existence checks: {cloud_file_path}")
+
+        source_ds_metadata = {
+            "id": source_ds,  # Use the path as ID
+            "workspace": workspace_id,
+            "type": dataset_type,
+            "format": dataset_format,
+            "cloud_file_path": cloud_file_path  # Needed by check_file_exists_in_cloud()
+        }
+
+        return source_ds_metadata, workspace_identifier, formatted_path
+
+    # Legacy path: source_ds is a dataset UUID
     source_ds_metadata = get_handler_metadata(source_ds, kind=kind)
     workspace_identifier = get_workspace_string_identifier(
         source_ds_metadata.get('workspace'),
@@ -334,17 +482,35 @@ def get_source_datasets_from_config(config_source, handler_metadata):
     """Helper function to get source datasets from config.
 
     Args:
-        config_source (str): Source key to lookup in handler metadata
+        config_source (str): Source key to lookup in handler metadata (old field names like 'train_datasets')
         handler_metadata (dict): Handler metadata containing dataset information
 
     Returns:
-        list: List of dataset IDs (excludes direct paths)
+        list: List of dataset IDs or direct paths
     """
     if config_source == "id":
         return [handler_metadata.get("id")]
+
+    # Try old field name first (for backward compatibility)
     datasets = get_datasets_from_metadata(handler_metadata, config_source)
-    # Filter out any direct paths - they'll be handled separately
-    return [d for d in datasets if not is_direct_path(d)]
+
+    # If old field is empty, try new field name (direct paths)
+    if not datasets:
+        # Map old field names to new field names
+        field_mapping = {
+            "train_datasets": "train_dataset_paths",
+            "eval_dataset": "eval_dataset_path",
+            "inference_dataset": "inference_dataset_path",
+            "calibration_dataset": "calibration_dataset_path"
+        }
+        new_field = field_mapping.get(config_source)
+        if new_field:
+            datasets = get_datasets_from_metadata(handler_metadata, new_field)
+            logger.info(f"Using new field '{new_field}' instead of '{config_source}': {datasets}")
+
+    # Return all datasets (both UUIDs and direct paths)
+    # Direct paths will be handled appropriately by downstream code
+    return datasets if datasets else []
 
 
 def process_convert_job_spec_path(spec_config, source_ds, dataset_convert_action):
@@ -530,7 +696,7 @@ def process_additional_downloads(
         for source_ds in source_datasets:
             (source_ds_metadata,
              workspace_identifier,
-             _) = get_dataset_metadata_and_paths(source_ds, workspace_cache)
+             _) = get_dataset_metadata_and_paths(source_ds, workspace_cache, handler_metadata=handler_metadata)
 
             # Handle path from convert job spec
             if "path_from_convert_job_spec" in download_config:
@@ -749,6 +915,21 @@ def apply_data_source_config(config, job_context, handler_metadata):
                 if protocol in ['lustre', 'file', 'local']:
                     set_nested_config_value(config, config_path, path)
                     logger.info(f"Stripped local filesystem protocol, using path: {path}")
+                # For cloud paths on Lepton backend, convert to lepton:// protocol
+                elif protocol in ['aws', 's3', 'azure']:
+                    # Check if running on Lepton backend from workspace cloud_type
+                    workspace_id = handler_metadata.get("workspace")
+                    cloud_type = ""
+                    if workspace_id:
+                        workspace_metadata = get_handler_metadata(workspace_id, "workspaces")
+                        if workspace_metadata:
+                            cloud_type = workspace_metadata.get('cloud_type', '').lower()
+
+                    if cloud_type == 'lepton':
+                        # Convert aws:// or azure:// to lepton://
+                        lepton_path = f"lepton://{path}"
+                        set_nested_config_value(config, config_path, lepton_path)
+                        logger.info(f"Converted to Lepton path (cloud_type={cloud_type}): {lepton_path}")
 
                 # User specified direct path, skip inference
                 already_configured_paths.add(config_path)
@@ -765,6 +946,14 @@ def apply_data_source_config(config, job_context, handler_metadata):
             if isinstance(existing_value, list):
                 has_direct_paths = any(isinstance(v, str) and is_direct_path(v) for v in existing_value)
                 if has_direct_paths:
+                    # Check if running on Lepton backend from workspace cloud_type
+                    workspace_id = handler_metadata.get("workspace")
+                    cloud_type = ""
+                    if workspace_id:
+                        workspace_metadata = get_handler_metadata(workspace_id, "workspaces")
+                        if workspace_metadata:
+                            cloud_type = workspace_metadata.get('cloud_type', '').lower()
+
                     # Process each item in list
                     processed_list = []
                     for item in existing_value:
@@ -773,8 +962,16 @@ def apply_data_source_config(config, job_context, handler_metadata):
                             if protocol in ['lustre', 'file', 'local']:
                                 processed_list.append(path)
                                 logger.info(f"Stripped protocol from list item: {protocol}://{path} -> {path}")
+                            elif protocol in ['aws', 's3', 'azure'] and cloud_type == 'lepton':
+                                # Convert cloud paths to lepton:// for Lepton backend
+                                lepton_path = f"lepton://{path}"
+                                processed_list.append(lepton_path)
+                                logger.info(
+                                    f"Converted list item to Lepton path "
+                                    f"(cloud_type={cloud_type}): {lepton_path}"
+                                )
                             else:
-                                processed_list.append(item)  # Keep cloud paths as-is
+                                processed_list.append(item)  # Keep cloud paths as-is for other backends
                         else:
                             processed_list.append(item)
                     set_nested_config_value(config, config_path, processed_list)
@@ -797,12 +994,16 @@ def apply_data_source_config(config, job_context, handler_metadata):
                     logger.info(f"Set {config_path} = {key_exists} based on parent job specs key '{key_path}'")
             continue
 
-        source_datasets = get_source_datasets_from_config(source_config["source"], handler_metadata)
+        source_datasets = get_source_datasets_from_config(
+            source_config["source"], handler_metadata
+        )
         if not source_datasets:
             continue
         (source_ds_metadata,
          workspace_identifier,
-         source_root) = get_dataset_metadata_and_paths(source_datasets[0], workspace_cache)
+         source_root) = get_dataset_metadata_and_paths(
+            source_datasets[0], workspace_cache, handler_metadata=handler_metadata
+        )
 
         # Handle value from metadata
         if "value_from_metadata" in source_config:
@@ -895,7 +1096,9 @@ def apply_data_source_config(config, job_context, handler_metadata):
             for source_ds in source_datasets:
                 (source_ds_metadata,
                  workspace_identifier,
-                 source_root) = get_dataset_metadata_and_paths(source_ds, workspace_cache)
+                 source_root) = get_dataset_metadata_and_paths(
+                    source_ds, workspace_cache, handler_metadata=handler_metadata
+                )
 
                 if "mapping" in source_config:
                     entry = {}
@@ -933,7 +1136,9 @@ def apply_data_source_config(config, job_context, handler_metadata):
 
             (source_ds_metadata,
              workspace_identifier,
-             source_root) = get_dataset_metadata_and_paths(source_ds, workspace_cache)
+             source_root) = get_dataset_metadata_and_paths(
+                source_ds, workspace_cache, handler_metadata=handler_metadata
+            )
 
             if "mapping" in source_config:
                 result = {}
@@ -1019,7 +1224,7 @@ def resolve_tar_or_folder_path(source_ds_metadata, source_root, file_path):
     if source_ds_metadata.get('workspace'):
         try:
             from nvidia_tao_core.microservices.utils.cloud_utils import create_cs_instance
-            workspace_metadata = get_handler_metadata(source_ds_metadata.get('workspace'), kind="workspace")
+            workspace_metadata = get_handler_metadata(source_ds_metadata.get('workspace'), kind="workspaces")
             if workspace_metadata:
                 cloud_type = workspace_metadata.get('cloud_type', '')
                 cloud_instance, _ = create_cs_instance(workspace_metadata)
@@ -1075,7 +1280,7 @@ def check_file_exists_in_cloud(source_ds_metadata, source_root, file_path):
     if source_ds_metadata.get('workspace'):
         try:
             from nvidia_tao_core.microservices.utils.cloud_utils import create_cs_instance
-            workspace_metadata = get_handler_metadata(source_ds_metadata.get('workspace'), kind="workspace")
+            workspace_metadata = get_handler_metadata(source_ds_metadata.get('workspace'), kind="workspaces")
             if workspace_metadata:
                 cloud_type = workspace_metadata.get('cloud_type', '')
                 cloud_instance, _ = create_cs_instance(workspace_metadata)
