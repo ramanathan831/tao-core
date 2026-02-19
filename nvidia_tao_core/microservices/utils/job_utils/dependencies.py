@@ -114,6 +114,17 @@ def dependency_check_dataset(job_context, dependency):
     handler_metadata = get_handler_metadata(handler_id, "experiments")
     if not handler_metadata:  # dataset job
         handler_metadata = get_handler_metadata(handler_id, "datasets")
+
+    # Check if using direct paths (new approach) - skip dependency check if so
+    # Direct paths don't need pull_complete status validation; user is responsible for path validity
+    train_dataset_paths = handler_metadata.get("train_dataset_paths")
+    eval_dataset_path = handler_metadata.get("eval_dataset_path")
+    inference_dataset_path = handler_metadata.get("inference_dataset_path")
+
+    if any([train_dataset_paths, eval_dataset_path, inference_dataset_path]):
+        logger.info(f"Using direct dataset paths - skipping dependency check for job {job_context.id}")
+        return True, ""
+
     valid_datset_structure = True
     train_datasets = handler_metadata.get("train_datasets", None)
     eval_dataset = handler_metadata.get("eval_dataset", None)

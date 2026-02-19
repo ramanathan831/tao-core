@@ -1372,6 +1372,7 @@ class ExperimentReq(Schema):
         validate=fields.validate.Length(max=2048),
         allow_none=True
     )
+    skip_dataset_validation = fields.Bool(allow_none=True)
 
 
 class ExperimentJob(Schema):

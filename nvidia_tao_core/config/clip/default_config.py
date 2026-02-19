@@ -42,18 +42,19 @@ class CLIPModelConfig:
     type: str = STR_FIELD(
         value="siglip2-so400m",
         default_value="siglip2-so400m",
-        description="CLIP model type. Options: "
-                    "SigLIP2: siglip2-so400m, siglip2-g-384, siglip2-large-384, siglip2-base-384; "
+        description="CLIP model type. "
                     "C-RADIO: c-radio_v3-h, c-radio_v3-l, c-radio_v3-b, c-radio_v3-g; "
-                    "OpenCLIP: ViT-L-14-SigLIP-CLIPA-224, ViT-L-14-SigLIP-CLIPA-336.",
+                    "SigLIP2: siglip2-so400m, siglip2-so400m-512, siglip2-g-384; "
+                    "OpenCLIP: ViT-L-14-SigLIP-CLIPA-224, ViT-L-14-SigLIP-CLIPA-336, "
+                    "ViT-H-14-SigLIP-CLIPA-224.",
         display_name="Model Type",
     )
     adaptor_name: Optional[str] = STR_FIELD(
         value=None,
         default_value=None,
-        description="Text adaptor name for C-RADIO models. If None, uses 'siglip2-g' (default). "
-                    "Options: 'siglip2-g' (SigLIP2), 'dfn_clip'/'clip' (DFN CLIP). "
-                    "Set loss_type to 'siglip' for siglip2-g, 'clip' for dfn_clip.",
+        description="Text adaptor for C-RADIO models (ignored for other model types). "
+                    "'siglip' (SigLIP2 text encoder) or 'clip' (DFN CLIP text encoder). "
+                    "When None, defaults to 'siglip' at runtime.",
         display_name="Adaptor Name",
     )
     freeze_vision_encoder: bool = BOOL_FIELD(
@@ -67,6 +68,35 @@ class CLIPModelConfig:
         default_value=False,
         description="If True, freeze text encoder weights during training.",
         display_name="Freeze Text Encoder",
+    )
+    image_size: int = INT_FIELD(
+        value=256,
+        default_value=256,
+        description="Input image resolution for training transforms. "
+                    "Common values: 224 (RADIO/OpenCLIP), 384 (SigLIP2-g), "
+                    "256 (SigLIP2-so400m). "
+                    "Must be a multiple of the model's patch size (typically 14 or 16).",
+        display_name="Image Size",
+    )
+    init_logit_scale: Optional[float] = FLOAT_FIELD(
+        value=None,
+        default_value=None,
+        description="Override for the initial logit scale (log-space). "
+                    "When None, automatically set from train.loss_type: "
+                    "2.3026 (SigLIP) or 2.6592 (CLIP). "
+                    "Set manually only with caution, as incorrect values "
+                    "can destabilize training.",
+        display_name="Initial Logit Scale",
+    )
+    init_logit_bias: Optional[float] = FLOAT_FIELD(
+        value=None,
+        default_value=None,
+        description="Override for the initial logit bias. "
+                    "When None, automatically set from train.loss_type: "
+                    "-10.0 (SigLIP) or 0.0 (CLIP). "
+                    "Set manually only with caution, as incorrect values "
+                    "can destabilize training.",
+        display_name="Initial Logit Bias",
     )
 
 
@@ -286,15 +316,30 @@ class CLIPDatasetConfig:
 # =============================================================================
 @dataclass
 class CLIPOptimConfig:
-    """AdamW optimizer configuration for CLIP training."""
+    """Optimizer configuration for CLIP training."""
 
-    lr: float = FLOAT_FIELD(
-        value=1e-3,
-        default_value=1e-3,
+    optimizer_type: str = STR_FIELD(
+        value="adamw",
+        default_value="adamw",
+        valid_options="adamw,lamb",
+        description="Optimizer type: 'adamw' (AdamW) or 'lamb' (LAMB).",
+        display_name="Optimizer Type",
+    )
+    vision_lr: float = FLOAT_FIELD(
+        value=1e-4,
+        default_value=1e-4,
         valid_min=0,
         valid_max="inf",
-        description="Learning rate for AdamW optimizer.",
-        display_name="Learning Rate",
+        description="Learning rate for the vision encoder.",
+        display_name="Vision LR",
+    )
+    text_lr: float = FLOAT_FIELD(
+        value=1e-4,
+        default_value=1e-4,
+        valid_min=0,
+        valid_max="inf",
+        description="Learning rate for the text encoder.",
+        display_name="Text LR",
     )
     weight_decay: float = FLOAT_FIELD(
         value=1e-4,
@@ -307,15 +352,15 @@ class CLIPOptimConfig:
     betas: List[float] = LIST_FIELD(
         arrList=[0.9, 0.95],
         default_value=[0.9, 0.95],
-        description="Adam beta parameters [beta1, beta2] for momentum.",
-        display_name="Adam Betas",
+        description="Adam/LAMB beta parameters [beta1, beta2] for momentum.",
+        display_name="Betas",
     )
     eps: float = FLOAT_FIELD(
         value=1e-6,
         default_value=1e-6,
         valid_min=0,
-        description="Adam epsilon for numerical stability.",
-        display_name="Adam Epsilon",
+        description="Epsilon for numerical stability.",
+        display_name="Epsilon",
     )
     warmup_steps: int = INT_FIELD(
         value=100,
@@ -323,6 +368,16 @@ class CLIPOptimConfig:
         valid_min=0,
         description="Number of linear warmup steps for learning rate.",
         display_name="Warmup Steps",
+    )
+    scheduler: str = STR_FIELD(
+        value="cosine",
+        default_value="cosine",
+        valid_options="cosine,constant,linear",
+        description="LR schedule after warmup: "
+                    "'cosine' (cosine decay to 0), "
+                    "'constant' (hold at base LR), "
+                    "'linear' (linear decay to 0).",
+        display_name="LR Scheduler",
     )
 
 
@@ -333,7 +388,7 @@ class CLIPTrainConfig(TrainConfig):
     optim: CLIPOptimConfig = DATACLASS_FIELD(
         CLIPOptimConfig(),
         default_value=CLIPOptimConfig(),
-        description="AdamW optimizer configuration.",
+        description="Optimizer configuration with per-tower learning rates.",
     )
     loss_type: str = STR_FIELD(
         value="siglip",
@@ -374,6 +429,12 @@ class CLIPTrainConfig(TrainConfig):
         description="Path to pretrained model checkpoint for fine-tuning.",
         display_name="Pretrained Model Path",
     )
+    val_check_interval: Optional[int] = INT_FIELD(
+        value=None,
+        default_value=None,
+        description="Run validation every N training steps. If None, validates at end of epoch.",
+        display_name="Validation Check Interval",
+    )
 
 
 # =============================================================================
@@ -395,6 +456,13 @@ class CLIPInferenceEvalConfig:
         valid_min=1,
         description="Batch size for inference/evaluation.",
         display_name="Batch Size",
+    )
+    num_gpus: int = INT_FIELD(
+        value=1,
+        default_value=1,
+        valid_min=1,
+        description="Number of GPUs to use.",
+        display_name="Number of GPUs",
     )
     gpu_ids: List[int] = LIST_FIELD(
         arrList=[0],
@@ -439,7 +507,7 @@ class CLIPExportConfig:
     onnx_file: str = STR_FIELD(
         value=MISSING,
         default_value=MISSING,
-        description="Output ONNX file path (without extension for 'both' encoder_type).",
+        description="Output ONNX file path (without extension for 'separate' encoder_type).",
         display_name="ONNX File Path",
     )
     encoder_type: str = STR_FIELD(
@@ -464,18 +532,43 @@ class CLIPExportConfig:
         display_name="Batch Size",
     )
     input_height: int = INT_FIELD(
-        value=384,
-        default_value=384,
+        value=256,
+        default_value=256,
         valid_min=32,
         description="Input image height for vision encoder export.",
         display_name="Input Height",
     )
     input_width: int = INT_FIELD(
-        value=384,
-        default_value=384,
+        value=256,
+        default_value=256,
         valid_min=32,
         description="Input image width for vision encoder export.",
         display_name="Input Width",
+    )
+    gpu_id: int = INT_FIELD(
+        value=0,
+        default_value=0,
+        description="GPU device ID to use for export.",
+        display_name="GPU ID",
+    )
+    on_cpu: bool = BOOL_FIELD(
+        value=False,
+        default_value=False,
+        description="If True, export on CPU instead of GPU.",
+        display_name="On CPU",
+    )
+    input_channel: int = INT_FIELD(
+        value=3,
+        default_value=3,
+        description="Number of channels in the input image.",
+        display_name="Input Channel",
+        valid_min=1,
+    )
+    verbose: bool = BOOL_FIELD(
+        value=False,
+        default_value=False,
+        description="Enable verbose ONNX export logging.",
+        display_name="Verbose",
     )
     results_dir: Optional[str] = STR_FIELD(
         value=None,
