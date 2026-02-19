@@ -25,7 +25,7 @@ from nvidia_tao_core.microservices.utils.core_utils import get_microservices_net
 from nvidia_tao_core.scripts.generate_schema import generate_schema
 
 EXCLUDED_KEYWORDS = [
-    'maxine', 'vlm', 'segmentation',
+    'vlm', 'segmentation',
     'image_classification', 'character_recognition', 'object_detection'
 ]
 

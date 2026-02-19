@@ -179,8 +179,7 @@ def _get_network_architectures(get_mapped: bool = False) -> Set[str]:
                                          "object_detection",
                                          "segmentation",
                                          "character_recognition",
-                                         "vlm",
-                                         "maxine_dataset"]:
+                                         "vlm"]:
                         architectures.add(arch_name)
                     else:
                         # Add networks from action mappings
@@ -438,7 +437,6 @@ class Backend(enum.Enum):
 
     LOCAL_K8S = "local-k8s"
     LOCAL_DOCKER = "local-docker"
-    NVCF = "NVCF"
     SLURM = "slurm"
     LEPTON = "lepton"
 

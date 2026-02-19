@@ -29,7 +29,6 @@ import traceback
 
 from nvidia_tao_core.microservices.utils.cloud_utils import CloudStorage
 from nvidia_tao_core.microservices.utils.ngc_utils import download_ngc_model, split_ngc_path, get_model_size_info
-from nvidia_tao_core.microservices.utils.nvcf_utils import invoke_function
 from nvidia_tao_core.microservices.utils.stateless_handler_utils import BACKEND, get_internal_job_status_update_data
 from nvidia_tao_core.distributed.decorators import master_node_only
 from nvidia_tao_core.microservices.enum_constants import Backend
@@ -495,7 +494,6 @@ def send_logs_to_server(seek_position, retry=0):
                 ngc_key = os.getenv("TAO_USER_KEY")
                 headers = {"Authorization": f"Bearer {ngc_key}"}
                 if log_contents and headers:
-                    nvcf_helm_deployment = os.getenv("NVCF_HELM")
                     log_callback_url = os.getenv("TAO_LOGGING_SERVER_URL") + ":log_update"
                     if log_callback_url:
                         headers['Content-Type'] = 'application/json'
@@ -503,29 +501,28 @@ def send_logs_to_server(seek_position, retry=0):
                             'experiment_number': os.getenv("AUTOML_EXPERIMENT_NUMBER", "0"),
                             'log_contents': log_contents
                         }
-                        if not nvcf_helm_deployment:
-                            try:
-                                response = requests.post(
-                                    log_callback_url,
-                                    json=data,
-                                    headers=headers,
-                                    timeout=REQUESTS_TIMEOUT
-                                )
-                                if response.ok:
-                                    return seek_position
-                                logger.info(
-                                    "Failed to send logs. Status code: {}".format(response.status_code)  # noqa pylint: disable=C0209
-                                )
-                                seek_position -= len(log_contents)
-                                retry += 1
+                        try:
+                            response = requests.post(
+                                log_callback_url,
+                                json=data,
+                                headers=headers,
+                                timeout=REQUESTS_TIMEOUT
+                            )
+                            if response.ok:
+                                return seek_position
+                            logger.info(
+                                "Failed to send logs. Status code: {}".format(response.status_code)  # noqa pylint: disable=C0209
+                            )
+                            seek_position -= len(log_contents)
+                            retry += 1
 
-                            except requests.RequestException as e:
-                                logger.info("Exception during log sending: {}".format(e))  # noqa pylint: disable=C0209
-                                seek_position -= len(log_contents)
-                                retry += 1
+                        except requests.RequestException as e:
+                            logger.info("Exception during log sending: {}".format(e))  # noqa pylint: disable=C0209
+                            seek_position -= len(log_contents)
+                            retry += 1
 
-                            time.sleep(5)
-                            return send_logs_to_server(seek_position, retry)
+                        time.sleep(5)
+                        return send_logs_to_server(seek_position, retry)
     return seek_position
 
 
@@ -577,46 +574,26 @@ def status_callback(data_string, retry=0):
                     "experiment_number": os.getenv("AUTOML_EXPERIMENT_NUMBER", "0"),
                     "status": data_string,
                 }
-                nvcf_helm_deployment = os.getenv("NVCF_HELM")
-                if nvcf_helm_deployment:
-                    url_parts = os.getenv("TAO_LOGGING_SERVER_URL", "").split('/')
-                    # Extract kind, handler_id, and job_id based on their positions
-                    kind = url_parts[7]
-                    handler_id = url_parts[8]
-                    job_id = url_parts[10]
-                    docker_env_vars = {
-                        "TAO_USER_KEY": ngc_key,
-                    }
-                    invoke_function(
-                        deployment_string=nvcf_helm_deployment,
-                        microservice_action="status_update",
-                        docker_env_vars=docker_env_vars,
-                        kind=kind,
-                        handler_id=handler_id,
-                        job_id=job_id,
-                        request_body=data,
+                try:
+                    response = requests.post(status_url, json=data, headers=headers, timeout=REQUESTS_TIMEOUT)
+                    if response.ok:
+                        logger.info(f"Status update with data {data} sent successfully")
+                        return
+                    logger.error(
+                        "Failed to send status update. Status code: {}".format(  # noqa pylint: disable=C0209
+                            response.status_code
+                        )
                     )
-                else:
-                    try:
-                        response = requests.post(status_url, json=data, headers=headers, timeout=REQUESTS_TIMEOUT)
-                        if response.ok:
-                            logger.info(f"Status update with data {data} sent successfully")
-                            return
-                        logger.error(
-                            "Failed to send status update. Status code: {}".format(  # noqa pylint: disable=C0209
-                                response.status_code
-                            )
-                        )
-                        retry += 1
+                    retry += 1
 
-                    except requests.RequestException as e:
-                        logger.error(
-                            "Exception during status update sending: {}".format(e)  # noqa pylint: disable=C0209
-                        )
-                        retry += 1
+                except requests.RequestException as e:
+                    logger.error(
+                        "Exception during status update sending: {}".format(e)  # noqa pylint: disable=C0209
+                    )
+                    retry += 1
 
-                    time.sleep(5)
-                    status_callback(data_string, retry)
+                time.sleep(5)
+                status_callback(data_string, retry)
 
 
 def should_skip_file_for_tarball(file_path, local_path, selective_tarball_config):

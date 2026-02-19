@@ -204,19 +204,8 @@ def wait_for_job_completion(job_id):
 
     config.load_incluster_config()
     while True:
-        dgx_active_jobs = []
-        if BACKEND == Backend.NVCF:
-            custom_api = client.CustomObjectsApi()
-            crd_group = 'nvcf-job-manager.nvidia.io'
-            crd_version = 'v1alpha1'
-            crd_plural = 'nvcfjobs'
-            # List all instances of the Custom Resource across all namespaces
-            custom_resources = custom_api.list_cluster_custom_object(crd_group, crd_version, crd_plural)
-            dgx_active_jobs = [dgx_cr["spec"].get("job_id") for dgx_cr in custom_resources['items']]
-
         ret = client.BatchV1Api().list_job_for_all_namespaces()
-        active_jobs = dgx_active_jobs + [job.metadata.name for job in ret.items]
-        active_jobs = list(set(active_jobs))
+        active_jobs = [job.metadata.name for job in ret.items]
         if job_id not in active_jobs:
             break
         time.sleep(5)

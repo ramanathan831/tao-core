@@ -649,7 +649,7 @@ Some file types or dataset configurations should only be used with specific inte
 
   When you need to validate the presence of files matching a pattern rather than specific filenames, use regex validation. This is useful for checking that a directory contains files of a certain type or that model files with varying names are present. The regex validation looks for any files matching the specified pattern.
 
-  **Example from maxine\_dataset.config.json:** The Maxine dataset validates video files using regex patterns.
+  **Example for video dataset validation:** Validate that video files are present using regex patterns.
 
 ```json
 {

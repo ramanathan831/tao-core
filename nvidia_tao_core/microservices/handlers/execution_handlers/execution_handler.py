@@ -55,7 +55,7 @@ logger = logging.getLogger(__name__)
 
 
 class ExecutionHandler(ABC):
-    """Base class for ALL execution handlers (K8s, Docker, Slurm, Lepton, NVCF)
+    """Base class for ALL execution handlers (K8s, Docker, Slurm, Lepton)
 
     This provides a unified interface for job execution across all backends.
     Both K8s executors and cloud handlers inherit from this class.
@@ -651,7 +651,6 @@ class ExecutionHandler(ABC):
         job_id="",
         docker_env_vars={},
         port=8000,
-        nvcf_helm="",
         statefulset_replicas=1
     ):
         """Send a request to a created microservice
@@ -667,7 +666,6 @@ class ExecutionHandler(ABC):
             job_id: Job identifier
             docker_env_vars: Docker environment variables
             port: Port for the API service
-            nvcf_helm: NVCF helm configuration
             statefulset_replicas: Number of statefulset replicas
 
         Returns:
@@ -899,7 +897,7 @@ class ExecutionHandler(ABC):
 
         Args:
             cloud_metadata: Dictionary containing cloud-specific credentials and info
-            backend: String indicating the backend type ('local-docker', 'local-k8s', 'NVCF', etc.)
+            backend: String indicating the backend type ('local-docker', 'local-k8s', 'slurm', 'lepton')
             container_image: Container image to use (required for Docker handler)
 
         Returns:
@@ -908,11 +906,12 @@ class ExecutionHandler(ABC):
         Raises:
             ValueError: If unable to determine the appropriate handler
         """
-        # Priority 1: Check for Slurm credentials in cloud_metadata
         if workspace_metadata and cloud_metadata is None:
             cloud_metadata = ExecutionHandler.get_cloud_metadata_from_workspace(workspace_metadata)
 
+        # Check for cloud platforms (Slurm, Lepton)
         if cloud_metadata:
+            # Priority 1: Check for Slurm credentials in cloud_metadata
             slurm_hostname = cloud_metadata.get('slurm_hostname')
             slurm_user = cloud_metadata.get('slurm_user')
             if slurm_hostname and slurm_user and not automl_brain:
@@ -927,34 +926,8 @@ class ExecutionHandler(ABC):
                 from .lepton_handler import LeptonHandler
                 return LeptonHandler(lepton_workspace_id, lepton_auth_token)
 
-            # Priority 3: Check for NVCF credentials in cloud_metadata
-            nvcf_backend_details = cloud_metadata.get('nvcf_backend_details')
-            team_name = cloud_metadata.get('teamName')
-            ngc_key = cloud_metadata.get('ngc_key') or cloud_metadata.get('TAO_ADMIN_KEY')
-            org_name = cloud_metadata.get('org_name')
-            if nvcf_backend_details and team_name and ngc_key and org_name:
-                from .nvcf_handler import NvcfHandler
-                return NvcfHandler(org_name, team_name, ngc_key, nvcf_backend_details)
-
-        # Priority 4: Check backend environment variable or parameter
+        # Check for local backends (Docker, K8s)
         backend_type = backend or BACKEND
-
-        if backend_type == Backend.NVCF:
-            # NVCF backend via environment variable
-            # Try to get credentials from environment or metadata
-            from .nvcf_handler import NvcfHandler
-            if cloud_metadata:
-                org_name = cloud_metadata.get('org_name', '')
-                team_name = cloud_metadata.get('teamName', os.getenv("NVCF_DEPLOYMENT_TEAM_NAME", "no_team"))
-                ngc_key = cloud_metadata.get('ngc_key') or cloud_metadata.get('TAO_ADMIN_KEY', '')
-                nvcf_backend_details = cloud_metadata.get('nvcf_backend_details', {})
-                if org_name and team_name and ngc_key:
-                    return NvcfHandler(org_name, team_name, ngc_key, nvcf_backend_details)
-            logger.error(
-                "NVCF backend requires cloud_metadata with org_name,"
-                "teamName, ngc_key, and nvcf_backend_details"
-            )
-            return None
 
         if backend_type == Backend.LOCAL_DOCKER:
             # Import here to avoid circular dependencies
@@ -1004,8 +977,8 @@ class ExecutionHandler(ABC):
             docker_env_vars: Docker environment variables
             results_dir: Results directory path
             automl_exp_job: Whether this is an AutoML experiment job
-            authorized_party_nca_id: Authorized party NCA ID (for NVCF)
-            org_name: Organization name (for NVCF)
+            authorized_party_nca_id: Authorized party NCA ID
+            org_name: Organization name
             backend: Backend type override (optional)
 
         Returns:
@@ -1037,16 +1010,7 @@ class ExecutionHandler(ABC):
             # Prepare kwargs based on handler type
             kwargs = {}
 
-            if handler and handler.backend_type == Backend.NVCF:
-                # NVCF handler needs: handler_id, handler_kind, docker_env_vars, automl_exp_job, authorized_party_nca_id
-                kwargs = {
-                    'handler_kind': handler_kind,
-                    'docker_env_vars': docker_env_vars or {},
-                    'automl_exp_job': automl_exp_job,
-                    'authorized_party_nca_id': authorized_party_nca_id
-                }
-
-            elif handler and handler.backend_type in [Backend.SLURM, Backend.LEPTON]:
+            if handler and handler.backend_type in [Backend.SLURM, Backend.LEPTON]:
                 # Cloud handlers need: results_dir, workspace_metadata
                 kwargs = {
                     'results_dir': results_dir,
@@ -1104,7 +1068,7 @@ class ExecutionHandler(ABC):
             num_nodes: Number of nodes
             accelerator: Accelerator type
             docker_env_vars: Docker environment variables
-            nv_job_metadata: NVCF job metadata
+            nv_job_metadata: Job metadata for cloud backends
             automl_brain: Whether this is an AutoML brain job
             automl_exp_job: Whether this is an AutoML experiment job
             local_cluster: Whether this is a local cluster
@@ -1124,32 +1088,9 @@ class ExecutionHandler(ABC):
             cloud_specific_details = workspace_metadata.get('cloud_specific_details', {})
             cloud_metadata.update(cloud_specific_details)
 
-        # Add NVCF metadata if provided
-        if nv_job_metadata:
-            cloud_metadata.update(nv_job_metadata)
-
         backend_type = backend or BACKEND
 
         try:
-            # For NVCF backend with metadata
-            if backend_type == Backend.NVCF and nv_job_metadata:
-                from nvidia_tao_core.microservices.handlers.execution_handlers.nvcf_handler import NvcfHandler
-                team_name = nv_job_metadata["teamName"]
-                nvcf_backend_details = nv_job_metadata["nvcf_backend_details"]
-                ngc_key = nv_job_metadata["TAO_ADMIN_KEY"]
-                docker_image_name = nv_job_metadata["dockerImageName"]
-
-                nvcf_handler = NvcfHandler(org_name, team_name, ngc_key, nvcf_backend_details)
-                nvcf_handler.create_job(
-                    job_name=job_name,
-                    image=image,
-                    docker_image_name=docker_image_name,
-                    nv_job_metadata=nv_job_metadata,
-                    num_nodes=num_nodes,
-                    automl_exp_job=automl_exp_job
-                )
-                return
-
             # For cloud backends (Slurm, Lepton)
             handler = ExecutionHandler.create_handler(
                 cloud_metadata=cloud_metadata,
@@ -1294,7 +1235,6 @@ class ExecutionHandler(ABC):
         docker_env_vars={},
         num_nodes=1,
         accelerator=None,
-        nvcf_helm="",
         **kwargs
     ):
         """Create a microservice and send request - unified across all backends
@@ -1316,7 +1256,6 @@ class ExecutionHandler(ABC):
             resource_shape: Resource shape for cloud backends
             dedicated_node_group: Dedicated node group for cloud backends
             accelerator: Accelerator type for K8s
-            nvcf_helm: NVCF helm configuration
 
         Returns:
             requests.Response: Response from the microservice, or None on failure
@@ -1346,7 +1285,7 @@ class ExecutionHandler(ABC):
             # Get or create handler instance
             # If self is already a specialized handler (Slurm/Lepton), use it
             # Otherwise, create appropriate handler via factory
-            valid_backends = [Backend.SLURM, Backend.LEPTON, Backend.LOCAL_DOCKER, Backend.LOCAL_K8S, Backend.NVCF]
+            valid_backends = [Backend.SLURM, Backend.LEPTON, Backend.LOCAL_DOCKER, Backend.LOCAL_K8S]
             if hasattr(self, 'backend_type') and self.backend_type in valid_backends:
                 handler = self
             else:
@@ -1405,7 +1344,6 @@ class ExecutionHandler(ABC):
                         job_id=microservice_pod_id,
                         docker_env_vars=docker_env_vars,
                         port=port,
-                        nvcf_helm=nvcf_helm,
                         statefulset_replicas=num_nodes
                     )
 
@@ -1522,29 +1460,6 @@ class ExecutionHandler(ABC):
                 time.sleep(poll_interval)
                 poll_count += 1
 
-        # Handle NVCF backend
-        elif BACKEND == Backend.NVCF:
-            # For NVCF, check job metadata status
-            while poll_count < max_polls:
-                job_metadata = get_handler_job_metadata(job_id)
-                if not job_metadata:
-                    self.logger.debug(f"NVCF job metadata not found: job_id={job_id}")
-                    job_terminated = True
-                    break
-
-                job_status = job_metadata.get("status", "")
-                if job_status in ("Canceled", "Done", "Error", "Paused"):
-                    self.logger.debug(f"NVCF job terminated: job_id={job_id}, status={job_status}")
-                    job_terminated = True
-                    break
-
-                self.logger.debug(
-                    f"NVCF job still active: job_id={job_id}, status={job_status}, "
-                    f"poll={poll_count}/{max_polls}"
-                )
-                time.sleep(poll_interval)
-                poll_count += 1
-
         # Handle local-k8s backend
         elif BACKEND == Backend.LOCAL_K8S:
             from kubernetes import client, config
@@ -1653,29 +1568,6 @@ class ExecutionHandler(ABC):
                     sts_terminated = True
                     break
 
-                time.sleep(poll_interval)
-                poll_count += 1
-
-        # Handle NVCF backend
-        elif self.backend_type == Backend.NVCF:
-            # For NVCF, check job metadata status
-            while poll_count < max_polls:
-                job_metadata = get_handler_job_metadata(job_id)
-                if not job_metadata:
-                    self.logger.debug(f"NVCF job metadata not found: job_id={job_id}")
-                    sts_terminated = True
-                    break
-
-                job_status = job_metadata.get("status", "")
-                if job_status in ("Canceled", "Done", "Error", "Paused"):
-                    self.logger.debug(f"NVCF job terminated: job_id={job_id}, status={job_status}")
-                    sts_terminated = True
-                    break
-
-                self.logger.debug(
-                    f"NVCF job still active: job_id={job_id}, status={job_status}, "
-                    f"poll={poll_count}/{max_polls}"
-                )
                 time.sleep(poll_interval)
                 poll_count += 1
 
