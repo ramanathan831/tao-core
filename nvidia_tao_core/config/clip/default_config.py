@@ -20,7 +20,9 @@ from omegaconf import MISSING
 
 from nvidia_tao_core.config.common.common_config import (
     CommonExperimentConfig,
+    GenTrtEngineConfig,
     TrainConfig,
+    TrtConfig,
 )
 from nvidia_tao_core.config.utils.types import (
     BOOL_FIELD,
@@ -444,10 +446,11 @@ class CLIPTrainConfig(TrainConfig):
 class CLIPInferenceEvalConfig:
     """Configuration for CLIP inference and evaluation."""
 
-    checkpoint: str = STR_FIELD(
-        value=MISSING,
-        default_value=MISSING,
-        description="Path to trained model checkpoint (.ckpt or .pth).",
+    checkpoint: Optional[str] = STR_FIELD(
+        value=None,
+        default_value=None,
+        description="Path to trained model checkpoint (.ckpt or .pth). "
+                    "Not required for TRT-based evaluation.",
         display_name="Checkpoint Path",
     )
     batch_size: int = INT_FIELD(
@@ -476,6 +479,12 @@ class CLIPInferenceEvalConfig:
         description="Directory to save inference/evaluation results.",
         display_name="Results Directory",
     )
+    trt_engine: Optional[str] = STR_FIELD(
+        value=None,
+        default_value=None,
+        description="Path to TensorRT engine for TRT-based evaluation/inference.",
+        display_name="TRT Engine Path",
+    )
     # Inference-specific fields
     image_dir: Optional[str] = STR_FIELD(
         value=None,
@@ -489,6 +498,15 @@ class CLIPInferenceEvalConfig:
         description="Path to text file with prompts for inference (inference only).",
         display_name="Text File",
     )
+    tokenizer_name: str = STR_FIELD(
+        value="openai/clip-vit-large-patch14",
+        default_value="openai/clip-vit-large-patch14",
+        description="HuggingFace tokenizer name for zero-shot classification. "
+                    "Must match the tokenizer used during ONNX export. "
+                    "Common values: 'openai/clip-vit-large-patch14' (CLIP/C-RADIO with DFN adapter), "
+                    "'google/siglip2-so400m-patch14-384' (SigLIP2/C-RADIO with SigLIP adapter).",
+        display_name="Tokenizer Name",
+    )
 
 
 # =============================================================================
@@ -498,15 +516,15 @@ class CLIPInferenceEvalConfig:
 class CLIPExportConfig:
     """ONNX export configuration for CLIP models."""
 
-    checkpoint: str = STR_FIELD(
-        value=MISSING,
-        default_value=MISSING,
+    checkpoint: Optional[str] = STR_FIELD(
+        value=None,
+        default_value=None,
         description="Path to trained model checkpoint (.ckpt or .pth).",
         display_name="Checkpoint Path",
     )
-    onnx_file: str = STR_FIELD(
-        value=MISSING,
-        default_value=MISSING,
+    onnx_file: Optional[str] = STR_FIELD(
+        value=None,
+        default_value=None,
         description="Output ONNX file path (without extension for 'separate' encoder_type).",
         display_name="ONNX File Path",
     )
@@ -579,6 +597,29 @@ class CLIPExportConfig:
 
 
 # =============================================================================
+# TRT Engine Config
+# =============================================================================
+@dataclass
+class CLIPTrtConfig(TrtConfig):
+    """CLIP TensorRT configuration."""
+
+    data_type: str = STR_FIELD(
+        value="fp32",
+        default_value="fp32",
+        valid_options="fp32,fp16",
+        description="TensorRT precision: FP32 or FP16.",
+        display_name="Data Type",
+    )
+
+
+@dataclass
+class CLIPGenTrtEngineConfig(GenTrtEngineConfig):
+    """CLIP TRT engine generation config."""
+
+    tensorrt: CLIPTrtConfig = DATACLASS_FIELD(CLIPTrtConfig(), default_value=CLIPTrtConfig())
+
+
+# =============================================================================
 # Experiment Config
 # =============================================================================
 @dataclass
@@ -620,4 +661,9 @@ class CLIPExperimentConfig(CommonExperimentConfig):
         CLIPExportConfig(),
         default_value=CLIPExportConfig(),
         description="Export config.",
+    )
+    gen_trt_engine: CLIPGenTrtEngineConfig = DATACLASS_FIELD(
+        CLIPGenTrtEngineConfig(),
+        default_value=CLIPGenTrtEngineConfig(),
+        description="TensorRT engine generation config.",
     )
