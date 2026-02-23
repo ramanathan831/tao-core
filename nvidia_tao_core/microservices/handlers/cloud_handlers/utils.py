@@ -468,6 +468,10 @@ def get_log_file_name():
 
 def send_logs_to_server(seek_position, retry=0):
     """Sends TTY logs back to Hosted API"""
+    # Skip log callbacks when DEBUG_ENABLED is set (for local debugging)
+    if os.getenv("DEBUG_ENABLED", "").lower() == "true":
+        return seek_position
+
     if os.getenv("CLOUD_BASED") == "True":
         # Skip log upload for k8s and docker backends - server handles it via direct streaming
         # Check TAO_EXECUTION_BACKEND (set by server for job containers)
@@ -533,6 +537,11 @@ def status_callback(data_string, retry=0):
         data_string (str): The status data to be sent.
         retry (int, optional): The current retry attempt (default is 0).
     """
+    # Skip callbacks when DEBUG_ENABLED is set (for local debugging)
+    if os.getenv("DEBUG_ENABLED", "").lower() == "true":
+        logger.info("DEBUG_ENABLED=True: Skipping status callback")
+        return
+
     # Check for early stopping based on epoch threshold
     early_stop_epoch = os.getenv("EARLY_STOP_EPOCH")
     if early_stop_epoch:
