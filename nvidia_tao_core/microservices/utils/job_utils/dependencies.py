@@ -33,11 +33,9 @@ from nvidia_tao_core.microservices.utils.stateless_handler_utils import (
     get_handler_metadata,
     get_base_experiment_metadata,
     get_job_specs,
-    get_automl_controller_info,
-    BACKEND
+    get_automl_controller_info
 )
 from nvidia_tao_core.microservices.utils.executor_utils import dependency_check
-from nvidia_tao_core.microservices.enum_constants import Backend
 # Configure logging
 TAO_LOG_LEVEL = os.getenv('TAO_LOG_LEVEL', 'INFO').upper()
 tao_log_level = getattr(logging, TAO_LOG_LEVEL, logging.INFO)
@@ -116,6 +114,17 @@ def dependency_check_dataset(job_context, dependency):
     handler_metadata = get_handler_metadata(handler_id, "experiments")
     if not handler_metadata:  # dataset job
         handler_metadata = get_handler_metadata(handler_id, "datasets")
+
+    # Check if using direct paths (new approach) - skip dependency check if so
+    # Direct paths don't need pull_complete status validation; user is responsible for path validity
+    train_dataset_paths = handler_metadata.get("train_dataset_paths")
+    eval_dataset_path = handler_metadata.get("eval_dataset_path")
+    inference_dataset_path = handler_metadata.get("inference_dataset_path")
+
+    if any([train_dataset_paths, eval_dataset_path, inference_dataset_path]):
+        logger.info(f"Using direct dataset paths - skipping dependency check for job {job_context.id}")
+        return True, ""
+
     valid_datset_structure = True
     train_datasets = handler_metadata.get("train_datasets", None)
     eval_dataset = handler_metadata.get("eval_dataset", None)
@@ -187,11 +196,6 @@ def dependency_check_model(job_context, dependency):
 def dependency_check_gpu(job_context, dependency):
     """Check if GPU dependency is met"""
     logger.debug(f"[GPU_DEP_CHECK] Starting GPU dependency check for job {job_context.id}")
-
-    # If BACKEND is NVCF, then we don't need to check for GPU availability if it's not a local job
-    local_job = (job_context.specs and "cluster" in job_context.specs and job_context.specs["cluster"] == "local")
-    if BACKEND == Backend.NVCF and not local_job:
-        return True, ""
 
     try:
         num_gpu = get_num_gpus_from_spec(

@@ -41,7 +41,6 @@ logger = logging.getLogger(__name__)
 
 NUM_OF_RETRY = 5
 base_exp_uuid = "00000000-0000-0000-0000-000000000000"
-NVCF_SECRET_FILE = "/var/secrets/secrets.json"
 
 
 def sha256_checksum(file_path):
@@ -342,23 +341,10 @@ def merge_nested_dicts(dict1, dict2):
 
 
 def get_admin_key(legacy_key=False):
-    """Get admin api key from k8s secret or NVCF secret"""
+    """Get admin api key from k8s secret"""
     try:
         # TODO: Use a better way to get the secret for various deployments
         try:
-            # Secret is in file in case of NVCF deployment
-            if os.path.exists(NVCF_SECRET_FILE):
-                with open(NVCF_SECRET_FILE, "r", encoding="utf-8") as secret_file:
-                    secrets = json.load(secret_file)
-                if secrets:
-                    if legacy_key and "ptm_api_key" in secrets:
-                        logger.debug(f"Returning ptm_api_key: {secrets['ptm_api_key']}")
-                        return secrets["ptm_api_key"]
-                    if "ngc_api_key" in secrets:
-                        logger.debug(f"Returning ngc_api_key: {secrets['ngc_api_key']}")
-                        return secrets["ngc_api_key"]
-                logger.error("Failed to obtain ngc_api_key from NVCF secret")
-                return ""
             if os.getenv("DEV_MODE", "False").lower() in ("true", "1"):
                 # DEV_MODE, get api key from env. It's used to avoid creating a secret in local dev env
                 # same env variable is also used in runtests.sh and build.sh

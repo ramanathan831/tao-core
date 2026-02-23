@@ -2,45 +2,28 @@ variables:
   GIT_DEPTH: "0"  # Tells git to fetch all the branches of the project
 
 stages:
-  - validate-mr-title
-  - check-mr-lines
+  - mr-standards
   - static-tests
   - check-jenkins-status
 
+
+include:
+  - project: 'nvidia-tao-toolkit/tao-utilities/tao-gitlab-templates'
+    file:
+      - 'check-mr-lines.yml'
+      - 'validate-mr-title.yml'
+
+
 validate_mr_title:
-  stage: validate-mr-title
-  script:
-    - |
-      # Extract the MR title from the environment variable provided by GitLab CI
-      MR_TITLE=$CI_MERGE_REQUEST_TITLE
-
-      # Regular expression for the MR title validation
-      REGEX="^\[(JIRA|TLT|TAO|TAOVN)-[0-9]+\]\[(CI|CD|Bugfix|Hotfix|CV|LLM|Feature|Model-Cards|Docs|Chore)\] .+$"
-
-      # Validate the MR title
-      if [[ "$MR_TITLE" =~ $REGEX ]]; then
-        echo "MR title is valid: $MR_TITLE"
-        exit 0
-      else
-        echo "Invalid MR title format: $MR_TITLE"
-        echo "Expected format: [JIRA-ID][CI/CD/Bugfix/Hotfix/CV/LLM/Feature/Model-Cards/Docs/Chore] MR Title"
-        exit 1
-      fi
+  stage: mr-standards
   tags: ["trigger-jenkins"]
-  only:
-    refs:
-      - merge_requests
+  extends: .validate_mr_title
 
 check_mr_lines:
-  stage: check-mr-lines
-  script:
-    - python3 ci/check_mr_lines.py
+  stage: mr-standards
   tags: ["trigger-jenkins"]
-  only:
-    - merge_requests
-  variables:
-    GITLAB_PRIVATE_TOKEN: $GITLAB_PRIVATE_TOKEN
-  allow_failure: true
+  extends: .check_mr_lines
+
 
 static_tests:
   stage: static-tests

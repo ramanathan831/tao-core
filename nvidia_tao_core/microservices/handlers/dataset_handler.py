@@ -55,7 +55,6 @@ from ..utils.basic_utils import (
     get_org_datasets,
     get_user_datasets,
     get_dataset_actions,
-    handler_level_access_control
 )
 
 # Configure logging
@@ -190,7 +189,7 @@ class DatasetHandler:
 
         intention = request_dict.get("use_for", [])
         if ds_format in ("raw", "coco_raw") and intention:
-            if intention != ["testing"] and ds_type != "maxine_dataset":
+            if intention != ["testing"]:
                 msg = "raw or coco_raw's format should be associated with ['testing'] intent"
                 return Code(400, {}, msg)
 
@@ -231,9 +230,6 @@ class DatasetHandler:
                     "use_for": intention,
                     "base_experiment_ids": request_dict.get("base_experiment_ids", []),
                     }
-
-        if not handler_level_access_control(user_id, org_name, dataset_id, "datasets", handler_metadata=metadata):
-            return Code(403, {}, "Not allowed to work with this org")
 
         # Set status based on skip_validation flag
         skip_validation = request_dict.get("skip_validation", False)
@@ -325,8 +321,6 @@ class DatasetHandler:
             return Code(404, {}, "Dataset not found")
 
         user_id = metadata.get("user_id")
-        if not handler_level_access_control(user_id, org_name, dataset_id, "datasets", handler_metadata=metadata):
-            return Code(403, {}, "Not allowed to work with this org")
         if not check_write_access(user_id, org_name, dataset_id, kind="datasets"):
             return Code(404, {}, "Dataset not available")
         if request_dict.get("public", None):

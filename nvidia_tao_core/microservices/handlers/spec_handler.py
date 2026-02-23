@@ -199,23 +199,6 @@ class SpecHandler:
             json_schema["automl_default_parameters"] = (
                 metadata.get("automl_settings", {}).get("automl_hyperparameters", "[]")
             )
-        # elif BACKEND == "NVCF":
-        #     json_schema = {}
-        #     deployment_string = os.getenv(f'FUNCTION_{NETWORK_CONTAINER_MAPPING[microservices_network]}')
-        #     if action == "gen_trt_engine":
-        #         deployment_string = os.getenv('FUNCTION_TAO_DEPLOY')
-        #     nvcf_response = nvcf_handler.invoke_function(
-        #         deployment_string=deployment_string,
-        #         network=microservices_network,
-        #         action=microservices_action,
-        #         microservice_action="get_schema"
-        #     )
-        #     if nvcf_response.status_code != 200:
-        #         if nvcf_response.status_code == 202:
-        #             return Code(404, {}, "Schema from NVCF couldn't be obtained in 60 seconds, Retry again")
-        #         return Code(nvcf_response.status_code, {}, str(nvcf_response.json()))
-        #     json_schema = nvcf_response.json().get("response")
-
         return Code(200, json_schema, "Schema retrieved")
 
     @staticmethod

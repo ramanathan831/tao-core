@@ -24,10 +24,9 @@ from nvidia_tao_core.microservices.constants import (
     TENSORBOARD_DISABLED_NETWORKS,
     TENSORBOARD_EXPERIMENT_LIMIT,
     TAO_NETWORKS,
-    MAXINE_NETWORKS
 )
 from nvidia_tao_core.microservices.utils.airgapped_utils import AirgappedExperimentLoader
-from nvidia_tao_core.microservices.enum_constants import Backend, ExperimentNetworkArch
+from nvidia_tao_core.microservices.enum_constants import ExperimentNetworkArch
 from nvidia_tao_core.microservices.utils.stateless_handler_utils import (
     check_read_access,
     check_write_access,
@@ -49,7 +48,6 @@ from nvidia_tao_core.microservices.utils.stateless_handler_utils import (
     get_handler_job_metadata,
     is_request_automl,
     delete_dnn_status,
-    BACKEND
 )
 from nvidia_tao_core.microservices.utils.encrypt_utils import NVVaultEncryption
 from nvidia_tao_core.microservices.handlers.tensorboard_handler import TensorboardHandler
@@ -70,13 +68,12 @@ from ..utils.basic_utils import (
     get_org_experiments,
     get_user_experiments,
     get_experiment,
-    handler_level_access_control
 )
 
 # Configure logging
 logger = logging.getLogger(__name__)
 
-# Identify if nginx-ingress is enabled (should be disabled for NVCF deployments)
+# Identify if nginx-ingress is enabled
 ingress_enabled = os.getenv("INGRESSENABLED", "false") == "true"
 
 
@@ -106,8 +103,7 @@ class ExperimentHandler:
                     handler_metadata["status"] = get_handler_status(handler_metadata)
                     metadatas.append(handler_metadata)
         if not user_only:
-            maxine_request = handler_level_access_control(user_id, org_name, base_experiment=True)
-            public_experiments_metadata = get_public_experiments(maxine=maxine_request)
+            public_experiments_metadata = get_public_experiments()
             metadatas += public_experiments_metadata
         return metadatas
 
@@ -120,8 +116,7 @@ class ExperimentHandler:
         """
         # Collect all metadatas
         metadatas = []
-        maxine_request = handler_level_access_control(user_id, org_name, base_experiment=True)
-        public_experiments_metadata = get_public_experiments(maxine=maxine_request)
+        public_experiments_metadata = get_public_experiments()
         metadatas += public_experiments_metadata
         return metadatas
 
@@ -243,8 +238,6 @@ class ExperimentHandler:
         if request_dict.get("public", False):
             add_public_experiment(experiment_id)
 
-        mdl_type = request_dict.get("type", "vision")
-
         # Create metadata dict and create some initial folders
         # Initially make datasets, base_experiment None
         metadata = {"id": experiment_id,
@@ -263,7 +256,6 @@ class ExperimentHandler:
                     "read_only": request_dict.get("read_only", False),
                     "public": request_dict.get("public", False),
                     "network_arch": mdl_nw,
-                    "type": mdl_type,
                     "dataset_type": read_network_config(mdl_nw)["api_params"]["dataset_type"],
                     "dataset_formats": read_network_config(mdl_nw)["api_params"].get(
                         "formats",
@@ -284,6 +276,11 @@ class ExperimentHandler:
                     "checkpoint_choose_method": request_dict.get("checkpoint_choose_method", "best_model"),
                     "checkpoint_epoch_number": request_dict.get("checkpoint_epoch_number", {}),
                     "calibration_dataset": None,
+                    # New fields for direct dataset paths
+                    "train_dataset_paths": request_dict.get("train_dataset_paths"),
+                    "eval_dataset_path": request_dict.get("eval_dataset_path"),
+                    "inference_dataset_path": request_dict.get("inference_dataset_path"),
+                    "calibration_dataset_path": request_dict.get("calibration_dataset_path"),
                     "base_experiment_ids": [],
                     "automl_settings": request_dict.get("automl_settings", {}),
                     "metric": request_dict.get("metric", "kpi"),
@@ -294,16 +291,8 @@ class ExperimentHandler:
                     "tags": list({t.lower(): t for t in request_dict.get("tags", [])}.values()),
                     }
 
-        if not handler_level_access_control(user_id, org_name, experiment_id, "experiments", handler_metadata=metadata):
-            return Code(403, {}, "Not allowed to work with this org")
-
         if metadata.get("automl_settings", {}).get("automl_enabled") and mdl_nw in AUTOML_DISABLED_NETWORKS:
             return Code(400, {}, "automl_enabled cannot be True for unsupported network")
-        if metadata.get("automl_settings", {}).get("automl_enabled") and BACKEND == Backend.NVCF:
-            return Code(400, {}, "Automl not supported on NVCF backend, use baremetal deployments of TAO-API")
-
-        if BACKEND == Backend.NVCF and metadata.get("tensorboard_enabled", False):
-            return Code(400, {}, "Tensorboard not supported on NVCF backend, use baremetal deployments of TAO-API")
         if mdl_nw in TAO_NETWORKS and (not metadata.get("workspace")):
             return Code(400, {}, "Workspace must be provided for experiment creation")
         if not ingress_enabled and metadata.get("tensorboard_enabled", False):
@@ -340,6 +329,53 @@ class ExperimentHandler:
         )
         if error_code:
             return error_code
+
+        # Dataset structure validation (checks for required files like annotations.json)
+        train_dataset_paths = request_dict.get("train_dataset_paths")
+        eval_dataset_path = request_dict.get("eval_dataset_path")
+        inference_dataset_path = request_dict.get("inference_dataset_path")
+        calibration_dataset_path = request_dict.get("calibration_dataset_path")
+        skip_validation = request_dict.get("skip_dataset_validation", False)
+
+        if any([
+            train_dataset_paths,
+            eval_dataset_path,
+            inference_dataset_path,
+            calibration_dataset_path
+        ]) and not skip_validation:
+            from nvidia_tao_core.microservices.utils.runtime_dataset_validator import (
+                validate_all_dataset_paths_structure
+            )
+
+            network_arch = request_dict.get("network_arch")
+            if not network_arch:
+                return Code(400, {}, "network_arch is required for dataset validation")
+
+            # Prepare metadata for validation
+            validation_metadata = {
+                "train_dataset_paths": train_dataset_paths,
+                "eval_dataset_path": eval_dataset_path,
+                "inference_dataset_path": inference_dataset_path,
+                "calibration_dataset_path": calibration_dataset_path,
+                "dataset_format": request_dict.get("dataset_format"),
+                "dataset_type": request_dict.get("dataset_type"),
+                "workspace": request_dict.get("workspace")
+            }
+
+            is_valid, error_msg, validation_details = validate_all_dataset_paths_structure(
+                validation_metadata,
+                network_arch,
+                skip_validation=False
+            )
+
+            if not is_valid:
+                # Return detailed validation error
+                return Code(400, validation_details, error_msg)
+
+            logger.info(
+                f"Dataset validation passed for experiment: "
+                f"{validation_details.get('message')}"
+            )
 
         def clean_on_error(experiment_id=experiment_id):
             mongo_experiments = MongoHandler("tao", "experiments")
@@ -562,8 +598,6 @@ class ExperimentHandler:
             return Code(400, {}, "Experiment does not exist")
 
         user_id = metadata.get("user_id")
-        if not handler_level_access_control(user_id, org_name, experiment_id, "experiments", handler_metadata=metadata):
-            return Code(403, {}, "Not allowed to work with this org")
         if not check_write_access(user_id, org_name, experiment_id, kind="experiments"):
             return Code(400, {}, "User doesn't have write access to experiment")
 
@@ -619,6 +653,10 @@ class ExperimentHandler:
                     "eval_dataset",
                     "inference_dataset",
                     "calibration_dataset",
+                    "train_dataset_paths",
+                    "eval_dataset_path",
+                    "inference_dataset_path",
+                    "calibration_dataset_path",
                     "base_experiment_ids",
                     "checkpoint_choose_method",
                     "checkpoint_epoch_number"
@@ -635,18 +673,6 @@ class ExperimentHandler:
                 # If False, can set. If True, need to check if AutoML is supported
                 if value:
                     mdl_nw = metadata.get("network_arch", "")
-                    if automl_enabled and BACKEND == Backend.NVCF:
-                        return Code(
-                            400,
-                            {},
-                            "Automl not supported on NVCF backend, use baremetal deployments of TAO-API"
-                        )
-                    if tensorboard_enabled and BACKEND == Backend.NVCF:
-                        return Code(
-                            400,
-                            {},
-                            "Tensorboard not supported on NVCF backend, use baremetal deployments of TAO-API"
-                        )
                     if mdl_nw not in AUTOML_DISABLED_NETWORKS:
                         metadata[key] = request_dict.get(key, {})
                     else:
@@ -842,10 +868,6 @@ class ExperimentHandler:
         if action not in ("train", "distill", "quantize", "retrain"):
             logger.debug(f"[RESUME] Action not resumable: job_id={job_id}, action={action}")
             return Code(400, [], f"Action should be train, distill, quantize, retrain, not {action}")
-        network = handler_metadata.get("network_arch", None)
-        if network in MAXINE_NETWORKS:
-            logger.debug(f"[RESUME] Maxine network does not support resume: job_id={job_id}, network={network}")
-            return Code(400, [], "Maxine networks do not support resume.")
         if not user_id:
             logger.debug(f"[RESUME] User ID not found in metadata: experiment_id={experiment_id}")
             return Code(

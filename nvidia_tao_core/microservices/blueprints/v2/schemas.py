@@ -194,7 +194,6 @@ class AllowedDockerEnvVariables(Enum):
     CLEARML_API_SECRET_KEY = "CLEARML_API_SECRET_KEY"
 
     CLOUD_BASED = "CLOUD_BASED"
-    NVCF_HELM = "NVCF_HELM"
     TELEMETRY_OPT_OUT = "TELEMETRY_OPT_OUT"
     TAO_API_KEY = "TAO_API_KEY"
     TAO_USER_KEY = "TAO_USER_KEY"
@@ -221,43 +220,6 @@ class AllowedDockerEnvVariables(Enum):
     CUDA_OVERRIDE_VERSION = "CUDA_OVERRIDE_VERSION"
 
     LEPTON_SHARED_MEMORY_SIZE = "LEPTON_SHARED_MEMORY_SIZE"
-
-
-class NVCFEndpoint(Enum):
-    """Class defining action type enum"""
-
-    login = 'login'
-    org_gpu_types = 'org_gpu_types'
-    workspace_retrieve_datasets = 'workspace_retrieve_datasets'
-    list = 'list'
-    retrieve = 'retrieve'
-    delete = 'delete'
-    bulk_delete = 'bulk_delete'
-    create = 'create'
-    update = 'update'
-    partial_update = 'partial_update'
-    specs_schema = 'specs_schema'
-    job_run = 'job_run'
-    job_retry = 'job_retry'
-    job_list = 'job_list'
-    job_retrieve = 'job_retrieve'
-    job_schema = 'job_schema'
-    job_logs = 'job_logs'
-    job_cancel = 'job_cancel'
-    job_delete = 'job_delete'
-    job_download = 'job_download'
-    job_pause = 'job_pause'
-    jobs_cancel = 'jobs_cancel'
-    bulk_cancel = 'bulk_cancel'
-    job_resume = 'job_resume'
-    automl_details = 'automl_details'
-    get_epoch_numbers = 'get_epoch_numbers'
-    model_publish = 'model_publish'
-    remove_published_model = 'remove_published_model'
-    status_update = 'status_update'
-    log_update = 'log_update'
-    container_job_run = 'container_job_run'
-    container_job_status = 'container_job_status'
 
 
 class CloudPullTypesEnum(Enum):
@@ -387,6 +349,13 @@ class ErrorRsp(Schema):
     error_code = fields.Int(
         validate=fields.validate.Range(min=-sys.maxsize - 1, max=sys.maxsize),
         format=sys_int_format()
+    )
+    validation_details = fields.Dict(
+        allow_none=True,
+        metadata={
+            "description": "Detailed validation information including expected structure, "
+                           "actual structure, and missing files"
+        }
     )
 
 
@@ -660,26 +629,6 @@ class LoginRsp(Schema):
     user_email = fields.Str(format="regex", regex=r'.*', validate=fields.validate.Length(max=1000), allow_none=True)
 
 
-class NVCFReq(Schema):
-    """Class defining login response schema"""
-
-    class Meta:
-        """Class enabling sorting field values by the order in which they are declared"""
-
-        ordered = True
-    ngc_org_name = fields.Str(format="regex", regex=r'.*', validate=fields.validate.Length(max=1000))
-    api_endpoint = EnumField(NVCFEndpoint)
-    kind = fields.Str(format="regex", regex=r'.*', validate=fields.validate.Length(max=1000))
-    handler_id = fields.Str(format="uuid", validate=fields.validate.Length(max=36))
-    is_base_experiment = fields.Bool()
-    is_job = fields.Bool()
-    job_id = fields.Str(format="uuid", validate=fields.validate.Length(max=36))
-    action = EnumField(ActionEnum)
-    request_body = fields.Raw()
-    ngc_key = fields.Str(format="regex", regex=r'.*', validate=fields.validate.Length(max=1000))
-    is_json_request = fields.Bool()
-
-
 class GpuDetails(Schema):
     """Class defining telemetry request schema"""
 
@@ -849,13 +798,6 @@ class SlurmBackendDetails(Schema):
     slurm_metadata = fields.Dict(allow_none=True)  # For storing slurm_job_id and other runtime metadata
 
 
-class NVCFBackendDetails(Schema):
-    """Backend details for NVCF execution"""
-
-    backend_type = fields.Constant("nvcf")
-    platform_id = fields.Str(format="uuid", validate=fields.validate.Length(max=36), allow_none=True)
-
-
 class LeptonBackendDetails(Schema):
     """Backend details for Lepton execution"""
 
@@ -869,7 +811,6 @@ class BackendDetails(OneOfSchema):
     type_schemas = {
         "local": LocalBackendDetails,
         "slurm": SlurmBackendDetails,
-        "nvcf": NVCFBackendDetails,
         "lepton": LeptonBackendDetails,
     }
     type_field = "backend_type"
@@ -1965,18 +1906,41 @@ class ExperimentJobReq(Schema):
         ),
         validate=validate.Length(max=sys.maxsize)
     )
+    # New fields for direct dataset paths (alternative to UUID-based dataset references)
+    train_dataset_paths = fields.List(
+        fields.Str(validate=fields.validate.Length(max=1000)),
+        validate=validate.Length(max=sys.maxsize),
+        allow_none=True,
+        metadata={"description": "List of dataset paths (aws://, azure://, lustre://, file://, or local)"}
+    )
+    eval_dataset_path = fields.Str(
+        validate=fields.validate.Length(max=1000),
+        allow_none=True,
+        metadata={"description": "Evaluation dataset path"}
+    )
+    inference_dataset_path = fields.Str(
+        validate=fields.validate.Length(max=1000),
+        allow_none=True,
+        metadata={"description": "Inference dataset path"}
+    )
+    calibration_dataset_path = fields.Str(
+        validate=fields.validate.Length(max=1000),
+        allow_none=True,
+        metadata={"description": "Calibration dataset path"}
+    )
+    dataset_format = fields.Str(
+        validate=fields.validate.Length(max=100),
+        allow_none=True,
+        metadata={
+            "description": "Dataset format (e.g., 'llava', 'coco', 'kitti'). "
+                           "If not specified, uses network's default format"
+        }
+    )
     read_only = fields.Bool()
     public = fields.Bool()
     automl_settings = fields.Nested(AutoML, allow_none=True)
     metric = fields.Str(format="regex", regex=r'.*', validate=fields.validate.Length(max=100), allow_none=True)
-    realtime_infer = fields.Bool(default=False)
     model_params = fields.Dict(allow_none=True)
-    bundle_url = fields.Str(format="regex", regex=r'.*', validate=fields.validate.Length(max=1000), allow_none=True)
-    realtime_infer_request_timeout = fields.Int(
-        format="int64",
-        validate=validate.Range(min=0, max=sys.maxsize),
-        allow_none=True
-    )
     experiment_actions = fields.List(
         fields.Nested(ExperimentActions, allow_none=True),
         validate=validate.Length(max=sys.maxsize)
@@ -2006,6 +1970,13 @@ class ExperimentJobReq(Schema):
         fields.Int(format="int64", validate=validate.Range(min=0, max=sys.maxsize)),
         validate=validate.Length(max=sys.maxsize),
         allow_none=True
+    )
+    skip_dataset_validation = fields.Bool(
+        allow_none=True,
+        metadata={
+            "description": "Skip dataset structure validation at job creation. "
+                           "Default: False. Set to True to bypass validation checks."
+        }
     )
     kind = fields.Constant(JobKindEnum.experiment.value)
     force_create = fields.Bool(allow_none=True)
@@ -2074,7 +2045,7 @@ class ExperimentJobRsp(Schema):
         """Class enabling sorting field values by the order in which they are declared"""
 
         ordered = True
-        load_only = ("user_id", "docker_env_vars", "realtime_infer_endpoint", "realtime_infer_model_name")
+        load_only = ("user_id", "docker_env_vars")
         unknown = EXCLUDE
 
     id = fields.Str(format="uuid", validate=fields.validate.Length(max=36))
@@ -2161,6 +2132,36 @@ class ExperimentJobRsp(Schema):
         ),
         validate=validate.Length(max=sys.maxsize)
     )
+    # New fields for direct dataset paths (alternative to UUID-based dataset references)
+    train_dataset_paths = fields.List(
+        fields.Str(validate=fields.validate.Length(max=1000)),
+        validate=validate.Length(max=sys.maxsize),
+        allow_none=True,
+        metadata={"description": "List of dataset paths (aws://, azure://, lustre://, file://, or local)"}
+    )
+    eval_dataset_path = fields.Str(
+        validate=fields.validate.Length(max=1000),
+        allow_none=True,
+        metadata={"description": "Evaluation dataset path"}
+    )
+    inference_dataset_path = fields.Str(
+        validate=fields.validate.Length(max=1000),
+        allow_none=True,
+        metadata={"description": "Inference dataset path"}
+    )
+    calibration_dataset_path = fields.Str(
+        validate=fields.validate.Length(max=1000),
+        allow_none=True,
+        metadata={"description": "Calibration dataset path"}
+    )
+    dataset_format = fields.Str(
+        validate=fields.validate.Length(max=100),
+        allow_none=True,
+        metadata={
+            "description": "Dataset format (e.g., 'llava', 'coco', 'kitti'). "
+                           "If not specified, uses network's default format"
+        }
+    )
     read_only = fields.Bool()
     public = fields.Bool()
     actions = fields.List(EnumField(ActionEnum), allow_none=True, validate=validate.Length(max=sys.maxsize))
@@ -2176,27 +2177,7 @@ class ExperimentJobRsp(Schema):
     all_jobs_cancel_status = EnumField(JobStatusEnum, allow_none=True)
     automl_settings = fields.Nested(AutoML)
     metric = fields.Str(format="regex", regex=r'.*', validate=fields.validate.Length(max=100), allow_none=True)
-    realtime_infer = fields.Bool(allow_none=True)
-    realtime_infer_support = fields.Bool()
-    realtime_infer_endpoint = fields.Str(
-        format="regex",
-        regex=r'.*',
-        validate=fields.validate.Length(max=1000),
-        allow_none=True
-    )
-    realtime_infer_model_name = fields.Str(
-        format="regex",
-        regex=r'.*',
-        validate=fields.validate.Length(max=1000),
-        allow_none=True
-    )
     model_params = fields.Dict(allow_none=True)
-    realtime_infer_request_timeout = fields.Int(
-        format="int64",
-        validate=validate.Range(min=0, max=86400),
-        allow_none=True
-    )
-    bundle_url = fields.Str(format="regex", regex=r'.*', validate=fields.validate.Length(max=1000), allow_none=True)
     base_experiment_metadata = fields.Nested(BaseExperimentMetadata, allow_none=True)
     source_type = EnumField(SourceType, allow_none=True)
     experiment_actions = fields.List(

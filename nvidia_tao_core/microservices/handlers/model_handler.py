@@ -16,7 +16,6 @@
 import logging
 import traceback
 
-from nvidia_tao_core.microservices.constants import MAXINE_NETWORKS
 from nvidia_tao_core.microservices.utils import ngc_utils
 from nvidia_tao_core.microservices.utils.stateless_handler_utils import (
     check_read_access,
@@ -77,20 +76,9 @@ class ModelHandler:
             )
 
         try:
-            network_arch = handler_metadata.get('network_arch')
             source_files = []
-            if job_action == 'gen_trt_engine' and network_arch in MAXINE_NETWORKS:
-                encoder_regex = r'.*encoder.*\.(engine|engine\.trtpkg)$'
-                encoder_file = resolve_checkpoint_root_and_search(handler_metadata, job_id, regex=encoder_regex)
-                if encoder_file:
-                    source_files.append(encoder_file)
-                decoder_regex = r'.*decoder.*\.(engine|engine\.trtpkg)$'
-                decoder_file = resolve_checkpoint_root_and_search(handler_metadata, job_id, regex=decoder_regex)
-                if decoder_file:
-                    source_files.append(decoder_file)
-            else:
-                source_file = resolve_checkpoint_root_and_search(handler_metadata, job_id)
-                source_files.append(source_file)
+            source_file = resolve_checkpoint_root_and_search(handler_metadata, job_id)
+            source_files.append(source_file)
             if not source_files:
                 return Code(404, {"message": "Unable to find a model for the given job"})
 

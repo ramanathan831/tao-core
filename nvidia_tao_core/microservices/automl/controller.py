@@ -61,21 +61,13 @@ from nvidia_tao_core.microservices.utils.stateless_handler_utils import (
     delete_dnn_status,
     update_automl_stats,
     report_health_beat,
-    delete_health_beat,
-    BACKEND
+    delete_health_beat
 )
 from nvidia_tao_core.microservices.utils.automl_job_utils import (
     on_new_automl_job,
     on_delete_automl_job,
     on_cancel_automl_job
 )
-from nvidia_tao_core.microservices.enum_constants import Backend
-
-# Initialize to None to avoid possibly-used-before-assignment
-overwrite_job_logs_from_bcp = None
-if BACKEND == Backend.NVCF:
-    from nvidia_tao_core.microservices.dgx_controller import overwrite_job_logs_from_bcp
-
 # Configure logging
 TAO_LOG_LEVEL = os.getenv('TAO_LOG_LEVEL', 'INFO').upper()
 tao_log_level = getattr(logging, TAO_LOG_LEVEL, logging.INFO)
@@ -1299,8 +1291,6 @@ class Controller:
                 self.save_state()
                 if status == JobStates.success:
                     container_log_file = f"{self.root}/{rec.job_id}/log.txt"
-                    if BACKEND == Backend.NVCF:
-                        overwrite_job_logs_from_bcp(container_log_file, rec.job_id)
                     if os.path.exists(container_log_file):
                         with open(container_log_file, "a", encoding='utf-8') as f:
                             f.write("\nEOF\n")
