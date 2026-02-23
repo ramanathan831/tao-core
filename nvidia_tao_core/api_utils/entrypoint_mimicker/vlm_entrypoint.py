@@ -156,6 +156,160 @@ def dual_output(log_file=None):
         yield sys.stdout, None
 
 
+def _build_cosmos_rl_multinode_command(config_path, script_path, train_args):
+    """Build command for cosmos-rl multi-node SLURM launch.
+
+    Each node determines its role (controller, policy, rollout) from
+    environment variables set by the SLURM sbatch script and runs the
+    appropriate cosmos-rl worker.
+
+    Env vars expected (set by slurm_handler sbatch / SLURM runtime):
+        NODE_RANK: This node's rank (set from SLURM_NODEID in sbatch)
+        SLURM_NODEID: This node's rank (set by Slurm, forwarded via container-env)
+        SLURMD_NODENAME: This node's hostname (set by Slurm, forwarded via container-env)
+        NUM_POLICY_NODES: Number of policy nodes
+        NUM_ROLLOUT_NODES: Number of rollout nodes
+        POLICY_NODES: Space-separated hostnames of policy nodes
+        ROLLOUT_NODES: Space-separated hostnames of rollout nodes
+        COSMOS_CONTROLLER_HOST: 'hostname:port' of the controller
+        CONTROLLER_PORT: Port for the controller
+        NODE_LAUNCH_METADATA_POLICY: JSON metadata for policy nodes
+        NODE_LAUNCH_METADATA_ROLLOUT: JSON metadata for rollout nodes
+    """
+    node_id = int(os.environ.get("SLURM_NODEID", os.environ.get("NODE_RANK", "0")))
+    n_policy_nodes = int(os.environ.get("NUM_POLICY_NODES", "1"))
+    controller_port = os.environ.get("CONTROLLER_PORT", "8082")
+
+    # Determine this node's role.
+    # With the 3-srun pattern, COSMOS_NODE_ROLE is explicitly set per-srun.
+    # Fall back to SLURM_NODEID-based detection for single-srun compat.
+    explicit_role = os.environ.get("COSMOS_NODE_ROLE", "")
+    if explicit_role in ("controller", "policy", "rollout"):
+        role = explicit_role
+        if role in ("controller", "policy"):
+            local_node_list = os.environ.get("POLICY_NODES", "")
+        else:
+            local_node_list = os.environ.get("ROLLOUT_NODES", "")
+    elif node_id < n_policy_nodes:
+        role = "policy"
+        local_node_list = os.environ.get("POLICY_NODES", "")
+    else:
+        role = "rollout"
+        local_node_list = os.environ.get("ROLLOUT_NODES", "")
+
+    # Set LOCAL_NODE_LIST for cosmos_rl_slurm_launch.py
+    os.environ["LOCAL_NODE_LIST"] = local_node_list
+
+    logger.info(
+        f"[COSMOS-RL MULTINODE] Node {node_id}, role={role}, "
+        f"controller={os.environ.get('COSMOS_CONTROLLER_HOST', 'unknown')}, "
+        f"LOCAL_NODE_LIST={local_node_list}"
+    )
+
+    # Discover the cosmos_rl package directory inside the container.
+    # The container may have multiple cosmos_rl installations (e.g.
+    # /workspace/cosmos_rl and /workspace/cosmos_rl_merged/cosmos_rl).
+    # We need the one that actually contains the launcher scripts, so
+    # iterate __path__ entries and pick the first that has them.
+    # Falls back to known locations if none match.
+    cosmos_pkg_cmd = r'''COSMOS_RL_PKG=$(python -c "
+import cosmos_rl, os
+for p in cosmos_rl.__path__:
+    if os.path.isfile(os.path.join(p, 'tools', 'slurm', 'cosmos_rl_slurm_launch.py')):
+        print(p); break
+else:
+    for fallback in ['/workspace/cosmos_rl_merged/cosmos_rl', '/workspace/cosmos_rl']:
+        if os.path.isfile(os.path.join(fallback, 'tools', 'slurm', 'cosmos_rl_slurm_launch.py')):
+            print(fallback); break
+    else:
+        print(list(cosmos_rl.__path__)[0])
+")'''
+
+    # Build the launcher script and args.
+    # When a custom hook script (.py file) is provided, it *replaces* the
+    # default launcher module (cosmos_rl.dispatcher.run_web_panel).
+    # This matches how cosmos_rl's own dispatch_job.py passes the launcher
+    # arg — the custom script becomes the entrypoint for both controller
+    # and workers, and internally calls cosmos_rl.launcher.worker_entry.run().
+    if script_path:
+        launcher_script = script_path
+    else:
+        launcher_script = "cosmos_rl.dispatcher.run_web_panel"
+    launcher_args_str = ""
+
+    # All nodes need this preamble
+    # Activate the cosmos_rl venv if it exists — the system Python may only
+    # have a namespace-packaged cosmos_rl with limited dependencies, while the
+    # venv has the full environment needed by launcher scripts.
+    preamble = f"""set -e
+export COSMOS_LOG_LEVEL=DEBUG
+if [ -f /opt/venv/cosmos_rl/bin/activate ]; then
+    source /opt/venv/cosmos_rl/bin/activate
+fi
+{cosmos_pkg_cmd}
+echo "COSMOS_RL_PKG=$COSMOS_RL_PKG"
+export LOCAL_NODE_LIST="{local_node_list}"
+"""
+
+    if role == "controller":
+        # 3-srun pattern: dedicated controller srun (runs ONLY the controller)
+        launch_cmd = f"""{preamble}
+echo "[Node {node_id}] Starting controller on port {controller_port}"
+export COSMOS_LOG_LEVEL=DEBUG
+bash $COSMOS_RL_PKG/launcher/launch_controller.sh \\
+    --port {controller_port} \\
+    --config {config_path} \\
+    --script {launcher_script} {launcher_args_str}
+"""
+    elif explicit_role:
+        # 3-srun pattern: dedicated policy or rollout srun
+        launch_cmd = f"""{preamble}
+echo "[Node {node_id}] Starting {role} worker"
+python $COSMOS_RL_PKG/tools/slurm/cosmos_rl_slurm_launch.py \\
+    --type {role} \\
+    --config {config_path} \\
+    {launcher_script} {launcher_args_str}
+"""
+    elif node_id == 0:
+        # Single-srun fallback: Node 0 runs controller + policy together
+        launch_cmd = f"""{preamble}
+echo "[Node {node_id}] Starting controller on port {controller_port}"
+bash $COSMOS_RL_PKG/launcher/launch_controller.sh \\
+    --port {controller_port} \\
+    --config {config_path} \\
+    --script {launcher_script} {launcher_args_str} &
+controller_pid=$!
+
+sleep 3
+
+echo "[Node {node_id}] Starting policy worker"
+set +e
+python $COSMOS_RL_PKG/tools/slurm/cosmos_rl_slurm_launch.py \\
+    --type policy \\
+    --config {config_path} \\
+    {launcher_script} {launcher_args_str}
+policy_exit=$?
+set -e
+
+echo "[Node {node_id}] Policy worker exited with code $policy_exit"
+kill $controller_pid 2>/dev/null || true
+wait $controller_pid 2>/dev/null || true
+exit $policy_exit
+"""
+    else:
+        # Single-srun fallback: other nodes run their detected role
+        launch_cmd = f"""{preamble}
+echo "[Node {node_id}] Starting {role} worker"
+python $COSMOS_RL_PKG/tools/slurm/cosmos_rl_slurm_launch.py \\
+    --type {role} \\
+    --config {config_path} \\
+    {launcher_script} {launcher_args_str}
+"""
+
+    logger.info(f"[COSMOS-RL MULTINODE] Launch command for node {node_id}:\n{launch_cmd}")
+    return ["/bin/bash", "-c", launch_cmd]
+
+
 def vlm_launch(neural_network_name, action, specs, job_id=""):
     """Launch a VLM model.
 
@@ -184,12 +338,22 @@ def vlm_launch(neural_network_name, action, specs, job_id=""):
         # Use TAO_API_RESULTS_DIR for SLURM compatibility, fallback to /results
         results_base = os.getenv('TAO_API_RESULTS_DIR', '/results')
         logger.info(f"results_base: {results_base}")
-        suffix = f"-{action}" if action != "train" else ""
-        launch_cmd = (
-            f"{neural_network_name}{suffix} --config {results_base}/{job_id}/spec.toml {train_args}"
-        )
-        logger.info(f"launch_cmd: {launch_cmd}")
-        command = ["/bin/bash", "-c", launch_cmd]
+        config_path = f"{results_base}/{job_id}/spec.toml"
+
+        # Check for multi-node SLURM mode
+        is_multinode = os.environ.get("COSMOS_RL_MULTINODE") == "1"
+
+        if is_multinode:
+            command = _build_cosmos_rl_multinode_command(
+                config_path, script_path, train_args
+            )
+        else:
+            suffix = f"-{action}" if action != "train" else ""
+            launch_cmd = (
+                f"{neural_network_name}{suffix} --config {config_path} {train_args}"
+            )
+            logger.info(f"launch_cmd: {launch_cmd}")
+            command = ["/bin/bash", "-c", launch_cmd]
     else:
         cli_args = convert_dict_to_cli_args(specs)
         cli_args = " ".join(cli_args)

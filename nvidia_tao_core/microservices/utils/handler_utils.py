@@ -1055,6 +1055,30 @@ def _get_cosmos_rl_total_gpus(spec):
         return None
 
 
+def _get_cosmos_rl_num_nodes(spec, gpus_per_node=8):
+    """Calculate the number of SLURM nodes needed for cosmos-rl.
+
+    Computes total GPUs from the parallelism config and divides by
+    gpus_per_node to get the required number of nodes.
+
+    Args:
+        spec: The specification dictionary
+        gpus_per_node: Number of GPUs per node (default: 8)
+
+    Returns:
+        int: Number of nodes required, or None if calculation fails
+    """
+    total_gpus = _get_cosmos_rl_total_gpus(spec)
+    if total_gpus is None or total_gpus <= 0:
+        return None
+    num_nodes = math.ceil(total_gpus / gpus_per_node)
+    logger.debug(
+        f"[COSMOS-RL] num_nodes={num_nodes} "
+        f"(total_gpus={total_gpus} / gpus_per_node={gpus_per_node})"
+    )
+    return num_nodes
+
+
 def get_num_gpus_from_spec(spec, action, network=None, default=0):
     """Validate the gpus requested"""
     if not isinstance(spec, dict):

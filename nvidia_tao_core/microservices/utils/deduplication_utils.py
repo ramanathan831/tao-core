@@ -19,6 +19,8 @@ import os
 
 if os.getenv("BACKEND"):
     from nvidia_tao_core.microservices.utils.mongo_utils import MongoHandler
+else:
+    MongoHandler = None
 
 # Configure logging
 logger = logging.getLogger(__name__)
