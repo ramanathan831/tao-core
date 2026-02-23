@@ -42,11 +42,13 @@ class CLIPModelConfig:
     """CLIP model configuration."""
 
     type: str = STR_FIELD(
-        value="siglip2-so400m",
-        default_value="siglip2-so400m",
+        value="siglip2-so400m-patch16-256",
+        default_value="siglip2-so400m-patch16-256",
         description="CLIP model type. "
                     "C-RADIO: c-radio_v3-h, c-radio_v3-l, c-radio_v3-b, c-radio_v3-g; "
-                    "SigLIP2: siglip2-so400m, siglip2-so400m-512, siglip2-g-384; "
+                    "SigLIP2: siglip2-so400m-patch16-naflex (NaFlex), siglip2-so400m-patch14-224, "
+                    "siglip2-so400m-patch14-384, siglip2-so400m-patch16-256, "
+                    "siglip2-so400m-patch16-384, siglip2-so400m-patch16-512; "
                     "OpenCLIP: ViT-L-14-SigLIP-CLIPA-224, ViT-L-14-SigLIP-CLIPA-336, "
                     "ViT-H-14-SigLIP-CLIPA-224.",
         display_name="Model Type",
@@ -519,7 +521,8 @@ class CLIPExportConfig:
     checkpoint: Optional[str] = STR_FIELD(
         value=None,
         default_value=None,
-        description="Path to trained model checkpoint (.ckpt or .pth).",
+        description="Path to trained model checkpoint (.ckpt or .pth). "
+                    "If null, exports directly from HuggingFace pretrained weights.",
         display_name="Checkpoint Path",
     )
     onnx_file: Optional[str] = STR_FIELD(
