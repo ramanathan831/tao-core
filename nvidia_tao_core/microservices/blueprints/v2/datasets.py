@@ -486,9 +486,27 @@ def dataset_create(org_name):
             f"Sunset date: {DATASET_API_SUNSET_DATE}"
         )
 
+    # Determine appropriate status code:
+    # - 201 for newly created dataset
+    # - 200 for existing dataset returned due to deduplication
     if response.code == 200:
-        response.code = 201
-    resp = make_response(jsonify(schema_dict), response.code)
+        if "already exists" in response.message:
+            # Return 200 for existing dataset
+            http_status = 200
+            # Add informational message to response
+            schema_dict['_message'] = (
+                "A dataset with the same configuration already exists. "
+                "Returning existing dataset. "
+                "To create a new dataset anyway, set 'force_create': true in the request body."
+            )
+            schema_dict['_duplicate'] = True
+        else:
+            # Return 201 for newly created dataset
+            http_status = 201
+    else:
+        http_status = response.code
+
+    resp = make_response(jsonify(schema_dict), http_status)
     return add_deprecation_headers(resp)
 
 

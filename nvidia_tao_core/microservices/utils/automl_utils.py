@@ -440,6 +440,7 @@ def apply_automl_custom_param_ranges(job_id, network_arch, automl_range_override
             custom_depends_on = param_range.get("depends_on")
             custom_math_cond = param_range.get("math_cond")
             custom_parent_param = param_range.get("parent_param")
+            disable_list = param_range.get("disable_list", False)
 
             # Check if parameter exists in schema
             if param_name not in format_json_schema:
@@ -566,8 +567,15 @@ def apply_automl_custom_param_ranges(job_id, network_arch, automl_range_override
                 "option_weights": custom_weights,
                 "depends_on": custom_depends_on,
                 "math_cond": custom_math_cond,
-                "parent_param": custom_parent_param
+                "parent_param": custom_parent_param,
+                "disable_list": disable_list
             }
+            # Debug: Log when disable_list is True
+            if disable_list:
+                logger.info(
+                    f"[AUTOML-CUSTOM-RANGE] Parameter '{param_name}': disable_list=True, "
+                    f"valid_min={custom_min}, valid_max={custom_max}"
+                )
 
         if errors:
             error_msg = f"Validation errors: {'; '.join(errors)}"

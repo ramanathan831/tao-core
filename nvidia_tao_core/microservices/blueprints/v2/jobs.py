@@ -287,8 +287,13 @@ def job_create(org_name):
             log_api_error(user_id, org_name, schema_dict, DataMonitorLogTypeEnum.tao_experiment, action="creation")
             return make_response(jsonify(schema_dict), experiment_response.code)
         experiment_id = experiment_response.data.get("id")
+
+        # Note: Job deduplication happens later in job_run() based on the experiment's existing jobs
     # Get automl_settings if present (only for experiment jobs)
     automl_settings = request_dict.get('automl_settings') if kind == 'experiment' else None
+
+    # Get force_create parameter
+    force_create = request_dict.get('force_create', False)
 
     # Get job response
     job_response = JobHandler.job_run(
@@ -303,7 +308,8 @@ def job_create(org_name):
         retain_checkpoints_for_resume=retain_checkpoints_for_resume,
         early_stop_epoch=early_stop_epoch,
         timeout_minutes=timeout_minutes,
-        automl_settings=automl_settings
+        automl_settings=automl_settings,
+        force_create=force_create
     )
     if job_response.code != 200:
         schema = ErrorRsp()
@@ -352,7 +358,23 @@ def job_create(org_name):
         tags = dataset.get('tags', [])
         combined_data = {"tags": tags} | job
     schema_dict = schema.dump(schema.load(combined_data))
-    return make_response(jsonify(schema_dict), 201)
+
+    # Determine appropriate status code:
+    # - 201 for newly created job
+    # - 200 for existing job returned due to deduplication
+    if "already exists" in job_response.message:
+        status_code = 200
+        # Add informational message to response
+        schema_dict['_message'] = (
+            "A job with the same parameters already exists. "
+            "Returning existing job. "
+            "To create a new job anyway, set 'force_create': true in the request body."
+        )
+        schema_dict['_duplicate'] = True
+    else:
+        status_code = 201
+
+    return make_response(jsonify(schema_dict), status_code)
 
 
 @jobs_bp_v2.route('/orgs/<org_name>/jobs/<job_id>', methods=['GET'])

@@ -194,7 +194,7 @@ def check_imports_exist(file_path, imports_list):
         'hydra', 'clearml', 'wandb',
         'pytorch_lightning', 'tensorflow', 'mpi4py',
         'pycuda', 'pycuda.driver', 'torch',
-        'diffusers', 'imageio', 'release'
+        'diffusers', 'imageio', 'release', 'transformers'
     ]
 
     for imp in imports_list:

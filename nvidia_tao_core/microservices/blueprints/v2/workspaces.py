@@ -560,10 +560,28 @@ def workspace_create(org_name):
     logger.info(f"Response: {response.data}")
     # Load metadata in schema and return
     schema_dict = schema.dump(schema.load(response.data))
-    logger.info(f"Schema dict: {schema_dict}")
+
+    # Determine appropriate status code:
+    # - 201 for newly created workspace
+    # - 200 for existing workspace returned due to deduplication
     if response.code == 200:
-        response.code = 201
-    return make_response(jsonify(schema_dict), response.code)
+        if "already exists" in response.message:
+            # Return 200 for existing workspace
+            http_status = 200
+            # Add informational message to response
+            schema_dict['_message'] = (
+                "A workspace with the same cloud configuration already exists. "
+                "Returning existing workspace. "
+                "To create a new workspace anyway, set 'force_create': true in the request body."
+            )
+            schema_dict['_duplicate'] = True
+        else:
+            # Return 201 for newly created workspace
+            http_status = 201
+    else:
+        http_status = response.code
+
+    return make_response(jsonify(schema_dict), http_status)
 
 
 @workspaces_bp_v2.route('/orgs/<org_name>/workspaces/<workspace_id>', methods=['PUT'])
