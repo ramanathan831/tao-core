@@ -115,6 +115,7 @@ class DepthNetModelConfig:
         description="The width of the correlation pyramid",
         display_name="correlation pyramid width",
         valid_min=1,
+        valid_max=256,
         automl_enabled="TRUE"
     )
     cv_group: int = INT_FIELD(
@@ -123,6 +124,7 @@ class DepthNetModelConfig:
         description="cv group",
         display_name="cv group",
         valid_min=1,
+        valid_max=64,
         automl_enabled="TRUE"
     )
     train_iters: int = INT_FIELD(
@@ -145,6 +147,7 @@ class DepthNetModelConfig:
         description="Volume dimension",
         display_name="volume dimension",
         valid_min=1,
+        valid_max=256,
         automl_enabled="TRUE"
     )
     low_memory: int = INT_FIELD(

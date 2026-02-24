@@ -377,8 +377,8 @@ class ExperimentConfig:
     """Experiment configuration for Cosmos-RL evaluation."""
 
     results_dir: str = STR_FIELD(
-        default_value="/results",
-        value="/results",
+        default_value="",
+        value="",
         display_name="Results directory",
         description="Directory to save evaluation results"
     )

@@ -765,8 +765,8 @@ class ExperimentConfig:
         description="Redis."
     )
     results_dir: str = STR_FIELD(
-        value="/results",
-        default_value="/results",
+        value="",
+        default_value="",
         display_name="Output directory",
         description="Output directory."
     )

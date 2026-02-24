@@ -71,6 +71,8 @@ class CNOptimConfig:
     momentum: float = FLOAT_FIELD(
         value=0.9,
         default_value=0.9,
+        valid_min=0.0,
+        valid_max=1.0,
         math_cond="> 0.0",
         display_name="momentum - AdamW",
         description="The momentum for the AdamW optimizer.",
@@ -79,6 +81,8 @@ class CNOptimConfig:
     weight_decay: float = FLOAT_FIELD(
         value=0.01,
         default_value=0.01,
+        valid_min=0.0,
+        valid_max=1.0,
         math_cond="> 0.0",
         display_name="weight decay",
         description="The weight decay coefficient.",
@@ -273,6 +277,8 @@ class RandomColor:
     brightness: float = FLOAT_FIELD(
         value=0.3,
         default_value=0.3,
+        valid_min=0.0,
+        valid_max=2.0,
         math_cond="> 0.0",
         description="Random Color Brightness",
         automl_enabled="TRUE"
@@ -280,6 +286,8 @@ class RandomColor:
     contrast: float = FLOAT_FIELD(
         value=0.3,
         default_value=0.3,
+        valid_min=0.0,
+        valid_max=2.0,
         math_cond="> 0.0",
         description="Random Color Contrast",
         automl_enabled="TRUE"
@@ -287,6 +295,8 @@ class RandomColor:
     saturation: float = FLOAT_FIELD(
         value=0.3,
         default_value=0.3,
+        valid_min=0.0,
+        valid_max=2.0,
         math_cond="> 0.0",
         description="Random Color Saturation",
         automl_enabled="TRUE"
@@ -294,6 +304,8 @@ class RandomColor:
     hue: float = FLOAT_FIELD(
         value=0.3,
         default_value=0.3,
+        valid_min=0.0,
+        valid_max=0.5,
         math_cond="> 0.0",
         description="Random Color Hue",
         automl_enabled="TRUE"
