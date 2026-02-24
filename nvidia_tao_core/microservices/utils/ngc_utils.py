@@ -50,6 +50,31 @@ class ErrorResponse:
         self.ok = False
 
 
+def send_ngc_api_request_without_retry(
+        endpoint,
+        requests_method,
+        request_body,
+        json=False,
+        ngc_key="",
+        accept_encoding="identity"):
+    """Send NGC API requests without retries"""
+    headers = {"Authorization": f"Bearer {ngc_key}"}
+    if accept_encoding:
+        headers['Accept-Encoding'] = accept_encoding
+    if requests_method == "POST":
+        if json:
+            headers['accept'] = 'application/json'
+            headers['Content-Type'] = 'application/json'
+        response = requests.post(url=endpoint, data=request_body, headers=headers, timeout=TIMEOUT)
+    elif requests_method == "GET":
+        response = requests.get(url=endpoint, headers=headers, timeout=TIMEOUT)
+    elif requests_method == "DELETE":
+        response = requests.delete(url=endpoint, headers=headers, timeout=TIMEOUT)
+    else:
+        raise ValueError(f"Unsupported request method: {requests_method}")
+    return response
+
+
 @retry_method(response=True)
 def send_ngc_api_request(endpoint, requests_method, request_body, json=False, ngc_key="", accept_encoding="identity"):
     """Send NGC API requests with token refresh, retries, and timeout handling"""
@@ -119,7 +144,7 @@ def get_user_info(ngc_key: str, accept_encoding: str = "identity") -> requests.R
     endpoint = "https://api.ngc.nvidia.com/v2/users/me"
 
     try:
-        response = send_ngc_api_request(
+        response = send_ngc_api_request_without_retry(
             endpoint=endpoint,
             requests_method="GET",
             request_body={},

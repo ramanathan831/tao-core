@@ -304,6 +304,7 @@ class SpecHandler:
         try:
             json_schema = generate_schema(microservices_network, microservices_action)
         except Exception as e:
+            logger.error(traceback.format_exc())
             logger.error("Exception thrown in get_spec_schema_without_handler_id is %s", str(e))
             logger.error("Unable to fetch schema from tao_core")
 

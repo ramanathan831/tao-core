@@ -1,0 +1,129 @@
+{
+    "api_params": {
+        "dataset_type": "image_classification",
+        "actions": ["train", "evaluate", "export", "inference", "gen_trt_engine"],
+        "formats": ["default"],
+        "accepted_ds_intents": ["training", "evaluation", "testing"],
+        "image": "TAO_PYTORCH",
+        "spec_backend": "yaml",
+        "actions_pipe": {
+            "train": "train",
+            "evaluate": "evaluate",
+            "export": "export_with_spec",
+            "inference": "inference",
+            "gen_trt_engine": "gen_trt_engine"
+        }
+    },
+    "data_sources": {
+        "train": {
+            "dataset.train.datasets": {
+                "source": "train_datasets",
+                "multiple_sources": true,
+                "mapping": {
+                    "root_dir": {
+                        "path": "images.tar.gz"
+                    },
+                    "image_list_file": {
+                        "path": "image_list.txt"
+                    },
+                    "label_dir": {
+                        "path": "labels.tar.gz"
+                    }
+                }
+            },
+            "dataset.val.dataset.root_dir": {
+                "source": "eval_dataset",
+                "multiple_sources": false,
+                "path": "images.tar.gz"
+            },
+            "dataset.val.dataset.image_list_file": {
+                "source": "eval_dataset",
+                "multiple_sources": false,
+                "path": "image_list.txt"
+            },
+            "dataset.val.dataset.label_dir": {
+                "source": "eval_dataset",
+                "multiple_sources": false,
+                "path": "labels.tar.gz"
+            },
+            "dataset.val.classnames_file": {
+                "source": "eval_dataset",
+                "multiple_sources": false,
+                "path": "class_name_list.txt"
+            }
+        },
+        "evaluate": {
+            "dataset.val.dataset.root_dir": {
+                "source": "eval_dataset",
+                "multiple_sources": false,
+                "path": "images.tar.gz"
+            },
+            "dataset.val.dataset.image_list_file": {
+                "source": "eval_dataset",
+                "multiple_sources": false,
+                "path": "image_list.txt"
+            },
+            "dataset.val.dataset.label_dir": {
+                "source": "eval_dataset",
+                "multiple_sources": false,
+                "path": "labels.tar.gz"
+            },
+            "dataset.val.classnames_file": {
+                "source": "eval_dataset",
+                "multiple_sources": false,
+                "path": "class_name_list.txt"
+            }
+        },
+        "inference": {
+            "inference.image_dir": {
+                "source": "inference_dataset",
+                "multiple_sources": false,
+                "path": "images.tar.gz"
+            },
+            "inference.text_file": {
+                "source": "inference_dataset",
+                "multiple_sources": false,
+                "optional": true,
+                "path": "prompts.txt"
+            }
+        }
+    },
+    "metrics": {
+        "available_metrics": [
+            "val/accuracy_top1",
+            "val/accuracy_top5",
+            "test/accuracy_top1",
+            "test/accuracy_top5"
+        ],
+        "monitoring_metric": "val/accuracy_top1"
+    },
+    "spec_params": {
+        "train": {
+            "results_dir": "output_dir",
+            "train.pretrained_model_path": "ptm_if_no_resume_model",
+            "train.resume_training_checkpoint_path": "resume_model",
+            "encryption_key": "key"
+        },
+        "evaluate": {
+            "results_dir": "output_dir",
+            "evaluate.checkpoint": "parent_model",
+            "evaluate.trt_engine": "parent_model",
+            "encryption_key": "key"
+        },
+        "export": {
+            "results_dir": "output_dir",
+            "export.checkpoint": "parent_model",
+            "export.onnx_file": "create_onnx_file",
+            "encryption_key": "key"
+        },
+        "inference": {
+            "results_dir": "output_dir",
+            "inference.checkpoint": "parent_model",
+            "inference.trt_engine": "parent_model",
+            "encryption_key": "key"
+        },
+        "gen_trt_engine": {
+            "results_dir": "output_dir"
+        }
+    }
+}
