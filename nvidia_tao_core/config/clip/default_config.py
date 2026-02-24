@@ -213,7 +213,6 @@ class CLIPTrainDataConfig:
     )
     wds: Optional[CLIPWDSConfig] = DATACLASS_FIELD(
         CLIPWDSConfig(),
-        default_value=CLIPWDSConfig(),
         description="WebDataset configuration (used when type='wds').",
     )
     batch_size: int = INT_FIELD(
@@ -237,15 +236,14 @@ class CLIPValDataConfig:
     """Validation data configuration."""
 
     type: str = STR_FIELD(
-        value="classification",
-        default_value="classification",
+        value="custom",
+        default_value="custom",
         valid_options="classification,custom",
         description="Validation dataset type: 'classification' (torchvision ImageFolder) or 'custom'.",
         display_name="Dataset Type",
     )
     dataset: CLIPDataPathConfig = DATACLASS_FIELD(
         CLIPDataPathConfig(),
-        default_value=CLIPDataPathConfig(),
         description="Validation dataset path configuration.",
     )
     batch_size: int = INT_FIELD(
@@ -288,17 +286,14 @@ class CLIPDatasetConfig:
 
     train: CLIPTrainDataConfig = DATACLASS_FIELD(
         CLIPTrainDataConfig(),
-        default_value=CLIPTrainDataConfig(),
         description="Training dataset configuration.",
     )
     val: CLIPValDataConfig = DATACLASS_FIELD(
         CLIPValDataConfig(),
-        default_value=CLIPValDataConfig(),
         description="Validation dataset configuration.",
     )
     augmentation: CLIPAugmentationConfig = DATACLASS_FIELD(
         CLIPAugmentationConfig(),
-        default_value=CLIPAugmentationConfig(),
         description="Data augmentation configuration.",
     )
     pin_memory: bool = BOOL_FIELD(
@@ -391,7 +386,6 @@ class CLIPTrainConfig(TrainConfig):
 
     optim: CLIPOptimConfig = DATACLASS_FIELD(
         CLIPOptimConfig(),
-        default_value=CLIPOptimConfig(),
         description="Optimizer configuration with per-tower learning rates.",
     )
     loss_type: str = STR_FIELD(
@@ -619,7 +613,7 @@ class CLIPTrtConfig(TrtConfig):
 class CLIPGenTrtEngineConfig(GenTrtEngineConfig):
     """CLIP TRT engine generation config."""
 
-    tensorrt: CLIPTrtConfig = DATACLASS_FIELD(CLIPTrtConfig(), default_value=CLIPTrtConfig())
+    tensorrt: CLIPTrtConfig = DATACLASS_FIELD(CLIPTrtConfig())
 
 
 # =============================================================================
@@ -637,36 +631,29 @@ class CLIPExperimentConfig(CommonExperimentConfig):
     )
     model: CLIPModelConfig = DATACLASS_FIELD(
         CLIPModelConfig(),
-        default_value=CLIPModelConfig(),
         description="Model config.",
     )
     dataset: CLIPDatasetConfig = DATACLASS_FIELD(
         CLIPDatasetConfig(),
-        default_value=CLIPDatasetConfig(),
         description="Dataset config.",
     )
     train: CLIPTrainConfig = DATACLASS_FIELD(
         CLIPTrainConfig(),
-        default_value=CLIPTrainConfig(),
         description="Training config.",
     )
     evaluate: CLIPInferenceEvalConfig = DATACLASS_FIELD(
         CLIPInferenceEvalConfig(),
-        default_value=CLIPInferenceEvalConfig(),
         description="Evaluation config.",
     )
     inference: CLIPInferenceEvalConfig = DATACLASS_FIELD(
         CLIPInferenceEvalConfig(),
-        default_value=CLIPInferenceEvalConfig(),
         description="Inference config.",
     )
     export: CLIPExportConfig = DATACLASS_FIELD(
         CLIPExportConfig(),
-        default_value=CLIPExportConfig(),
         description="Export config.",
     )
     gen_trt_engine: CLIPGenTrtEngineConfig = DATACLASS_FIELD(
         CLIPGenTrtEngineConfig(),
-        default_value=CLIPGenTrtEngineConfig(),
         description="TensorRT engine generation config.",
     )

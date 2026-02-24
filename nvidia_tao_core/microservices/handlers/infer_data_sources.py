@@ -1153,6 +1153,10 @@ def apply_data_source_config(config, job_context, handler_metadata):
                     set_nested_config_value(config, config_path, result)
             else:
                 path = source_config.get("path", "")
+                # Skip optional paths that don't exist (user can still provide via specs)
+                if source_config.get("optional") and path:
+                    if not check_file_exists_in_cloud(source_ds_metadata, source_root, path):
+                        continue
                 if path and not dataset_convert_downloaded_locally:
                     # Resolve tar file to folder if tar doesn't exist but folder does
                     resolved_path = resolve_tar_or_folder_path(source_ds_metadata, source_root, path)

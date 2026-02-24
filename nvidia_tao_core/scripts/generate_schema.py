@@ -39,6 +39,8 @@ def generate_schema(neural_network_name, action=""):
             f"nvidia_tao_core.config.{neural_network_name}.{action}"
         )
         expConfig = imported_module.ExperimentConfig()
+    elif neural_network_name == "clip":
+        expConfig = imported_module.CLIPExperimentConfig()
     else:
         expConfig = imported_module.ExperimentConfig()
     json_with_meta_config = dataclass2json_converter.dataclass_to_json(expConfig)
