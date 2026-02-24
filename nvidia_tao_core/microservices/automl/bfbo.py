@@ -197,7 +197,8 @@ class BFBO(AutoMLAlgorithmBase):
             )
 
             # Apply math condition if specified
-            if math_cond and type(math_cond) is str:
+            # Skip relational constraints (like "> depends_on") as they're handled in base class
+            if math_cond and type(math_cond) is str and "depends_on" not in math_cond:
                 parts = math_cond.split(" ")
                 if len(parts) >= 2:
                     operator = parts[0]
@@ -285,7 +286,8 @@ class BFBO(AutoMLAlgorithmBase):
             quantized_int = int(round(continuous_value))
 
             # Apply math condition if specified
-            if math_cond and type(math_cond) is str:
+            # Skip relational constraints (like "> depends_on") as they're handled in base class
+            if math_cond and type(math_cond) is str and "depends_on" not in math_cond:
                 parts = math_cond.split(" ")
                 if len(parts) >= 2:
                     operator = parts[0]
