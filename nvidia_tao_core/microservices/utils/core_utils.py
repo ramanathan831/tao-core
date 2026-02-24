@@ -340,21 +340,33 @@ def merge_nested_dicts(dict1, dict2):
     return merged_dict
 
 
-def get_admin_key(legacy_key=False):
-    """Get admin api key from k8s secret"""
+def _get_key_from_secrets_file():
+    """Try to read NGC API key from the mounted secrets.json file."""
+    secrets_path = os.getenv("VAULT_SECRET_FILE", "/var/secrets/secrets.json")
     try:
-        # TODO: Use a better way to get the secret for various deployments
+        if os.path.isfile(secrets_path):
+            with open(secrets_path, "r", encoding="utf-8") as f:
+                secrets = json.load(f)
+            key = secrets.get("ngc_api_key", "")
+            if key:
+                logger.info("Obtained NGC API key from %s", secrets_path)
+                return key
+    except Exception as e:
+        logger.warning("Failed to read NGC key from %s: %s", secrets_path, e)
+    return ""
+
+
+def get_admin_key(legacy_key=False):
+    """Get admin api key from k8s secret, secrets file, or environment."""
+    try:
         try:
             if os.getenv("DEV_MODE", "False").lower() in ("true", "1"):
-                # DEV_MODE, get api key from env. It's used to avoid creating a secret in local dev env
-                # same env variable is also used in runtests.sh and build.sh
                 key = os.environ.get('NGC_KEY')
                 if key:
                     return key
                 config.load_kube_config()
             else:
                 config.load_incluster_config()
-            # Secret is in k8s in case of NGC deployment
                 secret = client.CoreV1Api().read_namespaced_secret("adminclustersecret", "default")
         except client.exceptions.ApiException as e:
             if e.status == 404:
@@ -362,10 +374,10 @@ def get_admin_key(legacy_key=False):
                 logger.info("Falling back to bcpclustersecret")
                 secret = get_bcp_key()
                 if not secret:
-                    return ""
+                    return _get_key_from_secrets_file()
                 return secret
             logger.error("Failed to obtain secret from k8s: %s", e)
-            return ""
+            return _get_key_from_secrets_file()
 
         encoded_key = base64.b64decode(next(iter(secret.data.values())))
         key = json.loads(encoded_key)["auths"]["nvcr.io"]["password"]
@@ -373,7 +385,7 @@ def get_admin_key(legacy_key=False):
         return key
     except Exception as e:
         logger.error("Failed to obtain api key from k8s: %s", e)
-        return ""
+        return _get_key_from_secrets_file()
 
 
 def get_bcp_key():
