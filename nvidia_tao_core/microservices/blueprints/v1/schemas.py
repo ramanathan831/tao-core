@@ -807,10 +807,10 @@ class WorkspaceListRsp(Schema):
     pagination_info = fields.Nested(PaginationInfo, allow_none=True)
 
 
-class DatasetPathLst(Schema):
+class DatasetUriLst(Schema):
     """Class defining dataset actions schema"""
 
-    dataset_paths = fields.List(
+    dataset_uris = fields.List(
         fields.Str(
             format="regex",
             regex=r'.*',

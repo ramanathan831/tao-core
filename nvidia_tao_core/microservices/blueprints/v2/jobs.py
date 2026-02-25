@@ -107,10 +107,10 @@ def _create_virtual_dataset_for_direct_paths(user_id, org_name, request_dict):
         "name": "Direct-path dataset",
         "shared": False,
         "actions": actions,
-        "train_dataset_paths": request_dict.get("train_dataset_paths"),
-        "eval_dataset_path": request_dict.get("eval_dataset_path"),
-        "inference_dataset_path": request_dict.get("inference_dataset_path"),
-        "calibration_dataset_path": request_dict.get("calibration_dataset_path"),
+        "train_dataset_uris": request_dict.get("train_dataset_uris"),
+        "eval_dataset_uri": request_dict.get("eval_dataset_uri"),
+        "inference_dataset_uri": request_dict.get("inference_dataset_uri"),
+        "calibration_dataset_uri": request_dict.get("calibration_dataset_uri"),
         "workspace": request_dict.get("workspace"),
     }
 
@@ -209,10 +209,10 @@ def job_create(org_name):
         # Handle direct dataset paths (no dataset_id provided)
         if not dataset_id:
             has_paths = any([
-                request_dict.get("train_dataset_paths"),
-                request_dict.get("eval_dataset_path"),
-                request_dict.get("inference_dataset_path"),
-                request_dict.get("calibration_dataset_path"),
+                request_dict.get("train_dataset_uris"),
+                request_dict.get("eval_dataset_uri"),
+                request_dict.get("inference_dataset_uri"),
+                request_dict.get("calibration_dataset_uri"),
             ])
             if has_paths:
                 dataset_id = _create_virtual_dataset_for_direct_paths(user_id, org_name, request_dict)
@@ -220,8 +220,8 @@ def job_create(org_name):
                 metadata = {
                     "error_desc": (
                         "Either 'dataset_id' or at least one dataset path field "
-                        "('train_dataset_paths', 'eval_dataset_path', 'inference_dataset_path', "
-                        "'calibration_dataset_path') is required for dataset jobs."
+                        "('train_dataset_uris', 'eval_dataset_uri', 'inference_dataset_uri', "
+                        "'calibration_dataset_uri') is required for dataset jobs."
                     ),
                     "error_code": 6
                 }
@@ -276,24 +276,24 @@ def job_create(org_name):
             return make_response(jsonify(schema_dict), 400)
 
         # Validate dataset paths if using direct paths (new approach)
-        train_dataset_paths = request_dict.get("train_dataset_paths")
-        eval_dataset_path = request_dict.get("eval_dataset_path")
-        inference_dataset_path = request_dict.get("inference_dataset_path")
-        calibration_dataset_path = request_dict.get("calibration_dataset_path")
+        train_dataset_uris = request_dict.get("train_dataset_uris")
+        eval_dataset_uri = request_dict.get("eval_dataset_uri")
+        inference_dataset_uri = request_dict.get("inference_dataset_uri")
+        calibration_dataset_uri = request_dict.get("calibration_dataset_uri")
 
-        if any([train_dataset_paths, eval_dataset_path, inference_dataset_path, calibration_dataset_path]):
+        if any([train_dataset_uris, eval_dataset_uri, inference_dataset_uri, calibration_dataset_uri]):
             # Get backend type for validation
             backend_type = backend_details.get("backend_type") if backend_details else None
 
             # Validate all dataset paths against backend restrictions
-            from nvidia_tao_core.microservices.utils.dataset_path_validator import validate_all_dataset_paths
+            from nvidia_tao_core.microservices.utils.dataset_uri_validator import validate_all_dataset_uris
             validation_metadata = {
-                "train_dataset_paths": train_dataset_paths,
-                "eval_dataset_path": eval_dataset_path,
-                "inference_dataset_path": inference_dataset_path,
-                "calibration_dataset_path": calibration_dataset_path
+                "train_dataset_uris": train_dataset_uris,
+                "eval_dataset_uri": eval_dataset_uri,
+                "inference_dataset_uri": inference_dataset_uri,
+                "calibration_dataset_uri": calibration_dataset_uri
             }
-            is_valid, error_msg = validate_all_dataset_paths(validation_metadata, backend_type)
+            is_valid, error_msg = validate_all_dataset_uris(validation_metadata, backend_type)
             if not is_valid:
                 metadata = {"error_desc": error_msg, "error_code": 100}
                 schema = ErrorRsp()
@@ -317,12 +317,12 @@ def job_create(org_name):
             skip_validation = request_dict.get("skip_dataset_validation", False)
             logger.info(
                 f"Dataset structure validation: skip={skip_validation}, "
-                f"has_train={bool(train_dataset_paths)}, has_eval={bool(eval_dataset_path)}"
+                f"has_train={bool(train_dataset_uris)}, has_eval={bool(eval_dataset_uri)}"
             )
 
             if not skip_validation:
                 from nvidia_tao_core.microservices.utils.runtime_dataset_validator import (
-                    validate_all_dataset_paths_structure
+                    validate_all_dataset_uris_structure
                 )
 
                 network_arch = request_dict.get("network_arch")
@@ -338,16 +338,16 @@ def job_create(org_name):
 
                 # Prepare metadata for validation
                 validation_metadata = {
-                    "train_dataset_paths": train_dataset_paths,
-                    "eval_dataset_path": eval_dataset_path,
-                    "inference_dataset_path": inference_dataset_path,
-                    "calibration_dataset_path": calibration_dataset_path,
+                    "train_dataset_uris": train_dataset_uris,
+                    "eval_dataset_uri": eval_dataset_uri,
+                    "inference_dataset_uri": inference_dataset_uri,
+                    "calibration_dataset_uri": calibration_dataset_uri,
                     "dataset_format": request_dict.get("dataset_format"),
                     "dataset_type": request_dict.get("dataset_type"),
                     "workspace": request_dict.get("workspace")
                 }
 
-                is_valid, error_msg, validation_details = validate_all_dataset_paths_structure(
+                is_valid, error_msg, validation_details = validate_all_dataset_uris_structure(
                     validation_metadata,
                     network_arch,
                     skip_validation=False
