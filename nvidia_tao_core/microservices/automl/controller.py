@@ -858,7 +858,7 @@ class Controller:
         # Check current running jobs for capacity management
         running_jobs = sum(
             1 for rec in self.recommendations
-            if rec.status in [JobStates.pending, JobStates.running]
+            if rec.status in [JobStates.pending, JobStates.started, JobStates.running]
         )
 
         # Get max concurrent limit based on algorithm
@@ -1300,6 +1300,7 @@ class Controller:
                 self.delete_checkpoint_files(cloud_expt_root, rec)
 
         if self.automl_algorithm in ("hyperband", "h", "bohb", "dehb", "hyperband_es", "hes"):
+            brain_dict = get_automl_brain_info(self.automl_context.id)
             if brain_dict:
                 self.old_bracket = brain_dict.get("bracket", "0")
 

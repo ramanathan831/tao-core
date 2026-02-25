@@ -427,7 +427,7 @@ class ASHA(AutoMLAlgorithmBase):
         # Log current state for debugging
         active_by_rung = defaultdict(list)
         for rec in history:
-            if rec.status in [JobStates.pending, JobStates.running]:
+            if rec.status in [JobStates.pending, JobStates.started, JobStates.running]:
                 rung_idx = self.config_to_rung.get(rec.id, 0)
                 active_by_rung[rung_idx].append(rec.id)
 

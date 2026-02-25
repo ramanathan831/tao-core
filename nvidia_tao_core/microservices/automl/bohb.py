@@ -712,9 +712,9 @@ class BOHB(AutoMLAlgorithmBase):
                         f"job_id={exp.job_id}, result={exp.result}"
                     )
 
-                # Check for ANY pending/running experiments (resumed experiments reuse IDs!)
+                # Check for ANY pending/started/running experiments (resumed experiments reuse IDs!)
                 any_running = any(
-                    exp.status in [JobStates.pending, JobStates.running]
+                    exp.status in [JobStates.pending, JobStates.started, JobStates.running]
                     for exp in history
                 )
 
@@ -784,9 +784,9 @@ class BOHB(AutoMLAlgorithmBase):
         if self.last_launched_count > 0:
             logger.info("BOHB: Checking if last batch complete before generating new recommendations")
 
-            # Check for ANY pending/running experiments (handles resumed experiments with reused IDs)
+            # Check for ANY pending/started/running experiments (handles resumed experiments with reused IDs)
             any_running = any(
-                exp.status in [JobStates.pending, JobStates.running]
+                exp.status in [JobStates.pending, JobStates.started, JobStates.running]
                 for exp in history
             )
 
