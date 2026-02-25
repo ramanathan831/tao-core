@@ -442,9 +442,22 @@ class DockerHandler(ExecutionHandler):
                     )
                     gpu_ids = []
                 else:
-                    logger.debug(f"[GPU_ASSIGN] Attempting to assign {num_gpus} GPU(s) for container {container_name}")
-                    gpu_ids = gpu_manager.assign_gpus(container_name, num_gpus)
-                    logger.debug(f"[GPU_ASSIGN] Assigned GPU IDs: {gpu_ids} for container {container_name}")
+                    # Check if GPUs were already pre-assigned by the workflow
+                    # (may not be in job metadata for AutoML experiments, but still in GPU table)
+                    existing_gpu_ids = gpu_manager.get_assigned_gpu_ids(container_name)
+                    if existing_gpu_ids:
+                        gpu_ids = existing_gpu_ids
+                        logger.debug(
+                            f"[GPU_ASSIGN] Found already-assigned GPUs {gpu_ids} "
+                            f"for container {container_name} (from GPU table lookup)"
+                        )
+                    else:
+                        logger.debug(
+                            f"[GPU_ASSIGN] Attempting to assign {num_gpus} GPU(s) "
+                            f"for container {container_name}"
+                        )
+                        gpu_ids = gpu_manager.assign_gpus(container_name, num_gpus)
+                        logger.debug(f"[GPU_ASSIGN] Assigned GPU IDs: {gpu_ids} for container {container_name}")
 
                 # This prevents containers from starting with "all" GPUs when none are available
                 # This should rarely happen now because:
