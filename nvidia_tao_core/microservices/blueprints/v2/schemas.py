@@ -971,10 +971,10 @@ class WorkspaceListRsp(Schema):
     pagination_info = fields.Nested(PaginationInfo, allow_none=True)
 
 
-class DatasetPathLst(Schema):
+class DatasetUriLst(Schema):
     """Class defining dataset actions schema"""
 
-    dataset_paths = fields.List(
+    dataset_uris = fields.List(
         fields.Str(
             format="regex",
             regex=r'.*',
@@ -1821,26 +1821,26 @@ class DatasetJobReq(Schema):
         validate=validate.Length(max=2)
     )
     # New fields for direct dataset paths (alternative to UUID-based dataset_id)
-    train_dataset_paths = fields.List(
+    train_dataset_uris = fields.List(
         fields.Str(validate=fields.validate.Length(max=1000)),
         validate=validate.Length(max=sys.maxsize),
         allow_none=True,
-        metadata={"description": "List of dataset paths (aws://, azure://, lustre://, file://, or local)"}
+        metadata={"description": "List of dataset URIs (aws://, azure://, lustre://, file://, or local)"}
     )
-    eval_dataset_path = fields.Str(
+    eval_dataset_uri = fields.Str(
         validate=fields.validate.Length(max=1000),
         allow_none=True,
-        metadata={"description": "Evaluation dataset path"}
+        metadata={"description": "Evaluation dataset URI"}
     )
-    inference_dataset_path = fields.Str(
+    inference_dataset_uri = fields.Str(
         validate=fields.validate.Length(max=1000),
         allow_none=True,
-        metadata={"description": "Inference dataset path"}
+        metadata={"description": "Inference dataset URI"}
     )
-    calibration_dataset_path = fields.Str(
+    calibration_dataset_uri = fields.Str(
         validate=fields.validate.Length(max=1000),
         allow_none=True,
-        metadata={"description": "Calibration dataset path"}
+        metadata={"description": "Calibration dataset URI"}
     )
     dataset_format = fields.Str(
         validate=fields.validate.Length(max=100),
@@ -1952,26 +1952,26 @@ class ExperimentJobReq(Schema):
         validate=validate.Length(max=sys.maxsize)
     )
     # New fields for direct dataset paths (alternative to UUID-based dataset references)
-    train_dataset_paths = fields.List(
+    train_dataset_uris = fields.List(
         fields.Str(validate=fields.validate.Length(max=1000)),
         validate=validate.Length(max=sys.maxsize),
         allow_none=True,
-        metadata={"description": "List of dataset paths (aws://, azure://, lustre://, file://, or local)"}
+        metadata={"description": "List of dataset URIs (aws://, azure://, lustre://, file://, or local)"}
     )
-    eval_dataset_path = fields.Str(
+    eval_dataset_uri = fields.Str(
         validate=fields.validate.Length(max=1000),
         allow_none=True,
-        metadata={"description": "Evaluation dataset path"}
+        metadata={"description": "Evaluation dataset URI"}
     )
-    inference_dataset_path = fields.Str(
+    inference_dataset_uri = fields.Str(
         validate=fields.validate.Length(max=1000),
         allow_none=True,
-        metadata={"description": "Inference dataset path"}
+        metadata={"description": "Inference dataset URI"}
     )
-    calibration_dataset_path = fields.Str(
+    calibration_dataset_uri = fields.Str(
         validate=fields.validate.Length(max=1000),
         allow_none=True,
-        metadata={"description": "Calibration dataset path"}
+        metadata={"description": "Calibration dataset URI"}
     )
     dataset_format = fields.Str(
         validate=fields.validate.Length(max=100),
@@ -2178,26 +2178,26 @@ class ExperimentJobRsp(Schema):
         validate=validate.Length(max=sys.maxsize)
     )
     # New fields for direct dataset paths (alternative to UUID-based dataset references)
-    train_dataset_paths = fields.List(
+    train_dataset_uris = fields.List(
         fields.Str(validate=fields.validate.Length(max=1000)),
         validate=validate.Length(max=sys.maxsize),
         allow_none=True,
-        metadata={"description": "List of dataset paths (aws://, azure://, lustre://, file://, or local)"}
+        metadata={"description": "List of dataset URIs (aws://, azure://, lustre://, file://, or local)"}
     )
-    eval_dataset_path = fields.Str(
+    eval_dataset_uri = fields.Str(
         validate=fields.validate.Length(max=1000),
         allow_none=True,
-        metadata={"description": "Evaluation dataset path"}
+        metadata={"description": "Evaluation dataset URI"}
     )
-    inference_dataset_path = fields.Str(
+    inference_dataset_uri = fields.Str(
         validate=fields.validate.Length(max=1000),
         allow_none=True,
-        metadata={"description": "Inference dataset path"}
+        metadata={"description": "Inference dataset URI"}
     )
-    calibration_dataset_path = fields.Str(
+    calibration_dataset_uri = fields.Str(
         validate=fields.validate.Length(max=1000),
         allow_none=True,
-        metadata={"description": "Calibration dataset path"}
+        metadata={"description": "Calibration dataset URI"}
     )
     dataset_format = fields.Str(
         validate=fields.validate.Length(max=100),

@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-"""Validates dataset paths and backend compatibility"""
+"""Validates dataset URIs and backend compatibility"""
 import logging
 
 logger = logging.getLogger(__name__)
@@ -22,18 +22,18 @@ VALID_PROTOCOLS = ["aws", "s3", "azure", "lustre", "file", "local"]
 REMOTE_BACKENDS = ["slurm", "lepton", "nvcf"]
 
 
-def validate_dataset_path(path: str, backend_type: str = None) -> tuple:
-    """Validates dataset path format and backend compatibility.
+def validate_dataset_uri(path: str, backend_type: str = None) -> tuple:
+    """Validates dataset URI format and backend compatibility.
 
     Args:
-        path: Dataset path with or without protocol prefix
+        path: Dataset URI with or without protocol prefix
         backend_type: Backend type string (local, slurm, lepton, nvcf)
 
     Returns:
         tuple: (is_valid, error_message)
     """
     if not path:
-        return False, "Dataset path cannot be empty"
+        return False, "Dataset URI cannot be empty"
 
     # Parse protocol
     if "://" in path:
@@ -67,8 +67,8 @@ def validate_dataset_path(path: str, backend_type: str = None) -> tuple:
     return True, ""
 
 
-def validate_all_dataset_paths(experiment_metadata: dict, backend_type: str = None) -> tuple:
-    """Validates all dataset paths in experiment metadata.
+def validate_all_dataset_uris(experiment_metadata: dict, backend_type: str = None) -> tuple:
+    """Validates all dataset URIs in experiment metadata.
 
     Args:
         experiment_metadata: Experiment metadata dictionary
@@ -80,25 +80,25 @@ def validate_all_dataset_paths(experiment_metadata: dict, backend_type: str = No
     # Collect all paths to validate
     paths_to_validate = []
 
-    train_paths = experiment_metadata.get("train_dataset_paths", [])
+    train_paths = experiment_metadata.get("train_dataset_uris", [])
     if train_paths:
-        paths_to_validate.extend([(p, "train_dataset_paths") for p in train_paths])
+        paths_to_validate.extend([(p, "train_dataset_uris") for p in train_paths])
 
-    eval_path = experiment_metadata.get("eval_dataset_path")
+    eval_path = experiment_metadata.get("eval_dataset_uri")
     if eval_path:
-        paths_to_validate.append((eval_path, "eval_dataset_path"))
+        paths_to_validate.append((eval_path, "eval_dataset_uri"))
 
-    inference_path = experiment_metadata.get("inference_dataset_path")
+    inference_path = experiment_metadata.get("inference_dataset_uri")
     if inference_path:
-        paths_to_validate.append((inference_path, "inference_dataset_path"))
+        paths_to_validate.append((inference_path, "inference_dataset_uri"))
 
-    calibration_path = experiment_metadata.get("calibration_dataset_path")
+    calibration_path = experiment_metadata.get("calibration_dataset_uri")
     if calibration_path:
-        paths_to_validate.append((calibration_path, "calibration_dataset_path"))
+        paths_to_validate.append((calibration_path, "calibration_dataset_uri"))
 
     # Validate each path
     for path, field_name in paths_to_validate:
-        is_valid, error_msg = validate_dataset_path(path, backend_type)
+        is_valid, error_msg = validate_dataset_uri(path, backend_type)
         if not is_valid:
             return False, f"Invalid {field_name}: {error_msg}"
 
