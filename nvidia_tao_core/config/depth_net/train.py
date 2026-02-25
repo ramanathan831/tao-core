@@ -50,8 +50,8 @@ class OptimConfig:
     )
     lr: float = FLOAT_FIELD(
         value=1e-4,
-        valid_min=0.0,
-        valid_max=1.0,
+        valid_min=1e-6,
+        valid_max=1e-2,
         math_cond="> 0.0",
         display_name="learning rate",
         description="The initial learning rate for training the model, excluding the backbone.",
@@ -68,8 +68,8 @@ class OptimConfig:
     )
     weight_decay: float = FLOAT_FIELD(
         value=1e-4,
-        valid_min=0.0,
-        valid_max=1.0,
+        valid_min=1e-6,
+        valid_max=1e-2,
         math_cond="> 0.0",
         display_name="weight decay",
         description="The weight decay coefficient.",
@@ -112,8 +112,8 @@ class OptimConfig:
     )
     min_lr: float = FLOAT_FIELD(
         value=1e-7,
-        valid_min=0.0,
-        valid_max=1.0,
+        valid_min=1e-8,
+        valid_max=1e-3,
         math_cond="> 0.0",
         display_name="minimum learning rate",
         description="""The minimum learning rate value for the learning rate scheduler.""",
