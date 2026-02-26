@@ -481,6 +481,10 @@ class CNDatasetClassifyConfig:
         valid_max="inf",
         description="Number of golden samples for each input"
     )
+    quant_calibration_dataset: QuantCalibrationDataset = DATACLASS_FIELD(
+        QuantCalibrationDataset(),
+        description="Configurable parameters for the quantization calibration dataset.",
+    )
 
 
 @dataclass
