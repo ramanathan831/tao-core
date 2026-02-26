@@ -102,6 +102,16 @@ class CLIPModelConfig:
                     "can destabilize training.",
         display_name="Initial Logit Bias",
     )
+    canonicalize_text: bool = BOOL_FIELD(
+        value=False,
+        default_value=False,
+        description="Apply text canonicalization (lowercase + punctuation removal) "
+                    "before tokenization. Set to True to match Google big_vision/SigLIP "
+                    "zero-shot classification preprocessing. Set to False (default) to "
+                    "preserve punctuation, which is better for retrieval tasks and "
+                    "matches original CLIP/OpenCLIP behavior.",
+        display_name="Canonicalize Text",
+    )
 
 
 # =============================================================================
@@ -143,29 +153,31 @@ class CLIPAugmentationConfig:
 class CLIPDataPathConfig:
     """Dataset path configuration for custom image-text datasets."""
 
-    root_dir: str = STR_FIELD(
+    image_dir: str = STR_FIELD(
         value=MISSING,
         default_value=MISSING,
-        description="Root directory containing the images.",
-        display_name="Root Directory",
+        description="Directory containing the images.",
+        display_name="Image Directory",
     )
     image_list_file: Optional[str] = STR_FIELD(
         value=None,
         default_value=None,
-        description="Path to text file listing image filenames. If None, all images in root_dir are used.",
+        description="Path to text file listing image filenames. If None, all images in image_dir are used.",
         display_name="Image List File",
     )
-    label_dir: Optional[str] = STR_FIELD(
+    caption_dir: Optional[str] = STR_FIELD(
         value=None,
         default_value=None,
-        description="Directory containing text caption files. If None, uses root_dir.",
-        display_name="Label Directory",
+        description="Directory containing text caption files (.txt). "
+                    "If None, captions are expected in image_dir alongside images.",
+        display_name="Captions Directory",
     )
-    label_suffix: str = STR_FIELD(
+    caption_file_suffix: str = STR_FIELD(
         value=".txt",
         default_value=".txt",
-        description="File extension for caption files (e.g., '.txt').",
-        display_name="Label Suffix",
+        description="File extension for caption files. "
+                    "Caption filename = image_basename + caption_file_suffix (e.g., 'image.png' -> 'image.txt').",
+        display_name="Caption File Suffix",
     )
 
 
@@ -195,31 +207,20 @@ class CLIPWDSConfig:
 
 
 @dataclass
-class CLIPTrainDataConfig:
-    """Training data configuration."""
+class CLIPDataLoaderConfig:
+    """Base dataloader configuration shared by train and validation."""
 
-    type: str = STR_FIELD(
-        value="custom",
-        default_value="custom",
-        valid_options="wds,custom",
-        description="Dataset type: 'custom' for filesystem-based or 'wds' for WebDataset.",
-        display_name="Dataset Type",
-    )
     datasets: List[CLIPDataPathConfig] = LIST_FIELD(
         arrList=[],
         default_value=[],
-        description="List of dataset path configurations (used when type='custom').",
+        description="List of dataset path configurations.",
         display_name="Datasets",
     )
-    wds: Optional[CLIPWDSConfig] = DATACLASS_FIELD(
-        CLIPWDSConfig(),
-        description="WebDataset configuration (used when type='wds').",
-    )
     batch_size: int = INT_FIELD(
-        value=128,
-        default_value=128,
+        value=16,
+        default_value=16,
         valid_min=1,
-        description="Training batch size per GPU.",
+        description="Batch size per GPU.",
         display_name="Batch Size",
     )
     num_workers: int = INT_FIELD(
@@ -232,52 +233,34 @@ class CLIPTrainDataConfig:
 
 
 @dataclass
-class CLIPValDataConfig:
-    """Validation data configuration."""
+class CLIPTrainDataConfig(CLIPDataLoaderConfig):
+    """Training data configuration with additional options for dataset type."""
 
     type: str = STR_FIELD(
         value="custom",
         default_value="custom",
-        valid_options="classification,custom",
-        description="Validation dataset type: 'classification' (torchvision ImageFolder) or 'custom'.",
+        valid_options="wds,custom",
+        description="Dataset type: 'custom' for filesystem-based or 'wds' for WebDataset.",
         display_name="Dataset Type",
     )
-    dataset: CLIPDataPathConfig = DATACLASS_FIELD(
-        CLIPDataPathConfig(),
-        description="Validation dataset path configuration.",
+    wds: Optional[CLIPWDSConfig] = DATACLASS_FIELD(
+        CLIPWDSConfig(),
+        description="WebDataset configuration (used when type='wds').",
     )
     batch_size: int = INT_FIELD(
-        value=64,
-        default_value=64,
+        value=16,
+        default_value=16,
         valid_min=1,
-        description="Validation batch size per GPU.",
+        description="Training batch size per GPU.",
         display_name="Batch Size",
     )
-    num_workers: int = INT_FIELD(
-        value=8,
-        default_value=8,
-        valid_min=0,
-        description="Number of data loading worker processes.",
-        display_name="Number of Workers",
-    )
-    split: str = STR_FIELD(
-        value="val",
-        default_value="val",
-        description="Dataset split to use for zero-shot evaluation (e.g., 'train', 'val').",
-        display_name="Split",
-    )
-    templates_file: Optional[str] = STR_FIELD(
-        value=None,
-        default_value=None,
-        description="Path to custom prompt templates file for zero-shot classification.",
-        display_name="Templates File",
-    )
-    classnames_file: Optional[str] = STR_FIELD(
-        value=None,
-        default_value=None,
-        description="Path to custom class names file for zero-shot classification.",
-        display_name="Class Names File",
-    )
+
+
+@dataclass
+class CLIPValDataConfig(CLIPDataLoaderConfig):
+    """Validation data configuration for retrieval evaluation."""
+
+    pass
 
 
 @dataclass
@@ -439,8 +422,11 @@ class CLIPTrainConfig(TrainConfig):
 # Inference/Eval Config
 # =============================================================================
 @dataclass
-class CLIPInferenceEvalConfig:
-    """Configuration for CLIP inference and evaluation."""
+class CLIPInferenceEvalConfig(CLIPDataLoaderConfig):
+    """Configuration for CLIP inference and evaluation.
+
+    Inherits datasets, batch_size, num_workers from CLIPDataLoaderConfig.
+    """
 
     checkpoint: Optional[str] = STR_FIELD(
         value=None,
@@ -448,13 +434,6 @@ class CLIPInferenceEvalConfig:
         description="Path to trained model checkpoint (.ckpt or .pth). "
                     "Not required for TRT-based evaluation.",
         display_name="Checkpoint Path",
-    )
-    batch_size: int = INT_FIELD(
-        value=64,
-        default_value=64,
-        valid_min=1,
-        description="Batch size for inference/evaluation.",
-        display_name="Batch Size",
     )
     num_gpus: int = INT_FIELD(
         value=1,
@@ -481,27 +460,11 @@ class CLIPInferenceEvalConfig:
         description="Path to TensorRT engine for TRT-based evaluation/inference.",
         display_name="TRT Engine Path",
     )
-    # Inference-specific fields
-    image_dir: Optional[str] = STR_FIELD(
-        value=None,
-        default_value=None,
-        description="Directory containing images for inference (inference only).",
-        display_name="Image Directory",
-    )
     text_file: Optional[str] = STR_FIELD(
         value=None,
         default_value=None,
-        description="Path to text file with prompts for inference (inference only).",
+        description="Path to text file with prompts for text embedding extraction.",
         display_name="Text File",
-    )
-    tokenizer_name: str = STR_FIELD(
-        value="openai/clip-vit-large-patch14",
-        default_value="openai/clip-vit-large-patch14",
-        description="HuggingFace tokenizer name for zero-shot classification. "
-                    "Must match the tokenizer used during ONNX export. "
-                    "Common values: 'openai/clip-vit-large-patch14' (CLIP/C-RADIO with DFN adapter), "
-                    "'google/siglip2-so400m-patch14-384' (SigLIP2/C-RADIO with SigLIP adapter).",
-        display_name="Tokenizer Name",
     )
 
 

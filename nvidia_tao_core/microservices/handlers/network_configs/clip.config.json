@@ -1,6 +1,6 @@
 {
     "api_params": {
-        "dataset_type": "image_classification",
+        "dataset_type": "image_text",
         "actions": ["train", "evaluate", "export", "inference", "gen_trt_engine"],
         "formats": ["default"],
         "accepted_ds_intents": ["training", "evaluation", "testing"],
@@ -20,65 +20,71 @@
                 "source": "train_datasets",
                 "multiple_sources": true,
                 "mapping": {
-                    "root_dir": {
+                    "image_dir": {
                         "path": "images.tar.gz"
                     },
                     "image_list_file": {
-                        "path": "image_list.txt"
+                        "path": "image_list.txt",
+                        "optional": true
                     },
-                    "label_dir": {
-                        "path": "labels.tar.gz"
+                    "caption_dir": {
+                        "path": "captions.tar.gz"
+                    },
+                    "caption_file_suffix": {
+                        "optional": true
                     }
                 }
             },
-            "dataset.val.dataset.root_dir": {
+            "dataset.val.datasets": {
                 "source": "eval_dataset",
-                "multiple_sources": false,
-                "path": "images.tar.gz"
-            },
-            "dataset.val.dataset.image_list_file": {
-                "source": "eval_dataset",
-                "multiple_sources": false,
-                "path": "image_list.txt"
-            },
-            "dataset.val.dataset.label_dir": {
-                "source": "eval_dataset",
-                "multiple_sources": false,
-                "path": "labels.tar.gz"
-            },
-            "dataset.val.classnames_file": {
-                "source": "eval_dataset",
-                "multiple_sources": false,
-                "path": "class_name_list.txt"
+                "multiple_sources": true,
+                "mapping": {
+                    "image_dir": {
+                        "path": "images.tar.gz"
+                    },
+                    "image_list_file": {
+                        "path": "image_list.txt",
+                        "optional": true
+                    },
+                    "caption_dir": {
+                        "path": "captions.tar.gz"
+                    },
+                    "caption_file_suffix": {
+                        "optional": true
+                    }
+                }
             }
         },
         "evaluate": {
-            "dataset.val.dataset.root_dir": {
+            "dataset.val.datasets": {
                 "source": "eval_dataset",
-                "multiple_sources": false,
-                "path": "images.tar.gz"
-            },
-            "dataset.val.dataset.image_list_file": {
-                "source": "eval_dataset",
-                "multiple_sources": false,
-                "path": "image_list.txt"
-            },
-            "dataset.val.dataset.label_dir": {
-                "source": "eval_dataset",
-                "multiple_sources": false,
-                "path": "labels.tar.gz"
-            },
-            "dataset.val.classnames_file": {
-                "source": "eval_dataset",
-                "multiple_sources": false,
-                "path": "class_name_list.txt"
+                "multiple_sources": true,
+                "mapping": {
+                    "image_dir": {
+                        "path": "images.tar.gz"
+                    },
+                    "image_list_file": {
+                        "path": "image_list.txt",
+                        "optional": true
+                    },
+                    "caption_dir": {
+                        "path": "captions.tar.gz"
+                    },
+                    "caption_file_suffix": {
+                        "optional": true
+                    }
+                }
             }
         },
         "inference": {
-            "inference.image_dir": {
+            "inference.datasets": {
                 "source": "inference_dataset",
-                "multiple_sources": false,
-                "path": "images.tar.gz"
+                "multiple_sources": true,
+                "mapping": {
+                    "image_dir": {
+                        "path": "images.tar.gz"
+                    }
+                }
             },
             "inference.text_file": {
                 "source": "inference_dataset",
@@ -90,12 +96,32 @@
     },
     "metrics": {
         "available_metrics": [
-            "val/accuracy_top1",
-            "val/accuracy_top5",
-            "test/accuracy_top1",
-            "test/accuracy_top5"
+            "val/i2t_mAP",
+            "val/i2t_R@1",
+            "val/i2t_R@5",
+            "val/i2t_MedR",
+            "val/i2t_MeanR",
+            "val/i2t_AUC",
+            "val/t2i_mAP",
+            "val/t2i_R@1",
+            "val/t2i_R@5",
+            "val/t2i_MedR",
+            "val/t2i_MeanR",
+            "val/t2i_AUC",
+            "test/i2t_mAP",
+            "test/i2t_R@1",
+            "test/i2t_R@5",
+            "test/i2t_MedR",
+            "test/i2t_MeanR",
+            "test/i2t_AUC",
+            "test/t2i_mAP",
+            "test/t2i_R@1",
+            "test/t2i_R@5",
+            "test/t2i_MedR",
+            "test/t2i_MeanR",
+            "test/t2i_AUC"
         ],
-        "monitoring_metric": "val/accuracy_top1"
+        "monitoring_metric": "val/t2i_mAP"
     },
     "spec_params": {
         "train": {
