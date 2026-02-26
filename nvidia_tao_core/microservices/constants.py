@@ -19,7 +19,7 @@ TAO_NETWORKS = set([
     "mask_grounding_dino", "ml_recog", "ocdnet", "ocrnet", "optical_inspection", "pointpillars",
     "pose_classification", "re_identification", "centerpose", "visual_changenet_classify",
     "visual_changenet_segment", "deformable_detr",
-    "depth_net_mono", "depth_net_stereo", "dino", "rtdetr", "segformer",  # PYT CV MODELS
+    "depth_net_mono", "depth_net_stereo", "dino", "nvpanoptix3d", "rtdetr", "segformer",  # PYT CV MODELS
     "annotations", "analytics", "augmentation", "auto_label", "image"  # Data_Service tasks.
 ])
 VLM_NETWORKS = set(["vlm"])  # VLM networks

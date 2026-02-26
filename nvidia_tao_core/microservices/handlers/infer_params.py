@@ -266,6 +266,19 @@ def infer_parent_model(job_context, handler_metadata):
     return parent_model
 
 
+def infer_parent_model_or_ptm(job_context, handler_metadata):
+    """Returns parent job's checkpoint if parent exists, otherwise falls back to PTM.
+
+    Useful for two-stage pipelines (e.g. 2D→3D) where the first stage
+    uses PTM and subsequent stages use the previous stage's output.
+    """
+    if job_context.parent_id:
+        parent_model = get_model_results_path(handler_metadata, job_context.parent_id)
+        if parent_model:
+            return parent_model
+    return infer_ptm(job_context, handler_metadata)
+
+
 def infer_parent_model_folder(job_context, handler_metadata):
     """Returns path of the weight file of the parent job"""
     parent_model = get_model_results_path(handler_metadata, job_context.parent_id, folder=True)
@@ -544,6 +557,7 @@ CLI_CONFIG_TO_FUNCTIONS = {"output_dir": infer_output_dir,
                            "resume_model_bool": infer_resume_model_bool,
                            "automl_resume_model_bool": infer_automl_resume_model_bool,
                            "parent_model": infer_parent_model,
+                           "parent_model_or_ptm": infer_parent_model_or_ptm,
                            "parent_model_folder": infer_parent_model_folder,
                            "parent_model_evaluate": infer_parent_model_evaluate,
                            "resume_model": infer_resume_model,
