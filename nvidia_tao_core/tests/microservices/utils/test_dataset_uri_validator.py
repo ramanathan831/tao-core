@@ -14,119 +14,119 @@
 
 """Unit tests for dataset path validation"""
 import pytest
-from nvidia_tao_core.microservices.utils.dataset_path_validator import (
-    validate_dataset_path,
-    validate_all_dataset_paths,
+from nvidia_tao_core.microservices.utils.dataset_uri_validator import (
+    validate_dataset_uri,
+    validate_all_dataset_uris,
     VALID_PROTOCOLS,
     REMOTE_BACKENDS
 )
 
 
-class TestValidateDatasetPath:
-    """Tests for validate_dataset_path function"""
+class TestValidateDatasetUri:
+    """Tests for validate_dataset_uri function"""
 
     def test_valid_aws_path(self):
         """Test valid AWS S3 path"""
-        is_valid, error = validate_dataset_path("aws://bucket/path/to/data")
+        is_valid, error = validate_dataset_uri("aws://bucket/path/to/data")
         assert is_valid is True
         assert error == ""
 
     def test_valid_s3_path_normalized(self):
         """Test that s3:// is normalized to aws://"""
-        is_valid, error = validate_dataset_path("s3://bucket/path/to/data")
+        is_valid, error = validate_dataset_uri("s3://bucket/path/to/data")
         assert is_valid is True
         assert error == ""
 
     def test_valid_azure_path(self):
         """Test valid Azure path"""
-        is_valid, error = validate_dataset_path("azure://container/path/to/data")
+        is_valid, error = validate_dataset_uri("azure://container/path/to/data")
         assert is_valid is True
         assert error == ""
 
     def test_valid_lustre_path(self):
         """Test valid Lustre path"""
-        is_valid, error = validate_dataset_path("lustre:///scratch/data/train")
+        is_valid, error = validate_dataset_uri("lustre:///scratch/data/train")
         assert is_valid is True
         assert error == ""
 
     def test_valid_file_path(self):
         """Test valid file:// path"""
-        is_valid, error = validate_dataset_path("file:///local/data/train")
+        is_valid, error = validate_dataset_uri("file:///local/data/train")
         assert is_valid is True
         assert error == ""
 
     def test_valid_local_path_no_prefix(self):
         """Test valid local path without prefix"""
-        is_valid, error = validate_dataset_path("/local/data/train")
+        is_valid, error = validate_dataset_uri("/local/data/train")
         assert is_valid is True
         assert error == ""
 
     def test_invalid_protocol(self):
         """Test invalid protocol"""
-        is_valid, error = validate_dataset_path("ftp://server/path")
+        is_valid, error = validate_dataset_uri("ftp://server/path")
         assert is_valid is False
         assert "Invalid protocol 'ftp'" in error
         assert "Supported:" in error
 
     def test_empty_path(self):
         """Test empty path"""
-        is_valid, error = validate_dataset_path("")
+        is_valid, error = validate_dataset_uri("")
         assert is_valid is False
         assert "cannot be empty" in error
 
     def test_local_path_on_slurm_backend(self):
         """Test that local paths are not allowed on SLURM backend"""
-        is_valid, error = validate_dataset_path("/local/data", backend_type="slurm")
+        is_valid, error = validate_dataset_uri("/local/data", backend_type="slurm")
         assert is_valid is False
         assert "not allowed for SLURM backend" in error
         assert "lustre://" in error
 
     def test_file_path_on_slurm_backend(self):
         """Test that file:// paths are not allowed on SLURM backend"""
-        is_valid, error = validate_dataset_path("file:///local/data", backend_type="slurm")
+        is_valid, error = validate_dataset_uri("file:///local/data", backend_type="slurm")
         assert is_valid is False
         assert "not allowed for SLURM backend" in error
 
     def test_local_path_on_lepton_backend(self):
         """Test that local paths are not allowed on Lepton backend"""
-        is_valid, error = validate_dataset_path("/local/data", backend_type="lepton")
+        is_valid, error = validate_dataset_uri("/local/data", backend_type="lepton")
         assert is_valid is False
         assert "not allowed for LEPTON backend" in error
         assert "aws://" in error or "azure://" in error
 
     def test_file_path_on_lepton_backend(self):
         """Test that file:// paths are not allowed on Lepton backend"""
-        is_valid, error = validate_dataset_path("file:///local/data", backend_type="lepton")
+        is_valid, error = validate_dataset_uri("file:///local/data", backend_type="lepton")
         assert is_valid is False
         assert "not allowed for LEPTON backend" in error
 
     def test_local_path_on_nvcf_backend(self):
         """Test that local paths are not allowed on NVCF backend"""
-        is_valid, error = validate_dataset_path("/local/data", backend_type="nvcf")
+        is_valid, error = validate_dataset_uri("/local/data", backend_type="nvcf")
         assert is_valid is False
         assert "not allowed for NVCF backend" in error
 
     def test_lustre_path_on_slurm_backend(self):
         """Test that lustre:// paths are allowed on SLURM backend"""
-        is_valid, error = validate_dataset_path("lustre:///scratch/data", backend_type="slurm")
+        is_valid, error = validate_dataset_uri("lustre:///scratch/data", backend_type="slurm")
         assert is_valid is True
         assert error == ""
 
     def test_aws_path_on_lepton_backend(self):
         """Test that aws:// paths are allowed on Lepton backend"""
-        is_valid, error = validate_dataset_path("aws://bucket/data", backend_type="lepton")
+        is_valid, error = validate_dataset_uri("aws://bucket/data", backend_type="lepton")
         assert is_valid is True
         assert error == ""
 
     def test_azure_path_on_lepton_backend(self):
         """Test that azure:// paths are allowed on Lepton backend"""
-        is_valid, error = validate_dataset_path("azure://container/data", backend_type="lepton")
+        is_valid, error = validate_dataset_uri("azure://container/data", backend_type="lepton")
         assert is_valid is True
         assert error == ""
 
     def test_local_path_on_local_backend(self):
         """Test that local paths are allowed on local backend"""
-        is_valid, error = validate_dataset_path("/local/data", backend_type="local")
+        is_valid, error = validate_dataset_uri("/local/data", backend_type="local")
         assert is_valid is True
         assert error == ""
 
@@ -140,105 +140,105 @@ class TestValidateDatasetPath:
             "/local/data"
         ]
         for path in paths:
-            is_valid, error = validate_dataset_path(path, backend_type=None)
+            is_valid, error = validate_dataset_uri(path, backend_type=None)
             assert is_valid is True, f"Path {path} should be valid without backend_type"
             assert error == ""
 
 
-class TestValidateAllDatasetPaths:
-    """Tests for validate_all_dataset_paths function"""
+class TestValidateAllDatasetUris:
+    """Tests for validate_all_dataset_uris function"""
 
     def test_valid_all_paths(self):
         """Test validation with all valid paths"""
         metadata = {
-            "train_dataset_paths": ["lustre:///data/train1", "lustre:///data/train2"],
-            "eval_dataset_path": "lustre:///data/val",
-            "inference_dataset_path": "lustre:///data/test",
-            "calibration_dataset_path": "lustre:///data/calib"
+            "train_dataset_uris": ["lustre:///data/train1", "lustre:///data/train2"],
+            "eval_dataset_uri": "lustre:///data/val",
+            "inference_dataset_uri": "lustre:///data/test",
+            "calibration_dataset_uri": "lustre:///data/calib"
         }
-        is_valid, error = validate_all_dataset_paths(metadata, backend_type="slurm")
+        is_valid, error = validate_all_dataset_uris(metadata, backend_type="slurm")
         assert is_valid is True
         assert error == ""
 
     def test_invalid_train_path(self):
         """Test that invalid train path is caught"""
         metadata = {
-            "train_dataset_paths": ["/local/data"],  # Invalid for SLURM
-            "eval_dataset_path": "lustre:///data/val"
+            "train_dataset_uris": ["/local/data"],  # Invalid for SLURM
+            "eval_dataset_uri": "lustre:///data/val"
         }
-        is_valid, error = validate_all_dataset_paths(metadata, backend_type="slurm")
+        is_valid, error = validate_all_dataset_uris(metadata, backend_type="slurm")
         assert is_valid is False
-        assert "train_dataset_paths" in error
+        assert "train_dataset_uris" in error
         assert "not allowed for SLURM backend" in error
 
     def test_invalid_eval_path(self):
         """Test that invalid eval path is caught"""
         metadata = {
-            "train_dataset_paths": ["lustre:///data/train"],
-            "eval_dataset_path": "/local/data"  # Invalid for SLURM
+            "train_dataset_uris": ["lustre:///data/train"],
+            "eval_dataset_uri": "/local/data"  # Invalid for SLURM
         }
-        is_valid, error = validate_all_dataset_paths(metadata, backend_type="slurm")
+        is_valid, error = validate_all_dataset_uris(metadata, backend_type="slurm")
         assert is_valid is False
-        assert "eval_dataset_path" in error
+        assert "eval_dataset_uri" in error
 
     def test_invalid_inference_path(self):
         """Test that invalid inference path is caught"""
         metadata = {
-            "train_dataset_paths": ["lustre:///data/train"],
-            "inference_dataset_path": "/local/data"  # Invalid for SLURM
+            "train_dataset_uris": ["lustre:///data/train"],
+            "inference_dataset_uri": "/local/data"  # Invalid for SLURM
         }
-        is_valid, error = validate_all_dataset_paths(metadata, backend_type="slurm")
+        is_valid, error = validate_all_dataset_uris(metadata, backend_type="slurm")
         assert is_valid is False
-        assert "inference_dataset_path" in error
+        assert "inference_dataset_uri" in error
 
     def test_invalid_calibration_path(self):
         """Test that invalid calibration path is caught"""
         metadata = {
-            "train_dataset_paths": ["lustre:///data/train"],
-            "calibration_dataset_path": "/local/data"  # Invalid for SLURM
+            "train_dataset_uris": ["lustre:///data/train"],
+            "calibration_dataset_uri": "/local/data"  # Invalid for SLURM
         }
-        is_valid, error = validate_all_dataset_paths(metadata, backend_type="slurm")
+        is_valid, error = validate_all_dataset_uris(metadata, backend_type="slurm")
         assert is_valid is False
-        assert "calibration_dataset_path" in error
+        assert "calibration_dataset_uri" in error
 
     def test_empty_metadata(self):
         """Test validation with no dataset paths"""
         metadata = {}
-        is_valid, error = validate_all_dataset_paths(metadata, backend_type="slurm")
+        is_valid, error = validate_all_dataset_uris(metadata, backend_type="slurm")
         assert is_valid is True
         assert error == ""
 
     def test_none_values(self):
         """Test validation with None values"""
         metadata = {
-            "train_dataset_paths": None,
-            "eval_dataset_path": None,
-            "inference_dataset_path": None,
-            "calibration_dataset_path": None
+            "train_dataset_uris": None,
+            "eval_dataset_uri": None,
+            "inference_dataset_uri": None,
+            "calibration_dataset_uri": None
         }
-        is_valid, error = validate_all_dataset_paths(metadata, backend_type="slurm")
+        is_valid, error = validate_all_dataset_uris(metadata, backend_type="slurm")
         assert is_valid is True
         assert error == ""
 
     def test_mixed_valid_and_none(self):
         """Test validation with mix of valid paths and None"""
         metadata = {
-            "train_dataset_paths": ["lustre:///data/train"],
-            "eval_dataset_path": "lustre:///data/val",
-            "inference_dataset_path": None,
-            "calibration_dataset_path": None
+            "train_dataset_uris": ["lustre:///data/train"],
+            "eval_dataset_uri": "lustre:///data/val",
+            "inference_dataset_uri": None,
+            "calibration_dataset_uri": None
         }
-        is_valid, error = validate_all_dataset_paths(metadata, backend_type="slurm")
+        is_valid, error = validate_all_dataset_uris(metadata, backend_type="slurm")
         assert is_valid is True
         assert error == ""
 
     def test_multiple_invalid_paths(self):
         """Test that first invalid path is reported"""
         metadata = {
-            "train_dataset_paths": ["/local/data1", "/local/data2"],  # Both invalid for SLURM
-            "eval_dataset_path": "/local/val"  # Also invalid
+            "train_dataset_uris": ["/local/data1", "/local/data2"],  # Both invalid for SLURM
+            "eval_dataset_uri": "/local/val"  # Also invalid
         }
-        is_valid, error = validate_all_dataset_paths(metadata, backend_type="slurm")
+        is_valid, error = validate_all_dataset_uris(metadata, backend_type="slurm")
         assert is_valid is False
         # Should report first invalid path encountered
         assert "not allowed for SLURM backend" in error
@@ -250,14 +250,14 @@ class TestBackendRestrictions:
     @pytest.mark.parametrize("backend", REMOTE_BACKENDS)
     def test_local_paths_rejected_for_remote_backends(self, backend):
         """Test that local paths are rejected for all remote backends"""
-        is_valid, error = validate_dataset_path("/local/data", backend_type=backend)
+        is_valid, error = validate_dataset_uri("/local/data", backend_type=backend)
         assert is_valid is False
         assert backend.upper() in error
 
     @pytest.mark.parametrize("backend", REMOTE_BACKENDS)
     def test_file_paths_rejected_for_remote_backends(self, backend):
         """Test that file:// paths are rejected for all remote backends"""
-        is_valid, error = validate_dataset_path("file:///local/data", backend_type=backend)
+        is_valid, error = validate_dataset_uri("file:///local/data", backend_type=backend)
         assert is_valid is False
         assert backend.upper() in error
 
@@ -266,7 +266,7 @@ class TestBackendRestrictions:
     def test_cloud_paths_accepted_for_remote_backends(self, protocol, backend):
         """Test that cloud paths are accepted for all remote backends"""
         path = f"{protocol}://some/path"
-        is_valid, error = validate_dataset_path(path, backend_type=backend)
+        is_valid, error = validate_dataset_uri(path, backend_type=backend)
         assert is_valid is True
         assert error == ""
 
@@ -280,7 +280,7 @@ class TestBackendRestrictions:
             "/local/data"
         ]
         for path in paths:
-            is_valid, error = validate_dataset_path(path, backend_type="local")
+            is_valid, error = validate_dataset_uri(path, backend_type="local")
             assert is_valid is True, f"Path {path} should be valid for local backend"
             assert error == ""
 
@@ -291,8 +291,8 @@ class TestProtocolNormalization:
     def test_s3_normalized_to_aws(self):
         """Test that s3:// protocol is normalized to aws://"""
         # Both should be valid
-        is_valid_s3, _ = validate_dataset_path("s3://bucket/path")
-        is_valid_aws, _ = validate_dataset_path("aws://bucket/path")
+        is_valid_s3, _ = validate_dataset_uri("s3://bucket/path")
+        is_valid_aws, _ = validate_dataset_uri("aws://bucket/path")
 
         assert is_valid_s3 is True
         assert is_valid_aws is True
@@ -306,7 +306,7 @@ class TestProtocolNormalization:
             "FILE:///path"
         ]
         for path in paths:
-            is_valid, error = validate_dataset_path(path)
+            is_valid, error = validate_dataset_uri(path)
             assert is_valid is True, f"Path {path} should be valid (case-insensitive)"
 
 
@@ -315,17 +315,17 @@ class TestErrorMessages:
 
     def test_slurm_error_suggests_lustre(self):
         """Test that SLURM error suggests using lustre://"""
-        _, error = validate_dataset_path("/local/data", backend_type="slurm")
+        _, error = validate_dataset_uri("/local/data", backend_type="slurm")
         assert "lustre://" in error.lower()
 
     def test_lepton_error_suggests_cloud(self):
         """Test that Lepton error suggests using cloud storage"""
-        _, error = validate_dataset_path("/local/data", backend_type="lepton")
+        _, error = validate_dataset_uri("/local/data", backend_type="lepton")
         assert "aws://" in error.lower() or "azure://" in error.lower()
 
     def test_invalid_protocol_lists_valid_ones(self):
         """Test that invalid protocol error lists valid protocols"""
-        _, error = validate_dataset_path("ftp://server/path")
+        _, error = validate_dataset_uri("ftp://server/path")
         for protocol in VALID_PROTOCOLS:
             # Check that valid protocols are mentioned (except 'local' which is implied by no prefix)
             if protocol != "local":

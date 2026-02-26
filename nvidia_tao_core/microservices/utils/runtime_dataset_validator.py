@@ -22,8 +22,8 @@ from nvidia_tao_core.microservices.utils.stateless_handler_utils import get_hand
 logger = logging.getLogger(__name__)
 
 
-def validate_dataset_path_structure(
-    dataset_path: str,
+def validate_dataset_uri_structure(
+    dataset_uri: str,
     network_arch: str,
     dataset_format: str,
     dataset_type: str = None,
@@ -38,7 +38,7 @@ def validate_dataset_path_structure(
     on network config validation rules.
 
     Args:
-        dataset_path: Full dataset path (e.g., "aws://bucket/data", "lustre:///data/train")
+        dataset_uri: Full dataset URI (e.g., "aws://bucket/data", "lustre:///data/train")
         network_arch: Network architecture name (e.g., "resnet", "cosmos-rl")
         dataset_format: Dataset format (e.g., "coco", "kitti", "llava")
         dataset_type: Dataset type (e.g., "object_detection", "vlm")
@@ -62,28 +62,28 @@ def validate_dataset_path_structure(
         }
     """
     if skip_validation:
-        logger.info(f"Skipping dataset validation for {dataset_path} (skip_validation=True)")
+        logger.info(f"Skipping dataset validation for {dataset_uri} (skip_validation=True)")
         return True, {"message": "Validation skipped"}
 
     logger.info(
-        f"Starting dataset validation for path: {dataset_path}, "
+        f"Starting dataset validation for path: {dataset_uri}, "
         f"network: {network_arch}, format: {dataset_format}"
     )
 
     # Detect if path is cloud or local (do this early as it's needed in multiple places)
     # Cloud paths have protocols: aws://, azure://, lepton://, lustre://, slurm://
-    is_cloud_path = any(dataset_path.startswith(proto) for proto in
+    is_cloud_path = any(dataset_uri.startswith(proto) for proto in
                         ["aws://", "azure://", "lepton://", "lustre://", "slurm://"])
 
     # Extract the path without protocol prefix for cloud_file_path
     # For AWS/Azure, workspace contains bucket config, so cloud_file_path should be path within bucket
     # Format: aws://bucket-name/path/to/data -> /path/to/data
     # For SLURM/Lustre, keep the full path
-    cloud_file_path_clean = dataset_path
+    cloud_file_path_clean = dataset_uri
     if is_cloud_path:
         for proto in ["aws://", "azure://", "lepton://", "lustre://", "slurm://"]:
-            if dataset_path.startswith(proto):
-                path_after_proto = dataset_path[len(proto):]
+            if dataset_uri.startswith(proto):
+                path_after_proto = dataset_uri[len(proto):]
 
                 # For AWS/Azure/Lepton, strip bucket name (first component)
                 # Bucket is configured in workspace, so cloud_file_path is path within bucket
@@ -100,16 +100,16 @@ def validate_dataset_path_structure(
                     if not cloud_file_path_clean.startswith('/'):
                         cloud_file_path_clean = '/' + cloud_file_path_clean
                 break
-        logger.info(f"Parsed cloud path: {dataset_path} -> cloud_file_path={cloud_file_path_clean}")
+        logger.info(f"Parsed cloud path: {dataset_uri} -> cloud_file_path={cloud_file_path_clean}")
 
     # Get workspace metadata for cloud credentials
     workspace_metadata = None
     if is_cloud_path:
         if not workspace_id:
             return False, {
-                "error": "Workspace ID is required for cloud dataset paths",
-                "error_details": f"Dataset path '{dataset_path}' is a cloud path but no workspace_id was provided",
-                "dataset_path": dataset_path
+                "error": "Workspace ID is required for cloud dataset URIs",
+                "error_details": f"Dataset URI '{dataset_uri}' is a cloud path but no workspace_id was provided",
+                "dataset_uri": dataset_uri
             }
         workspace_metadata = get_handler_metadata(workspace_id, "workspaces")
         if not workspace_metadata:
@@ -117,7 +117,7 @@ def validate_dataset_path_structure(
                 "error": "Workspace not found or access denied",
                 "error_details": f"Could not retrieve workspace metadata for workspace_id '{workspace_id}'",
                 "workspace_id": workspace_id,
-                "dataset_path": dataset_path
+                "dataset_uri": dataset_uri
             }
 
     # First, load network config to infer dataset_type and dataset_format if not provided
@@ -155,7 +155,7 @@ def validate_dataset_path_structure(
         # No format-specific validation rules defined
         # But still verify the path is accessible (catch non-existent paths)
         logger.warning(f"No format-specific validation rules defined for {network_arch}")
-        logger.info(f"Performing basic accessibility check for {dataset_path}")
+        logger.info(f"Performing basic accessibility check for {dataset_uri}")
 
         if is_cloud_path:
             # For cloud paths, try to access the storage to verify path is accessible
@@ -181,8 +181,8 @@ def validate_dataset_path_structure(
                 if not handler.cloud_instance:
                     return False, {
                         "error": "Cannot access cloud storage",
-                        "error_details": f"Failed to create cloud instance for path '{dataset_path}'",
-                        "dataset_path": dataset_path
+                        "error_details": f"Failed to create cloud instance for path '{dataset_uri}'",
+                        "dataset_uri": dataset_uri
                     }
 
                 # For paths without validation rules, we can't reliably check if they're valid
@@ -207,18 +207,18 @@ def validate_dataset_path_structure(
             except Exception as e:
                 logger.error(f"Error validating cloud path: {str(e)}")
                 return False, {
-                    "error": "Failed to validate dataset path",
-                    "error_details": f"Error accessing path '{dataset_path}': {str(e)}",
-                    "dataset_path": dataset_path
+                    "error": "Failed to validate dataset URI",
+                    "error_details": f"Error accessing path '{dataset_uri}': {str(e)}",
+                    "dataset_uri": dataset_uri
                 }
         else:
             # For local paths, check if directory exists
             import os
-            if not os.path.isdir(dataset_path):
+            if not os.path.isdir(dataset_uri):
                 return False, {
-                    "error": "Dataset path does not exist",
-                    "error_details": f"Local directory '{dataset_path}' does not exist",
-                    "dataset_path": dataset_path
+                    "error": "Dataset URI does not exist",
+                    "error_details": f"Local directory '{dataset_uri}' does not exist",
+                    "dataset_uri": dataset_uri
                 }
 
             return True, {
@@ -241,8 +241,8 @@ def validate_dataset_path_structure(
     # Call the existing validation function with correct signature
     # validate_dataset(org_name, handler_metadata, temp_dir="",
     #                  workspace_metadata=None)
-    # For cloud: pass dataset_path in cloud_file_path, temp_dir=""
-    # For local: pass dataset_path in temp_dir, cloud_file_path=""
+    # For cloud: pass dataset_uri in cloud_file_path, temp_dir=""
+    # For local: pass dataset_uri in temp_dir, cloud_file_path=""
     logger.info(
         f"Calling validate_dataset with: cloud_path={is_cloud_path}, "
         f"has_workspace={workspace_metadata is not None}"
@@ -251,37 +251,37 @@ def validate_dataset_path_structure(
     is_valid, validation_result = validate_dataset(
         org_name="",  # org_name not needed for validation
         handler_metadata=handler_metadata,
-        temp_dir=dataset_path if not is_cloud_path else "",  # Local path goes in temp_dir
+        temp_dir=dataset_uri if not is_cloud_path else "",  # Local path goes in temp_dir
         workspace_metadata=workspace_metadata if is_cloud_path else None
     )
 
-    logger.info(f"Validation result for {dataset_path}: is_valid={is_valid}, details={validation_result}")
+    logger.info(f"Validation result for {dataset_uri}: is_valid={is_valid}, details={validation_result}")
 
     if not is_valid:
         # Add context to error message
         validation_result["network_arch"] = network_arch
-        validation_result["dataset_path"] = dataset_path
+        validation_result["dataset_uri"] = dataset_uri
         validation_result["workspace_id"] = workspace_id
-        logger.error(f"Dataset validation failed for {dataset_path}: {validation_result.get('error_details')}")
+        logger.error(f"Dataset validation failed for {dataset_uri}: {validation_result.get('error_details')}")
     else:
-        logger.info(f"Dataset validation passed for {dataset_path}")
+        logger.info(f"Dataset validation passed for {dataset_uri}")
 
     return is_valid, validation_result
 
 
-def validate_all_dataset_paths_structure(
+def validate_all_dataset_uris_structure(
     experiment_metadata: dict,
     network_arch: str,
     skip_validation: bool = False
 ) -> tuple:
-    """Validate all dataset paths in experiment metadata.
+    """Validate all dataset URIs in experiment metadata.
 
     Args:
         experiment_metadata: Experiment metadata containing:
-            - train_dataset_paths: List of training dataset paths
-            - eval_dataset_path: Evaluation dataset path
-            - inference_dataset_path: Inference dataset path
-            - calibration_dataset_path: Calibration dataset path
+            - train_dataset_uris: List of training dataset URIs
+            - eval_dataset_uri: Evaluation dataset URI
+            - inference_dataset_uri: Inference dataset URI
+            - calibration_dataset_uri: Calibration dataset URI
             - dataset_format: Dataset format (optional, will infer from network config)
             - dataset_type: Dataset type (optional, will infer from network config)
             - workspace: Workspace ID for cloud credentials
@@ -313,26 +313,26 @@ def validate_all_dataset_paths_structure(
     # Collect all paths to validate
     paths_to_validate = []
 
-    train_paths = experiment_metadata.get("train_dataset_paths", [])
+    train_paths = experiment_metadata.get("train_dataset_uris", [])
     if train_paths:
         for path in train_paths:
-            paths_to_validate.append((path, "train_dataset_paths", ["training"]))
+            paths_to_validate.append((path, "train_dataset_uris", ["training"]))
 
-    eval_path = experiment_metadata.get("eval_dataset_path")
+    eval_path = experiment_metadata.get("eval_dataset_uri")
     if eval_path:
-        paths_to_validate.append((eval_path, "eval_dataset_path", ["evaluation"]))
+        paths_to_validate.append((eval_path, "eval_dataset_uri", ["evaluation"]))
 
-    inference_path = experiment_metadata.get("inference_dataset_path")
+    inference_path = experiment_metadata.get("inference_dataset_uri")
     if inference_path:
-        paths_to_validate.append((inference_path, "inference_dataset_path", ["inference"]))
+        paths_to_validate.append((inference_path, "inference_dataset_uri", ["inference"]))
 
-    calibration_path = experiment_metadata.get("calibration_dataset_path")
+    calibration_path = experiment_metadata.get("calibration_dataset_uri")
     if calibration_path:
-        paths_to_validate.append((calibration_path, "calibration_dataset_path", ["calibration"]))
+        paths_to_validate.append((calibration_path, "calibration_dataset_uri", ["calibration"]))
 
     # If no paths to validate, return success
     if not paths_to_validate:
-        return True, "", {"message": "No dataset paths to validate"}
+        return True, "", {"message": "No dataset URIs to validate"}
 
     # Validate each path
     for path, field_name, intents in paths_to_validate:
@@ -341,8 +341,8 @@ def validate_all_dataset_paths_structure(
             logger.info(f"Skipping validation for dataset UUID: {path}")
             continue
 
-        is_valid, validation_details = validate_dataset_path_structure(
-            dataset_path=path,
+        is_valid, validation_details = validate_dataset_uri_structure(
+            dataset_uri=path,
             network_arch=network_arch,
             dataset_format=dataset_format,
             dataset_type=dataset_type,
@@ -358,7 +358,7 @@ def validate_all_dataset_paths_structure(
             )
             return False, error_msg, validation_details
 
-    return True, "", {"message": "All dataset paths validated successfully"}
+    return True, "", {"message": "All dataset URIs validated successfully"}
 
 
 def is_uuid(value: str) -> bool:

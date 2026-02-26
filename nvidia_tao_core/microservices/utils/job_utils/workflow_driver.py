@@ -59,8 +59,8 @@ def create_job_context(
     if kind == "experiment" and backend_details:
         backend_type = backend_details.get('backend_type') if isinstance(backend_details, dict) else None
         if backend_type and handler_metadata:
-            from nvidia_tao_core.microservices.utils.dataset_path_validator import validate_all_dataset_paths
-            is_valid, error_msg = validate_all_dataset_paths(handler_metadata, backend_type)
+            from nvidia_tao_core.microservices.utils.dataset_uri_validator import validate_all_dataset_uris
+            is_valid, error_msg = validate_all_dataset_uris(handler_metadata, backend_type)
             if not is_valid:
                 raise ValueError(f"Dataset path validation failed: {error_msg}")
 

@@ -153,8 +153,8 @@ def resolve_dataset_reference(value, workspace_metadata=None, backend_type=None)
     # Check if it's a direct path (has protocol prefix)
     if is_direct_path(value):
         # Validate path against backend
-        from nvidia_tao_core.microservices.utils.dataset_path_validator import validate_dataset_path
-        is_valid, error = validate_dataset_path(value, backend_type)
+        from nvidia_tao_core.microservices.utils.dataset_uri_validator import validate_dataset_uri
+        is_valid, error = validate_dataset_uri(value, backend_type)
         if not is_valid:
             raise ValueError(error)
 
@@ -498,10 +498,10 @@ def get_source_datasets_from_config(config_source, handler_metadata):
     if not datasets:
         # Map old field names to new field names
         field_mapping = {
-            "train_datasets": "train_dataset_paths",
-            "eval_dataset": "eval_dataset_path",
-            "inference_dataset": "inference_dataset_path",
-            "calibration_dataset": "calibration_dataset_path"
+            "train_datasets": "train_dataset_uris",
+            "eval_dataset": "eval_dataset_uri",
+            "inference_dataset": "inference_dataset_uri",
+            "calibration_dataset": "calibration_dataset_uri"
         }
         new_field = field_mapping.get(config_source)
         if new_field:
@@ -1153,6 +1153,10 @@ def apply_data_source_config(config, job_context, handler_metadata):
                     set_nested_config_value(config, config_path, result)
             else:
                 path = source_config.get("path", "")
+                # Skip optional paths that don't exist (user can still provide via specs)
+                if source_config.get("optional") and path:
+                    if not check_file_exists_in_cloud(source_ds_metadata, source_root, path):
+                        continue
                 if path and not dataset_convert_downloaded_locally:
                     # Resolve tar file to folder if tar doesn't exist but folder does
                     resolved_path = resolve_tar_or_folder_path(source_ds_metadata, source_root, path)

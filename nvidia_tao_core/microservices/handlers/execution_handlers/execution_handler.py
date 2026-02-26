@@ -773,6 +773,9 @@ class ExecutionHandler(ABC):
                     data = json.dumps(request_metadata)
                     response = requests.post(endpoint, data=data, timeout=120)
 
+                if response.status_code not in [200, 201]:
+                    self.logger.error(f"Error response from {endpoint}: {response.status_code} {response.text}")
+
                 return response
 
             except Exception as e:

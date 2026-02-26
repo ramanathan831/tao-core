@@ -277,10 +277,10 @@ class ExperimentHandler:
                     "checkpoint_epoch_number": request_dict.get("checkpoint_epoch_number", {}),
                     "calibration_dataset": None,
                     # New fields for direct dataset paths
-                    "train_dataset_paths": request_dict.get("train_dataset_paths"),
-                    "eval_dataset_path": request_dict.get("eval_dataset_path"),
-                    "inference_dataset_path": request_dict.get("inference_dataset_path"),
-                    "calibration_dataset_path": request_dict.get("calibration_dataset_path"),
+                    "train_dataset_uris": request_dict.get("train_dataset_uris"),
+                    "eval_dataset_uri": request_dict.get("eval_dataset_uri"),
+                    "inference_dataset_uri": request_dict.get("inference_dataset_uri"),
+                    "calibration_dataset_uri": request_dict.get("calibration_dataset_uri"),
                     "base_experiment_ids": [],
                     "automl_settings": request_dict.get("automl_settings", {}),
                     "metric": request_dict.get("metric", "kpi"),
@@ -331,20 +331,20 @@ class ExperimentHandler:
             return error_code
 
         # Dataset structure validation (checks for required files like annotations.json)
-        train_dataset_paths = request_dict.get("train_dataset_paths")
-        eval_dataset_path = request_dict.get("eval_dataset_path")
-        inference_dataset_path = request_dict.get("inference_dataset_path")
-        calibration_dataset_path = request_dict.get("calibration_dataset_path")
+        train_dataset_uris = request_dict.get("train_dataset_uris")
+        eval_dataset_uri = request_dict.get("eval_dataset_uri")
+        inference_dataset_uri = request_dict.get("inference_dataset_uri")
+        calibration_dataset_uri = request_dict.get("calibration_dataset_uri")
         skip_validation = request_dict.get("skip_dataset_validation", False)
 
         if any([
-            train_dataset_paths,
-            eval_dataset_path,
-            inference_dataset_path,
-            calibration_dataset_path
+            train_dataset_uris,
+            eval_dataset_uri,
+            inference_dataset_uri,
+            calibration_dataset_uri
         ]) and not skip_validation:
             from nvidia_tao_core.microservices.utils.runtime_dataset_validator import (
-                validate_all_dataset_paths_structure
+                validate_all_dataset_uris_structure
             )
 
             network_arch = request_dict.get("network_arch")
@@ -353,16 +353,16 @@ class ExperimentHandler:
 
             # Prepare metadata for validation
             validation_metadata = {
-                "train_dataset_paths": train_dataset_paths,
-                "eval_dataset_path": eval_dataset_path,
-                "inference_dataset_path": inference_dataset_path,
-                "calibration_dataset_path": calibration_dataset_path,
+                "train_dataset_uris": train_dataset_uris,
+                "eval_dataset_uri": eval_dataset_uri,
+                "inference_dataset_uri": inference_dataset_uri,
+                "calibration_dataset_uri": calibration_dataset_uri,
                 "dataset_format": request_dict.get("dataset_format"),
                 "dataset_type": request_dict.get("dataset_type"),
                 "workspace": request_dict.get("workspace")
             }
 
-            is_valid, error_msg, validation_details = validate_all_dataset_paths_structure(
+            is_valid, error_msg, validation_details = validate_all_dataset_uris_structure(
                 validation_metadata,
                 network_arch,
                 skip_validation=False
@@ -653,10 +653,10 @@ class ExperimentHandler:
                     "eval_dataset",
                     "inference_dataset",
                     "calibration_dataset",
-                    "train_dataset_paths",
-                    "eval_dataset_path",
-                    "inference_dataset_path",
-                    "calibration_dataset_path",
+                    "train_dataset_uris",
+                    "eval_dataset_uri",
+                    "inference_dataset_uri",
+                    "calibration_dataset_uri",
                     "base_experiment_ids",
                     "checkpoint_choose_method",
                     "checkpoint_epoch_number"
