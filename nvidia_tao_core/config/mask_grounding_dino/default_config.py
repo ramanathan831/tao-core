@@ -155,6 +155,24 @@ class MaskGDINODatasetConfig(GDINODatasetConfig):
 class MaskGDINOModelConfig(GDINOModelConfig):
     """DINO model config."""
 
+    enc_layers: int = INT_FIELD(
+        value=6,
+        default_value=6,
+        description="Number of encoder layers in the transformer (fixed at 6 for Mask Grounding DINO)",
+        valid_min=6,
+        valid_max=6,
+        automl_enabled="FALSE",
+        display_name="encoder layers",
+    )
+    dec_layers: int = INT_FIELD(
+        value=6,
+        default_value=6,
+        description="Number of decoder layers in the transformer (fixed at 6 for Mask Grounding DINO)",
+        valid_min=6,
+        valid_max=6,
+        automl_enabled="FALSE",
+        display_name="decoder layers",
+    )
     has_mask: bool = BOOL_FIELD(
         value=True,
         default_value=True,

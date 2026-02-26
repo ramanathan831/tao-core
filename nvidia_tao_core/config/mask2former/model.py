@@ -118,6 +118,7 @@ class MaskFormer:
         display_unit="hidden dim",
         valid_min=64,
         valid_max=1024,
+        math_cond="/ 8",
         automl_enabled="True",
         popular="yes",
     )

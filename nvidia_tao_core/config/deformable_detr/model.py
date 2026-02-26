@@ -76,8 +76,8 @@ class DDModelConfig:
         default_value=300,
         description="The number of queries",
         display_name="number of queries",
-        valid_min=1,
-        valid_max="inf",
+        valid_min=100,
+        valid_max=900,
         automl_enabled="TRUE",
         parent_param="TRUE"
     )
@@ -182,6 +182,7 @@ class DDModelConfig:
         default_value=6,
         description="Numer of encoder layers in the transformer",
         valid_min=1,
+        valid_max=12,
         automl_enabled="TRUE",
         display_name="encoder layers",
     )
@@ -190,6 +191,7 @@ class DDModelConfig:
         default_value=6,
         description="Numer of decoder layers in the transformer",
         valid_min=1,
+        valid_max=12,
         automl_enabled="TRUE",
         display_name="decoder layers",
     )

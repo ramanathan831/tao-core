@@ -51,7 +51,7 @@ class OptimConfig:
     lr: float = FLOAT_FIELD(
         value=2e-4,
         valid_min=0.0,
-        valid_max=1.0,
+        valid_max=0.01,
         math_cond="> 0.0",
         display_name="learning rate",
         description="The initial learning rate for training the model, excluding the backbone.",
@@ -60,7 +60,7 @@ class OptimConfig:
     lr_backbone: float = FLOAT_FIELD(
         value=2e-5,
         valid_min=0.0,
-        valid_max=1.0,
+        valid_max=0.001,
         math_cond="> 0.0",
         display_name="learning rate - backbone",
         description="The initial learning rate for training the backbone.",
@@ -87,7 +87,7 @@ class OptimConfig:
     weight_decay: float = FLOAT_FIELD(
         value=1e-4,
         valid_min=0.0,
-        valid_max=1.0,
+        valid_max=0.1,
         math_cond="> 0.0",
         display_name="weight decay",
         description="The weight decay coefficient.",
