@@ -99,11 +99,6 @@
                 "source": "train_datasets",
                 "multiple_sources": false,
                 "path": "images.tar.gz"
-            },
-            "dataset.classify.quant_calibration_dataset.csv_path": {
-                "source": "train_datasets",
-                "multiple_sources": false,
-                "path": "dataset.csv"
             }
         },
         "evaluate": {
