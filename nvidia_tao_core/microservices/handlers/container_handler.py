@@ -1105,7 +1105,7 @@ class ContainerJobHandler:
                 status_level=status
             )
             if cloud_storage:
-                cloud_storage.upload_file(status_file, status_file)
+                cloud_storage.upload_file(status_file, status_file, send_status_callbacks=False)
         # Clean up any stale CUDA contexts
         cleanup_cuda_contexts()
 

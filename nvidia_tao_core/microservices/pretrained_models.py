@@ -152,25 +152,34 @@ class BaseExperimentMetadata:
         """Return current version of Nvidia TAO.
 
         Priority:
-          1. $TAO_TOOLKIT_VERSION
-          2. local version.py (if distributed with the wheel)
-          3. hard-coded fallback
+          1. installed package metadata (reflects actual pip-installed version)
+          2. nvidia_tao_core.version.__version__ (source module, if available)
+          3. $TAO_TOOLKIT_VERSION (image env var, may be stale)
+          4. hard-coded fallback
         """
         if self._cached_tao_version:
             return self._cached_tao_version
+
+        try:
+            from importlib.metadata import version as pkg_version
+            self._cached_tao_version = pkg_version("nvidia-tao-core")
+            return self._cached_tao_version
+        except Exception:
+            pass
+
+        try:
+            from nvidia_tao_core.version import __version__ as src_version
+            self._cached_tao_version = src_version
+            return self._cached_tao_version
+        except Exception:
+            pass
 
         env_ver = os.getenv("TAO_TOOLKIT_VERSION")
         if env_ver:
             self._cached_tao_version = env_ver
             return env_ver
 
-        # Optional: Look for version.py next to this file to stay forward-compatible
-        try:
-            from importlib.metadata import version as pkg_version
-            self._cached_tao_version = pkg_version("nvidia-tao-core")
-        except Exception:
-            self._cached_tao_version = "6.0.0"
-
+        self._cached_tao_version = "6.0.0"
         return self._cached_tao_version
 
     def get_ngc_client(self, org: str, team: str, ngc_key: str):

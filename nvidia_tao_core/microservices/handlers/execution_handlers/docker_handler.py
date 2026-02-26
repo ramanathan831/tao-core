@@ -28,6 +28,7 @@ from nvidia_tao_core.microservices.handlers.execution_handlers import ExecutionH
 from nvidia_tao_core.microservices.utils.core_utils import get_admin_key
 from nvidia_tao_core.microservices.utils.stateless_handler_utils import (
     get_handler_job_metadata,
+    write_job_metadata,
     BACKEND
 )
 from nvidia_tao_core.microservices.enum_constants import Backend
@@ -442,9 +443,22 @@ class DockerHandler(ExecutionHandler):
                     )
                     gpu_ids = []
                 else:
-                    logger.debug(f"[GPU_ASSIGN] Attempting to assign {num_gpus} GPU(s) for container {container_name}")
-                    gpu_ids = gpu_manager.assign_gpus(container_name, num_gpus)
-                    logger.debug(f"[GPU_ASSIGN] Assigned GPU IDs: {gpu_ids} for container {container_name}")
+                    # Check if GPUs were already pre-assigned by the workflow
+                    # (may not be in job metadata for AutoML experiments, but still in GPU table)
+                    existing_gpu_ids = gpu_manager.get_assigned_gpu_ids(container_name)
+                    if existing_gpu_ids:
+                        gpu_ids = existing_gpu_ids
+                        logger.debug(
+                            f"[GPU_ASSIGN] Found already-assigned GPUs {gpu_ids} "
+                            f"for container {container_name} (from GPU table lookup)"
+                        )
+                    else:
+                        logger.debug(
+                            f"[GPU_ASSIGN] Attempting to assign {num_gpus} GPU(s) "
+                            f"for container {container_name}"
+                        )
+                        gpu_ids = gpu_manager.assign_gpus(container_name, num_gpus)
+                        logger.debug(f"[GPU_ASSIGN] Assigned GPU IDs: {gpu_ids} for container {container_name}")
 
                 # This prevents containers from starting with "all" GPUs when none are available
                 # This should rarely happen now because:
@@ -527,6 +541,21 @@ class DockerHandler(ExecutionHandler):
             # Start the container
             self._container = self._docker_client.containers.run(**run_kwargs)
             logger.info(f"Container {container_name} started successfully")
+
+            # Transition normal jobs from Pending → Started so that
+            # _reclaim_stale_gpus knows a container has been created and can
+            # safely apply its "no container = stale" heuristic.
+            # AutoML experiment sub-jobs are handled separately via the
+            # controller recommendation (pending → started) in AutoMLPipeline.run().
+            if job_id:
+                try:
+                    _meta = get_handler_job_metadata(job_id)
+                    if _meta and _meta.get("status") in ("Pending", "pending"):
+                        _meta["status"] = "Started"
+                        write_job_metadata(job_id, _meta)
+                        logger.info(f"[LIFECYCLE] Job {job_id}: Pending → Started (container created)")
+                except Exception as status_err:
+                    logger.warning(f"[LIFECYCLE] Could not update status to Started for {job_id}: {status_err}")
 
         except Exception as e:
             logger.error(f"Exception thrown in start_container is {str(e)}")

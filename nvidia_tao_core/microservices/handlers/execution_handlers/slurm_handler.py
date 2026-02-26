@@ -14,6 +14,7 @@
 """Handler to execute jobs on Slurm"""
 
 import json
+import math
 import subprocess
 import logging
 import os
@@ -964,11 +965,6 @@ class SlurmHandler(ExecutionHandler):
             - Set force_reconvert_latest=True to always reconvert :latest tagged images
             - Cached SQSH files are stored in sqsh_cache_dir for reuse across jobs
         """
-        # Detect multi-node from num_nodes parameter
-        is_multi_node = num_nodes > 1
-        if is_multi_node:
-            self.logger.info(f"Detected multi-node job: {num_nodes} nodes")
-
         # Set default timeout if not specified
         if timeout_hours is None:
             timeout_hours = time_hours - 0.2  # 12 minutes buffer
@@ -976,8 +972,24 @@ class SlurmHandler(ExecutionHandler):
         if num_gpus < max_num_gpus:
             exclusive = False
         else:
+            # num_gpus may represent total GPUs across all nodes (e.g., cosmos-rl
+            # passes total_gpus=64). Compute the correct num_nodes before capping
+            # num_gpus to the per-node limit.
+            computed_nodes = math.ceil(num_gpus / max_num_gpus)
+            if computed_nodes > num_nodes:
+                self.logger.info(
+                    f"Auto-computed num_nodes={computed_nodes} from "
+                    f"total_gpus={num_gpus} / max_num_gpus={max_num_gpus} "
+                    f"(overriding provided num_nodes={num_nodes})"
+                )
+                num_nodes = computed_nodes
             exclusive = True
             num_gpus = max_num_gpus
+
+        # Detect multi-node after potential num_nodes recalculation above
+        is_multi_node = num_nodes > 1
+        if is_multi_node:
+            self.logger.info(f"Detected multi-node job: {num_nodes} nodes")
 
         if mail_user is None:
             mail_user = f"{self.login_user}@nvidia.com"
@@ -1114,7 +1126,37 @@ class SlurmHandler(ExecutionHandler):
         )
 
         self.logger.debug(f"partition in slurm_handler create_job: {partition}")
-        # Build the SLURM script content
+
+        # For cosmos-rl multi-node: compute node metadata and inject as env vars
+        # so that vlm_entrypoint.py can determine each node's role and launch
+        # the appropriate cosmos-rl workers (controller, policy, rollout)
+        if network == "cosmos-rl" and is_multi_node:
+            node_info = self._compute_cosmos_rl_node_metadata(specs, num_gpus)
+            docker_env_vars["COSMOS_RL_MULTINODE"] = "1"
+            docker_env_vars["NUM_POLICY_NODES"] = str(node_info["n_policy_nodes"])
+            docker_env_vars["NUM_ROLLOUT_NODES"] = str(node_info["n_rollout_nodes"])
+            docker_env_vars["TOTAL_NODES"] = str(node_info["total_nodes"])
+            docker_env_vars["NODE_LAUNCH_METADATA_POLICY"] = json.dumps(
+                node_info["policy_metadata"]
+            )
+            docker_env_vars["NODE_LAUNCH_METADATA_ROLLOUT"] = json.dumps(
+                node_info["rollout_metadata"]
+            )
+            docker_env_vars["CONTROLLER_PORT"] = "8082"
+            self.logger.info(
+                f"[COSMOS-RL] Multi-node metadata: "
+                f"{node_info['n_policy_nodes']} policy nodes "
+                f"({node_info['n_policy_replicas']} replicas × "
+                f"{node_info['min_gpus_policy']} GPUs), "
+                f"{node_info['n_rollout_nodes']} rollout nodes "
+                f"({node_info['n_rollout_replicas']} replicas × "
+                f"{node_info['min_gpus_rollout']} GPUs), "
+                f"total={node_info['total_nodes']} nodes"
+            )
+            # Override num_nodes with the precise cosmos-rl total
+            num_nodes = node_info["total_nodes"]
+
+        # Build the SLURM script content (unified path for all networks)
         slurm_script = self._build_slurm_script(
             job_name=job_name,
             num_nodes=num_nodes,
@@ -1470,6 +1512,125 @@ class SlurmHandler(ExecutionHandler):
             self.logger.error(f"Error reading remote file {remote_file_path}: {e}")
             return None
 
+    @staticmethod
+    def _compute_cosmos_rl_node_metadata(specs, num_gpus_per_node=8):
+        """Compute node launch metadata for cosmos-rl multi-node jobs.
+
+        Replicates the logic from cosmos_rl/tools/slurm/dispatch_job.py to
+        compute how policy and rollout replicas are distributed across nodes.
+
+        Returns:
+            dict with keys:
+                n_policy_nodes (int): Number of nodes for policy
+                n_rollout_nodes (int): Number of nodes for rollout
+                total_nodes (int): Total number of nodes
+                policy_metadata (list[dict]): Per-node launch metadata for policy
+                rollout_metadata (list[dict]): Per-node launch metadata for rollout
+        """
+        policy_par = specs.get("policy", {}).get("parallelism", {})
+        rollout_par = specs.get("rollout", {}).get("parallelism", {})
+        train_policy = specs.get("train", {}).get("train_policy", {})
+
+        # Policy GPUs per replica
+        tp = int(policy_par.get("tp_size", 1))
+        pp = int(policy_par.get("pp_size", 1))
+        cp = int(policy_par.get("cp_size", 1))
+        dp_rep = int(policy_par.get("dp_replicate_size", 1))
+        dp_shard = int(policy_par.get("dp_shard_size", 1))
+        n_policy_replicas = int(policy_par.get("n_init_replicas", 1))
+
+        min_gpus_policy = tp * pp * cp * dp_rep
+        if dp_shard >= 1:
+            min_gpus_policy *= dp_shard
+
+        # Rollout GPUs per replica
+        r_tp = int(rollout_par.get("tp_size", 1))
+        r_pp = int(rollout_par.get("pp_size", 1))
+        n_rollout_replicas = int(rollout_par.get("n_init_replicas", 1))
+        min_gpus_rollout = r_tp * r_pp
+
+        train_type = train_policy.get("type", "grpo")
+
+        def compute_nodes_for_role(gpus_per_replica, n_replicas, role):
+            """Compute per-node metadata for a role (policy or rollout)."""
+            metadata = []
+            rendezvous_port = 29345
+
+            if gpus_per_replica >= num_gpus_per_node:
+                # Replica spans multiple nodes
+                nodes_per_replica = gpus_per_replica // num_gpus_per_node
+                total_nodes_role = n_replicas * nodes_per_replica
+
+                rendezvous_node = 0
+                for i_node in range(total_nodes_role):
+                    if i_node % nodes_per_replica == 0:
+                        rendezvous_node = i_node
+
+                    replica_meta = {
+                        "colocation": [{
+                            "nnode": nodes_per_replica,
+                            "role": role,
+                            "rendezvous_node": rendezvous_node,
+                            "rendezvous_port": rendezvous_port,
+                            "visible_gpus": list(range(num_gpus_per_node)),
+                        }]
+                    }
+                    metadata.append(replica_meta)
+            else:
+                # Multiple replicas per node
+                total_nodes_role = math.ceil(
+                    n_replicas * gpus_per_replica / num_gpus_per_node
+                )
+                replica_counter = 0
+                for i_node in range(total_nodes_role):
+                    colocation = []
+                    local_counter = 0
+                    while replica_counter < n_replicas:
+                        colocation.append({
+                            "nnode": 1,
+                            "role": role,
+                            "rendezvous_node": i_node,
+                            "rendezvous_port": rendezvous_port + replica_counter,
+                            "visible_gpus": list(range(
+                                local_counter * gpus_per_replica,
+                                (local_counter + 1) * gpus_per_replica,
+                            )),
+                        })
+                        replica_counter += 1
+                        local_counter += 1
+                        if replica_counter == n_replicas:
+                            break
+                        if local_counter * gpus_per_replica >= num_gpus_per_node:
+                            break
+                    metadata.append({"colocation": colocation})
+
+            return metadata
+
+        policy_metadata = compute_nodes_for_role(
+            min_gpus_policy, n_policy_replicas, "policy"
+        )
+        n_policy_nodes = len(policy_metadata)
+
+        if train_type == "sft":
+            rollout_metadata = []
+        else:
+            rollout_metadata = compute_nodes_for_role(
+                min_gpus_rollout, n_rollout_replicas, "rollout"
+            )
+        n_rollout_nodes = len(rollout_metadata)
+
+        return {
+            "n_policy_nodes": n_policy_nodes,
+            "n_rollout_nodes": n_rollout_nodes,
+            "total_nodes": n_policy_nodes + n_rollout_nodes,
+            "policy_metadata": policy_metadata,
+            "rollout_metadata": rollout_metadata,
+            "min_gpus_policy": min_gpus_policy,
+            "min_gpus_rollout": min_gpus_rollout,
+            "n_policy_replicas": n_policy_replicas,
+            "n_rollout_replicas": n_rollout_replicas,
+        }
+
     def _build_slurm_script(
             self,
             job_name,
@@ -1521,6 +1682,10 @@ class SlurmHandler(ExecutionHandler):
             "#SBATCH --wait-all-nodes=1",
         ])
 
+        # cosmos-rl needs all available memory for model weights and KV cache
+        if network == "cosmos-rl":
+            script_lines.append("#SBATCH --mem=0")
+
         if exclusive:
             script_lines.append("#SBATCH --exclusive")
 
@@ -1565,13 +1730,37 @@ class SlurmHandler(ExecutionHandler):
                 f"export NUM_GPU_PER_NODE={num_gpus}",
                 "export MASTER_PORT=29500",
                 "",
-                "# Compute MASTER_ADDR (first node)",
+                "# Compute MASTER_ADDR and node lists from SLURM allocation",
                 "NODELIST=$(scontrol show hostname $SLURM_JOB_NODELIST)",
                 "export MASTER_ADDR=$(echo $NODELIST | cut -d' ' -f1)",
                 "",
                 "# NODE_RANK from SLURM node ID (more semantically correct than SLURM_PROCID)",
                 "export NODE_RANK=$SLURM_NODEID",
             ])
+
+            # Cosmos-RL multi-node: compute controller host and per-role
+            # node lists from SLURM allocation (SLURM_JOB_NODELIST is
+            # available in the sbatch context).
+            # The per-node role (policy vs rollout) is determined inside
+            # the container by vlm_entrypoint.py using SLURM_NODEID,
+            # NUM_POLICY_NODES, POLICY_NODES, and ROLLOUT_NODES.
+            if network == "cosmos-rl":
+                n_policy = docker_env_vars.get("NUM_POLICY_NODES", "1")
+                n_total = docker_env_vars.get("TOTAL_NODES", str(num_nodes))
+                controller_port = docker_env_vars.get("CONTROLLER_PORT", "8082")
+                script_lines.extend([
+                    "",
+                    "# Cosmos-RL: compute controller host and per-role node lists",
+                    "export CONTROLLER_NODE=$(echo $NODELIST | cut -d' ' -f1)",
+                    f'export COSMOS_CONTROLLER_HOST="${{CONTROLLER_NODE}}:{controller_port}"',
+                    f"export POLICY_NODES=$(echo $NODELIST | cut -d' ' -f1-{n_policy})",
+                    f"NUM_ROLLOUT_NODES_VAL={docker_env_vars.get('NUM_ROLLOUT_NODES', '0')}",
+                    "if [ $NUM_ROLLOUT_NODES_VAL -gt 0 ]; then",
+                    f"    export ROLLOUT_NODES=$(echo $NODELIST | cut -d' ' -f$(({n_policy}+1))-$(({n_total})))",
+                    "fi",
+                    'echo "Cosmos-RL: POLICY_NODES=$POLICY_NODES, ROLLOUT_NODES=$ROLLOUT_NODES"',
+                    'echo "Cosmos-RL: COSMOS_CONTROLLER_HOST=$COSMOS_CONTROLLER_HOST"',
+                ])
 
         # CUDA environment override for jobs that need to force use of specific CUDA version
         # This is useful when:
@@ -1628,14 +1817,21 @@ class SlurmHandler(ExecutionHandler):
         # Add multi-node env vars to container
         container_env_keys = ",".join(docker_env_vars.keys()) if docker_env_vars else ""
         if is_multi_node:
-            multi_node_env_keys = ",".join([
+            multi_node_env_keys = [
                 "NODE_RANK", "WORLD_SIZE", "MASTER_ADDR", "MASTER_PORT",
                 "NUM_GPU_PER_NODE"
-            ])
+            ]
+            # Cosmos-RL: also forward runtime-computed vars and Slurm node info
+            if network == "cosmos-rl":
+                multi_node_env_keys.extend([
+                    "COSMOS_CONTROLLER_HOST", "POLICY_NODES", "ROLLOUT_NODES",
+                    "CONTROLLER_NODE", "SLURM_NODEID", "SLURMD_NODENAME",
+                ])
+            multi_node_env_str = ",".join(multi_node_env_keys)
             if container_env_keys:
-                container_env_keys = multi_node_env_keys + "," + container_env_keys
+                container_env_keys = multi_node_env_str + "," + container_env_keys
             else:
-                container_env_keys = multi_node_env_keys
+                container_env_keys = multi_node_env_str
 
         # Build base srun (all srun options MUST come before the "--")
         srun_base = (
@@ -1646,26 +1842,158 @@ class SlurmHandler(ExecutionHandler):
         if container_env_keys:
             srun_base += f" --container-env={container_env_keys}"
 
-        # Add output redirection if use_srun is enabled (for advanced features)
-        if use_srun:
-            srun_base += " -o $OUTFILE -e $ERRFILE --open-mode=append"
+        if network == "cosmos-rl" and is_multi_node:
+            # 3-parallel-srun pattern matching the native cosmos_rl_job_multi_node.sh.
+            # Each role (controller, policy, rollout) gets its own srun targeting
+            # specific nodes, with separate log files and independent failure handling.
+            srun_cosmos = (
+                f"srun --container-image={container_image} "
+                f"--container-mounts={container_mounts} "
+                f"--no-container-mount-home --export=ALL"
+            )
+            if container_env_keys:
+                srun_cosmos += f" --container-env={container_env_keys}"
 
-        # Build command with timeout if enabled (for auto-requeue support)
-        if use_timeout:
-            # Convert to minutes for better precision (e.g., 3.8h = 228m)
-            timeout_mins = int(timeout_hours * 60) if timeout_hours else int((time_hours - 0.2) * 60)
-            script_lines.append(f"timeout {timeout_mins}m {srun_base} -- python {command}")
-        else:
-            script_lines.append(f"{srun_base} -- python {command}")
+            n_policy = docker_env_vars.get("NUM_POLICY_NODES", "1")
+            n_rollout = docker_env_vars.get("NUM_ROLLOUT_NODES", "0")
 
-        if use_timeout and use_requeue:
             script_lines.extend([
                 "",
-                "# Launch self again",
-                "if [[ $? == 124 ]]; then",
-                "    scontrol requeue $SLURM_JOB_ID",
-                "fi"
+                "# Create per-role log directories",
+                f"mkdir -p {log_dir}/${{SLURM_JOB_NAME}}-${{SLURM_JOB_ID}}/controller",
+                f"mkdir -p {log_dir}/${{SLURM_JOB_NAME}}-${{SLURM_JOB_ID}}/policy",
+                f"mkdir -p {log_dir}/${{SLURM_JOB_NAME}}-${{SLURM_JOB_ID}}/rollout",
+                "",
+                "# --- Controller (on first policy node, --overlap) ---",
+                f"{srun_cosmos} \\",
+                "    --overlap \\",
+                "    --nodes=1 \\",
+                "    --nodelist=$CONTROLLER_NODE \\",
+                f"    -o {log_dir}/%x-%j/controller/%t.out \\",
+                f"    -e {log_dir}/%x-%j/controller/%t.err \\",
+                "    --export=ALL,COSMOS_NODE_ROLE=controller \\",
+                f"    -- python {command} &",
+                "pid_controller=$!",
+                "",
+                "# --- Policy workers ---",
+                f"{srun_cosmos} \\",
+                "    --overlap \\",
+                f"    --nodes={n_policy} \\",
+                "    --nodelist=\"$POLICY_NODES\" \\",
+                f"    -o {log_dir}/%x-%j/policy/%t.out \\",
+                f"    -e {log_dir}/%x-%j/policy/%t.err \\",
+                "    --export=ALL,COSMOS_NODE_ROLE=policy \\",
+                f"    -- python {command} &",
+                "pid_policy=$!",
+                "",
+                f"if [ {n_rollout} -gt 0 ]; then",
+                "    # --- Rollout workers ---",
+                f"    {srun_cosmos} \\",
+                f"        --nodes={n_rollout} \\",
+                "        --nodelist=\"$ROLLOUT_NODES\" \\",
+                f"        -o {log_dir}/%x-%j/rollout/%t.out \\",
+                f"        -e {log_dir}/%x-%j/rollout/%t.err \\",
+                "        --export=ALL,COSMOS_NODE_ROLE=rollout \\",
+                f"        -- python {command} &",
+                "    pid_rollout=$!",
+                "fi",
+                "",
+                'echo "Waiting for controller, policy, and rollout. Job: $SLURM_JOB_ID"',
+                "",
+                "# Monitor all roles -- if any fails, kill the others and cancel job",
+                "while true; do",
+                "    kill -0 $pid_policy 2>/dev/null; pol_alive=$?",
+                "",
+                f"    if [ {n_rollout} -gt 0 ]; then",
+                "        kill -0 $pid_rollout 2>/dev/null; roll_alive=$?",
+                "    else",
+                "        roll_alive=1; exit_code_rollout=0",
+                "    fi",
+                "",
+                "    kill -0 $pid_controller 2>/dev/null; crl_alive=$?",
+                "",
+                "    # All done?",
+                "    if [ $pol_alive -ne 0 ] && [ $roll_alive -ne 0 ] && [ $crl_alive -ne 0 ]; then",
+                "        wait $pid_policy; exit_code_policy=$?",
+                f"        if [ {n_rollout} -gt 0 ]; then wait $pid_rollout; exit_code_rollout=$?; fi",
+                "        wait $pid_controller; exit_code_controller=$?",
+                "        if [ $exit_code_policy -ne 0 ] || [ $exit_code_rollout -ne 0 ]"
+                " || [ $exit_code_controller -ne 0 ]; then",
+                '            echo "One or more roles failed'
+                ' (policy=$exit_code_policy rollout=${exit_code_rollout:-0}'
+                ' controller=$exit_code_controller)"',
+                "            scancel $SLURM_JOB_ID",
+                "            exit 1",
+                "        else",
+                '            echo "All roles succeeded"',
+                "            exit 0",
+                "        fi",
+                "    fi",
+                "",
+                "    # Policy failed early?",
+                "    if [ $pol_alive -ne 0 ]; then",
+                "        wait $pid_policy; ec=$?",
+                "        if [ $ec -ne 0 ]; then",
+                '            echo "Policy failed ($ec). Killing other roles."',
+                f"            if [ {n_rollout} -gt 0 ]; then kill $pid_rollout 2>/dev/null || true; fi",
+                "            kill $pid_controller 2>/dev/null || true",
+                "            scancel $SLURM_JOB_ID; exit $ec",
+                "        fi",
+                "    fi",
+                "",
+                "    # Rollout failed early?",
+                f"    if [ {n_rollout} -gt 0 ]; then",
+                "        if [ $roll_alive -ne 0 ]; then",
+                "            wait $pid_rollout; ec=$?",
+                "            if [ $ec -ne 0 ]; then",
+                '                echo "Rollout failed ($ec). Killing other roles."',
+                "                kill $pid_policy 2>/dev/null || true",
+                "                kill $pid_controller 2>/dev/null || true",
+                "                scancel $SLURM_JOB_ID; exit $ec",
+                "            fi",
+                "        fi",
+                "    fi",
+                "",
+                "    # Controller failed early?",
+                "    if [ $crl_alive -ne 0 ]; then",
+                "        wait $pid_controller; ec=$?",
+                "        if [ $ec -ne 0 ]; then",
+                '            echo "Controller failed ($ec). Killing other roles."',
+                "            kill $pid_policy 2>/dev/null || true",
+                f"            if [ {n_rollout} -gt 0 ]; then kill $pid_rollout 2>/dev/null || true; fi",
+                "            scancel $SLURM_JOB_ID; exit $ec",
+                "        fi",
+                "    fi",
+                "",
+                "    sleep 1",
+                "done",
             ])
+        else:
+            # Non-cosmos-rl or single-node: standard single srun
+            # Add output redirection if use_srun is enabled (for advanced features)
+            if use_srun:
+                srun_base += " -o $OUTFILE -e $ERRFILE --open-mode=append"
+
+            # Prevent home directory conflicts for cosmos-rl single-node
+            if network == "cosmos-rl":
+                srun_base += " --no-container-mount-home --export=ALL"
+
+            # Build command with timeout if enabled (for auto-requeue support)
+            if use_timeout:
+                # Convert to minutes for better precision (e.g., 3.8h = 228m)
+                timeout_mins = int(timeout_hours * 60) if timeout_hours else int((time_hours - 0.2) * 60)
+                script_lines.append(f"timeout {timeout_mins}m {srun_base} -- python {command}")
+            else:
+                script_lines.append(f"{srun_base} -- python {command}")
+
+            if use_timeout and use_requeue:
+                script_lines.extend([
+                    "",
+                    "# Launch self again",
+                    "if [[ $? == 124 ]]; then",
+                    "    scontrol requeue $SLURM_JOB_ID",
+                    "fi"
+                ])
 
         return "\n".join(script_lines)
 

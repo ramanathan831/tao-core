@@ -599,7 +599,7 @@ class ActionPipeline:
 
                     # Stop log monitoring when job is done
                     logger.debug(f"[ACTIONS] Job {self.job_name} completed, checking if should stop log monitoring")
-                    if BACKEND in ("local-k8s", "local-docker"):
+                    if BACKEND in (Backend.LOCAL_K8S, Backend.LOCAL_DOCKER):
                         try:
                             logger.info(
                                 f"[ACTIONS] Stopping log monitoring for completed job {self.job_name}"
@@ -623,7 +623,7 @@ class ActionPipeline:
                     update_job_status(self.handler_id, self.job_name, status="Error", kind=self.handler_kind)
 
                     # Stop log monitoring when job errors
-                    if BACKEND in ("local-k8s", "local-docker"):
+                    if BACKEND in (Backend.LOCAL_K8S, Backend.LOCAL_DOCKER):
                         try:
                             stop_monitoring_job(self.job_name)
                             logger.info(f"Stopped log monitoring for errored job {self.job_name}")
@@ -830,7 +830,7 @@ class ActionPipeline:
                 f"[ACTIONS] Checking if log monitoring should start for job {self.job_name}, "
                 f"BACKEND={BACKEND}"
             )
-            if BACKEND in ("local-k8s", "local-docker"):
+            if BACKEND in (Backend.LOCAL_K8S, Backend.LOCAL_DOCKER):
                 try:
                     logger.debug(f"[ACTIONS] Starting log monitoring setup for job {self.job_name}")
                     # Get callback URL if available
@@ -842,7 +842,7 @@ class ActionPipeline:
 
                     # Get namespace for K8s
                     namespace = None
-                    if BACKEND == "local-k8s":
+                    if BACKEND == Backend.LOCAL_K8S:
                         namespace = os.getenv("NAMESPACE")
                         logger.debug(f"[ACTIONS] K8s namespace from env: {namespace}")
                         if not namespace:
@@ -1039,8 +1039,19 @@ class TrainVal(CLIPipeline):
             save_job_specs(self.job_context.id, spec)
 
         # Take .json file, read in spec params, infer spec params
-        if action in network_config["spec_params"].keys():
-            for field_name, inference_fn in network_config["spec_params"][action].items():
+        # Fall back to the mapped network's config if the action isn't in the primary config
+        spec_params_action = action
+        spec_params_config = network_config
+        if action not in network_config.get("spec_params", {}):
+            mapped_net, mapped_act = get_microservices_network_and_action(network, action)
+            if mapped_net != network:
+                mapped_config = read_network_config(mapped_net)
+                if mapped_act in mapped_config.get("spec_params", {}):
+                    spec_params_action = mapped_act
+                    spec_params_config = mapped_config
+
+        if spec_params_action in spec_params_config.get("spec_params", {}):
+            for field_name, inference_fn in spec_params_config["spec_params"][spec_params_action].items():
                 field_value = (
                     CLI_CONFIG_TO_FUNCTIONS[inference_fn](self.job_context, self.handler_metadata)
                     if inference_fn in CLI_CONFIG_TO_FUNCTIONS
@@ -1401,12 +1412,26 @@ class AutoMLPipeline(ActionPipeline):
                 f"and job id {self.job_name} submitted"
             )
 
+            # Transition controller recommendation: pending → started.
+            # This is the AutoML equivalent of the Pending → Started write
+            # that normal jobs do in tao.jobs. It tells _reclaim_stale_gpus
+            # that the container/pod now exists and can be checked.
+            if self.recs_dict and self.rec_number is not None:
+                prev_status = self.recs_dict[self.rec_number].get("status", "")
+                if prev_status in ("pending", ""):
+                    self.recs_dict[self.rec_number]["status"] = "started"
+                    save_automl_controller_info(self.automl_brain_job_id, self.recs_dict)
+                    logger.info(
+                        f"[LIFECYCLE] AutoML rec {self.rec_number} (job {self.job_name}): "
+                        f"{prev_status or '(none)'} → started (container created)"
+                    )
+
             # Start log monitoring for AutoML recommendation job
             logger.debug(
                 f"[ACTIONS] Checking if log monitoring should start for AutoML rec job "
                 f"{self.job_name}, BACKEND={BACKEND}"
             )
-            if BACKEND in ("local-k8s", "local-docker"):
+            if BACKEND in (Backend.LOCAL_K8S, Backend.LOCAL_DOCKER):
                 try:
                     logger.debug(
                         f"[ACTIONS] Starting log monitoring setup for AutoML rec job "
@@ -1421,7 +1446,7 @@ class AutoMLPipeline(ActionPipeline):
 
                     # Get namespace for K8s
                     namespace = None
-                    if BACKEND == "local-k8s":
+                    if BACKEND == Backend.LOCAL_K8S:
                         namespace = os.getenv("NAMESPACE")
                         logger.debug(f"[ACTIONS] AutoML K8s namespace from env: {namespace}")
                         if not namespace:

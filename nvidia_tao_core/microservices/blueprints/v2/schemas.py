@@ -149,6 +149,7 @@ class JobStatusEnum(Enum):
     """Class defining job status enum"""
 
     Done = 'Done'
+    Started = 'Started'
     Running = 'Running'
     Error = 'Error'
     Pending = 'Pending'

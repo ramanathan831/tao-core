@@ -116,25 +116,36 @@ def get_valid_range(parameter_config, parent_params, custom_ranges=None):
         if custom_depends_on is not None:
             dependent_on_param = custom_depends_on
     if type(dependent_on_param) is str and dependent_on_param:
-        dependent_on_param_op = dependent_on_param.split(" ")[0]
-        dependent_on_param_name = dependent_on_param.split(" ")[1]
-        if dependent_on_param_name in parent_params.keys():
-            limit_value = parent_params[dependent_on_param_name]
+        parts = dependent_on_param.split(" ")
+        if len(parts) >= 2:
+            dependent_on_param_op = parts[0]
+            dependent_on_param_name = parts[1]
         else:
-            limit_value = default_value
+            dependent_on_param_name = parts[0]
+            math_cond = parameter_config.get("math_cond", "")
+            if type(math_cond) is str and "depends_on" in math_cond:
+                dependent_on_param_op = math_cond.strip().split()[0]
+            else:
+                dependent_on_param_op = None
 
-        epsilon = 0.000001
-        if limit_value == epsilon:
-            epsilon /= 10
+        if dependent_on_param_op is not None:
+            if dependent_on_param_name in parent_params.keys():
+                limit_value = parent_params[dependent_on_param_name]
+            else:
+                limit_value = default_value
 
-        if dependent_on_param_op == ">":
-            v_min = limit_value + epsilon
-        elif dependent_on_param_op == ">=":
-            v_min = limit_value
-        elif dependent_on_param_op == "<":
-            v_max = limit_value - epsilon
-        elif dependent_on_param_op == "<=":
-            v_max = limit_value
+            epsilon = 0.000001
+            if limit_value == epsilon:
+                epsilon /= 10
+
+            if dependent_on_param_op == ">":
+                v_min = limit_value + epsilon
+            elif dependent_on_param_op == ">=":
+                v_min = limit_value
+            elif dependent_on_param_op == "<":
+                v_max = limit_value - epsilon
+            elif dependent_on_param_op == "<=":
+                v_max = limit_value
 
     return v_min, v_max
 

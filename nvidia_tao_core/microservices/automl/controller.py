@@ -24,7 +24,7 @@ from copy import deepcopy
 from datetime import timedelta
 
 from nvidia_tao_core.microservices.utils.automl_utils import Recommendation, ResumeRecommendation, JobStates
-from nvidia_tao_core.microservices.utils.core_utils import get_monitoring_metric
+from nvidia_tao_core.microservices.utils.core_utils import get_monitoring_metric, normalize_metric_config
 from nvidia_tao_core.microservices.constants import (
     _ITER_MODELS,
     NO_VAL_METRICS_DURING_TRAINING_NETWORKS,
@@ -143,13 +143,21 @@ class Controller:
             self.metric_key = "loss"
             self.metric = "loss"
         elif self.metric == "kpi":
-            self.metric_key = get_monitoring_metric(self.network)
+            # Get monitoring metric(s) - may be string or list
+            monitoring_metric = get_monitoring_metric(self.network)
+            # Normalize to list for consistent handling, use first as primary key
+            metric_list = normalize_metric_config(monitoring_metric)
+            self.metric_key = metric_list[0] if metric_list else monitoring_metric
+            # Store full list for matching against available metrics
+            self.metric_key_list = metric_list
         else:
             self.metric_key = self.metric
+            self.metric_key_list = [self.metric]
 
         self.brain.reverse_sort = True
         self.min_max = max
-        if self.metric == "loss" or self.metric_key in ("loss", "evaluation_cost") or "loss" in self.metric_key:
+        metric_key_str = str(self.metric_key) if self.metric_key else ""
+        if self.metric == "loss" or metric_key_str in ("loss", "evaluation_cost") or "loss" in metric_key_str:
             self.brain.reverse_sort = False
             self.min_max = min
 
@@ -850,7 +858,7 @@ class Controller:
         # Check current running jobs for capacity management
         running_jobs = sum(
             1 for rec in self.recommendations
-            if rec.status in [JobStates.pending, JobStates.running]
+            if rec.status in [JobStates.pending, JobStates.started, JobStates.running]
         )
 
         # Get max concurrent limit based on algorithm
@@ -1292,6 +1300,7 @@ class Controller:
                 self.delete_checkpoint_files(cloud_expt_root, rec)
 
         if self.automl_algorithm in ("hyperband", "h", "bohb", "dehb", "hyperband_es", "hes"):
+            brain_dict = get_automl_brain_info(self.automl_context.id)
             if brain_dict:
                 self.old_bracket = brain_dict.get("bracket", "0")
 

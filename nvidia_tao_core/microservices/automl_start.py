@@ -449,6 +449,7 @@ if __name__ == "__main__":
             org_name,
             "experiment",
             name=name,
+            num_gpu=num_gpu,
             backend_details=backend_details,
             specs=specs,
             retain_checkpoints_for_resume=retain_checkpoints_for_resume,

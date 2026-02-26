@@ -253,7 +253,8 @@ class ASHA(AutoMLAlgorithmBase):
             )
 
             # Apply math condition if specified
-            if math_cond and type(math_cond) is str:
+            # Skip relational constraints (like "> depends_on") as they're handled in base class
+            if math_cond and type(math_cond) is str and "depends_on" not in math_cond:
                 parts = math_cond.split(" ")
                 if len(parts) >= 2:
                     operator = parts[0]
@@ -426,7 +427,7 @@ class ASHA(AutoMLAlgorithmBase):
         # Log current state for debugging
         active_by_rung = defaultdict(list)
         for rec in history:
-            if rec.status in [JobStates.pending, JobStates.running]:
+            if rec.status in [JobStates.pending, JobStates.started, JobStates.running]:
                 rung_idx = self.config_to_rung.get(rec.id, 0)
                 active_by_rung[rung_idx].append(rec.id)
 

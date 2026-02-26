@@ -138,6 +138,7 @@ def execute_job(job_context):
     # This prevents race condition where job is dequeued before we discover GPUs aren't available
     # NOTE: Skip GPU pre-assignment for SLURM jobs as SLURM manages its own GPU scheduling
     from nvidia_tao_core.microservices.utils.stateless_handler_utils import BACKEND
+    from nvidia_tao_core.microservices.enum_constants import Backend
 
     # Check if this job is using a SLURM workspace
     is_slurm_job = False
@@ -177,7 +178,7 @@ def execute_job(job_context):
     except Exception as e:
         logger.debug(f"[WORKFLOW] Could not check workspace cloud_type for job {job_context.id}: {e}")
 
-    if BACKEND == "local-docker" and not is_slurm_job:
+    if BACKEND == Backend.LOCAL_DOCKER and not is_slurm_job:
         # Check if this job needs GPUs
         gpu_dependency = None
         for dep in job_context.dependencies:
@@ -435,15 +436,14 @@ def scan_for_jobs():
                 # Handle GPU validation failures (e.g., requested GPUs > available GPUs)
                 if "GPUs requested count" in message and "is greater than" in message:
                     update_job_status(job.handler_id, job.id, status="Error", kind=job.kind + "s")
-                    # Update detailed status with both status and message
                     detailed_status_message = {
                         "status": "FAILURE",
                         "message": message
                     }
                     if automl_experiment_job_id:
-                        # For AutoML experiments, update both the specific experiment and the brain job
+                        brain_job_id = job.parent_id if job.parent_id else job.id
                         update_job_message(
-                            job.handler_id, job.id, kind=job.kind + "s", message=detailed_status_message,
+                            job.handler_id, brain_job_id, kind=job.kind + "s", message=detailed_status_message,
                             automl_expt_job_id=automl_experiment_job_id, update_automl_expt=True
                         )
                     update_job_message(job.handler_id, job.id, kind=job.kind + "s", message=detailed_status_message)
@@ -453,9 +453,13 @@ def scan_for_jobs():
             # Update detailed status message in response when appropriate message is available
             pending_reason_message = ''.join(pending_reason_message.rsplit(" and, ", 1))
             if automl_experiment_job_id:
-                # For AutoML experiments, update the specific experiment
+                brain_job_id = job.parent_id if job.parent_id else job.id
+                if pending_reason_message:
+                    pending_status = {"status": "PENDING", "message": pending_reason_message}
+                else:
+                    pending_status = pending_reason_message
                 update_job_message(
-                    job.handler_id, job.id, kind=job.kind + "s", message=pending_reason_message,
+                    job.handler_id, brain_job_id, kind=job.kind + "s", message=pending_status,
                     automl_expt_job_id=automl_experiment_job_id, update_automl_expt=True
                 )
             else:

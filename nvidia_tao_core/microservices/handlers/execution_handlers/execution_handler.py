@@ -289,12 +289,11 @@ class ExecutionHandler(ABC):
         image_short = f"{repository}:{tag}"
         if pull_phase == "checking":
             return {
-                "status": "RUNNING",
+                "status": "PENDING",
                 "message": f"Checking if Docker image '{image_short}' exists locally..."
             }
 
         if pull_phase == "not_found":
-            # Image doesn't exist locally, need to pull
             message = f"Docker image '{image_short}' not found locally. Preparing to pull from registry..."
             if registry == "nvcr.io":
                 size_info = cls.get_ngc_image_size(registry, repository, tag, ngc_api_key)
@@ -310,7 +309,7 @@ class ExecutionHandler(ABC):
                         f"This process may take several minutes depending on network speed."
                     )
             return {
-                "status": "RUNNING",
+                "status": "PENDING",
                 "message": message
             }
 
@@ -328,7 +327,7 @@ class ExecutionHandler(ABC):
                         f"Please wait, this process may take 5-15 minutes on first run."
                     )
             return {
-                "status": "RUNNING",
+                "status": "PENDING",
                 "message": message
             }
 
@@ -346,19 +345,19 @@ class ExecutionHandler(ABC):
                         f"Extraction may take a few minutes..."
                     )
             return {
-                "status": "RUNNING",
+                "status": "PENDING",
                 "message": message
             }
 
         if pull_phase == "complete":
             return {
-                "status": "RUNNING",
+                "status": "PENDING",
                 "message": f"Docker image '{image_short}' is ready. Starting container..."
             }
 
         if pull_phase == "already_exists":
             return {
-                "status": "RUNNING",
+                "status": "PENDING",
                 "message": f"Docker image '{image_short}' found locally. Starting container..."
             }
 
@@ -388,7 +387,7 @@ class ExecutionHandler(ABC):
             }
 
         return {
-            "status": "RUNNING",
+            "status": "PENDING",
             "message": f"Processing Docker image '{image_short}'..."
         }
 

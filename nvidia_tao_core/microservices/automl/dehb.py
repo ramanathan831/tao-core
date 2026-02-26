@@ -193,7 +193,8 @@ class DEHB(AutoMLAlgorithmBase):
                 value = int(round(continuous_value))
 
                 # Apply math conditions if specified
-                if math_cond and type(math_cond) is str:
+                # Skip relational constraints (like "> depends_on") as they're handled in base class
+                if math_cond and type(math_cond) is str and "depends_on" not in math_cond:
                     parts = math_cond.split(" ")
                     if len(parts) >= 2:
                         operator = parts[0]
@@ -481,9 +482,9 @@ class DEHB(AutoMLAlgorithmBase):
                         f"job_id={exp.job_id}, result={exp.result}"
                     )
 
-                # Check for ANY pending/running experiments (resumed experiments reuse IDs!)
+                # Check for ANY pending/started/running experiments (resumed experiments reuse IDs!)
                 any_running = any(
-                    exp.status in [JobStates.pending, JobStates.running]
+                    exp.status in [JobStates.pending, JobStates.started, JobStates.running]
                     for exp in history
                 )
 
@@ -544,9 +545,9 @@ class DEHB(AutoMLAlgorithmBase):
         if self.last_launched_count > 0:
             logger.info("DEHB: Checking if last batch complete before generating new recommendations")
 
-            # Check for ANY pending/running experiments (handles resumed experiments with reused IDs)
+            # Check for ANY pending/started/running experiments (handles resumed experiments with reused IDs)
             any_running = any(
-                exp.status in [JobStates.pending, JobStates.running]
+                exp.status in [JobStates.pending, JobStates.started, JobStates.running]
                 for exp in history
             )
 

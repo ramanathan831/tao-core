@@ -144,9 +144,13 @@
             "time_per_epoch",
             "eta",
             "best_val/avg_loss",
-            "val/avg_loss"
+            "val/avg_loss",
+            "val/reward_avg",
+            "val/reward_std",
+            "val/reward_max",
+            "val/reward_min"
         ],
-        "monitoring_metric": "val/avg_loss",
+        "monitoring_metric": ["val/avg_loss", "val/reward_avg", "val/loss"],
         "dynamic_metric_patterns": [
             "^train/(iteration_time|loss_avg|loss_max|learning_rate|grad_norm|total_steps|cur_epoch|total_epochs|model_flops|mfu)$",
             "^steps_per_epoch$",
