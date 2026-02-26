@@ -1412,6 +1412,20 @@ class AutoMLPipeline(ActionPipeline):
                 f"and job id {self.job_name} submitted"
             )
 
+            # Transition controller recommendation: pending → started.
+            # This is the AutoML equivalent of the Pending → Started write
+            # that normal jobs do in tao.jobs. It tells _reclaim_stale_gpus
+            # that the container/pod now exists and can be checked.
+            if self.recs_dict and self.rec_number is not None:
+                prev_status = self.recs_dict[self.rec_number].get("status", "")
+                if prev_status in ("pending", ""):
+                    self.recs_dict[self.rec_number]["status"] = "started"
+                    save_automl_controller_info(self.automl_brain_job_id, self.recs_dict)
+                    logger.info(
+                        f"[LIFECYCLE] AutoML rec {self.rec_number} (job {self.job_name}): "
+                        f"{prev_status or '(none)'} → started (container created)"
+                    )
+
             # Start log monitoring for AutoML recommendation job
             logger.debug(
                 f"[ACTIONS] Checking if log monitoring should start for AutoML rec job "

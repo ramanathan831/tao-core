@@ -138,7 +138,8 @@ class GPUManager:
 
         Terminal states for normal jobs: Done, Error, Canceled, Paused
         Terminal states for AutoML: success, failure, error, done, canceled
-        Non-terminal states: Running, Pending, Creating, Canceling, Pausing, running, pending, canceling
+        Pre-launch states (container NOT expected): Pending, pending, Creating
+        Post-launch non-terminal states (container expected): Started, Running, running, Canceling, Pausing, canceling
 
         Returns:
             int: Number of GPUs reclaimed
@@ -154,6 +155,11 @@ class GPUManager:
         TERMINAL_STATES = {
             "Done", "Error", "Canceled", "Paused", "success", "failure", "error", "done", "canceled"
         }
+
+        # Pre-launch states: container/pod has NOT been created yet.
+        # Do NOT check for container existence or reclaim GPUs in these states —
+        # the container is not expected to exist yet.
+        PRE_LAUNCH_STATES = {"Pending", "pending", "Creating"}
 
         reclaimed_count = 0
         for gpu in assigned_gpus:
@@ -284,10 +290,17 @@ class GPUManager:
                         f"terminal state '{job_status}' BUT container still running, "
                         f"keeping GPU assignment (cleanup in progress)"
                     )
+            elif job_status in PRE_LAUNCH_STATES:
+                # Job is queued / being set up — container is NOT expected to exist.
+                # Skip container check entirely; reclaiming here is wrong.
+                logger.debug(
+                    f"GPU {gpu_id} assigned to job {assigned_job_id} "
+                    f"in pre-launch state '{job_status}' - keeping assignment "
+                    f"(container not expected yet)"
+                )
             else:
-                # Job is in non-terminal state (e.g., Running, Pending)
-                # But we MUST verify the container actually exists!
-                # If DB says "Running" but container is gone, reclaim the GPU
+                # Job is in a post-launch, non-terminal state (e.g. Started, Running).
+                # Container SHOULD exist — verify it does.
                 container_running = self._is_container_running(assigned_job_id)
                 if container_running:
                     logger.debug(
@@ -295,7 +308,6 @@ class GPUManager:
                         f"in non-terminal state '{job_status}', container running - keeping assignment"
                     )
                 else:
-                    # Container doesn't exist but DB says job is running - stale entry!
                     logger.warning(
                         f"[GPU_RELEASE] GPU {gpu_id} assigned to job {assigned_job_id}: "
                         f"DB status '{job_status}' but container NOT running (crashed/removed). "

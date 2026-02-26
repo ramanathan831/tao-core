@@ -22,6 +22,7 @@ from kubernetes import client, config
 from kubernetes.client.rest import ApiException
 from nvidia_tao_core.microservices.utils.stateless_handler_utils import (
     get_handler_job_metadata,
+    write_job_metadata,
     get_dnn_status,
     BACKEND
 )
@@ -418,6 +419,21 @@ class KubernetesHandler(ExecutionHandler):
 
             # StatefulSet creation is successful if no exception was raised
             self.logger.info(f"K8s microservice {job_id} created successfully")
+
+            # Transition normal jobs from Pending → Started so that
+            # _reclaim_stale_gpus knows a pod has been created and can
+            # safely apply its "no container = stale" heuristic.
+            # AutoML experiment sub-jobs are handled separately via the
+            # controller recommendation (pending → started) in AutoMLPipeline.run().
+            try:
+                _meta = get_handler_job_metadata(job_id)
+                if _meta and _meta.get("status") in ("Pending", "pending"):
+                    _meta["status"] = "Started"
+                    write_job_metadata(job_id, _meta)
+                    self.logger.info(f"[LIFECYCLE] Job {job_id}: Pending → Started (pod created)")
+            except Exception as status_err:
+                self.logger.warning(f"[LIFECYCLE] Could not update status to Started for {job_id}: {status_err}")
+
             return True
         except Exception as e:
             self.logger.error(f"Failed to create K8s microservice: {e}")
