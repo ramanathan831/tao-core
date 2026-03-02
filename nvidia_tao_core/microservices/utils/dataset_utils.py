@@ -287,10 +287,6 @@ def validate_dataset(org_name, handler_metadata, temp_dir="", workspace_metadata
             "requirements": format_reqs
         }
 
-        # Get actual files in dataset
-        actual_files = _get_actual_files_in_dataset(handler)
-        validation_result["actual_structure"] = actual_files
-
         # Validate each requirement and collect detailed errors
         validation_errors = []
         missing_files = []
@@ -434,6 +430,7 @@ def validate_dataset(org_name, handler_metadata, temp_dir="", workspace_metadata
         # Compile validation results
         validation_result["missing_files"] = missing_files
         if validation_errors:
+            validation_result["actual_structure"] = _get_actual_files_in_dataset(handler)
             validation_result["error_details"] = "; ".join(validation_errors)
             validation_result["success"] = False
             logger.error("Dataset validation failed: %s", validation_result["error_details"])

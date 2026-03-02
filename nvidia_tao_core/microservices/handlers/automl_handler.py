@@ -358,8 +358,13 @@ class AutoMLHandler:
                         f"rec_job_id={recommendation_job_id}"
                     )
 
-                    rec_handler = ExecutionHandler.create_handler(backend=BACKEND, job_id=recommendation_job_id)
-                    job_terminated = rec_handler.wait_for_termination(recommendation_job_id, timeout_seconds=120) if rec_handler else False
+                    rec_handler = ExecutionHandler.create_handler(
+                        backend=BACKEND, job_id=recommendation_job_id
+                    )
+                    job_terminated = (
+                        rec_handler.wait_for_termination(recommendation_job_id, timeout_seconds=120)
+                        if rec_handler else False
+                    )
                     if not job_terminated:
                         logger.warning(
                             f"[AUTOML-STOP] Timeout waiting for recommendation termination: "
