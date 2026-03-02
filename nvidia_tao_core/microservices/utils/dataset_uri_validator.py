@@ -17,7 +17,7 @@ import logging
 
 logger = logging.getLogger(__name__)
 
-VALID_PROTOCOLS = ["aws", "s3", "azure", "lustre", "file", "local"]
+VALID_PROTOCOLS = ["aws", "s3", "azure", "lustre", "file", "local", "seaweedfs"]
 # Backends that do not allow local/file paths (must use cloud or shared filesystem)
 REMOTE_BACKENDS = ["slurm", "lepton", "nvcf"]
 

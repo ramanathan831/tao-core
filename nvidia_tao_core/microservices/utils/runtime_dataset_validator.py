@@ -73,7 +73,7 @@ def validate_dataset_uri_structure(
     # Detect if path is cloud or local (do this early as it's needed in multiple places)
     # Cloud paths have protocols: aws://, azure://, lepton://, lustre://, slurm://
     is_cloud_path = any(dataset_uri.startswith(proto) for proto in
-                        ["aws://", "azure://", "lepton://", "lustre://", "slurm://"])
+                        ["aws://", "azure://", "lepton://", "lustre://", "slurm://", "seaweedfs://"])
 
     # Extract the path without protocol prefix for cloud_file_path
     # For AWS/Azure, workspace contains bucket config, so cloud_file_path should be path within bucket
@@ -81,13 +81,11 @@ def validate_dataset_uri_structure(
     # For SLURM/Lustre, keep the full path
     cloud_file_path_clean = dataset_uri
     if is_cloud_path:
-        for proto in ["aws://", "azure://", "lepton://", "lustre://", "slurm://"]:
+        for proto in ["aws://", "azure://", "lepton://", "lustre://", "slurm://", "seaweedfs://"]:
             if dataset_uri.startswith(proto):
                 path_after_proto = dataset_uri[len(proto):]
 
-                # For AWS/Azure/Lepton, strip bucket name (first component)
-                # Bucket is configured in workspace, so cloud_file_path is path within bucket
-                if proto in ["aws://", "azure://", "lepton://"]:
+                if proto in ["aws://", "azure://", "lepton://", "seaweedfs://"]:
                     # Split into bucket and path: "bucket-name/path/to/data" -> "/path/to/data"
                     parts = path_after_proto.split('/', 1)
                     if len(parts) > 1:
