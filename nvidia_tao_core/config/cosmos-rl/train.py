@@ -683,8 +683,8 @@ class PolicyConfig:
     """Policy config."""
 
     model_name_or_path: str = STR_FIELD(
-        value="nvidia/Cosmos-Reason1-7B",
-        default_value="nvidia/Cosmos-Reason1-7B",
+        value="nvidia/Cosmos-Reason2-8B",
+        default_value="nvidia/Cosmos-Reason2-8B",
         display_name="Model name or path",
         description="Model name or path."
     )
@@ -716,8 +716,8 @@ class VisionConfig:
     """Vision config."""
 
     fps: int = INT_FIELD(
-        value=1,
-        default_value=1,
+        value=None,
+        default_value=None,
         valid_min=1,
         valid_max=3,
         display_name="FPS",
@@ -726,12 +726,21 @@ class VisionConfig:
     )
 
     total_pixels: int = INT_FIELD(
-        value=313600,
-        default_value=313600,
+        value=None,
+        default_value=None,
         valid_min=1,
         valid_max="inf",
         display_name="Total pixels",
         description="Total number of pixels for vision processing."
+    )
+
+    nframes: int = INT_FIELD(
+        value=8,
+        default_value=8,
+        valid_min=1,
+        valid_max=8,
+        display_name="Number of frames",
+        description="Number of frames for vision processing."
     )
 
 
