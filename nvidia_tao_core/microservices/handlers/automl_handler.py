@@ -306,7 +306,8 @@ class AutoMLHandler:
             logger.debug(f"[AUTOML-STOP] Brain K8s job deleted, waiting for pod termination: job_id={job_id}")
 
             # Wait for actual K8s Job/Pod to terminate (synchronous)
-            job_terminated = ExecutionHandler.wait_for_job_termination(job_id, timeout_seconds=120)
+            handler = ExecutionHandler.create_handler(backend=BACKEND, job_id=job_id)
+            job_terminated = handler.wait_for_job_termination(job_id, timeout_seconds=120) if handler else False
             if not job_terminated:
                 logger.warning(f"[AUTOML-STOP] Timeout waiting for brain termination: job_id={job_id}")
             else:
@@ -357,7 +358,8 @@ class AutoMLHandler:
                         f"rec_job_id={recommendation_job_id}"
                     )
 
-                    job_terminated = ExecutionHandler.wait_for_termination(recommendation_job_id, timeout_seconds=120)
+                    rec_handler = ExecutionHandler.create_handler(backend=BACKEND, job_id=recommendation_job_id)
+                    job_terminated = rec_handler.wait_for_termination(recommendation_job_id, timeout_seconds=120) if rec_handler else False
                     if not job_terminated:
                         logger.warning(
                             f"[AUTOML-STOP] Timeout waiting for recommendation termination: "
