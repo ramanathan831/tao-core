@@ -38,7 +38,7 @@ class AirgappedExperimentLoader:
         Args:
             cloud_config (dict, optional): Cloud storage configuration.
         """
-        self.mongo_handler = MongoHandler("tao", "experiments")
+        self.mongo_handler = MongoHandler("tao", "jobs")
         self.local_json_file = None
 
         if not cloud_config:
@@ -295,6 +295,7 @@ class AirgappedExperimentLoader:
 
         for exp_id, experiment in experiments.items():
             try:
+                experiment['public'] = True
                 self.mongo_handler.upsert({'id': exp_id}, experiment)
                 success_count += 1
                 logger.debug("Successfully imported experiment: %s", exp_id)

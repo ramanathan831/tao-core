@@ -106,6 +106,8 @@ def inference_microservice_start(org_name):
         }
         if validated_data.get("workspace"):
             experiment_request["workspace"] = validated_data.get("workspace")
+        if validated_data.get("docker_env_vars"):
+            experiment_request["docker_env_vars"] = validated_data.get("docker_env_vars")
         user_id = authentication.get_user_id(request.headers.get('Authorization', ''), org_name)
         logger.info(f"User ID: {user_id}")
         logger.info(f"Org Name: {org_name}")
@@ -288,19 +290,30 @@ def inference_microservice_status(org_name, job_id):  # noqa: D214
         return make_response(jsonify(schema_dict), 400)
 
     try:
-        # Get Inference Microservice service status directly
+        from nvidia_tao_core.microservices.utils.stateless_handler_utils import get_handler_job_metadata
+        job_metadata = get_handler_job_metadata(job_id)
+        if job_metadata:
+            job_status = job_metadata.get("status", "")
+            if job_status in ("Done", "Error", "Canceled"):
+                return make_response(jsonify({
+                    "job_id": job_id,
+                    "status": job_status,
+                    "message": f"Inference microservice has been {job_status.lower()}",
+                }), 200)
+
         result = InferenceMicroserviceHandler.get_inference_microservice_status_direct(job_id)
         if result.get("status") != "error":
             return make_response(jsonify(result), 200)
+        error_msg = result.get("error", "Unknown error")
         schema = ErrorRsp()
-        metadata = {"error_desc": result, "error_code": 2}
+        metadata = {"error_desc": str(error_msg), "error_code": 2}
         schema_dict = schema.dump(schema.load(metadata))
-        return make_response(jsonify(schema_dict), 500)
+        return make_response(jsonify(schema_dict), 503)
 
     except Exception as e:
         logger.error("Error getting Inference Microservice status: %s", str(e))
         schema = ErrorRsp()
-        metadata = {"error_desc": str(e), "error_code": 3}
+        metadata = {"error_desc": str(e)[:1000], "error_code": 3}
         schema_dict = schema.dump(schema.load(metadata))
         return make_response(jsonify(schema_dict), 500)
 

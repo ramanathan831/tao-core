@@ -1088,8 +1088,8 @@ def get_num_gpus_from_spec(spec, action, network=None, default=0):
     if network == "cosmos-rl":
         cosmos_rl_gpus = _get_cosmos_rl_total_gpus(spec)
         if cosmos_rl_gpus is not None and cosmos_rl_gpus > 0:
+            _check_gpu_conditions("num_gpus", cosmos_rl_gpus)
             gpu_set_values.append(cosmos_rl_gpus)
-            # Return early for cosmos-rl since we have the exact calculation
             return cosmos_rl_gpus
 
     # First check for network-specific GPU parameter using gpu_mapper
