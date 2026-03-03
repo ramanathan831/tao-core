@@ -32,7 +32,8 @@
             "inference": ["/merged/"]
         },
         "upload_strategy": {
-            "evaluate": "tarball_after_completion"
+            "evaluate": "tarball_after_completion",
+            "inference": "tarball_after_completion"
         }
     },
 
@@ -63,6 +64,12 @@
                     "llava": ["images.tar.gz", "videos.tar.gz"],
                     "*": "images.tar.gz"
                 }
+            }
+        },
+        "inference": {
+            "enable_lora": {
+                "source": "parent_job_specs",
+                "check_key_exists": "policy.lora"
             }
         },
         "evaluate": {
@@ -97,6 +104,10 @@
                     "llava": ["images.tar.gz", "videos.tar.gz"],
                     "*": "images.tar.gz"
                 }
+            },
+            "model.enable_lora": {
+                "source": "parent_job_specs",
+                "check_key_exists": "policy.lora"
             }
         }
     },
@@ -162,6 +173,10 @@
             "^(max_epochs?|current_epoch|epoch)$",
             "^(training_phase|training_completed)$",
             "^(correct_samples|total_samples)$",
+            "^(loss|avg_loss)$",
+            "^(balanced_accuracy|f1_score)$",
+            "^(TP|FP|TN|FN|precision|recall)$",
+            "^(positive_accuracy|negative_accuracy)$",
             "^(evaluation_phase|evaluation_status)$",
             "^(validation_phase|validation_dataset_size|dataset_size|total_batches|batches_processed|progress_percent)$",
             "^(batch_index|batch_loss|is_last_step)$",
@@ -179,7 +194,10 @@
             "^bertscore_(precision|recall|f1)$",
             "^(count|distance|left_right|mcq|quantitative|qualitative)_(accuracy|total|correct)$",
             "^(going.straight|turning.left|turning.right)_(accuracy|total|correct)$",
-            "^(quantization_status|quantization_scheme|num_calibration_samples|smoothing_strength)$",
+            "^(inference_status|total_files|successful|failed)$",
+            "^(total_tokens_generated|total_time_s|media_path|media_type)$",
+            "^result_.*$",
+            "^(quantization_status|quantization_scheme|num_calibration_samples|smoothing_strength|kv_precision)$",
             "^(time_per_epoch|eta)$",
             "^model_path$"
         ]

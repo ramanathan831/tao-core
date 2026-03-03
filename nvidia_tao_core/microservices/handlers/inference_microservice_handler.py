@@ -122,7 +122,6 @@ class InferenceMicroserviceHandler:
         # Build command for Inference Microservice integrated into TAO container
         parent_id = job_config.get("parent_job_id", job_config.get("parent_id", ""))
 
-        # Check if parent job is in Done state (skip for HuggingFace models without parent)
         if parent_id:
             from nvidia_tao_core.microservices.utils.stateless_handler_utils import (
                 get_handler_job_metadata
@@ -164,8 +163,8 @@ class InferenceMicroserviceHandler:
         # cli_args = " ".join(cli_args)
         # logger.info("Using CLI args: %s", cli_args)
 
-        # Get docker_env_vars from request (job_config), not from experiment_metadata
-        docker_env_vars = job_config.get("docker_env_vars", {})
+        docker_env_vars = dict(job_config.get("docker_env_vars", {}))
+
         docker_env_vars["TAO_EXECUTION_BACKEND"] = BACKEND.value
         docker_env_vars["TAO_API_JOB_ID"] = job_id
 
@@ -359,33 +358,43 @@ umask 0 &&
             return Code(500, {}, f"Failed to start Inference Microservice: {str(e)}. Try again")
 
     @staticmethod
-    def stop_inference_microservice(job_id: str, auto_deletion: bool = False) -> Code:
+    def stop_inference_microservice(
+        job_id: str, auto_deletion: bool = False, reason: str = ""
+    ) -> Code:
         """Stop a running Inference Microservice
 
         Args:
             job_id: Job ID for the microservice to stop
-            auto_deletion: True if called due to idle timeout, False if manual stop
+            auto_deletion: True if called due to auto-deletion, False if manual stop
+            reason: Reason for auto-deletion (e.g. "idle_timeout_exceeded",
+                    "initialization_failed", "model_loading_failed")
 
         Returns:
             Code object with status and result information
         """
         action = "Auto-deleting" if auto_deletion else "Stopping"
-        reason = "due to inactivity" if auto_deletion else "manually"
+        reason_desc = f"(reason: {reason})" if reason else "manually"
 
-        logger.info("%s Inference Microservice %s %s", action, job_id, reason)
+        logger.info("%s Inference Microservice %s %s", action, job_id, reason_desc)
 
         try:
             from nvidia_tao_core.microservices.handlers.execution_handlers.execution_handler import ExecutionHandler
-            success = ExecutionHandler.delete(job_id, resource_type="inference_microservice")
+            success = ExecutionHandler.delete_job_with_handler(job_id)
 
             if success:
-                success_message = "auto-deleted due to inactivity" if auto_deletion else "stopped successfully"
+                is_failure = reason in (
+                    "initialization_failed", "model_loading_failed"
+                )
+                job_status = "Error" if is_failure else "Done"
+                success_message = (
+                    f"auto-deleted ({reason})" if auto_deletion
+                    else "stopped successfully"
+                )
                 logger.info(
                     "Successfully %s Inference Microservice %s",
                     "auto-deleted" if auto_deletion else "stopped", job_id
                 )
 
-                # Update job status to Done in database
                 from nvidia_tao_core.microservices.utils.stateless_handler_utils import (
                     update_job_status, get_handler_job_metadata
                 )
@@ -396,17 +405,20 @@ umask 0 &&
                         update_job_status(
                             experiment_id,
                             job_id,
-                            status="Done",
+                            status=job_status,
                             kind="experiments"
                         )
-                        logger.info("Updated job status to Done for %s", job_id)
+                        logger.info(
+                            "Updated job status to %s for %s", job_status, job_id
+                        )
 
                 result = {
                     "status": "success",
                     "message": f"Inference microservice for job {job_id} {success_message}",
                     "job_id": job_id,
                     "timestamp": datetime.now().isoformat(),
-                    "auto_deletion": auto_deletion
+                    "auto_deletion": auto_deletion,
+                    "reason": reason,
                 }
                 return Code(200, result, f"Inference Microservice {success_message}")
 
