@@ -24,7 +24,7 @@ logger = logging.getLogger(__name__)
 
 def generate_schema(neural_network_name, action=""):
     """Generates JSON schema for network"""
-    if neural_network_name == "cosmos-rl":
+    if neural_network_name in ("cosmos-rl", "cosmos_predict"):
         imported_module = dataclass2json_converter.import_module_from_path(
             f"nvidia_tao_core.config.{neural_network_name}.{action}"
         )

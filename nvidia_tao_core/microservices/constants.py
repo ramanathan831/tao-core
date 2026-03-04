@@ -65,7 +65,7 @@ TENSORBOARD_EXPERIMENT_LIMIT = 10  # Maximum number of Tensorboard enabled exper
 # only at end of training they run evaluation
 NO_VAL_METRICS_DURING_TRAINING_NETWORKS = set([])
 MISSING_EPOCH_FORMAT_NETWORKS = set([
-    "pointpillars", "bevfusion", "cosmos-rl"
+    "pointpillars", "bevfusion", "cosmos-rl", "cosmos_predict"
 ])  # These networks have the epoch/iter number not following a format; ex: 1.pth instead of 001.pth
 STATUS_CALLBACK_MISMATCH_WITH_CHECKPOINT_EPOCH = set([
     "pointpillars"
@@ -112,6 +112,7 @@ NETWORK_CONTAINER_MAPPING = {"action_recognition": "TAO_PYTORCH",
                              "visual_changenet_segment": "TAO_PYTORCH",
                              "mae": "TAO_PYTORCH",
                              "cosmos-rl": "COSMOS_RL",
+                             "cosmos_predict": "COSMOS_PREDICT",
                              "vila": "VILA"}
 
 CV_ACTION_RULES = {

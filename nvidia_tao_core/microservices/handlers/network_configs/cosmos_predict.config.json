@@ -1,0 +1,69 @@
+{
+    "api_params": {
+        "dataset_type": "video_generation",
+        "actions": ["inference"],
+        "formats": ["video"],
+        "accepted_ds_intents": ["training", "evaluation"],
+        "image": "COSMOS_PREDICT",
+        "spec_backend": "toml",
+        "actions_pipe": {
+            "inference": "inference"
+        }
+    },
+
+    "checkpoint": {
+        "format": "distcp",
+        "folder": "true"
+    },
+
+    "cloud_upload": {
+        "exclude_patterns": {
+            "inference": []
+        },
+        "upload_strategy": {
+            "inference": "tarball_after_completion"
+        }
+    },
+
+    "data_sources": {
+        "inference": {
+            "inference.enable_lora": {
+                "source": "parent_job_specs",
+                "check_key_exists": "inference.enable_lora"
+            }
+        }
+    },
+
+    "preserve_source_path_params": [],
+
+    "spec_params": {
+        "inference": {
+            "results_dir": "output_dir",
+            "inference.checkpoint_path": "parent_model_folder"
+        }
+    },
+
+    "automl_spec_params": {},
+
+    "metrics": {
+        "available_metrics": [
+            "operation",
+            "component",
+            "status",
+            "event",
+            "config"
+        ],
+        "monitoring_metric": [],
+        "dynamic_metric_patterns": [
+            "^component$",
+            "^(error|error_type|error_message)$",
+            "^(interrupted|step_name)$",
+            "^phase$",
+            "^(results_dir|results_path)$",
+            "^(inference_status|total_files|successful|failed)$",
+            "^(inference_type|prompt|model|num_output_frames|num_steps|guidance|seed)$",
+            "^lora_(enabled|merge_status|merge_error)$",
+            "^model_path$"
+        ]
+    }
+}

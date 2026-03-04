@@ -278,6 +278,28 @@ umask 0 &&
             if num_gpus == 0:
                 num_gpus = 1  # Inference requires at least 1 GPU
 
+            # Write job metadata BEFORE creating the container so that:
+            # 1. Status callbacks from the container can find the job
+            # 2. GPU reclaim logic can detect the job and check container existence
+            job_metadata = {
+                "id": job_id,
+                "action": "inference_microservice",
+                "status": "Started",
+                "created_on": datetime.now(tz=timezone.utc),
+                "last_modified": datetime.now(tz=timezone.utc),
+                "experiment_id": experiment_id,
+                "org_name": org_name,
+                "user_id": experiment_metadata.get("user_id"),
+                "network": network_arch,
+                "parent_id": job_config.get("parent_id", ""),
+                "num_gpu": num_gpus,
+                "platform_id": None,
+                "kind": "experiment",
+                "specs": {},
+            }
+            write_job_metadata(job_id, job_metadata)
+            logger.info("Saved inference microservice job metadata (Started) for %s", job_id)
+
             try:
                 success = execution_handler.create_microservice(
                     job_id=job_id,
@@ -286,11 +308,10 @@ umask 0 &&
                     api_port=api_port,
                     num_gpu=num_gpus,
                     inference_microservice=True,
-                    docker_env_vars=docker_env_vars  # Pass env vars to container
+                    docker_env_vars=docker_env_vars
                 )
             except RuntimeError as e:
                 error_msg = str(e)
-                # Extract GPU-specific error messages for better user feedback
                 if "GPU" in error_msg or "gpu" in error_msg:
                     logger.error("GPU allocation failed: %s", error_msg)
                     return Code(503, {}, f"Insufficient GPU resources: {error_msg}")
@@ -311,33 +332,14 @@ umask 0 &&
                     logger.error("Inference Microservice service failed to become ready. Status: %s", service_status)
                     return Code(500, {}, f"Inference Microservice service failed to become ready: {service_status}")
 
-            # For Kubernetes services, we typically use cluster IP for internal communication
             service_url = InferenceMicroserviceHandler.get_inference_microservice_url(job_id, None, api_port)
-
             logger.info("Inference Microservice created at %s", service_url)
 
-            # Save job metadata to database so status callbacks can find it
-
-            job_metadata = {
-                "id": job_id,
-                "action": "inference_microservice",  # Special action for inference microservices
-                "status": "Running",
-                "created_on": datetime.now(tz=timezone.utc),
-                "last_modified": datetime.now(tz=timezone.utc),
-                "experiment_id": experiment_id,
-                "org_name": org_name,
-                "user_id": experiment_metadata.get("user_id"),
-                "network": network_arch,
-                "parent_id": job_config.get("parent_id", ""),
-                "num_gpu": num_gpus,
-                "platform_id": None,
-                "kind": "experiment",
-                "specs": {},
-                "workflow_status": "Running",  # Not enqueued since it's already running
-            }
-
+            # Update status to Running now that container is healthy
+            job_metadata["status"] = "Running"
+            job_metadata["last_modified"] = datetime.now(tz=timezone.utc)
             write_job_metadata(job_id, job_metadata)
-            logger.info("Saved inference microservice job metadata for %s", job_id)
+            logger.info("Updated inference microservice job status to Running for %s", job_id)
 
             return Code(200, {
                 "service_id": service_id,
