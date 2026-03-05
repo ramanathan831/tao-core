@@ -149,7 +149,11 @@
             "encryption_key": "key"
         },
         "gen_trt_engine": {
-            "results_dir": "output_dir"
+            "results_dir": "output_dir",
+            "encryption_key": "key",
+            "gen_trt_engine.onnx_file": "parent_model",
+            "gen_trt_engine.trt_engine": "create_engine_file"
         }
-    }
+    },
+    "companion_onnx_bin_download": true
 }

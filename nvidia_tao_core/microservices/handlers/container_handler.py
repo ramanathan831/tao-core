@@ -229,6 +229,11 @@ def prepare_data_before_job_run(job, docker_env_vars):
         logger.info("No files to download from main spec")
 
     custom_script = specs.pop("custom_script", None)
+    # Pop internal key added by infer_data_sources for companion folder downloads (e.g. CLIP
+    # large-model exports that produce model.onnx + model.bin).  The folder was already
+    # downloaded as part of the main spec above; we must remove this key so it does not appear
+    # in the YAML spec passed to the CLI tool.
+    specs.pop("_companion_onnx_folder", None)
 
     # Save spec file with dynamic backend
     network_arch = job["neural_network_name"]
