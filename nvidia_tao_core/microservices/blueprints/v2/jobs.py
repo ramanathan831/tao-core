@@ -94,6 +94,15 @@ def _create_virtual_dataset_for_direct_paths(user_id, org_name, request_dict):
     except Exception:
         actions = default_actions
 
+    # Infer use_for (intent) from which URI fields are populated
+    use_for = []
+    if request_dict.get("train_dataset_uris"):
+        use_for.append("training")
+    if request_dict.get("eval_dataset_uri"):
+        use_for.append("evaluation")
+    if request_dict.get("inference_dataset_uri"):
+        use_for.append("inference")
+
     now = datetime.now(tz=timezone.utc).isoformat()
     metadata = {
         "id": dataset_id,
@@ -107,6 +116,7 @@ def _create_virtual_dataset_for_direct_paths(user_id, org_name, request_dict):
         "name": "Direct-path dataset",
         "shared": False,
         "actions": actions,
+        "use_for": use_for,
         "train_dataset_uris": request_dict.get("train_dataset_uris"),
         "eval_dataset_uri": request_dict.get("eval_dataset_uri"),
         "inference_dataset_uri": request_dict.get("inference_dataset_uri"),

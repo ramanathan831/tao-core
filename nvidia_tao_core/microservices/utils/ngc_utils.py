@@ -278,13 +278,13 @@ def upload_model(org_name, team_name, handler_metadata, source_files, ngc_key, j
     workspace_metadata = get_handler_metadata(workspace_id, "workspaces")
     cs_instance, _ = create_cs_instance(workspace_metadata)
     jobs_root = get_jobs_root(handler_metadata.get("user_id"), org_name=org_name)
-    local_dir = os.path.join(jobs_root, "publish_model_artifacts")
+    local_dir = os.path.join(jobs_root, f"publish_model_artifacts_{job_id}")
     if not os.path.exists(local_dir):
         os.makedirs(local_dir, exist_ok=True)
     for source_file in source_files:
         cloud_path = source_file[len(workspace_identifier):]
         artifact_name = os.path.basename(cloud_path[:-1] if cloud_path[-1] == '/' else cloud_path)
-        local_path = os.path.join(jobs_root, "publish_model_artifacts", artifact_name)
+        local_path = os.path.join(local_dir, artifact_name)
         cs_instance.download_file(cloud_path, local_path)
 
     target_version = f"{org_name}/{team_name}/{network}:{job_action}_{job_id}_{epoch_number}"
