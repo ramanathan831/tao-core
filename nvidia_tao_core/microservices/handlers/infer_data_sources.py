@@ -285,6 +285,48 @@ def get_job_id_of_action(dataset_id, kind, action):
     return job_id
 
 
+def _find_convert_job_by_uri_match(source_uri, dataset_convert_action):
+    """Find the most recent successful dataset_convert job whose dataset URI matches source_uri.
+
+    When using virtual datasets (direct paths), each create-job call creates a new
+    dataset so the normal per-dataset job lookup fails.  This function queries MongoDB
+    for any dataset whose URI fields match *source_uri* and that has a completed
+    dataset_convert job, returning the most recently created one.
+    """
+    from nvidia_tao_core.microservices.handlers.mongo_handler import MongoHandler
+
+    if not source_uri:
+        return None
+
+    mongo_ds = MongoHandler("tao", "datasets")
+    query = {"$or": [
+        {"train_dataset_uris": source_uri},
+        {"eval_dataset_uri": source_uri},
+        {"inference_dataset_uri": source_uri},
+        {"calibration_dataset_uri": source_uri},
+    ]}
+    matching_datasets = list(mongo_ds.find(query))
+    best_job_id = None
+    best_created = ""
+    for ds in matching_datasets:
+        ds_id = ds.get("id")
+        if not ds_id:
+            continue
+        job_id = get_job_id_of_action(ds_id, "datasets", dataset_convert_action)
+        if job_id:
+            job_meta = get_handler_job_metadata(job_id)
+            created = job_meta.get("created_on", "") if job_meta else ""
+            if not best_job_id or created > best_created:
+                best_job_id = job_id
+                best_created = created
+    if best_job_id:
+        logger.info(
+            "Found dataset_convert job %s via URI match (uri=%s)",
+            best_job_id, source_uri
+        )
+    return best_job_id
+
+
 def get_dataset_convert_downloaded_locally(network_config):
     """Get if dataset convert is downloaded locally"""
     dataset_convert_downloaded_locally = False
@@ -306,7 +348,8 @@ def apply_transforms(
     source_ds=None,
     dataset_convert_action=None,
     workspace_identifier=None,
-    dataset_convert_downloaded_locally=None
+    dataset_convert_downloaded_locally=None,
+    parent_job_id=None
 ):
     """Apply a list of transforms to a value.
 
@@ -317,6 +360,7 @@ def apply_transforms(
         source_ds: Source dataset ID
         dataset_convert_action: Action for dataset conversion
         workspace_identifier: Workspace identifier for dataset convert job paths
+        parent_job_id: Parent job ID for fallback dataset_convert lookup
     """
     if isinstance(transforms, str):
         transforms = [transforms]
@@ -330,6 +374,10 @@ def apply_transforms(
             dataset_convert_job_id = get_job_id_of_action(
                 source_ds, kind="datasets", action=dataset_convert_action
             ) or ""
+            if not dataset_convert_job_id and source_root:
+                dataset_convert_job_id = _find_convert_job_by_uri_match(
+                    source_root, dataset_convert_action
+                ) or ""
             if "{dataset_convert_job_id}" in value and not dataset_convert_job_id:
                 logger.warning(
                     "Unable to resolve dataset-convert job for dataset %s; skipping transform.",
@@ -337,16 +385,13 @@ def apply_transforms(
                 )
                 return value
 
-            # Check if the value already has the results path format
             value = value.replace("{dataset_convert_job_id}", dataset_convert_job_id)
             if dataset_convert_downloaded_locally:
                 return value
 
             if value.startswith("/results/"):
-                # It's already in the correct format, just prepend workspace identifier
                 value = f"{workspace_identifier}{value}"
             else:
-                # Legacy format - apply the old logic
                 corrected_value = value.replace(source_root, "")
                 value = f"{workspace_identifier}{corrected_value.lstrip('/')}"
 
@@ -358,12 +403,30 @@ def get_source_root(source_ds_metadata, workspace_identifier):
 
     For SLURM, if cloud_file_path is already absolute, prepend only the protocol prefix.
     For cloud storage, concatenate workspace_identifier with relative cloud_file_path.
+    For datasets created with train_dataset_uris (no cloud_file_path), derive path from the URI.
     """
     cloud_file_path = source_ds_metadata.get('cloud_file_path', '')
 
+    # If cloud_file_path is empty, derive from whichever dataset URI is populated
+    if not cloud_file_path:
+        uri = None
+        train_uris = source_ds_metadata.get('train_dataset_uris', [])
+        if train_uris and isinstance(train_uris, list) and train_uris[0]:
+            uri = train_uris[0]
+        elif source_ds_metadata.get('eval_dataset_uri'):
+            uri = source_ds_metadata['eval_dataset_uri']
+        elif source_ds_metadata.get('inference_dataset_uri'):
+            uri = source_ds_metadata['inference_dataset_uri']
+        elif source_ds_metadata.get('calibration_dataset_uri'):
+            uri = source_ds_metadata['calibration_dataset_uri']
+
+        if uri and workspace_identifier and uri.startswith(workspace_identifier):
+            cloud_file_path = uri[len(workspace_identifier):]
+            source_ds_metadata['cloud_file_path'] = cloud_file_path
+            logger.info(f"Derived cloud_file_path from dataset URI: {cloud_file_path}")
+
     # For SLURM with absolute paths, only add protocol prefix (not the full base path)
     if workspace_identifier.startswith('slurm://') and cloud_file_path.startswith('/'):
-        # Extract just the protocol part: slurm:///lustre/... -> slurm:// + /lustre/...
         return f"slurm://{cloud_file_path}"
 
     # For cloud storage or relative paths, concatenate normally
@@ -543,7 +606,8 @@ def process_convert_job_spec_path(spec_config, source_ds, dataset_convert_action
 
 
 def process_mapping_path_and_transforms(mapping, source_root, source_ds, dataset_convert_action,
-                                        workspace_identifier, dataset_convert_downloaded_locally):
+                                        workspace_identifier, dataset_convert_downloaded_locally,
+                                        parent_job_id=None):
     """Helper function to process mapping path and apply transforms."""
     # Skip optional paths that don't exist
     if mapping.get("optional") and not check_file_exists(source_root, mapping["path"]):
@@ -564,7 +628,8 @@ def process_mapping_path_and_transforms(mapping, source_root, source_ds, dataset
         value = apply_transforms(
             value, mapping["transform"],
             source_root, source_ds, dataset_convert_action,
-            workspace_identifier, dataset_convert_downloaded_locally)
+            workspace_identifier, dataset_convert_downloaded_locally,
+            parent_job_id=parent_job_id)
 
     return value
 
@@ -587,7 +652,8 @@ def replace_placeholder_and_apply_workspace_id(value, placeholder, replacement, 
 
 
 def process_mapping_entry(mapping, source_root, source_ds, dataset_convert_action,
-                          workspace_identifier, dataset_convert_downloaded_locally=False):
+                          workspace_identifier, dataset_convert_downloaded_locally=False,
+                          parent_job_id=None):
     """Process a single mapping entry.
 
     Handles three types of mappings:
@@ -616,7 +682,8 @@ def process_mapping_entry(mapping, source_root, source_ds, dataset_convert_actio
             if isinstance(sub_mapping, dict) and "path" in sub_mapping:
                 value = process_mapping_path_and_transforms(
                     sub_mapping, source_root, source_ds, dataset_convert_action,
-                    workspace_identifier, dataset_convert_downloaded_locally)
+                    workspace_identifier, dataset_convert_downloaded_locally,
+                    parent_job_id=parent_job_id)
                 if value is not None:
                     result[key] = value
         return result if result else None
@@ -625,7 +692,8 @@ def process_mapping_entry(mapping, source_root, source_ds, dataset_convert_actio
     if "path" in mapping:
         return process_mapping_path_and_transforms(
             mapping, source_root, source_ds, dataset_convert_action,
-            workspace_identifier, dataset_convert_downloaded_locally)
+            workspace_identifier, dataset_convert_downloaded_locally,
+            parent_job_id=parent_job_id)
 
     return None
 
@@ -634,7 +702,16 @@ def get_metadata_value(metadata, path_type):
     """Helper function to get metadata values safely"""
     if path_type == "intent":
         use_for = metadata.get("use_for", [])
-        return use_for[0] if use_for else None
+        if use_for:
+            return use_for[0]
+        # Infer intent from dataset URI fields when use_for is not set
+        if metadata.get("train_dataset_uris"):
+            return "training"
+        if metadata.get("eval_dataset_uri"):
+            return "evaluation"
+        if metadata.get("inference_dataset_uri"):
+            return "inference"
+        return None
     return metadata.get(path_type) if path_type in ["type", "format"] else None
 
 
@@ -1032,7 +1109,8 @@ def apply_data_source_config(config, job_context, handler_metadata):
                 value = apply_transforms(
                     value, source_config.get("transform", []),
                     source_root, source_datasets[0], dataset_convert_action,
-                    workspace_identifier, dataset_convert_downloaded_locally)
+                    workspace_identifier, dataset_convert_downloaded_locally,
+                    parent_job_id=job_context.parent_id)
                 set_nested_config_value(config, config_path, value)
                 already_configured_paths.add(config_path)  # Mark as configured
                 continue
@@ -1073,7 +1151,8 @@ def apply_data_source_config(config, job_context, handler_metadata):
                     value = apply_transforms(
                         value, source_config.get("transform", []),
                         source_root, source_datasets[0], dataset_convert_action,
-                        workspace_identifier, dataset_convert_downloaded_locally)
+                        workspace_identifier, dataset_convert_downloaded_locally,
+                        parent_job_id=job_context.parent_id)
                 set_nested_config_value(config, config_path, value)
                 already_configured_paths.add(config_path)  # Mark as configured
                 continue
@@ -1105,7 +1184,8 @@ def apply_data_source_config(config, job_context, handler_metadata):
                     for key, mapping in source_config["mapping"].items():
                         value = process_mapping_entry(
                             mapping, source_root, source_ds,
-                            dataset_convert_action, workspace_identifier, network_config)
+                            dataset_convert_action, workspace_identifier, network_config,
+                            parent_job_id=job_context.parent_id)
                         if value is not None:
                             entry[key] = value
                     if entry:
@@ -1145,7 +1225,8 @@ def apply_data_source_config(config, job_context, handler_metadata):
                 for key, mapping in source_config["mapping"].items():
                     value = process_mapping_entry(
                         mapping, source_root, source_ds,
-                        dataset_convert_action, workspace_identifier, network_config)
+                        dataset_convert_action, workspace_identifier, network_config,
+                        parent_job_id=job_context.parent_id)
                     if value is not None:
                         result[key] = value
 
@@ -1169,7 +1250,8 @@ def apply_data_source_config(config, job_context, handler_metadata):
                 value = apply_transforms(
                     value, source_config.get("transform", []),
                     source_root, source_ds, dataset_convert_action,
-                    workspace_identifier, dataset_convert_downloaded_locally)
+                    workspace_identifier, dataset_convert_downloaded_locally,
+                    parent_job_id=job_context.parent_id)
                 set_nested_config_value(config, config_path, value)
 
     # Add preserve_source_path_params from network config if specified

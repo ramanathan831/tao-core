@@ -389,13 +389,11 @@ def upload_files(local_path, cloud_storage, file_last_modified=None,
         try:
             send_callbacks = progress_tracker is not None  # Enable callbacks only for batch uploads
             if "graceful_termination_signal" not in file_path:
-                if not file_last_modified:
-                    # Snapshot mode: upload immediately
+                if not file_last_modified or progress_tracker is not None:
                     cloud_storage.upload_file(
                         file_path, file_path, progress_tracker=progress_tracker,
                         send_status_callbacks=send_callbacks)
                 else:
-                    # Continuous monitoring mode: wait before upload
                     time.sleep(10)
                     cloud_storage.upload_file(
                         file_path, file_path, progress_tracker=progress_tracker,
@@ -804,7 +802,7 @@ def monitor_and_upload(local_path, cloud_storage, exit_event, seek_position=0,
                          retain_patterns=retain_patterns)
 
             seek_position = send_logs_to_server(seek_position)
-            time.sleep(30)  # Adjust the sleep interval as needed
+            exit_event.wait(30)  # Wakes immediately when exit_event is set
 
     except (KeyboardInterrupt, SystemExit, Exception):
         logger.error("traceback: %s", traceback.format_exc())
