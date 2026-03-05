@@ -235,6 +235,7 @@ class DatasetIntentEnum(Enum):
     training = 'training'
     evaluation = 'evaluation'
     testing = 'testing'
+    calibration = 'calibration'
 
 
 class CheckpointChooseMethodEnum(Enum):
@@ -883,7 +884,7 @@ class LstStr(Schema):
     accepted_dataset_intents = fields.List(
         EnumField(DatasetIntentEnum),
         allow_none=True,
-        validate=validate.Length(max=3)
+        validate=validate.Length(max=4)
     )
 
 
@@ -925,7 +926,7 @@ class DatasetReq(Schema):
     client_secret = fields.Str(format="regex", regex=r'.*', validate=fields.validate.Length(max=2048), allow_none=True)
     filters = fields.Str(format="regex", regex=r'.*', validate=fields.validate.Length(max=2048), allow_none=True)
     status = EnumField(PullStatus)
-    use_for = fields.List(EnumField(DatasetIntentEnum), allow_none=True, validate=validate.Length(max=3))
+    use_for = fields.List(EnumField(DatasetIntentEnum), allow_none=True, validate=validate.Length(max=4))
     base_experiment_pull_complete = EnumField(PullStatus)
     base_experiment_ids = fields.List(
         fields.Str(format="uuid", validate=fields.validate.Length(max=36)),
@@ -1016,7 +1017,7 @@ class DatasetRsp(Schema):
     client_secret = fields.Str(format="regex", regex=r'.*', validate=fields.validate.Length(max=2048), allow_none=True)
     filters = fields.Str(format="regex", regex=r'.*', validate=fields.validate.Length(max=2048), allow_none=True)
     status = EnumField(PullStatus)
-    use_for = fields.List(EnumField(DatasetIntentEnum), allow_none=True, validate=validate.Length(max=3))
+    use_for = fields.List(EnumField(DatasetIntentEnum), allow_none=True, validate=validate.Length(max=4))
     base_experiment_pull_complete = EnumField(PullStatus)
     base_experiment_ids = fields.List(
         fields.Str(format="uuid", validate=fields.validate.Length(max=36)),
