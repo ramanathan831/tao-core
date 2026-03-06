@@ -231,11 +231,14 @@ class SpecHandler:
             if not base_experiment_spec:
                 return Code(404, {}, "Base specs not present.")
 
+        # Map network name through actions_mapping (e.g. visual_changenet_segment -> visual_changenet)
+        mapped_network, mapped_action = get_microservices_network_and_action(base_experiment_network, action)
+
         # Read csv from utils/spec_utils/specs/<network_name>/action.csv
         # Convert to json schema
         json_schema = {}
         try:
-            json_schema = generate_schema(base_experiment_network, action)
+            json_schema = generate_schema(mapped_network, mapped_action)
         except Exception as e:
             logger.error("Exception thrown in get_base_experiment_spec_schema is %s", str(e))
             logger.error("Unable to fetch schema from tao_core")

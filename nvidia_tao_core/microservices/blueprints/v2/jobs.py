@@ -99,19 +99,14 @@ def _create_virtual_dataset_for_direct_paths(user_id, org_name, request_dict):
     except Exception:
         actions = default_actions
 
-    # Extract cloud_file_path from the primary URI so get_source_root() resolves correctly.
-    # For aws://bucket/path/to/data, cloud_file_path = "path/to/data" (everything after bucket/).
-    cloud_file_path = ""
-    train_uris = request_dict.get("train_dataset_uris") or []
-    primary_uri = (train_uris[0] if train_uris else
-                   request_dict.get("eval_dataset_uri") or
-                   request_dict.get("inference_dataset_uri") or
-                   request_dict.get("calibration_dataset_uri"))
-    if primary_uri and "://" in primary_uri:
-        _, path_after_protocol = primary_uri.split("://", 1)
-        parts = path_after_protocol.split("/", 1)
-        if len(parts) > 1:
-            cloud_file_path = parts[1]
+    # Infer use_for (intent) from which URI fields are populated
+    use_for = []
+    if request_dict.get("train_dataset_uris"):
+        use_for.append("training")
+    if request_dict.get("eval_dataset_uri"):
+        use_for.append("evaluation")
+    if request_dict.get("inference_dataset_uri"):
+        use_for.append("testing")
 
     now = datetime.now(tz=timezone.utc).isoformat()
     metadata = {
@@ -126,12 +121,12 @@ def _create_virtual_dataset_for_direct_paths(user_id, org_name, request_dict):
         "name": "Direct-path dataset",
         "shared": False,
         "actions": actions,
+        "use_for": use_for,
         "train_dataset_uris": request_dict.get("train_dataset_uris"),
         "eval_dataset_uri": request_dict.get("eval_dataset_uri"),
         "inference_dataset_uri": request_dict.get("inference_dataset_uri"),
         "calibration_dataset_uri": request_dict.get("calibration_dataset_uri"),
         "workspace": request_dict.get("workspace"),
-        "cloud_file_path": cloud_file_path,
     }
 
     write_handler_metadata(dataset_id, metadata, "dataset")

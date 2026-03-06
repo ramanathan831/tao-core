@@ -322,7 +322,7 @@ def validate_all_dataset_uris_structure(
 
     inference_path = experiment_metadata.get("inference_dataset_uri")
     if inference_path:
-        paths_to_validate.append((inference_path, "inference_dataset_uri", ["inference"]))
+        paths_to_validate.append((inference_path, "inference_dataset_uri", ["testing"]))
 
     calibration_path = experiment_metadata.get("calibration_dataset_uri")
     if calibration_path:
@@ -331,6 +331,9 @@ def validate_all_dataset_uris_structure(
     # If no paths to validate, return success
     if not paths_to_validate:
         return True, "", {"message": "No dataset URIs to validate"}
+
+    # Get all supported formats for fallback validation
+    all_formats = api_params.get("formats", [])
 
     # Validate each path
     for path, field_name, intents in paths_to_validate:
@@ -348,6 +351,31 @@ def validate_all_dataset_uris_structure(
             workspace_id=workspace_id,
             skip_validation=False
         )
+
+        if not is_valid and all_formats:
+            # Train and eval datasets may use different formats (e.g. odvg for
+            # train, coco for eval).  Try remaining supported formats before
+            # reporting a failure.
+            for alt_format in all_formats:
+                if alt_format == dataset_format:
+                    continue
+                logger.info(
+                    f"Retrying validation for {field_name} with format '{alt_format}'"
+                )
+                is_valid, validation_details = validate_dataset_uri_structure(
+                    dataset_uri=path,
+                    network_arch=network_arch,
+                    dataset_format=alt_format,
+                    dataset_type=dataset_type,
+                    dataset_intent=intents,
+                    workspace_id=workspace_id,
+                    skip_validation=False
+                )
+                if is_valid:
+                    logger.info(
+                        f"Validation passed for {field_name} with alt format '{alt_format}'"
+                    )
+                    break
 
         if not is_valid:
             error_msg = (
