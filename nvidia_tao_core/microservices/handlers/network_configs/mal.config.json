@@ -85,7 +85,8 @@
     },
     "metrics": {
         "available_metrics": [
-            "mIoU"
+            "mIoU",
+            "val_cluster_score"
         ],
         "monitoring_metric": "mIoU",
         "dynamic_metric_patterns": [

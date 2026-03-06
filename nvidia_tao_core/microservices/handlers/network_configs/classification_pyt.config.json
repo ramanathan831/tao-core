@@ -177,7 +177,10 @@
         "available_metrics": [
             "val_acc_1"
         ],
-        "monitoring_metric": "val_acc_1"
+        "monitoring_metric": "val_acc_1",
+        "dynamic_metric_patterns": [
+            "^(train|val|test)_acc_\\d+$"
+        ]
     },
     "cloud_upload": {
         "upload_strategy": {
