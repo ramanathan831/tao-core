@@ -585,6 +585,11 @@ def process_convert_job_spec_path(spec_config, source_ds, dataset_convert_action
     dataset_convert_job_id = get_job_id_of_action(
         source_ds, kind="datasets", action=dataset_convert_action
     )
+    # For direct-path (URI) datasets, fall back to URI-based lookup
+    if not dataset_convert_job_id and is_direct_path(source_ds):
+        dataset_convert_job_id = _find_convert_job_by_uri_match(
+            source_ds, dataset_convert_action
+        )
 
     if not dataset_convert_job_id:
         return None, None
@@ -729,31 +734,46 @@ def process_additional_downloads(
 
         if dataset_convert_strategy:
             # Get datasets that might have dataset_convert results
+            # Check both legacy (UUID) and new (URI) field names
             source_datasets = (get_datasets_from_metadata(handler_metadata, "train_datasets") or
+                               get_datasets_from_metadata(handler_metadata, "train_dataset_uris") or
                                get_datasets_from_metadata(handler_metadata, "eval_dataset") or
-                               get_datasets_from_metadata(handler_metadata, "inference_dataset"))
+                               get_datasets_from_metadata(handler_metadata, "eval_dataset_uri") or
+                               get_datasets_from_metadata(handler_metadata, "inference_dataset") or
+                               get_datasets_from_metadata(handler_metadata, "inference_dataset_uri"))
             if source_datasets:
+                source_ds_ref = source_datasets[0]
                 dataset_convert_job_id = get_job_id_of_action(
-                    source_datasets[0], kind="datasets", action=dataset_convert_action
+                    source_ds_ref, kind="datasets", action=dataset_convert_action
                 )
+                # For direct-path (URI) datasets, fall back to URI-based lookup
+                if not dataset_convert_job_id and is_direct_path(source_ds_ref):
+                    dataset_convert_job_id = _find_convert_job_by_uri_match(
+                        source_ds_ref, dataset_convert_action
+                    )
 
                 if dataset_convert_job_id:
                     # Get workspace identifier
-                    source_ds_metadata = get_handler_metadata(source_datasets[0], kind="datasets")
-                    workspace_identifier = get_workspace_string_identifier(
-                        source_ds_metadata.get('workspace'),
-                        workspace_cache
-                    )
+                    if is_direct_path(source_ds_ref):
+                        workspace_identifier = get_workspace_string_identifier(
+                            handler_metadata.get('workspace'),
+                            workspace_cache
+                        )
+                    else:
+                        source_ds_metadata = get_handler_metadata(source_ds_ref, kind="datasets")
+                        workspace_identifier = get_workspace_string_identifier(
+                            source_ds_metadata.get('workspace'),
+                            workspace_cache
+                        )
 
                     # Generate download path based on strategy
+                    ws_prefix = workspace_identifier.rstrip('/')
                     if dataset_convert_strategy == "tarball_after_completion":
-                        # For simple tarball strategy (like pointpillars)
-                        download_path = (f"{workspace_identifier}/results/{dataset_convert_job_id}/"
+                        download_path = (f"{ws_prefix}/results/{dataset_convert_job_id}/"
                                          f"{endpoint_action}_results.tar.gz")
                         additional_downloads.append(download_path)
                     elif isinstance(dataset_convert_strategy, dict) and "selective_tarball" in dataset_convert_strategy:
-                        # For selective tarball strategy (like sparse4d)
-                        download_path = (f"{workspace_identifier}/results/{dataset_convert_job_id}/"
+                        download_path = (f"{ws_prefix}/results/{dataset_convert_job_id}/"
                                          f"{endpoint_action}_selective.tar.gz")
                         additional_downloads.append(download_path)
 
