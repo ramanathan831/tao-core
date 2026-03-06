@@ -322,7 +322,7 @@ def validate_all_dataset_uris_structure(
 
     inference_path = experiment_metadata.get("inference_dataset_uri")
     if inference_path:
-        paths_to_validate.append((inference_path, "inference_dataset_uri", ["inference"]))
+        paths_to_validate.append((inference_path, "inference_dataset_uri", ["testing"]))
 
     calibration_path = experiment_metadata.get("calibration_dataset_uri")
     if calibration_path:
