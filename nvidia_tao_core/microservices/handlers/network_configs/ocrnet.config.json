@@ -18,6 +18,7 @@
         "accepted_ds_intents": [
             "training",
             "evaluation",
+            "testing",
             "calibration"
         ],
         "image": "TAO_PYTORCH",
@@ -48,6 +49,10 @@
                             "type": "file"
                         },
                         "evaluation": {
+                            "path": "test.tar.gz",
+                            "type": "file"
+                        },
+                        "testing": {
                             "path": "test.tar.gz",
                             "type": "file"
                         },

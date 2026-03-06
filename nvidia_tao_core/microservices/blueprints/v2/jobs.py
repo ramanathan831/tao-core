@@ -101,7 +101,7 @@ def _create_virtual_dataset_for_direct_paths(user_id, org_name, request_dict):
     if request_dict.get("eval_dataset_uri"):
         use_for.append("evaluation")
     if request_dict.get("inference_dataset_uri"):
-        use_for.append("inference")
+        use_for.append("testing")
 
     now = datetime.now(tz=timezone.utc).isoformat()
     metadata = {
