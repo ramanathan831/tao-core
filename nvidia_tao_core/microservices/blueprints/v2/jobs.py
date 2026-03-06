@@ -82,7 +82,12 @@ def _create_virtual_dataset_for_direct_paths(user_id, org_name, request_dict):
 
     dataset_id = str(uuid_module.uuid4())
     dataset_type = request_dict.get("dataset_type", "object_detection")
-    dataset_format = request_dict.get("dataset_format", "custom")
+    dataset_format = request_dict.get("dataset_format")
+    if not dataset_format:
+        from nvidia_tao_core.microservices.utils.core_utils import read_network_config
+        nc = read_network_config(dataset_type)
+        formats = nc.get("api_params", {}).get("formats", [])
+        dataset_format = formats[0] if formats else "custom"
 
     # Try to resolve valid actions for this type+format combination
     default_actions = [
@@ -93,6 +98,20 @@ def _create_virtual_dataset_for_direct_paths(user_id, org_name, request_dict):
         actions = get_dataset_actions(dataset_type, dataset_format)
     except Exception:
         actions = default_actions
+
+    # Extract cloud_file_path from the primary URI so get_source_root() resolves correctly.
+    # For aws://bucket/path/to/data, cloud_file_path = "path/to/data" (everything after bucket/).
+    cloud_file_path = ""
+    train_uris = request_dict.get("train_dataset_uris") or []
+    primary_uri = (train_uris[0] if train_uris else
+                   request_dict.get("eval_dataset_uri") or
+                   request_dict.get("inference_dataset_uri") or
+                   request_dict.get("calibration_dataset_uri"))
+    if primary_uri and "://" in primary_uri:
+        _, path_after_protocol = primary_uri.split("://", 1)
+        parts = path_after_protocol.split("/", 1)
+        if len(parts) > 1:
+            cloud_file_path = parts[1]
 
     now = datetime.now(tz=timezone.utc).isoformat()
     metadata = {
@@ -112,6 +131,7 @@ def _create_virtual_dataset_for_direct_paths(user_id, org_name, request_dict):
         "inference_dataset_uri": request_dict.get("inference_dataset_uri"),
         "calibration_dataset_uri": request_dict.get("calibration_dataset_uri"),
         "workspace": request_dict.get("workspace"),
+        "cloud_file_path": cloud_file_path,
     }
 
     write_handler_metadata(dataset_id, metadata, "dataset")
