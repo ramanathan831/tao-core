@@ -66,13 +66,16 @@ class ModelHandler:
 
         job_status = job_metadata.get("status", "Error")
         if job_status not in ("Success", "Done"):
-            return Code(404, {"error_desc": f"Job is not in Success or Done state (current: {job_status})", "error_code": 404})
+            return Code(
+                404,
+                {"error_desc": f"Job is not in Success or Done state (current: {job_status})", "error_code": 404}
+            )
         job_action = job_metadata.get("action", "")
         if job_action not in ("train", "distill", "quantize", "prune", "retrain", "export", "gen_trt_engine"):
             return Code(
                 404,
-                {"error_desc": "Publish model is available only for train, distill, quantize, prune, retrain, export, "
-                 "gen_trt_engine actions", "error_code": 404}
+                {"error_desc": "Publish model is available only for train, distill, quantize, prune, retrain, "
+                 "export, gen_trt_engine actions", "error_code": 404}
             )
 
         try:
@@ -139,7 +142,10 @@ class ModelHandler:
 
         job_status = job_metadata.get("status", "Error")
         if job_status not in ("Success", "Done"):
-            return Code(404, {"error_desc": f"Job is not in Success or Done state (current: {job_status})", "error_code": 404})
+            return Code(
+                404,
+                {"error_desc": f"Job is not in Success or Done state (current: {job_status})", "error_code": 404}
+            )
         job_action = job_metadata.get("action", "")
         if job_action not in ("train", "distill", "quantize", "prune", "retrain", "export", "gen_trt_engine"):
             return Code(
@@ -151,14 +157,20 @@ class ModelHandler:
         try:
             ngc_key = ngc_utils.get_user_key(user_id, org_name)
             if not ngc_key:
-                return Code(403, {"error_desc": "User does not have access to remove published model", "error_code": 403})
+                return Code(
+                    403,
+                    {"error_desc": "User does not have access to remove published model", "error_code": 403}
+                )
 
             response = ngc_utils.delete_model(
                 org_name, team_name, handler_metadata, ngc_key, job_id, job_action
             )
             if response.ok:
                 return Code(response.status_code, {"message": "Successfully deleted model"})
-            return Code(response.status_code, {"error_desc": "Unable to delete published model", "error_code": response.status_code})
+            return Code(
+                response.status_code,
+                {"error_desc": "Unable to delete published model", "error_code": response.status_code}
+            )
         except Exception as e:
             logger.error("Exception thrown in remove_published_model is %s", str(e))
             logger.error(traceback.format_exc())
