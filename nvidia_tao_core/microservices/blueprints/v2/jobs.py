@@ -82,7 +82,12 @@ def _create_virtual_dataset_for_direct_paths(user_id, org_name, request_dict):
 
     dataset_id = str(uuid_module.uuid4())
     dataset_type = request_dict.get("dataset_type", "object_detection")
-    dataset_format = request_dict.get("dataset_format", "custom")
+    dataset_format = request_dict.get("dataset_format")
+    if not dataset_format:
+        from nvidia_tao_core.microservices.utils.core_utils import read_network_config
+        nc = read_network_config(dataset_type)
+        formats = nc.get("api_params", {}).get("formats", [])
+        dataset_format = formats[0] if formats else "custom"
 
     # Try to resolve valid actions for this type+format combination
     default_actions = [

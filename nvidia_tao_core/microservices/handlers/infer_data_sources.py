@@ -1300,6 +1300,33 @@ def apply_data_source_config(config, job_context, handler_metadata):
     if additional_downloads:
         config["additional_downloads"] = additional_downloads
 
+    # For networks that export models larger than 2 GB, the ONNX exporter splits output into
+    # model.onnx + model.bin (and possibly other artefacts).  When gen_trt_engine runs, the
+    # ONNX runtime requires all sibling files to be present in the same directory as the .onnx.
+    #
+    # We achieve this by adding a top-level "_companion_onnx_folder" key to the spec whose
+    # value is the cloud path of the directory containing the ONNX file.  The container handler
+    # already calls download_files_from_spec on the full spec dict before launching the job, so
+    # this triggers a folder download (download_folder) that places every export artefact next
+    # to the ONNX file.  The key is popped by the container handler before the YAML spec is
+    # written, so it never reaches the CLI tool.
+    if (job_action == "gen_trt_engine" and
+            network_config.get("companion_onnx_bin_download", False)):
+        onnx_file_path = get_nested_config_value(config, "gen_trt_engine.onnx_file")
+        if onnx_file_path and isinstance(onnx_file_path, str) and onnx_file_path.endswith(".onnx"):
+            onnx_folder_path = os.path.dirname(onnx_file_path)
+            if onnx_folder_path:
+                config["_companion_onnx_folder"] = onnx_folder_path
+                logger.info(
+                    "Added parent export folder for companion download: %s", onnx_folder_path
+                )
+            else:
+                logger.warning(
+                    "Could not derive parent export folder from onnx_file path '%s'; "
+                    "companion artefacts (e.g. model.bin) will not be pre-downloaded.",
+                    onnx_file_path
+                )
+
     return config
 
 
