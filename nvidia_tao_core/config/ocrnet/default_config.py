@@ -412,6 +412,12 @@ class OCRNetTrainExpConfig(TrainConfig):
         description="The distributed strategy for multi-gpu training.",
         display="distributed_strategy"
     )
+    use_distributed_sampler: bool = BOOL_FIELD(
+        value=False,
+        default_value=False,
+        description="Use distributed sampler for multi-GPU training",
+        display="use_distributed_sampler"
+    )
     model_ema: bool = BOOL_FIELD(
         value=False,
         default_value=False,
