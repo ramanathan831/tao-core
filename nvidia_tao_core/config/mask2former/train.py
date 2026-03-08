@@ -174,11 +174,18 @@ class Mask2FormerTrainExpConfig(TrainConfig):
         DDP (Distributed Data Parallel) and Fully Sharded DDP are supported.""",
     )
     activation_checkpoint: bool = BOOL_FIELD(
-        value=True,
+        value=False,
         display_name="enable activation checkpointing",
         description="""
         A True value instructs train to recompute in backward pass to save GPU memory,
-        rather than storing activations.""",
+        rather than storing activations. Note: activation checkpointing is incompatible
+        with find_unused_parameters in DDP and may cause errors if the model has unused
+        parameters.""",
+    )
+    use_distributed_sampler: bool = BOOL_FIELD(
+        value=False,
+        display_name="use distributed sampler",
+        description="Use distributed sampler for multi-GPU training.",
     )
     iters_per_epoch: Optional[int] = INT_FIELD(
         value=None,  # 20210, 118272

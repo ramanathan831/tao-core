@@ -653,13 +653,13 @@ class CNTrainExpConfig(TrainConfig):
         display_name="precision"
     )
     sync_batchnorm: bool = BOOL_FIELD(
-        value=True,
-        default_value=True,
+        value=False,
+        default_value=False,
         description="Synchronize batch normalization across devices"
     )
     use_distributed_sampler: bool = BOOL_FIELD(
-        value=True,
-        default_value=True,
+        value=False,
+        default_value=False,
         description="Use distributed sampler for multi-GPU training"
     )
 
