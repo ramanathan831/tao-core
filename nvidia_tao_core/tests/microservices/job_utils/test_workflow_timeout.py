@@ -15,7 +15,7 @@
 """Unit tests for job timeout monitoring feature in workflow.py"""
 
 import os
-from unittest.mock import patch, MagicMock, call
+from unittest.mock import patch, MagicMock
 from datetime import datetime, timezone, timedelta
 
 from nvidia_tao_core.microservices.utils.job_utils.timeout_monitor import (
