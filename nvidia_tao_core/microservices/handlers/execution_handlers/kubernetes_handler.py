@@ -153,7 +153,7 @@ class KubernetesHandler(ExecutionHandler):
         # Get mongo configuration if backend is set
         backend_env = client.V1EnvVar(
             name="BACKEND",
-            value=BACKEND)
+            value=BACKEND.value)
         # CL job needs to set the environment variable to pass GPU checks (validate_num_gpu) for training jobs
         num_gpu_env = client.V1EnvVar(
             name="NUM_GPU_PER_NODE",
@@ -258,7 +258,7 @@ class KubernetesHandler(ExecutionHandler):
         except Exception as e:
             self.logger.error(f"Exception thrown in executor create is {str(e)}")
             self.logger.error(traceback.format_exc())
-            return
+            raise RuntimeError(f"Failed to create K8s job '{job_name}': {e}") from e
 
     def check_and_update_job_image_pull_status(self, job_name, namespace=None):
         """Check image pull status for a K8s Job and update job message.
