@@ -1095,6 +1095,9 @@ def get_num_gpus_from_spec(spec, action, network=None, default=0, skip_gpu_condi
     if not isinstance(spec, dict):
         return default
 
+    if action == "retrain":
+        action = "train"
+
     gpu_set_values = []
 
     # Special handling for cosmos-rl to calculate total GPUs correctly.
@@ -1163,6 +1166,10 @@ def get_num_nodes_from_spec(spec, action, network=None, default=1):
     """
     if not isinstance(spec, dict):
         return default
+
+    if action == "retrain":
+        action = "train"
+
     node_set_values = []
 
     # First check for network-specific node parameter using node_mapper
@@ -1511,6 +1518,8 @@ def latest_model(files, delimiters="_", epoch_number="000", extensions=[".tlt", 
     for file in files:
         _, file_extension = os.path.splitext(file)
         if file_extension not in extensions:
+            continue
+        if "_latest" in os.path.basename(file):
             continue
         model_name = file
         for extension in extensions:
