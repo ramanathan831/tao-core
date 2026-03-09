@@ -460,7 +460,7 @@ class Dataloader:
         default_value=16,
         valid_min=1,
         valid_max="inf",
-        automl_enabled="TRUE",
+        automl_enabled="FALSE",
         description="The batch size during training.",
         display_name="batch_size",
         popular="yes",
