@@ -25,7 +25,7 @@
 import os
 import logging
 
-from nvidia_tao_core.microservices.utils.handler_utils import get_num_gpus_from_spec
+from nvidia_tao_core.microservices.utils.handler_utils import get_num_gpus_from_spec, is_remote_backend
 from nvidia_tao_core.microservices.utils.stateless_handler_utils import (
     get_handler_log_root,
     update_job_status,
@@ -197,14 +197,20 @@ def dependency_check_gpu(job_context, dependency):
     """Check if GPU dependency is met"""
     logger.debug(f"[GPU_DEP_CHECK] Starting GPU dependency check for job {job_context.id}")
 
+    skip_gpu_check = is_remote_backend(getattr(job_context, 'backend_details', None))
+    if skip_gpu_check:
+        logger.debug(
+            f"[GPU_DEP_CHECK] Job {job_context.id}: SLURM backend detected, "
+            f"skipping per-node GPU validation (SLURM handles multi-node scheduling)"
+        )
+
     try:
         num_gpu = get_num_gpus_from_spec(
-            job_context.specs, job_context.action, network=job_context.network, default=dependency.num
+            job_context.specs, job_context.action, network=job_context.network,
+            default=dependency.num, skip_gpu_conditions_check=skip_gpu_check
         )
         logger.debug(f"[GPU_DEP_CHECK] Job {job_context.id}: Determined needs {num_gpu} GPU(s) from spec")
     except ValueError as e:
-        # GPU validation failed (e.g., requested GPUs > available GPUs)
-        # Return False to fail the dependency check with the error message
         error_message = str(e)
         logger.error(f"[GPU_DEP_CHECK] Job {job_context.id}: GPU validation failed: {error_message}")
         return False, error_message
