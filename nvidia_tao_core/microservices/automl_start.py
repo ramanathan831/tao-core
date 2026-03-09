@@ -434,8 +434,11 @@ if __name__ == "__main__":
         retain_checkpoints_for_resume = args.retain_checkpoints_for_resume.lower() in ("true", "1")
         timeout_minutes = int(args.timeout_minutes)
 
-        from nvidia_tao_core.microservices.utils.handler_utils import get_num_gpus_from_spec
-        num_gpu = get_num_gpus_from_spec(specs, "train", network=network, default=-1)
+        from nvidia_tao_core.microservices.utils.handler_utils import get_num_gpus_from_spec, is_remote_backend
+        num_gpu = get_num_gpus_from_spec(
+            specs, "train", network=network, default=-1,
+            skip_gpu_conditions_check=is_remote_backend(backend_details)
+        )
         logger.debug(
             f"[AUTOML-START] AutoML brain job {automl_job_id}: num_gpu from spec = {num_gpu}, "
             f"NUM_GPU_PER_NODE={os.getenv('NUM_GPU_PER_NODE', '0')}"

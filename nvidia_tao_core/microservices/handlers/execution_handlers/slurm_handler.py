@@ -286,16 +286,30 @@ class SlurmHandler(ExecutionHandler):
 
     @staticmethod
     def _to_compact_json(value: Union[str, dict, list]):
-        """Return a compact JSON string from dict/list/JSON string."""
+        """Return a compact JSON string from dict/list/JSON string.
+
+        Converts numpy/pathlib and other common non-JSON types so specs/env
+        from API or datasets serialize without TypeError (root cause of
+        'Error when creating microservice pod' for evaluate jobs).
+        """
+        def _json_serializer(obj):
+            if hasattr(obj, "item"):  # numpy scalar
+                return obj.item()
+            if hasattr(obj, "isoformat"):  # datetime
+                return obj.isoformat()
+            if isinstance(obj, (bytes, bytearray)):
+                return obj.decode("utf-8", errors="replace")
+            if hasattr(obj, "__fspath__"):  # pathlib.Path
+                return str(obj)
+            raise TypeError(f"Object of type {type(obj).__name__} is not JSON serializable")
+
         if isinstance(value, (dict, list)):
-            return json.dumps(value, separators=(",", ":"), ensure_ascii=False)
+            return json.dumps(value, separators=(",", ":"), ensure_ascii=False, default=_json_serializer)
         # value is str
-        # Try JSON parsing
         try:
             parsed = json.loads(value)
-            return json.dumps(parsed, separators=(",", ":"), ensure_ascii=False)
+            return json.dumps(parsed, separators=(",", ":"), ensure_ascii=False, default=_json_serializer)
         except Exception:
-            # Fallback: return as-is (container_handler will validate)
             return value
 
     def _get_ssh_options(self):
@@ -965,6 +979,12 @@ class SlurmHandler(ExecutionHandler):
             - Set force_reconvert_latest=True to always reconvert :latest tagged images
             - Cached SQSH files are stored in sqsh_cache_dir for reuse across jobs
         """
+        if specs is None:
+            specs = {}
+        if docker_env_vars is None:
+            docker_env_vars = {}
+        if cloud_metadata is None:
+            cloud_metadata = {}
         # Set default timeout if not specified
         if timeout_hours is None:
             timeout_hours = time_hours - 0.2  # 12 minutes buffer
@@ -1178,7 +1198,6 @@ class SlurmHandler(ExecutionHandler):
             exclusive=exclusive,
             network=network,
         )
-
         # Write script to local temp file, submit it, then clean up
         with tempfile.NamedTemporaryFile(mode='w', suffix='.sbatch', delete=False) as tmp:
             tmp.write(slurm_script)
@@ -1283,6 +1302,9 @@ class SlurmHandler(ExecutionHandler):
             return sbatch_output
         except subprocess.CalledProcessError as e:
             self.logger.error(f"Failed to submit Slurm job: {e.stderr.strip()}")
+            raise
+        except Exception as e:
+            self.logger.error(f"Failed to create job {job_id}: {e}")
             raise
         finally:
             # Clean up local temp file

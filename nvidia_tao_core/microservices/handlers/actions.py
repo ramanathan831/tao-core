@@ -74,6 +74,7 @@ from nvidia_tao_core.microservices.utils.handler_utils import (
     read_nested_dict,
     search_for_base_experiment,
     get_num_gpus_from_spec,
+    is_remote_backend,
     write_nested_dict,
     get_cloud_metadata
 )
@@ -759,7 +760,8 @@ class ActionPipeline:
             self.run_command, outdir = self.generate_run_command()
             if self.spec:
                 self.num_gpu = get_num_gpus_from_spec(
-                    self.spec, self.job_context.action, network=self.network, default=self.num_gpu
+                    self.spec, self.job_context.action, network=self.network, default=self.num_gpu,
+                    skip_gpu_conditions_check=is_remote_backend(self.job_context.backend_details)
                 )
                 self.num_nodes = get_num_nodes_from_spec(
                     self.spec,
@@ -1224,7 +1226,10 @@ class AutoMLPipeline(ActionPipeline):
         spec = apply_data_source_config(spec, self.job_context, self.handler_metadata)
         self.detailed_print("Loaded AutoML specs")
 
-        self.num_gpu = get_num_gpus_from_spec(spec, "train", network=self.network, default=self.num_gpu)
+        self.num_gpu = get_num_gpus_from_spec(
+            spec, "train", network=self.network, default=self.num_gpu,
+            skip_gpu_conditions_check=is_remote_backend(self.job_context.backend_details)
+        )
         self.num_nodes = get_num_nodes_from_spec(spec, "train", network=self.network, default=self.num_nodes)
 
         return spec
