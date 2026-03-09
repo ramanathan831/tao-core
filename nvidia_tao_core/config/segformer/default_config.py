@@ -473,6 +473,18 @@ class SFTrainExpConfig(TrainConfig):
     )
     segment: SFTrainSegmentConfig = DATACLASS_FIELD(SFTrainSegmentConfig())
     tensorboard: Optional[TensorBoardLogger] = DATACLASS_FIELD(TensorBoardLogger())
+    use_distributed_sampler: bool = BOOL_FIELD(
+        value=False,
+        default_value=False,
+        description="Use distributed sampler for multi-GPU training",
+        display_name="use_distributed_sampler"
+    )
+    sync_batchnorm: bool = BOOL_FIELD(
+        value=False,
+        default_value=False,
+        description="Enable synchronized batch normalization for multi-GPU training",
+        display_name="sync_batchnorm"
+    )
 
     checkpointer: Optional[Dict[str, Any]] = None
     enable_lr_monitor: Optional[bool] = False
