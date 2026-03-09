@@ -209,18 +209,33 @@ class AutoMLHandler:
             f"Setting NUM_GPU_PER_NODE={cluster_num_gpus} in brain container env (no actual GPUs assigned)"
         )
 
-        ExecutionHandler.create_job_with_handler(
-            org_name=org_name,
-            job_name=job_id,
-            image=image,
-            command=run_command,
-            workspace_metadata=decrypted_workspace_metadata,
-            num_gpu=0,
-            docker_env_vars=docker_env_vars,
-            automl_brain=True,
-            automl_exp_job=False,
-            backend_details=backend_details
-        )
+        try:
+            ExecutionHandler.create_job_with_handler(
+                org_name=org_name,
+                job_name=job_id,
+                image=image,
+                command=run_command,
+                workspace_metadata=decrypted_workspace_metadata,
+                num_gpu=0,
+                docker_env_vars=docker_env_vars,
+                automl_brain=True,
+                automl_exp_job=False,
+                backend_details=backend_details
+            )
+        except Exception as e:
+            logger.error(f"[AUTOML-START] Failed to create brain job {job_id}: {e}")
+            from nvidia_tao_core.microservices.utils.stateless_handler_utils import update_job_status
+            update_job_status(experiment_id, job_id, status="Error", kind="experiments")
+            job_metadata["status"] = "Error"
+            job_metadata["job_details"] = {
+                job_id: {
+                    "detailed_status": {
+                        "message": f"AutoML brain job creation failed: {e}"
+                    }
+                }
+            }
+            write_job_metadata(job_id, job_metadata)
+            raise
 
         # Start log monitoring for AutoML brain job (server-side)
         backend = os.getenv("BACKEND", "local-k8s")
@@ -522,16 +537,32 @@ class AutoMLHandler:
             f"[AUTOML-RESUME] Creating K8s job for AutoML brain: job_id={job_id}, num_gpu=0, "
             f"NUM_GPU_PER_NODE={cluster_num_gpus} in env"
         )
-        ExecutionHandler.create_job_with_handler(
-            org_name=org_name,
-            job_name=job_id,
-            image=image,
-            command=run_command,
-            workspace_metadata=decrypted_workspace_metadata,
-            num_gpu=0,
-            docker_env_vars=docker_env_vars,
-            automl_brain=True,
-            automl_exp_job=False,
-            backend_details=backend_details
-        )
+        try:
+            ExecutionHandler.create_job_with_handler(
+                org_name=org_name,
+                job_name=job_id,
+                image=image,
+                command=run_command,
+                workspace_metadata=decrypted_workspace_metadata,
+                num_gpu=0,
+                docker_env_vars=docker_env_vars,
+                automl_brain=True,
+                automl_exp_job=False,
+                backend_details=backend_details
+            )
+        except Exception as e:
+            logger.error(f"[AUTOML-RESUME] Failed to create brain job {job_id}: {e}")
+            from nvidia_tao_core.microservices.utils.stateless_handler_utils import update_job_status
+            update_job_status(experiment_id, job_id, status="Error", kind="experiments")
+            resumed_metadata = get_handler_job_metadata(job_id) or {}
+            resumed_metadata["status"] = "Error"
+            resumed_metadata["job_details"] = {
+                job_id: {
+                    "detailed_status": {
+                        "message": f"AutoML brain job creation failed on resume: {e}"
+                    }
+                }
+            }
+            write_job_metadata(job_id, resumed_metadata)
+            raise
         logger.debug(f"[AUTOML-RESUME] AutoML resume operation completed: job_id={job_id}")
