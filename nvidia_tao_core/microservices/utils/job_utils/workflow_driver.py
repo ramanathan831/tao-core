@@ -18,7 +18,7 @@ import logging
 
 from nvidia_tao_core.microservices.constants import NO_SPEC_ACTIONS_MODEL
 from nvidia_tao_core.microservices.utils.stateless_handler_utils import get_handler_type, get_job
-from nvidia_tao_core.microservices.utils.handler_utils import JobContext, get_num_gpus_from_spec
+from nvidia_tao_core.microservices.utils.handler_utils import JobContext, get_num_gpus_from_spec, is_remote_backend
 from .workflow import Dependency, Job, Workflow
 
 # Configure logging
@@ -110,11 +110,13 @@ def on_new_job(job_context):
             platform_id = job_context.specs.get("platform_id")
         if job_context.specs:
             try:
+                skip_gpu_check = is_remote_backend(job_context.backend_details)
                 num_gpu = get_num_gpus_from_spec(
                     job_context.specs,
                     job_context.action,
                     network=job_context.network,
-                    default=num_gpu
+                    default=num_gpu,
+                    skip_gpu_conditions_check=skip_gpu_check
                 )
                 logger.debug(
                     f"GPU count determined from specs for {job_context.network}/{job_context.action}: {num_gpu}"
