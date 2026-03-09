@@ -960,7 +960,24 @@ class ExperimentHandler:
         except Exception as e:
             logger.error(f"[RESUME] Exception thrown in resume_experiment_job: job_id={job_id}, error={str(e)}")
             logger.error(f"[RESUME] Traceback: {traceback.format_exc()}")
-            return Code(400, [], "Action cannot be resumed")
+            try:
+                from nvidia_tao_core.microservices.utils.stateless_handler_utils import (
+                    update_job_status as _update_status,
+                    write_job_metadata
+                )
+                _update_status(experiment_id, job_id, status="Error", kind=kind + "s")
+                err_meta = get_handler_job_metadata(job_id)
+                if err_meta:
+                    err_meta["status"] = "Error"
+                    err_meta.setdefault("job_details", {})[job_id] = {
+                        "detailed_status": {
+                            "message": f"Job resume failed: {e}"
+                        }
+                    }
+                    write_job_metadata(job_id, err_meta)
+            except Exception as status_err:
+                logger.error(f"[RESUME] Failed to update job {job_id} status to Error: {status_err}")
+            return Code(400, [], f"Action cannot be resumed: {e}")
 
     @staticmethod
     def automl_details(org_name, experiment_id, job_id):
