@@ -210,12 +210,15 @@ class Controller:
         if "TAO_CLIENT_TYPE" not in experiment_metadata["docker_env_vars"]:
             # Set to api since AutoML is triggered by API server
             experiment_metadata["docker_env_vars"]["TAO_CLIENT_TYPE"] = "api"
+        # Pass brain's log level to train jobs so logging is consistent (brain sets TAO_LOG_LEVEL when started)
+        brain_log_level = os.getenv("TAO_LOG_LEVEL", "INFO")
+        experiment_metadata["docker_env_vars"]["TAO_LOG_LEVEL"] = brain_log_level
 
         # Save updated metadata
         write_handler_metadata(self.automl_context.handler_id, experiment_metadata, "experiments")
         logger.info(
-            "Injected TAO_AUTOML_TRIGGERED=true for experiment %s",
-            self.automl_context.handler_id
+            "Injected TAO_AUTOML_TRIGGERED=true and TAO_LOG_LEVEL=%s (from brain) for experiment %s",
+            brain_log_level, self.automl_context.handler_id
         )
 
     def _initialize_wandb_for_automl(self):
@@ -505,6 +508,45 @@ class Controller:
                         "status": "SUCCESS"
                     }
                 }
+            elif self.best_rec_id >= 0:
+                # Fallback: move to brain folder failed but best experiment is known. Only mark Done
+                # if valid checkpoint files exist in the best experiment folder.
+                best_rec = next(
+                    (r for r in self.recommendations if r.id == self.best_rec_id),
+                    None
+                )
+                has_checkpoints = False
+                if best_rec is not None:
+                    expt_folder = self._get_experiment_results_path(best_rec.job_id)
+                    (find_trained_tlt, find_trained_hdf5, find_trained_pth, _,
+                     find_trained_safetensors) = self.get_checkpoint_paths_matching_epoch_number(
+                        expt_folder, self.best_rec_id
+                    )
+                    has_checkpoints = bool(
+                        find_trained_tlt or find_trained_hdf5 or find_trained_pth or find_trained_safetensors
+                    )
+                if has_checkpoints:
+                    status = "Done"
+                    result_metadata["job_details"][self.automl_context.id] = {
+                        "detailed_status": {
+                            "message": (
+                                "AutoML run completed; best model checkpoints remain in experiment "
+                                "folder (copy to brain folder failed). Export/inference will use them."
+                            ),
+                            "status": "SUCCESS"
+                        }
+                    }
+                else:
+                    no_ckpt_path = expt_folder if best_rec is not None else best_model_path
+                    result_metadata["job_details"][self.automl_context.id] = {
+                        "detailed_status": {
+                            "message": (
+                                f"No valid checkpoint files in best experiment folder {no_ckpt_path}; "
+                                "cannot use fallback."
+                            ),
+                            "status": "FAILURE"
+                        }
+                    }
 
             write_job_metadata(self.automl_context.id, result_metadata)
             update_job_status(self.automl_context.handler_id, self.automl_context.id, status=status, kind="experiments")
@@ -1534,36 +1576,58 @@ class Controller:
                     self.automl_context.id,
                     f"Moving best model folder for experiment {rec.id} to {cloud_best_model_folder}"
                 )
-                # Move folder but exclude log files - experiment logs should stay in experiment folder
-                # The brain job has its own logs, experiment logs should not be moved to brain folder
+                best_specs = get_job_specs(job_name, automl=True, automl_experiment_id=str(rec.id))
                 exclude_log_files = ['microservices_log.txt', 'log.txt']
                 logger.info(f"Moving best experiment folder excluding log files: {exclude_log_files}")
-                self.cs_instance.move_folder(
-                    expt_folder[1:],
-                    cloud_best_model_folder,
-                    job_id=self.automl_context.id,
-                    exclude_files=exclude_log_files
-                )
-                report_health_beat(
-                    self.automl_context.id,
-                    f"Completed moving best model folder for experiment {rec.id}"
-                )
-                best_specs = get_job_specs(job_name, automl=True, automl_experiment_id=str(rec.id))
-                save_automl_best_rec_info(self.automl_context.id, rec.id, rec.job_id)
-                save_job_specs(self.automl_context.id, specs=best_specs, automl=True, automl_experiment_id="-1")
-                (find_trained_tlt,
-                 find_trained_hdf5,
-                 find_trained_pth,
-                 _,
-                 find_trained_safetensors) = self.get_checkpoint_paths_matching_epoch_number(
-                    cloud_best_model_folder,
-                    rec.id
-                )
-                if find_trained_tlt or find_trained_hdf5 or find_trained_pth or find_trained_safetensors:
-                    self.best_model_copied = True
-                    return rec.id
-                logger.info("Best model checkpoints couldn't be moved")
-                return -1
+                try:
+                    self.cs_instance.move_folder(
+                        expt_folder[1:],
+                        cloud_best_model_folder,
+                        job_id=self.automl_context.id,
+                        exclude_files=exclude_log_files
+                    )
+                    report_health_beat(
+                        self.automl_context.id,
+                        f"Completed moving best model folder for experiment {rec.id}"
+                    )
+                    save_automl_best_rec_info(self.automl_context.id, rec.id, rec.job_id)
+                    save_job_specs(self.automl_context.id, specs=best_specs, automl=True, automl_experiment_id="-1")
+                    (find_trained_tlt,
+                     find_trained_hdf5,
+                     find_trained_pth,
+                     _,
+                     find_trained_safetensors) = self.get_checkpoint_paths_matching_epoch_number(
+                        cloud_best_model_folder,
+                        rec.id
+                    )
+                    if find_trained_tlt or find_trained_hdf5 or find_trained_pth or find_trained_safetensors:
+                        self.best_model_copied = True
+                        return rec.id
+                    logger.info("Best model checkpoints couldn't be moved")
+                    return -1
+                except Exception as move_err:
+                    logger.warning(
+                        "Move of best experiment folder to brain folder failed (%s); "
+                        "storing best_model_results_job_id=experiment so downstream use experiment folder: %s",
+                        rec.job_id, move_err
+                    )
+                    save_automl_best_rec_info(
+                        self.automl_context.id, rec.id, rec.job_id,
+                        best_model_results_job_id=rec.job_id
+                    )
+                    save_job_specs(self.automl_context.id, specs=best_specs, automl=True, automl_experiment_id="-1")
+                    (find_trained_tlt,
+                     find_trained_hdf5,
+                     find_trained_pth,
+                     _,
+                     find_trained_safetensors) = self.get_checkpoint_paths_matching_epoch_number(
+                        expt_folder, rec.id
+                    )
+                    if find_trained_tlt or find_trained_hdf5 or find_trained_pth or find_trained_safetensors:
+                        self.best_model_copied = False
+                        return rec.id
+                    logger.warning("Best model checkpoints not found in experiment folder after move failure")
+                    return -1
         return -1
 
     def get_checkpoint_paths_matching_epoch_number(self, path, rec_id):

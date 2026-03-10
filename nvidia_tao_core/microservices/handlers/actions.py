@@ -1025,11 +1025,13 @@ class TrainVal(CLIPipeline):
                         default_spec = spec_schema["default"]
                         user_modified_values = find_differences(spec, default_spec)
                     automl = False
-                    best_rec_id, best_rec_job_id = get_automl_best_rec_info(parent_job_id)
-                    logger.info(f"Best rec id: {best_rec_id}, Best rec job id: {best_rec_job_id}")
-                    if best_rec_id != "-1":
+                    best_rec_number, best_rec_job_id, _ = get_automl_best_rec_info(parent_job_id)
+                    logger.info(f"Best rec number: {best_rec_number}, Best rec job id: {best_rec_job_id}")
+                    if best_rec_number != "-1":
                         automl = True
-                        parent_spec = get_job_specs(best_rec_job_id, automl=automl, automl_experiment_id=best_rec_id)
+                        parent_spec = get_job_specs(
+                            best_rec_job_id, automl=automl, automl_experiment_id=best_rec_number
+                        )
                     else:
                         parent_spec = get_job_specs(parent_job_id)
                     train_specs_passed_in_req_body = get_job_specs(parent_job_id)

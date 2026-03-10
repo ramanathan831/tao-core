@@ -236,6 +236,12 @@ def get_handler_job_metadata(job_id):
         mongo_jobs = MongoHandler("tao", "jobs")
         job_query = {'id': job_id}
         metadata = mongo_jobs.find_one(job_query)
+        if not metadata:
+            logger.debug(
+                "Job %s not found in MongoDB (tao.jobs). If you changed API URL or restarted containers, "
+                "ensure this API server uses the same MongoDB as when the job was created.",
+                job_id
+            )
     return metadata
 
 
@@ -551,18 +557,38 @@ def save_automl_current_rec(brain_job_id, current_rec):
 
 
 def get_automl_best_rec_info(brain_job_id):
-    """Get automl best recommendation info"""
+    """Get automl best recommendation info.
+
+    Returns:
+        best_rec_number: recommendation index (e.g. 0).
+        best_rec_id: experiment job id whose results contain the best model.
+        best_model_results_job_id: job id whose results folder contains the best model
+            (brain_job_id if move succeeded, best_rec_id if move failed). Defaults to
+            brain_job_id when not set for backward compatibility.
+    """
     mongo_jobs = MongoHandler("tao", "automl_jobs")
     job_query = {'id': brain_job_id}
     automl_info = mongo_jobs.find_one(job_query)
-    return automl_info.get("best_rec_number", "-1"), automl_info.get("best_rec_id", "-1")
+    if not automl_info:
+        return "-1", "-1", brain_job_id
+    best_rec_number = automl_info.get("best_rec_number", "-1")
+    best_rec_id = automl_info.get("best_rec_id", "-1")
+    best_model_results_job_id = automl_info.get("best_model_results_job_id") or brain_job_id
+    return best_rec_number, best_rec_id, best_model_results_job_id
 
 
-def save_automl_best_rec_info(brain_job_id, best_rec_number, best_rec_job_id):
-    """Save automl best recommendation info"""
+def save_automl_best_rec_info(brain_job_id, best_rec_number, best_rec_job_id, best_model_results_job_id=None):
+    """Save automl best recommendation info.
+
+    When move_folder of best experiment to brain folder fails, pass best_model_results_job_id=best_rec_job_id
+    so downstream (e.g. evaluate, export) resolve parent model from the experiment folder.
+    """
     mongo_jobs = MongoHandler("tao", "automl_jobs")
     job_query = {'id': brain_job_id}
-    mongo_jobs.upsert(job_query, {"best_rec_number": str(best_rec_number), "best_rec_id": str(best_rec_job_id)})
+    payload = {"best_rec_number": str(best_rec_number), "best_rec_id": str(best_rec_job_id)}
+    if best_model_results_job_id is not None:
+        payload["best_model_results_job_id"] = str(best_model_results_job_id)
+    mongo_jobs.upsert(job_query, payload)
 
 
 def get_automl_custom_param_ranges(experiment_id):
