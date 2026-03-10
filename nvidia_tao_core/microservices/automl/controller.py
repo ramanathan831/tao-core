@@ -929,6 +929,30 @@ class Controller:
         history = deepcopy(self.recommendations)
         recommended_specs = self.brain.generate_recommendations(history)
 
+        # HyperBand ES: cancel early-stopped jobs signaled by the brain
+        configs_to_cancel = getattr(self.brain, 'configs_to_cancel', set())
+        if configs_to_cancel:
+            for job_id_to_cancel in configs_to_cancel:
+                logger.info(
+                    f"[AUTOML-CONTROLLER] Cancelling early-stopped job {job_id_to_cancel} "
+                    f"(signaled by {self.automl_algorithm} brain)"
+                )
+                on_cancel_automl_job(job_id_to_cancel)
+                for rec in self.recommendations:
+                    if rec.job_id == job_id_to_cancel:
+                        if self.brain.reverse_sort:
+                            penalty = 1e-7
+                        else:
+                            penalty = 1e7
+                        rec.update_result(penalty)
+                        rec.update_status(JobStates.failure)
+                        logger.info(
+                            f"[AUTOML-CONTROLLER] Marked early-stopped rec {rec.id} "
+                            f"as failure with penalty {penalty}"
+                        )
+                        break
+            self.save_state()
+
         # Support both single and multiple recommendations
         if not isinstance(recommended_specs, list):
             recommended_specs = [recommended_specs] if recommended_specs else []
@@ -963,10 +987,13 @@ class Controller:
 
                 # Store early_stop_epoch on the recommendation for later metric trimming
                 if self.automl_algorithm in ("hyperband", "h", "bohb", "asha", "dehb", "hyperband_es", "hes", "pbt"):
-                    rec.early_stop_epoch = self.brain.epoch_number
+                    epoch_target = self.brain.epoch_number
+                    if hasattr(self.brain, 'config_epoch_targets') and new_id in self.brain.config_epoch_targets:
+                        epoch_target = self.brain.config_epoch_targets[new_id]
+                    rec.early_stop_epoch = epoch_target
                     logger.debug(
                         f"[AUTOML-CONTROLLER] Set early_stop_epoch for new recommendation: "
-                        f"rec_id={rec.id}, early_stop_epoch={self.brain.epoch_number}"
+                        f"rec_id={rec.id}, early_stop_epoch={epoch_target}"
                     )
 
                 self.recommendations.append(rec)
@@ -997,13 +1024,15 @@ class Controller:
                     f"automl_job_id={self.automl_context.id}"
                 )
                 if self.automl_algorithm in ("hyperband", "h", "bohb", "asha", "dehb", "hyperband_es", "hes", "pbt"):
-                    self.automl_context.early_stop_epoch = self.brain.epoch_number
-                    # Store early_stop_epoch on the recommendation for later metric trimming
-                    self.recommendations[rec_id].early_stop_epoch = self.brain.epoch_number
+                    epoch_target = self.brain.epoch_number
+                    if hasattr(self.brain, 'config_epoch_targets') and rec_id in self.brain.config_epoch_targets:
+                        epoch_target = self.brain.config_epoch_targets[rec_id]
+                    self.automl_context.early_stop_epoch = epoch_target
+                    self.recommendations[rec_id].early_stop_epoch = epoch_target
                     logger.debug(
-                        f"[AUTOML-CONTROLLER-RESUME] Set early_stop_epoch for Hyperband: "
+                        f"[AUTOML-CONTROLLER-RESUME] Set early_stop_epoch: "
                         f"automl_job_id={self.automl_context.id}, rec_id={rec_id}, "
-                        f"early_stop_epoch={self.brain.epoch_number}"
+                        f"early_stop_epoch={epoch_target}"
                     )
 
                 # update temp_rec

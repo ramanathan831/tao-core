@@ -90,11 +90,16 @@ class BOHB(AutoMLAlgorithmBase):
         self.last_launched_count = 0
 
         # TPE-specific variables for Bayesian optimization
-        self.observations = []  # List of (config, result) tuples
+        # Budget-specific observations: {budget_epoch: [(config_array, result), ...]}
+        self.budget_observations = {}
         self.quantile = top_n_percent / 100.0  # Convert percentage to quantile
         self.min_bandwidth = 0.01  # Minimum bandwidth for KDE
         self.num_samples = int(kde_samples)  # Number of samples to evaluate for each recommendation
         self.min_points_in_model = int(min_points_in_model)  # Minimum points needed for KDE
+        # Paper Algorithm 2, line 1: fraction of configs sampled uniformly at random
+        self.random_fraction = 1.0 / 3.0
+        # Paper Section 4.1: bandwidth multiplier for exploration around good KDE
+        self.bandwidth_factor = 3.0
 
         logger.info(
             f"BOHB initialized with max_epochs={max_epochs}, "
@@ -106,10 +111,10 @@ class BOHB(AutoMLAlgorithmBase):
     def brackets_and_sh_sequence(self, max_epochs, reduction_factor):
         """Generate ni,ri arrays based on max_epochs and reduction_factor values"""
         smax = int(np.log(max_epochs) / np.log(reduction_factor))
-        for itr, s in enumerate(range(smax, 0, -1)):
+        for itr, s in enumerate(range(smax, -1, -1)):
             self.ni[str(itr)] = []
             self.ri[str(itr)] = []
-            n = int(math.ceil(int((smax + 1) / (s + 1)) * (reduction_factor**s)))
+            n = int(math.ceil((smax + 1) * (reduction_factor**s) / (s + 1)))
             r = int(max_epochs / (reduction_factor**s))
             for s_idx in range(s + 1):
                 ni = int(n * (reduction_factor**(-s_idx)))
@@ -180,25 +185,77 @@ class BOHB(AutoMLAlgorithmBase):
             logger.warning(f"Failed to sample from KDE: {e}")
             return None
 
-    def _tpe_suggest(self):
-        """Use Tree-structured Parzen Estimator to suggest next configuration
+    def _get_observations_for_budget(self, budget):
+        """Get observations for TPE model using the paper's budget selection strategy.
+
+        BOHB paper (Section 4.1, Algorithm 2 line 2): always use the model for
+        the LARGEST budget that has enough observations (>= Nmin + 2). This ensures
+        the model is built from the highest-fidelity data available, not necessarily
+        the current bracket's budget.
+
+        If no single budget has enough data, fall back to aggregating from the
+        closest lower budgets.
+        """
+        min_required = max(2, self.min_points_in_model)
+
+        # Paper: b = argmax{D_b : |D_b| >= Nmin + 2}
+        # Select the largest budget with sufficient observations
+        sorted_budgets = sorted(self.budget_observations.keys(), reverse=True)
+        for b in sorted_budgets:
+            obs = self.budget_observations[b]
+            if len(obs) >= min_required:
+                logger.info(
+                    f"BOHB model: using budget {b} ({len(obs)} observations) "
+                    f"[requested budget={budget}]"
+                )
+                return list(obs)
+
+        # Fallback: aggregate from current budget downward
+        obs = list(self.budget_observations.get(budget, []))
+        for b in sorted_budgets:
+            if b < budget:
+                obs.extend(self.budget_observations[b])
+                if len(obs) >= min_required:
+                    break
+        return obs
+
+    def _tpe_suggest(self, budget=None):
+        """Use Tree-structured Parzen Estimator to suggest next configuration.
+
+        Implements the BOHB paper's Algorithm 2:
+        1. With probability random_fraction, return a random configuration
+        2. Select largest budget with enough data for model building
+        3. Sample from bandwidth-inflated good KDE l'(x), pick best l(x)/g(x)
+
+        Args:
+            budget: current budget (epoch count) to use budget-specific observations
 
         Returns:
             numpy array of shape (n_dims,) representing suggested configuration in [0, 1]
         """
-        if len(self.observations) < max(2, self.min_points_in_model):
-            # Not enough data, return random sample
+        # Paper Algorithm 2, line 1: random fraction for guaranteed convergence
+        if np.random.rand() < self.random_fraction:
+            logger.info("BOHB: Random fraction triggered, returning random configuration")
+            return np.random.rand(len(self.parameters))
+
+        if budget is not None:
+            observations = self._get_observations_for_budget(budget)
+        else:
+            observations = []
+            for obs_list in self.budget_observations.values():
+                observations.extend(obs_list)
+
+        if len(observations) < max(2, self.min_points_in_model):
             min_required = max(2, self.min_points_in_model)
             logger.info(
-                f"Insufficient observations for TPE ({len(self.observations)} < {min_required}), "
+                f"Insufficient observations for TPE ({len(observations)} < {min_required}), "
                 "using random sampling"
             )
             return np.random.rand(len(self.parameters))
 
-        # Sort observations by result
-        sorted_obs = sorted(self.observations, key=lambda x: x[1], reverse=self.reverse_sort)
+        sorted_obs = sorted(observations, key=lambda x: x[1], reverse=self.reverse_sort)
 
-        # Split into good and bad observations
+        # Split into good and bad observations (paper Eq. 3)
         n_good = max(1, int(self.quantile * len(sorted_obs)))
         good_obs = np.array([obs[0] for obs in sorted_obs[:n_good]])
         bad_obs = np.array([obs[0] for obs in sorted_obs[n_good:]])
@@ -211,23 +268,30 @@ class BOHB(AutoMLAlgorithmBase):
             logger.info("Failed to build good KDE, using random sampling")
             return np.random.rand(len(self.parameters))
 
-        # Sample candidates from good KDE
-        candidates = self._sample_from_kde(good_kde, self.num_samples)
+        # Paper Section 4.1: sample from l'(x) with inflated bandwidth for exploration
+        sample_kde = good_kde
+        try:
+            bw = good_kde.factor * self.bandwidth_factor
+            good_kde_explore = self._build_kde(good_obs, bandwidth=bw)
+            if good_kde_explore is not None:
+                sample_kde = good_kde_explore
+        except (AttributeError, TypeError):
+            pass
+
+        candidates = self._sample_from_kde(sample_kde, self.num_samples)
         if candidates is None:
             logger.info("Failed to sample from good KDE, using random sampling")
             return np.random.rand(len(self.parameters))
 
-        # Evaluate Expected Improvement for each candidate
+        # Evaluate l(x)/g(x) using the ORIGINAL good KDE (not inflated)
         best_ei = -np.inf
         best_candidate = None
 
         for candidate in candidates:
-            # Calculate likelihood ratio l(x) / g(x)
             good_prob = good_kde.pdf(candidate.reshape(-1, 1))[0]
 
             if bad_kde is not None:
                 bad_prob = bad_kde.pdf(candidate.reshape(-1, 1))[0]
-                # Avoid division by zero
                 bad_prob = max(bad_prob, 1e-10)
                 ei = good_prob / bad_prob
             else:
@@ -369,19 +433,16 @@ class BOHB(AutoMLAlgorithmBase):
                     operator = parts[0]
                     factor = int(float(parts[1]))
                     if operator == "^":
-                        # Use helper function for power constraints with equal priority
-                        normalized = suggestion * (v_max - v_min) + v_min
-                        fallback = clamp_value(normalized, v_min, v_max)
+                        fallback = self._map_suggestion_to_float(suggestion, v_min, v_max)
+                        fallback = clamp_value(fallback, v_min, v_max)
                         random_float = float(self._apply_power_constraint_with_equal_priority(
                             v_min, v_max, factor, fallback))
                     else:
-                        # Regular sampling for non-power constraints
-                        normalized = suggestion * (v_max - v_min) + v_min
-                        random_float = clamp_value(normalized, v_min, v_max)
+                        random_float = self._map_suggestion_to_float(suggestion, v_min, v_max)
+                        random_float = clamp_value(random_float, v_min, v_max)
             else:
-                # No math condition, regular sampling
-                normalized = suggestion * (v_max - v_min) + v_min
-                random_float = clamp_value(normalized, v_min, v_max)
+                random_float = self._map_suggestion_to_float(suggestion, v_min, v_max)
+                random_float = clamp_value(random_float, v_min, v_max)
 
             if not (type(parent_param) is float and math.isnan(parent_param)):
                 if ((type(parent_param) is str and parent_param != "nan" and parent_param == "TRUE") or
@@ -524,6 +585,9 @@ class BOHB(AutoMLAlgorithmBase):
 
             return int(valid_options[idx])
 
+        if tp == "bool":
+            return suggestion >= 0.5
+
         return super().generate_automl_param_rec_value(parameter_config)
 
     def save_state(self):
@@ -539,10 +603,11 @@ class BOHB(AutoMLAlgorithmBase):
         state_dict["ri"] = self.ri
         state_dict["last_launched_count"] = self.last_launched_count
         state_dict["metric"] = self.metric
-        # Save TPE observations
-        state_dict["observations"] = [
-            (obs[0].tolist(), obs[1]) for obs in self.observations
-        ]
+        # Save budget-specific TPE observations
+        state_dict["budget_observations"] = {
+            str(budget): [(obs[0].tolist(), obs[1]) for obs in obs_list]
+            for budget, obs_list in self.budget_observations.items()
+        }
 
         save_automl_brain_info(self.job_context.id, state_dict)
 
@@ -573,9 +638,15 @@ class BOHB(AutoMLAlgorithmBase):
         brain.epoch_number = json_loaded["epoch_number"]
         brain.last_launched_count = json_loaded.get("last_launched_count", 0)
 
-        # Load TPE observations if available
-        if "observations" in json_loaded:
-            brain.observations = [
+        # Load budget-specific TPE observations
+        if "budget_observations" in json_loaded:
+            brain.budget_observations = {
+                float(budget): [(np.array(obs[0]), obs[1]) for obs in obs_list]
+                for budget, obs_list in json_loaded["budget_observations"].items()
+            }
+        elif "observations" in json_loaded:
+            # Backward compatibility: migrate flat observations to budget 0
+            brain.budget_observations[0] = [
                 (np.array(obs[0]), obs[1]) for obs in json_loaded["observations"]
             ]
 
@@ -601,10 +672,10 @@ class BOHB(AutoMLAlgorithmBase):
             return None
 
         if self.sh_iter == 0:
-            # Use TPE to generate configuration instead of random sampling
-            suggestions = self._tpe_suggest()
+            current_budget = self.ri[self.bracket][self.sh_iter] * self.epoch_multiplier
+            suggestions = self._tpe_suggest(budget=current_budget)
             specs = self._generate_parameters_from_suggestions(suggestions)
-            self.epoch_number = self.ri[self.bracket][self.sh_iter] * self.epoch_multiplier
+            self.epoch_number = current_budget
             to_return = specs
         else:
             # Do successive halving on the last bracket
@@ -669,6 +740,69 @@ class BOHB(AutoMLAlgorithmBase):
                 max_ni = max([max_ni] + bracket_ni)
         return max_ni
 
+    def _normalize_value_to_observation(self, param, value):
+        """Encode an actual parameter value back to [0, 1] for KDE observation.
+
+        This is the inverse of generate_automl_param_rec_value's decoding.
+        Must stay consistent: decode(encode(value)) should approximate value.
+        """
+        param_type = param.get("value_type", "")
+
+        if param_type == "float":
+            v_min, v_max = get_valid_range(param, self.parent_params, self.custom_ranges)
+            if v_max > v_min and value is not None:
+                try:
+                    fval = float(value)
+                    if v_min > 0 and v_max > 0 and v_max / v_min >= 10 and fval > 0:
+                        log_min = np.log10(v_min)
+                        log_max = np.log10(v_max)
+                        return np.clip((np.log10(fval) - log_min) / (log_max - log_min), 0.0, 1.0)
+                    return np.clip((fval - v_min) / (v_max - v_min), 0.0, 1.0)
+                except (TypeError, ValueError):
+                    return 0.5
+            return 0.5
+
+        if param_type in ("int", "integer"):
+            v_min, v_max = get_valid_range(param, self.parent_params, self.custom_ranges)
+            if v_max > v_min and value is not None:
+                try:
+                    return np.clip((float(value) - v_min) / (v_max - v_min), 0.0, 1.0)
+                except (TypeError, ValueError):
+                    return 0.5
+            return 0.5
+
+        if param_type in ("categorical", "ordered"):
+            valid_options = get_valid_options(param, self.custom_ranges)
+            if valid_options and valid_options != "" and value is not None:
+                try:
+                    idx = list(valid_options).index(value)
+                    return (idx + 0.5) / len(valid_options)
+                except ValueError:
+                    str_options = [str(o) for o in valid_options]
+                    if str(value) in str_options:
+                        idx = str_options.index(str(value))
+                        return (idx + 0.5) / len(valid_options)
+            return 0.5
+
+        if param_type == "ordered_int":
+            valid_options = get_valid_options(param, self.custom_ranges)
+            if valid_options and valid_options != "" and value is not None:
+                try:
+                    int_val = int(value)
+                    int_options = [int(o) for o in valid_options]
+                    idx = int_options.index(int_val)
+                    return (idx + 0.5) / len(valid_options)
+                except (ValueError, TypeError):
+                    pass
+            return 0.5
+
+        if param_type == "bool":
+            if value is not None:
+                return 0.75 if bool(value) else 0.25
+            return 0.5
+
+        return 0.5
+
     def _generate_parameters_from_suggestions(self, suggestions):
         """Generates parameter values from TPE suggestions
 
@@ -732,36 +866,26 @@ class BOHB(AutoMLAlgorithmBase):
                     )
             return []
 
-        # Update observations with completed experiments
+        # Update budget-specific observations with completed experiments
         for rec in history:
             if rec.status == JobStates.success and rec.result != 0.0:
-                # Extract configuration as numpy array
                 config = []
                 for param in self.parameters:
                     param_name = param["parameter"]
                     value = rec.specs.get(param_name)
-                    # Normalize to [0, 1] range if possible
-                    if param["value_type"] == "float":
-                        v_min, v_max = get_valid_range(param, self.parent_params, self.custom_ranges)
-                        if v_max > v_min:
-                            normalized = (value - v_min) / (v_max - v_min)
-                            config.append(np.clip(normalized, 0.0, 1.0))
-                        else:
-                            config.append(0.5)
-                    else:
-                        # For non-float types, use a simple normalization
-                        config.append(0.5)
+                    config.append(self._normalize_value_to_observation(param, value))
 
                 if len(config) == len(self.parameters):
-                    # Only add if we have all parameters
                     config_array = np.array(config)
-                    # Check if this configuration is already in observations
+                    budget = getattr(rec, 'early_stop_epoch', None) or 0
+                    if budget not in self.budget_observations:
+                        self.budget_observations[budget] = []
                     is_duplicate = any(
-                        np.allclose(obs[0], config_array) for obs in self.observations
+                        np.allclose(obs[0], config_array) for obs in self.budget_observations[budget]
                     )
                     if not is_duplicate:
-                        self.observations.append((config_array, rec.result))
-                        logger.info(f"Added observation: config with result={rec.result}")
+                        self.budget_observations[budget].append((config_array, rec.result))
+                        logger.info(f"Added observation at budget={budget}: result={rec.result}")
 
         # Initial case: launch all configs for first rung in parallel
         if history == []:

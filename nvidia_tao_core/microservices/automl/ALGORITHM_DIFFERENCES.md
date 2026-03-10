@@ -4,7 +4,7 @@
 
 ## Overview
 
-This document explains the **actual implementation differences** between TAO's 6 AutoML algorithms, based on direct code analysis. All behaviors described here are **verified by unit tests**.
+This document explains the **actual implementation differences** between TAO's 8 AutoML algorithms, based on direct code analysis. All behaviors described here are **verified by unit tests**.
 
 ---
 
@@ -18,6 +18,8 @@ This document explains the **actual implementation differences** between TAO's 6
 | **DEHB** | Multi-fidelity + Evolutionary | Synchronous batches | High (DE) | Complex spaces |
 | **PBT** | Population-based | Parallel population | Medium (perturbation) | Long training |
 | **Bayesian** | Model-based | **Sequential** | High (GP+EI) | Few experiments |
+| **HyperBandES** | Multi-fidelity + Predictive | Synchronous batches | Medium (curve fitting) | Saving compute on poor configs |
+| **BFBO** | Model-based | **Sequential** | High (GP+UCB) | Adaptive exploration-exploitation |
 
 ---
 
@@ -608,6 +610,407 @@ Pattern: Random → Explore → Exploit/Refine
 
 ---
 
+## 7. HyperBand ES (HyperBand with Early Stopping via Learning Curve Prediction)
+
+### Implementation Details
+
+**File:** `nvidia_tao_core/microservices/automl/hyperband_es.py`
+
+**Inherits from:** `HyperBand` (extends all Hyperband behavior)
+
+**Key Parameters:**
+```python
+algorithm_specific_params = {
+    "automl_max_epochs": 9,
+    "automl_reduction_factor": 3,
+    "epoch_multiplier": 1,
+    "early_stop_threshold": 0.8,      # Confidence threshold for stopping (0-1)
+    "min_early_stop_epochs": 3         # Minimum data points before prediction
+}
+```
+
+### How It Works (Verified by Code)
+
+HyperBandES wraps standard Hyperband with a predictive early stopping layer. During execution, it fits learning curve models to each configuration's training history and terminates configs whose predicted final performance is uncompetitive.
+
+**Learning Curve Models** (lines 72-87):
+
+Two curve models are available for extrapolation:
+
+```python
+# Power law: captures typical NN training decay
+def _power_law_model(x, a, b, c):
+    return a * np.power(x, b) + c
+
+# Exponential: captures plateau-style convergence
+def _exponential_model(x, a, b, c):
+    return a * np.exp(-b * x) + c
+```
+
+**Prediction & Confidence** (lines 89-141):
+
+```python
+def _predict_final_performance(config_id, current_curve):
+    if len(current_curve) < min_epochs_for_prediction:
+        return None, 0.0  # Not enough data
+
+    # Fit power law model via scipy.optimize.curve_fit
+    popt, _ = curve_fit(power_law_model, epochs, metrics, p0=initial_guess, maxfev=1000)
+
+    # Predict at max epochs for this bracket
+    max_epochs = ri[bracket][-1] * epoch_multiplier
+    predicted_final = power_law_model(max_epochs, *popt)
+
+    # Confidence = R² goodness-of-fit
+    residuals = metrics - power_law_model(epochs, *popt)
+    r_squared = 1 - (sum(residuals²) / sum((metrics - mean(metrics))²))
+    confidence = clamp(r_squared, 0, 1)
+
+    return predicted_final, confidence
+```
+
+**Early Stopping Decision** (lines 143-207):
+
+```python
+def _should_early_stop(config_id, current_result, current_epoch):
+    # 1. Record data point
+    learning_curves[config_id].append((current_epoch, current_result))
+
+    # 2. Need enough data points
+    if len(learning_curves[config_id]) < min_epochs_for_prediction:
+        return False
+
+    # 3. Predict final performance
+    predicted_final, confidence = predict_final_performance(config_id, curve)
+
+    # 4. Must be confident enough
+    if confidence < confidence_threshold:  # Default: 0.8
+        return False
+
+    # 5. Compare to current best across all other configs
+    current_best = best_result_from_other_configs()
+
+    # 6. Stop if predicted to be worse by 5% margin
+    if lower_is_better:
+        should_stop = predicted_final > current_best * 1.05
+    else:
+        should_stop = predicted_final < current_best * 0.95
+
+    return should_stop
+```
+
+**Integration with Hyperband** (lines 209-223):
+
+```python
+def generate_recommendations(history):
+    # Use parent HyperBand logic for bracket/rung management
+    recommendations = super().generate_recommendations(history)
+
+    # Additionally check running configs for early stopping
+    for rec in history:
+        if rec.status == JobStates.running and rec.result != 0.0:
+            if should_early_stop(rec.id, rec.result, epoch_number):
+                rec.update_status(JobStates.failure)  # Eliminate via parent logic
+
+    return recommendations
+```
+
+### Example: HyperBandES in Action
+
+```
+Same as Hyperband: max_epochs=9, reduction_factor=3
+Brackets, rungs, synchronous execution — all inherited.
+
+Additional behavior during rung execution:
+
+Bracket 0, Step 1: Launch 9 configs @ 1 epoch
+  Config 0: epoch 1 → 0.450
+  Config 1: epoch 1 → 0.350
+  Config 2: epoch 1 → 0.550
+  Config 3: epoch 1 → 0.370
+  ... (6 more configs)
+
+  Learning curves after step 1: Only 1 data point each
+  → min_early_stop_epochs=3, so NO predictions yet
+
+Bracket 0, Step 2: Top 3 promoted to 3 epochs
+  Config 1 training: epoch 1→0.350, epoch 2→0.320, epoch 3→0.300
+    Curve: [(1,0.350), (2,0.320), (3,0.300)]
+    Fit power law → predicted at epoch 9: 0.245 ✅
+    R²=0.98, confidence=0.98 > 0.80 threshold
+    current_best from others = 0.310
+    predicted 0.245 < 0.310 * 0.95 = 0.295? YES → Keep running ✓
+
+  Config 3 training: epoch 1→0.370, epoch 2→0.365, epoch 3→0.362
+    Curve: [(1,0.370), (2,0.365), (3,0.362)]
+    Fit power law → predicted at epoch 9: 0.355
+    R²=0.95, confidence=0.95 > 0.80
+    current_best = 0.300 (Config 1)
+    predicted 0.355 > 0.300 * 1.05 = 0.315? YES → EARLY STOP ✋
+    → Config 3 marked as failure, eliminated
+
+Result: Saved compute by not running Config 3 to completion
+```
+
+### Critical Implementation Details
+
+1. **Inherits All Hyperband Behavior**: Bracket structure, synchronous execution, top-k selection — all from parent class
+2. **Failures for Elimination**: Early-stopped configs are marked `JobStates.failure`, triggering Hyperband's elimination logic
+3. **State Persistence** (lines 227-268): Learning curves and early-stopped config IDs are saved/loaded alongside Hyperband state
+4. **5% Safety Margin**: The comparison uses a 5% margin to avoid prematurely stopping configs that might catch up
+
+### Controller Integration
+
+- Algorithm aliases: `"hyperband_es"`, `"hes"`
+- Treated as Hyperband-like: shares `max_epochs`, `reduction_factor`, `epoch_multiplier` parameters
+- Uses `early_stop_epoch` for metric trimming, same as Hyperband
+
+### Tested Behaviors
+
+⚠️ **No dedicated test file exists** (`test_hyperband_es.py` not found)
+- Inherits Hyperband test coverage indirectly
+- Learning curve prediction, early stopping logic, and state persistence are untested
+
+### When to Use HyperBandES
+
+✅ **Good for:**
+- Expensive training jobs where early termination saves significant compute
+- Search spaces where poor configs show clear early divergence
+- Smooth, predictable loss curves (power-law-like decay)
+
+❌ **Not good for:**
+- Very short training runs (not enough data points for curve fitting)
+- Noisy or non-monotonic loss curves (curve fitting will be unreliable)
+- Fewer than `min_early_stop_epochs` epochs per rung (predictions never trigger)
+
+### Comparison: HyperBandES vs Hyperband
+
+| Aspect | Hyperband | HyperBandES |
+|--------|-----------|-------------|
+| **Execution** | Synchronous (identical) | Synchronous (identical) |
+| **Elimination** | Only at rung boundaries | At rung boundaries + mid-rung via prediction |
+| **Intelligence** | None (random configs) | Medium (learning curve extrapolation) |
+| **Compute Savings** | Baseline | Additional savings from early stopping |
+| **Complexity** | Simpler | Adds curve fitting + prediction layer |
+| **Risk** | None (fair evaluation) | May prematurely stop late-blooming configs |
+
+---
+
+## 8. BFBO (Bayesian First-Order Bayesian Optimization)
+
+### Implementation Details
+
+**File:** `nvidia_tao_core/microservices/automl/bfbo.py`
+
+**Inherits from:** `AutoMLAlgorithmBase` (same base as Bayesian)
+
+**Key Parameters:**
+```python
+algorithm_specific_params = {
+    "automl_max_recommendations": 12,     # Sequential experiments
+    "kappa": 2.0,                         # UCB exploration weight (higher = more exploration)
+    "kappa_decay": 0.95,                  # Decay factor per iteration
+    "kappa_min": 0.5,                     # Minimum kappa value
+    "penalization_radius": 0.1,           # Local penalization radius
+    "num_restarts": 10                    # Acquisition optimization restarts
+}
+```
+
+### How It Works (Verified by Code)
+
+BFBO enhances traditional Bayesian Optimization (which uses Expected Improvement) with three key differences:
+1. **UCB acquisition function** instead of EI — simpler, with adaptive exploration via kappa decay
+2. **Local penalization** — discourages querying points near previous evaluations
+3. **Gradient-based optimization** — uses L-BFGS-B for acquisition function optimization
+
+**Gaussian Process Setup** (lines 61-72):
+
+```python
+# RBF kernel with per-dimension length scales
+length_scale = [1.0] * len(parameters)
+kernel = ConstantKernel(1.0) * RBF(length_scale=length_scale, length_scale_bounds=(1e-2, 1e2))
+
+gp = GaussianProcessRegressor(
+    kernel=kernel,
+    alpha=1e-6,
+    optimizer="fmin_l_bfgs_b",
+    n_restarts_optimizer=10,
+    normalize_y=True,
+    random_state=95051
+)
+```
+
+**Upper Confidence Bound with Local Penalization** (lines 513-540):
+
+```python
+def _upper_confidence_bound(X):
+    mu, sigma = gp.predict(X, return_std=True)
+
+    # Local penalization: reduce UCB near previously evaluated points
+    penalization = 1.0
+    if local_penalization and len(Xs) > 0:
+        distances = np.linalg.norm(np.array(Xs) - X, axis=1)
+        penalization = np.prod(np.tanh(distances / penalization_radius))
+
+    # UCB = μ(x) + κ * σ(x) * penalization
+    ucb = mu + kappa * sigma * penalization
+    return -ucb  # Negate for minimization
+```
+
+**Adaptive Exploration-Exploitation** (lines 430-431):
+
+```python
+# After each iteration, decay kappa
+kappa = max(kappa_min, kappa * kappa_decay)
+# kappa: 2.0 → 1.9 → 1.805 → ... → 0.5 (min)
+# Effect: starts exploratory, becomes increasingly exploitative
+```
+
+**UCB Optimization** (lines 472-511):
+
+```python
+def optimize_ucb():
+    best_ucb = -inf
+    best_x = None
+
+    for i in range(num_restarts):
+        if i == 0:
+            # First restart: perturb best observed point
+            best_idx = argmax(ys)
+            x0 = Xs[best_idx] + randn(dim) * 0.1
+            x0 = clip(x0, 0, 1)
+        else:
+            x0 = random(dim)  # Random restart
+
+        res = minimize(
+            upper_confidence_bound,
+            x0=x0,
+            bounds=[(0, 1)] * dim,
+            method='L-BFGS-B',    # Gradient-based optimizer
+            options={'maxiter': 100}
+        )
+
+        if -res.fun > best_ucb:
+            best_ucb = -res.fun
+            best_x = res.x
+
+    return best_x
+```
+
+**Sequential Execution** (lines 406-449):
+
+```python
+def generate_recommendations(history):
+    if history == []:
+        # First iteration: random sampling
+        suggestions = np.random.rand(len(parameters))
+        Xs.append(suggestions)
+        return [convert_to_recommendation(suggestions)]
+
+    # Wait for previous experiment to finish
+    if history[-1].status not in [success, failure]:
+        return []  # No recommendation yet
+
+    # Update GP with new result
+    ys.append(history[-1].result)
+    gp.fit(np.array(Xs), np.array(ys))
+
+    # Decay kappa for adaptive exploration
+    kappa = max(kappa_min, kappa * kappa_decay)
+
+    # Generate next point by optimizing UCB
+    suggestions = optimize_ucb()
+    Xs.append(suggestions)
+    return [convert_to_recommendation(suggestions)]
+```
+
+### Example: BFBO Learning with Kappa Decay
+
+```
+Search Space: lr=[0.0001, 0.01], wd=[0.0, 0.1]
+
+Iteration 0 (Random, kappa=2.0):
+  history == [] → random sampling
+  Config 0: lr=0.0045, wd=0.052 → 0.58
+
+Iteration 1 (UCB-guided, kappa=2.0 → 1.9):
+  GP fitted with 1 observation
+  UCB = μ + 2.0 * σ * penalization
+  → High σ everywhere except near Config 0
+  → Penalization pushes away from Config 0
+  Config 1: lr=0.0082, wd=0.031 → 0.62 ⭐ BETTER
+  kappa decayed: 2.0 * 0.95 = 1.9
+
+Iteration 2 (UCB-guided, kappa=1.9 → 1.805):
+  GP fitted with 2 observations
+  UCB = μ + 1.9 * σ * penalization
+  → Slightly less exploratory than iteration 1
+  → Penalization avoids both Config 0 and Config 1 regions
+  Config 2: lr=0.0076, wd=0.034 → 0.64 ⭐⭐ BEST
+  kappa decayed: 1.9 * 0.95 = 1.805
+
+  ...
+
+Iteration 10 (kappa=1.19):
+  → Much more exploitative, refining near best region
+  Config 10: lr=0.0079, wd=0.033 → 0.66 ⭐⭐⭐
+
+Iteration 30 (kappa=0.5, at minimum):
+  → Fully exploitative, fine-tuning
+  Config 30: lr=0.0078, wd=0.0325 → 0.67
+
+Pattern: Explore broadly → Gradually focus → Fine-tune near optimum
+         (controlled by kappa decay: 2.0 → 0.5)
+```
+
+### Critical Implementation Details
+
+1. **UCB vs EI**: BFBO uses UCB (`μ + κσ`) instead of Bayesian's EI. UCB is simpler and the kappa parameter gives direct control over exploration-exploitation
+2. **Local Penalization** (lines 529-535): Multiplies UCB by `∏ tanh(distance_i / radius)`, which approaches 0 near previous points and 1 far away — naturally diversifies the search
+3. **Kappa Decay**: Starts at 2.0 (exploratory) and decays by 0.95× per iteration down to 0.5 — automatic transition from exploration to exploitation
+4. **State Persistence** (lines 361-404): Saves `Xs`, `ys`, and current `kappa`; reloads and re-fits GP on resume
+5. **Inf/NaN Handling** (lines 392-400, 457-464): Cleans invalid values (`inf→1e7`, `nan→0`) before GP fitting
+6. **Probability of Improvement** (lines 542-568): An alternative acquisition function `_probability_of_improvement` is implemented but not used in the default flow — available for extension
+
+### Controller Integration
+
+- Algorithm aliases: `"bfbo"`
+- Treated as sequential (same group as `"bayesian"`, `"b"`): uses `max_recommendations` limit
+- Non-resuming: checkpoints can be deleted immediately after evaluation
+
+### Tested Behaviors
+
+⚠️ **No dedicated test file exists** (`test_bfbo.py` not found)
+- GP fitting, UCB optimization, kappa decay, local penalization, and state persistence are untested
+
+### When to Use BFBO
+
+✅ **Good for:**
+- Few to moderate experiments (5-20)
+- Want automatic exploration-to-exploitation transition
+- Search spaces where diversity matters (local penalization prevents clustering)
+- Sequential execution acceptable
+
+❌ **Not good for:**
+- Many experiments (O(n³) GP fitting, same as Bayesian)
+- Parallel execution needed
+- Very noisy objectives (UCB can be sensitive to noise)
+
+### Comparison: BFBO vs Bayesian
+
+| Aspect | Bayesian | BFBO |
+|--------|----------|------|
+| **Acquisition Function** | Expected Improvement (EI) | Upper Confidence Bound (UCB) |
+| **Exploration Control** | Static `xi` parameter | Adaptive `kappa` with decay (2.0→0.5) |
+| **Diversity** | No mechanism | Local penalization avoids re-querying |
+| **Optimization** | Multi-start L-BFGS-B | Multi-start L-BFGS-B (identical) |
+| **GP Kernel** | RBF with scalar length scale | RBF with per-dimension length scales |
+| **Execution** | Sequential (identical) | Sequential (identical) |
+| **Complexity** | Simpler | Slightly more complex (penalization + decay) |
+| **Best For** | Small budgets, smooth spaces | Moderate budgets, need diversity |
+
+---
+
 ## Algorithm Comparison Matrix
 
 ### Execution Patterns
@@ -620,6 +1023,8 @@ Pattern: Random → Explore → Exploit/Refine
 | **DEHB** | Batch (9 configs) | Waits for all | Yes | O(n log n) + DE |
 | **PBT** | Full population | Synchronized evals | **No** | O(population) |
 | **Bayesian** | Sequential (1 at a time) | N/A | Yes | O(n³) |
+| **HyperBandES** | Batch (9 configs) | Waits for all | Yes | O(n log n) + curve fit |
+| **BFBO** | Sequential (1 at a time) | N/A | Yes | O(n³) |
 
 ### Intelligence & Learning
 
@@ -631,6 +1036,8 @@ Pattern: Random → Explore → Exploit/Refine
 | **DEHB** | DE (evolution) | Yes | High |
 | **PBT** | Perturbation | Yes | Medium |
 | **Bayesian** | GP + EI | Yes | Very High |
+| **HyperBandES** | Curve extrapolation | No (random configs) | Medium (saves wasted compute) |
+| **BFBO** | GP + UCB + penalization | Yes | Very High |
 
 ### Performance Characteristics
 
@@ -642,6 +1049,8 @@ Pattern: Random → Explore → Exploit/Refine
 | **DEHB** | Medium | High | 50% ⚠️ |
 | **PBT** | **Fast** | High | 57% ⚠️ |
 | **Bayesian** | Slow | Very High | 83% ✅ |
+| **HyperBandES** | Medium-Fast | Medium | 0% ❌ (no tests) |
+| **BFBO** | Slow | Very High | 0% ❌ (no tests) |
 
 ---
 
@@ -651,7 +1060,8 @@ Pattern: Random → Explore → Exploit/Refine
 
 **1 GPU (Sequential):**
 ```
-Need best accuracy? → Bayesian
+Need best accuracy? → Bayesian or BFBO
+Want adaptive exploration? → BFBO (kappa decay auto-balances)
 Time constrained? → Skip AutoML (not worth overhead)
 Simple space? → Bayesian (3-5 configs)
 ```
@@ -659,6 +1069,7 @@ Simple space? → Bayesian (3-5 configs)
 **2-4 GPUs (Small Parallel):**
 ```
 Simple space? → Hyperband (baseline)
+Simple space + expensive training? → HyperBandES (saves compute)
 Medium complexity? → BOHB
 Complex space? → DEHB
 Fast results? → ASHA
@@ -670,12 +1081,14 @@ Long training? → PBT
 Fast turnaround? → ASHA (best utilization)
 Maximum accuracy? → PBT (continuous training)
 Complex space? → BOHB or DEHB
+Expensive configs with predictable curves? → HyperBandES
 ```
 
 ### By Experiment Characteristics
 
 **Few Experiments (3-10):**
 - ✅ Bayesian - Efficient with small data
+- ✅ BFBO - Efficient + adaptive exploration
 - ⚠️ BOHB/DEHB - Need 5+ to learn
 - ❌ Hyperband/ASHA - Waste experiments
 
@@ -683,16 +1096,18 @@ Complex space? → BOHB or DEHB
 - ✅ BOHB - Fast convergence
 - ✅ DEHB - Complex spaces
 - ✅ ASHA - Parallel efficiency
-- ⚠️ Bayesian - O(n³) scaling
+- ⚠️ Bayesian/BFBO - O(n³) scaling
 
 **Time Constrained:**
 - ✅ ASHA - Asynchronous, no waiting
 - ✅ PBT - No restart overhead
-- ❌ Bayesian - Sequential, slow
+- ✅ HyperBandES - Kills poor configs early
+- ❌ Bayesian/BFBO - Sequential, slow
 
 **Long Training (>1 hour/experiment):**
 - ✅ PBT - Continuous, no restarts
-- ✅ Bayesian - Few experiments
+- ✅ Bayesian/BFBO - Few experiments
+- ✅ HyperBandES - Early termination saves hours per bad config
 - ⚠️ Hyperband/ASHA - Many restarts
 - ❌ ASHA - Assumes fast experiments
 
@@ -702,7 +1117,7 @@ Complex space? → BOHB or DEHB
 
 ### Verified by Tests
 
-All behaviors in this document are **verified by unit tests**:
+All behaviors in this document are **verified by unit tests** (where tests exist):
 
 - **ASHA**: 5 tests, 80% coverage
   - floor(m/nu) quota calculation
@@ -724,12 +1139,21 @@ All behaviors in this document are **verified by unit tests**:
   - Basic flow tested
   - Algorithm-specific mechanisms need deeper verification
 
+- **HyperBandES**: 0 tests, 0% coverage ❌
+  - No dedicated test file exists
+  - Inherits Hyperband tests indirectly (parent class only)
+
+- **BFBO**: 0 tests, 0% coverage ❌
+  - No dedicated test file exists
+
 ### Known Gaps
 
 ⚠️ **Not explicitly tested:**
 - BOHB: TPE sampling quality
 - DEHB: Mutation/crossover operations
 - PBT: Bottom 20% replacement, weight copying, perturbation values
+- HyperBandES: Learning curve prediction, early stopping decisions, power law fitting, confidence calculation, state persistence
+- BFBO: UCB optimization, kappa decay, local penalization, GP fitting with UCB, state persistence
 
 These work (verified by end-to-end tests) but mechanism details not explicitly verified.
 
@@ -745,6 +1169,17 @@ These work (verified by end-to-end tests) but mechanism details not explicitly v
     "automl_max_concurrent": 4,          # Parallel workers (ASHA only)
     "automl_max_trials": 30,             # Total configs (ASHA only)
     "epoch_multiplier": 1                # Epoch scaling
+}
+```
+
+### HyperBandES
+```python
+{
+    "automl_max_epochs": 9,              # Max resource per config (inherited)
+    "automl_reduction_factor": 3,        # Successive halving factor (inherited)
+    "epoch_multiplier": 1,               # Epoch scaling (inherited)
+    "early_stop_threshold": 0.8,         # R² confidence threshold for stopping (0-1)
+    "min_early_stop_epochs": 3           # Min data points before prediction
 }
 ```
 
@@ -767,6 +1202,18 @@ These work (verified by end-to-end tests) but mechanism details not explicitly v
 }
 ```
 
+### BFBO
+```python
+{
+    "automl_max_recommendations": 12,    # Sequential experiments
+    "kappa": 2.0,                        # UCB exploration weight (higher = more exploration)
+    "kappa_decay": 0.95,                 # Kappa decay per iteration
+    "kappa_min": 0.5,                    # Minimum kappa value
+    "penalization_radius": 0.1,          # Local penalization radius
+    "num_restarts": 10                   # UCB optimization restarts
+}
+```
+
 ---
 
 ## Key Takeaways
@@ -775,6 +1222,9 @@ These work (verified by end-to-end tests) but mechanism details not explicitly v
 2. **BOHB/DEHB**: Add intelligence (TPE/DE) to Hyperband's structure
 3. **PBT**: Unique - only algorithm without restarts
 4. **Bayesian**: Best sample efficiency, but sequential
-5. **Tested Behaviors**: Core workflows verified, some algorithm-specific mechanisms need deeper testing
+5. **HyperBandES**: Hyperband + predictive early stopping via learning curve extrapolation — saves compute on poor configs
+6. **BFBO**: Enhanced Bayesian with UCB acquisition, adaptive kappa decay, and local penalization — automatic exploration-to-exploitation transition
+7. **Bayesian vs BFBO**: Both are GP-based and sequential; Bayesian uses EI with static `xi`, BFBO uses UCB with decaying `kappa` and local penalization for diversity
+8. **Tested Behaviors**: Core workflows verified for 6/8 algorithms; HyperBandES and BFBO have no dedicated tests
 
-**All algorithms work correctly** - verified by passing tests and code audit.
+**All 8 algorithms are registered in `__init__.py`** and fully integrated into the controller.

@@ -84,6 +84,8 @@ class HyperBand(AutoMLAlgorithmBase):
             self.reverse_sort = False
         # Track how many configs were launched in current rung (for parallel execution)
         self.last_launched_count = 0
+        self.done_wait_cycles = 0
+        self.max_done_wait_cycles = 60
         logger.info(
             f"Hyperband initialized with max_epochs={max_epochs}, "
             f"reduction_factor={reduction_factor}, epoch_multiplier={self.epoch_multiplier}"
@@ -96,10 +98,10 @@ class HyperBand(AutoMLAlgorithmBase):
             f"Hyperband bracket calculation: max_epochs={max_epochs}, "
             f"reduction_factor={reduction_factor}, smax={smax}"
         )
-        for itr, s in enumerate(range(smax, 0, -1)):
+        for itr, s in enumerate(range(smax, -1, -1)):
             self.ni[str(itr)] = []
             self.ri[str(itr)] = []
-            n = int(math.ceil(int((smax + 1) / (s + 1)) * (reduction_factor**s)))
+            n = int(math.ceil((smax + 1) * (reduction_factor**s) / (s + 1)))
             r = int(max_epochs / (reduction_factor**s))
             logger.info(f"  Bracket {itr} (s={s}): initial n={n}, r={r}")
             for s_idx in range(s + 1):
@@ -266,12 +268,10 @@ class HyperBand(AutoMLAlgorithmBase):
                         random_float = float(self._apply_power_constraint_with_equal_priority(
                             v_min, v_max, factor, fallback))
                     else:
-                        # Regular sampling for non-power constraints
-                        random_float = np.random.uniform(low=v_min, high=v_max)
+                        random_float = self._sample_float(v_min, v_max)
                         random_float = clamp_value(random_float, v_min, v_max)
             else:
-                # No math condition, regular sampling
-                random_float = np.random.uniform(low=v_min, high=v_max)
+                random_float = self._sample_float(v_min, v_max)
                 random_float = clamp_value(random_float, v_min, v_max)
 
             if not (type(parent_param) is float and math.isnan(parent_param)):
@@ -424,18 +424,25 @@ class HyperBand(AutoMLAlgorithmBase):
 
         Returns True only if all recommendations have been issued AND all have completed.
         Checks last_launched_count to ensure running experiments finish before declaring done.
+        Falls back to True after max_done_wait_cycles to prevent indefinite hangs.
         """
-        logger.info(
-            f"Hyperband done() called: complete={self.complete}, last_launched_count={self.last_launched_count}"
-        )
-
         if not self.complete:
-            logger.info("Hyperband done() returning False: not complete yet")
+            self.done_wait_cycles = 0
             return False
 
-        # If complete flag is set but we still have running experiments, not done yet
         if self.last_launched_count > 0:
-            logger.warning(f"Hyperband done() returning False: {self.last_launched_count} experiments still running!")
+            self.done_wait_cycles += 1
+            if self.done_wait_cycles >= self.max_done_wait_cycles:
+                logger.warning(
+                    f"Hyperband done() timeout: waited {self.done_wait_cycles} cycles for "
+                    f"{self.last_launched_count} experiments. Force-completing."
+                )
+                self.last_launched_count = 0
+                return True
+            logger.warning(
+                f"Hyperband done() returning False: {self.last_launched_count} experiments "
+                f"still running (wait cycle {self.done_wait_cycles}/{self.max_done_wait_cycles})"
+            )
             return False
 
         logger.info("Hyperband done() returning True: all recommendations issued and completed")

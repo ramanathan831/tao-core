@@ -90,10 +90,13 @@ class DEHB(AutoMLAlgorithmBase):
         # Track how many configs were launched in current rung (for parallel execution)
         self.last_launched_count = 0
 
-        # DE-specific: population for each bracket
-        self.population = []  # List of configurations (as normalized vectors)
-        self.population_results = []  # Corresponding results
-        self.bracket_populations = {}  # bracket -> population
+        # DE-specific: per-budget subpopulations (DEHB paper Section 3.2)
+        # Each budget level maintains its own population for DE evolution
+        self.budget_populations = {}  # budget -> list of config vectors
+        self.budget_results = {}  # budget -> list of corresponding results
+        self.config_budgets = {}  # config_id -> budget it was last evaluated at
+        # DE selection: maps config_id -> (target_vector, target_result, budget)
+        self.trial_targets = {}
 
         logger.info(
             f"DEHB initialized with max_epochs={max_epochs}, "
@@ -104,10 +107,10 @@ class DEHB(AutoMLAlgorithmBase):
     def brackets_and_sh_sequence(self, max_epochs, reduction_factor):
         """Generate ni,ri arrays based on max_epochs and reduction_factor values"""
         smax = int(np.log(max_epochs) / np.log(reduction_factor))
-        for itr, s in enumerate(range(smax, 0, -1)):
+        for itr, s in enumerate(range(smax, -1, -1)):
             self.ni[str(itr)] = []
             self.ri[str(itr)] = []
-            n = int(math.ceil(int((smax + 1) / (s + 1)) * (reduction_factor**s)))
+            n = int(math.ceil((smax + 1) * (reduction_factor**s) / (s + 1)))
             r = int(max_epochs / (reduction_factor**s))
             for s_idx in range(s + 1):
                 ni = int(n * (reduction_factor**(-s_idx)))
@@ -136,6 +139,9 @@ class DEHB(AutoMLAlgorithmBase):
     def _normalize_config_to_vector(self, specs):
         """Convert a configuration dict to normalized vector [0, 1]^d
 
+        Uses get_valid_range() for float/int to stay consistent with
+        _vector_to_config() decoding, especially when custom_ranges apply.
+
         Args:
             specs: configuration dict
 
@@ -149,15 +155,61 @@ class DEHB(AutoMLAlgorithmBase):
             param_type = param.get("value_type")
 
             if param_type in ("float", "int", "integer"):
-                v_min = param.get("valid_min", 0)
-                v_max = param.get("valid_max", 1)
-                if v_max > v_min:
-                    normalized = (value - v_min) / (v_max - v_min)
-                    vector.append(np.clip(normalized, 0.0, 1.0))
+                try:
+                    v_min, v_max = get_valid_range(param, self.parent_params, self.custom_ranges)
+                except (TypeError, ValueError):
+                    v_min, v_max = 0, 1
+                if isinstance(v_min, list):
+                    v_min = float(v_min[0]) if v_min else 0.0
+                if isinstance(v_max, list):
+                    v_max = float(v_max[0]) if v_max else 1.0
+                v_min, v_max = float(v_min), float(v_max)
+                if v_max > v_min and value is not None:
+                    try:
+                        actual = float(value) if not isinstance(value, list) else float(value[0])
+                        normalized = (actual - v_min) / (v_max - v_min)
+                        vector.append(np.clip(normalized, 0.0, 1.0))
+                    except (TypeError, ValueError):
+                        vector.append(0.5)
                 else:
                     vector.append(0.5)
+
+            elif param_type in ("categorical", "ordered"):
+                valid_options = get_valid_options(param, self.custom_ranges)
+                if valid_options and valid_options != "" and value is not None:
+                    try:
+                        idx = list(valid_options).index(value)
+                        vector.append((idx + 0.5) / len(valid_options))
+                    except ValueError:
+                        str_options = [str(o) for o in valid_options]
+                        if str(value) in str_options:
+                            idx = str_options.index(str(value))
+                            vector.append((idx + 0.5) / len(valid_options))
+                        else:
+                            vector.append(0.5)
+                else:
+                    vector.append(0.5)
+
+            elif param_type == "ordered_int":
+                valid_options = get_valid_options(param, self.custom_ranges)
+                if valid_options and valid_options != "" and value is not None:
+                    try:
+                        int_val = int(value)
+                        int_options = [int(o) for o in valid_options]
+                        idx = int_options.index(int_val)
+                        vector.append((idx + 0.5) / len(valid_options))
+                    except (ValueError, TypeError):
+                        vector.append(0.5)
+                else:
+                    vector.append(0.5)
+
+            elif param_type == "bool":
+                if value is not None:
+                    vector.append(0.75 if bool(value) else 0.25)
+                else:
+                    vector.append(0.5)
+
             else:
-                # For non-numeric, use a simple encoding
                 vector.append(0.5)
 
         return np.array(vector)
@@ -268,49 +320,52 @@ class DEHB(AutoMLAlgorithmBase):
 
         return specs
 
-    def _differential_evolution_mutation(self):
-        """Generate new configuration using DE mutation and crossover
+    def _differential_evolution_mutation(self, budget):
+        """Generate new configuration using DE/rand/1/bin mutation strategy.
 
-        DE/rand/1 mutation: v = x_r1 + F * (x_r2 - x_r3)
+        Uses the subpopulation at the given budget level for DE evolution.
+        Falls back to random sampling if the budget's subpopulation has < 4 members.
+
+        Args:
+            budget: The budget (epoch) level for this configuration.
 
         Returns:
-            New configuration as dict
+            tuple: (config_dict, target_info) where target_info is
+                   (target_vector, target_result, budget) for DE selection, or None for random.
         """
-        if len(self.population) < 4:
-            # Not enough population, generate random
-            logger.info("Insufficient population for DE, using random sampling")
-            return self._generate_random_parameters()
+        pop = self.budget_populations.get(budget, [])
+        pop_results = self.budget_results.get(budget, [])
 
-        # Select random base vector
-        base_idx = np.random.randint(len(self.population))
-        base_vector = self.population[base_idx]
+        if len(pop) < 4:
+            logger.info(
+                f"Insufficient population for DE at budget {budget} "
+                f"(size={len(pop)}), using random sampling"
+            )
+            return self._generate_random_parameters(), None
 
-        # Select two other random vectors for difference
-        indices = list(range(len(self.population)))
+        base_idx = np.random.randint(len(pop))
+        base_vector = pop[base_idx]
+
+        indices = list(range(len(pop)))
         indices.remove(base_idx)
         r1, r2 = np.random.choice(indices, size=2, replace=False)
 
         # Mutation: v = base + F * (x_r1 - x_r2)
         mutant_vector = base_vector + self.mutation_factor * (
-            self.population[r1] - self.population[r2]
+            pop[r1] - pop[r2]
         )
-
-        # Clip to [0, 1]
         mutant_vector = np.clip(mutant_vector, 0.0, 1.0)
 
-        # Crossover: mix mutant with base
+        # Binomial crossover with unconditional j_rand
+        j_rand = np.random.randint(len(base_vector))
         trial_vector = np.copy(base_vector)
         for i in range(len(trial_vector)):
-            if np.random.rand() < self.crossover_prob:
+            if np.random.rand() < self.crossover_prob or i == j_rand:
                 trial_vector[i] = mutant_vector[i]
 
-        # Ensure at least one dimension from mutant
-        if np.random.rand() < self.crossover_prob:
-            j_rand = np.random.randint(len(trial_vector))
-            trial_vector[j_rand] = mutant_vector[j_rand]
-
-        logger.info("Generated configuration via DE mutation")
-        return self._vector_to_config(trial_vector)
+        target_info = (np.copy(base_vector), pop_results[base_idx], budget)
+        logger.info(f"Generated configuration via DE mutation at budget {budget}")
+        return self._vector_to_config(trial_vector), target_info
 
     def _generate_random_parameters(self):
         """Generate random parameter values"""
@@ -335,9 +390,21 @@ class DEHB(AutoMLAlgorithmBase):
         state_dict["ri"] = self.ri
         state_dict["last_launched_count"] = self.last_launched_count
         state_dict["metric"] = self.metric
-        # Save DE population
-        state_dict["population"] = [p.tolist() for p in self.population]
-        state_dict["population_results"] = self.population_results
+        # Save per-budget DE populations
+        state_dict["budget_populations"] = {
+            str(k): [p.tolist() for p in v]
+            for k, v in self.budget_populations.items()
+        }
+        state_dict["budget_results"] = {
+            str(k): v for k, v in self.budget_results.items()
+        }
+        state_dict["config_budgets"] = {
+            str(k): v for k, v in self.config_budgets.items()
+        }
+        state_dict["trial_targets"] = {
+            str(k): (v[0].tolist(), v[1], v[2])
+            for k, v in self.trial_targets.items()
+        }
 
         save_automl_brain_info(self.job_context.id, state_dict)
 
@@ -362,10 +429,34 @@ class DEHB(AutoMLAlgorithmBase):
         brain.epoch_number = json_loaded["epoch_number"]
         brain.last_launched_count = json_loaded.get("last_launched_count", 0)
 
-        # Load DE population
-        if "population" in json_loaded:
-            brain.population = [np.array(p) for p in json_loaded["population"]]
-            brain.population_results = json_loaded["population_results"]
+        # Load per-budget DE populations
+        if "budget_populations" in json_loaded:
+            brain.budget_populations = {
+                int(k): [np.array(p) for p in v]
+                for k, v in json_loaded["budget_populations"].items()
+            }
+            brain.budget_results = {
+                int(k): v
+                for k, v in json_loaded["budget_results"].items()
+            }
+        elif "population" in json_loaded and json_loaded["population"]:
+            # Backward compat: migrate old global population to budget 0
+            brain.budget_populations[0] = [np.array(p) for p in json_loaded["population"]]
+            brain.budget_results[0] = json_loaded["population_results"]
+
+        if "config_budgets" in json_loaded:
+            brain.config_budgets = {
+                int(k): v for k, v in json_loaded["config_budgets"].items()
+            }
+
+        if "trial_targets" in json_loaded:
+            brain.trial_targets = {}
+            for k, v in json_loaded["trial_targets"].items():
+                if len(v) == 3:
+                    brain.trial_targets[int(k)] = (np.array(v[0]), v[1], v[2])
+                else:
+                    # Backward compat: old 2-tuple format -> budget 0
+                    brain.trial_targets[int(k)] = (np.array(v[0]), v[1], 0)
 
         return brain
 
@@ -389,9 +480,13 @@ class DEHB(AutoMLAlgorithmBase):
             return None
 
         if self.sh_iter == 0:
-            # Use DE to generate configuration instead of random sampling
-            specs = self._differential_evolution_mutation()
-            self.epoch_number = self.ri[self.bracket][self.sh_iter] * self.epoch_multiplier
+            budget = self.ri[self.bracket][self.sh_iter] * self.epoch_multiplier
+            specs, target_info = self._differential_evolution_mutation(budget)
+            self.epoch_number = budget
+            config_id = len(history) + self.expt_iter
+            self.config_budgets[config_id] = budget
+            if target_info is not None:
+                self.trial_targets[config_id] = target_info
             to_return = specs
         else:
             # Do successive halving
@@ -413,9 +508,12 @@ class DEHB(AutoMLAlgorithmBase):
                         reverse=self.reverse_sort
                     )[0:self.ni[self.bracket][self.sh_iter]]
 
-            self.epoch_number = self.ri[self.bracket][self.sh_iter] * self.epoch_multiplier
+            budget = self.ri[self.bracket][self.sh_iter] * self.epoch_multiplier
+            self.epoch_number = budget
+            rec_id = self.experiments_considered[self.expt_iter].id
+            self.config_budgets[rec_id] = budget
             resumerec = ResumeRecommendation(
-                self.experiments_considered[self.expt_iter].id,
+                rec_id,
                 self.experiments_considered[self.expt_iter].specs,
                 self.experiments_considered[self.expt_iter].job_id
             )
@@ -502,27 +600,62 @@ class DEHB(AutoMLAlgorithmBase):
                     )
             return []
 
-        # Update DE population with completed experiments
+        # DE selection with per-budget subpopulations (DEHB paper Section 3.2)
         for rec in history:
             if rec.status == JobStates.success and rec.result != 0.0:
-                # Add to population
-                config_vector = self._normalize_config_to_vector(rec.specs)
-                # Only add if not already in population
-                is_duplicate = any(np.allclose(config_vector, p) for p in self.population)
-                if not is_duplicate:
-                    self.population.append(config_vector)
-                    self.population_results.append(rec.result)
-                    logger.info(f"Added config to DE population (size={len(self.population)})")
+                budget = self.config_budgets.get(rec.id)
+                if budget is None:
+                    continue
 
-                    # Keep population size manageable
-                    if len(self.population) > 50:
-                        # Remove worst performer
-                        if self.reverse_sort:
-                            worst_idx = np.argmin(self.population_results)
+                config_vector = self._normalize_config_to_vector(rec.specs)
+
+                if budget not in self.budget_populations:
+                    self.budget_populations[budget] = []
+                    self.budget_results[budget] = []
+
+                pop = self.budget_populations[budget]
+                is_duplicate = any(np.allclose(config_vector, p) for p in pop)
+                if is_duplicate:
+                    self.trial_targets.pop(rec.id, None)
+                    continue
+
+                target_info = self.trial_targets.pop(rec.id, None)
+
+                if target_info is not None:
+                    target_vector, target_result, target_budget = target_info
+                    trial_is_better = (
+                        (self.reverse_sort and rec.result > target_result) or
+                        (not self.reverse_sort and rec.result < target_result)
+                    )
+                    if trial_is_better:
+                        target_pop = self.budget_populations.get(target_budget, [])
+                        target_idx = None
+                        for idx, p in enumerate(target_pop):
+                            if np.allclose(p, target_vector):
+                                target_idx = idx
+                                break
+                        if target_idx is not None:
+                            self.budget_populations[target_budget][target_idx] = config_vector
+                            self.budget_results[target_budget][target_idx] = rec.result
+                            logger.info(
+                                f"DE selection: trial replaced target at budget {target_budget} "
+                                f"(pop_size={len(target_pop)})"
+                            )
                         else:
-                            worst_idx = np.argmax(self.population_results)
-                        self.population.pop(worst_idx)
-                        self.population_results.pop(worst_idx)
+                            pop.append(config_vector)
+                            self.budget_results[budget].append(rec.result)
+                            logger.info(
+                                f"DE selection: target gone, added trial at budget {budget} "
+                                f"(pop_size={len(pop)})"
+                            )
+                    else:
+                        logger.info("DE selection: trial worse than target, discarded")
+                else:
+                    pop.append(config_vector)
+                    self.budget_results[budget].append(rec.result)
+                    logger.info(
+                        f"Added config to budget {budget} population (pop_size={len(pop)})"
+                    )
 
         # Initial case: launch all configs for first rung in parallel
         if history == []:

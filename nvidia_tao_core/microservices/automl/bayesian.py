@@ -45,18 +45,19 @@ logger = logging.getLogger(__name__)
 class Bayesian(AutoMLAlgorithmBase):
     """Bayesian AutoML algorithm class"""
 
-    def __init__(self, job_context, root, network, parameters):
+    def __init__(self, job_context, root, network, parameters, metric="loss"):
         """Initialize the Bayesian algorithm class
 
         Args:
             root: handler root
             network: model we are running AutoML on
             parameters: automl sweepable parameters
+            metric: metric to optimize (e.g., 'loss', 'val_accuracy', 'mIoU')
         """
         super().__init__(job_context, root, network, parameters)
+        self.metric = metric
         length_scale = [1.0] * len(self.parameters)
         m52 = ConstantKernel(1.0) * Matern(length_scale=length_scale, nu=2.5)
-        # m52 = ConstantKernel(1.0) * Matern(length_scale=1.0, nu=2.5) # is another option
         self.gp = GaussianProcessRegressor(
             kernel=m52,
             alpha=1e-10,
@@ -70,6 +71,11 @@ class Bayesian(AutoMLAlgorithmBase):
 
         self.xi = 0.01
         self.num_restarts = 5
+        self.min_seed_points = 3
+
+        self.reverse_sort = True
+        if metric == "loss" or "loss" in metric.lower() or metric.lower() in ("evaluation_cost",):
+            self.reverse_sort = False
 
         self.num_epochs_per_experiment = get_total_epochs(job_context, os.path.join(self.handler_root, "specs"))
 
@@ -190,23 +196,19 @@ class Bayesian(AutoMLAlgorithmBase):
                     operator = parts[0]
                     factor = int(float(parts[1]))
                     if operator == "^":
-                        # Use helper function for power constraints with equal priority
-                        normalized = suggestion * (v_max - v_min) + v_min
-                        fallback = clamp_value(normalized, v_min, v_max)
+                        fallback = self._map_suggestion_to_float(suggestion, v_min, v_max)
+                        fallback = clamp_value(fallback, v_min, v_max)
                         quantized = float(self._apply_power_constraint_with_equal_priority(
                             v_min, v_max, factor, fallback))
                     else:
-                        # Regular sampling for non-power constraints
-                        normalized = suggestion * (v_max - v_min) + v_min
-                        quantized = clamp_value(normalized, v_min, v_max)
+                        quantized = self._map_suggestion_to_float(suggestion, v_min, v_max)
+                        quantized = clamp_value(quantized, v_min, v_max)
                 else:
-                    # Invalid math condition format, fall back to regular sampling
-                    normalized = suggestion * (v_max - v_min) + v_min
-                    quantized = clamp_value(normalized, v_min, v_max)
+                    quantized = self._map_suggestion_to_float(suggestion, v_min, v_max)
+                    quantized = clamp_value(quantized, v_min, v_max)
             else:
-                # No math condition, regular sampling
-                normalized = suggestion * (v_max - v_min) + v_min
-                quantized = clamp_value(normalized, v_min, v_max)
+                quantized = self._map_suggestion_to_float(suggestion, v_min, v_max)
+                quantized = clamp_value(quantized, v_min, v_max)
 
             if not (type(parent_param) is float and math.isnan(parent_param)):
                 if (isinstance(parent_param, str) and parent_param != "nan" and parent_param == "TRUE") or (
@@ -347,28 +349,33 @@ class Bayesian(AutoMLAlgorithmBase):
 
             return int(valid_options[idx])
 
+        if data_type == "bool":
+            return suggestion >= 0.5
+
         return super().generate_automl_param_rec_value(parameter_config)
 
     def save_state(self):
         """Save the Bayesian algorithm related variables to brain metadata"""
         state_dict = {}
-        state_dict["Xs"] = np.array(self.Xs).tolist()  # List of np arrays
-        state_dict["ys"] = np.array(self.ys).tolist()  # List
+        state_dict["Xs"] = np.array(self.Xs).tolist()
+        state_dict["ys"] = np.array(self.ys).tolist()
+        state_dict["metric"] = self.metric
 
         save_automl_brain_info(self.job_context.id, state_dict)
 
     @staticmethod
-    def load_state(job_context, root, network, parameters):
+    def load_state(job_context, root, network, parameters, metric="loss"):
         """Load the Bayesian algorithm related variables to brain metadata"""
         json_loaded = get_automl_brain_info(job_context.id)
         if not json_loaded:
-            return Bayesian(job_context, root, network, parameters)
+            return Bayesian(job_context, root, network, parameters, metric)
 
+        loaded_metric = json_loaded.get("metric", metric)
         Xs = []
         for x in json_loaded["Xs"]:
             Xs.append(np.array(x))
         ys = json_loaded["ys"]
-        bayesian = Bayesian(job_context, root, network, parameters)
+        bayesian = Bayesian(job_context, root, network, parameters, loaded_metric)
         # Load state (Remember everything)
         bayesian.Xs = Xs
         bayesian.ys = ys
@@ -412,13 +419,25 @@ class Bayesian(AutoMLAlgorithmBase):
         if history[-1].status not in [JobStates.success, JobStates.failure]:
             return []
 
-        # Update the GP based on results
         self.ys.append(history[-1].result)
+
+        if len(self.ys) < self.min_seed_points:
+            logger.info(
+                f"Collecting seed points: {len(self.ys)}/{self.min_seed_points}, "
+                "using random sampling"
+            )
+            suggestions = np.random.rand(len(self.parameters))
+            self.Xs.append(suggestions)
+            recommendations = []
+            for param_dict, suggestion in zip(self.parameters, suggestions):
+                recommendation_value = self.generate_automl_param_rec_value(param_dict, suggestion)
+                logger.info(f"Recommendation param: {param_dict['parameter']} value: {recommendation_value}")
+                recommendations.append(recommendation_value)
+            return [dict(zip([param["parameter"] for param in self.parameters], recommendations))]
+
         self.update_gp()
 
-        # Generate one recommendation
-        # Generate "suggestions" which are in [0.0, 1.0] by optimizing EI
-        suggestions = self.optimize_ei()  # length = len(self.parameters), np.array type
+        suggestions = self.optimize_ei()
         self.Xs.append(suggestions)
         # Convert the suggestions to recommendations based on parameter type
         # Assume one:one mapping between self.parameters and suggestions
@@ -478,12 +497,15 @@ class Bayesian(AutoMLAlgorithmBase):
     def _expected_improvement(self, X, xi=0.01):
         """Calculate the expected improvement at points X based on existing samples.
 
+        For maximization (higher is better): EI = (μ - f* - ξ)Φ(Z) + σφ(Z)
+        For minimization (lower is better):  EI = (f* - μ - ξ)Φ(Z) + σφ(Z)
+
         Args:
             X: Points at which EI shall be calculated (m x d)
             xi: Exploitation-exploration trade-off parameter
 
         Returns:
-            float: Expected improvements at points X
+            float: Negative expected improvement (for scipy.optimize.minimize)
         """
         X = X.reshape(1, -1)
 
@@ -491,13 +513,15 @@ class Bayesian(AutoMLAlgorithmBase):
         mu_sample = self.gp.predict(np.array(self.Xs))
 
         sigma = sigma.reshape(-1, 1)
-        # Needed for noise-based model,
-        # otherwise use np.max(Y_sample).
-        # See also section 2.4 in [1]
-        mu_sample_opt = np.max(mu_sample)
+
+        if self.reverse_sort:
+            mu_sample_opt = np.max(mu_sample)
+            imp = mu - mu_sample_opt - self.xi
+        else:
+            mu_sample_opt = np.min(mu_sample)
+            imp = mu_sample_opt - mu - self.xi
 
         with np.errstate(divide='warn'):
-            imp = mu - mu_sample_opt - self.xi
             Z = imp / sigma
             ei = imp * norm.cdf(Z) + sigma * norm.pdf(Z)
             ei[sigma == 0.0] = 0.0

@@ -87,6 +87,24 @@ class AutoMLAlgorithmBase:
 
         logger.info(f"Initialized random seed: {seed} for job {job_context.id}")
 
+    @staticmethod
+    def _sample_float(v_min, v_max):
+        """Sample a float value, using log-uniform when the range spans orders of magnitude."""
+        if v_min > 0 and v_max > 0 and v_max / v_min >= 10:
+            log_min = np.log10(v_min)
+            log_max = np.log10(v_max)
+            return float(10 ** np.random.uniform(log_min, log_max))
+        return float(np.random.uniform(v_min, v_max))
+
+    @staticmethod
+    def _map_suggestion_to_float(suggestion, v_min, v_max):
+        """Map a [0,1] suggestion to a float, using log-scale when appropriate."""
+        if v_min > 0 and v_max > 0 and v_max / v_min >= 10:
+            log_min = np.log10(v_min)
+            log_max = np.log10(v_max)
+            return float(10 ** (suggestion * (log_max - log_min) + log_min))
+        return float(suggestion * (v_max - v_min) + v_min)
+
     def _apply_power_constraint_with_equal_priority(self, v_min, v_max, factor, fallback_value=None):
         """Apply power constraint by sampling directly from valid powers to give equal priority.
 
@@ -310,9 +328,8 @@ class AutoMLAlgorithmBase:
                     parent_params=self.parent_params
                 )
 
-            # Existing handling for defined ranges
             v_min, v_max = get_valid_range(parameter_config, self.parent_params, self.custom_ranges)
-            random_float = np.random.uniform(v_min, v_max)
+            random_float = self._sample_float(v_min, v_max)
 
             if not (type(parent_param) is float and math.isnan(parent_param)):
                 if ((isinstance(parent_param, str) and parent_param != "nan" and parent_param == "TRUE") or
@@ -656,64 +673,6 @@ class AutoMLAlgorithmBase:
                 value=None,
                 parent_params=self.parent_params
             )
-
-        if data_type == "float":
-            # Handle float parameters
-            v_min = parameter_config.get("valid_min", "")
-            v_max = parameter_config.get("valid_max", "")
-
-            # If no valid range, generate values around default
-            if v_min == "" or v_max == "":
-                if default_value is not None and default_value != "":
-                    default_val = float(default_value)
-                    # Generate values in range [default/10, default*10] for diversity
-                    if default_val > 0:
-                        v_min = default_val / 10.0
-                        v_max = default_val * 10.0
-                    elif default_val < 0:
-                        v_min = default_val * 10.0
-                        v_max = default_val / 10.0
-                    else:  # default is 0
-                        v_min = -1.0
-                        v_max = 1.0
-                    random_float = np.random.uniform(v_min, v_max)
-                    logger.info(
-                        f"Generated random float for {parameter_name} (no range): "
-                        f"{random_float} around default {default_val}"
-                    )
-                    return random_float
-                # No default either, use reasonable range
-                return np.random.uniform(0.0, 1.0)
-
-            # Convert to float
-            if v_min == "-inf":
-                v_min = float('-inf')
-            elif v_min != "":
-                v_min = float(v_min)
-            else:
-                v_min = 0.0
-
-            if v_max == "inf":
-                v_max = float('inf')
-            elif v_max != "":
-                v_max = float(v_max)
-            else:
-                v_max = 1.0
-
-            # Handle infinite bounds by using default or reasonable values
-            if v_min == float('-inf'):
-                v_min = 0.0
-            if v_max == float('inf'):
-                # Use default as max, or a reasonable value
-                if default_value is not None and default_value != "":
-                    v_max = float(default_value) * 10  # 10x default as upper bound
-                else:
-                    v_max = 1.0
-
-            # Generate random float in range
-            random_float = np.random.uniform(v_min, v_max)
-            logger.info(f"Generated random float for {parameter_name}: {random_float} in range [{v_min}, {v_max}]")
-            return random_float
 
         if data_type == "string":
             # Handle string parameters with valid_options

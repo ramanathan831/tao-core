@@ -192,8 +192,9 @@ class TestBOHBFlow:
         print("=" * 80)
 
         # Check observations were collected
-        assert len(bohb.observations) > 0, "BOHB should have collected observations"
-        print(f"✓ Total observations collected: {len(bohb.observations)}")
+        total_obs = sum(len(v) for v in bohb.budget_observations.values())
+        assert total_obs > 0, "BOHB should have collected observations"
+        print(f"✓ Total observations collected: {total_obs}")
 
         successful_configs = [rec for rec in history if rec.status == JobStates.success and rec.result < 0.9]
         assert len(successful_configs) > 0, "Expected successful configurations"
@@ -253,11 +254,12 @@ class TestBOHBFlow:
 
         # Verify observations were collected
         # Note: BOHB filters duplicate configs, so may collect fewer than 9 unique observations
-        print(f"Collected {len(bohb.observations)} observations (configs completed: {len(history)})")
-        assert len(bohb.observations) > 0, \
-            f"Should have collected at least 1 observation, got {len(bohb.observations)}"
+        total_obs = sum(len(v) for v in bohb.budget_observations.values())
+        print(f"Collected {total_obs} observations (configs completed: {len(history)})")
+        assert total_obs > 0, \
+            f"Should have collected at least 1 observation, got {total_obs}"
         assert len(history) == 9, f"Should have completed 9 configs, got {len(history)}"
 
         print(f"✓ Completed {len(history)} configurations")
-        print(f"✓ Collected {len(bohb.observations)} unique observations")
+        print(f"✓ Collected {total_obs} unique observations")
         print("✅ Bayesian sampling test passed")

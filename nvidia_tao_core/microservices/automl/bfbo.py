@@ -90,6 +90,8 @@ class BFBO(AutoMLAlgorithmBase):
 
         self.num_epochs_per_experiment = get_total_epochs(job_context, os.path.join(self.handler_root, "specs"))
 
+        self.reverse_sort = True
+
         logger.info("BFBO initialized with UCB acquisition and local penalization")
 
     def generate_automl_param_rec_value(self, parameter_config, suggestion):
@@ -204,19 +206,16 @@ class BFBO(AutoMLAlgorithmBase):
                     operator = parts[0]
                     factor = int(float(parts[1]))
                     if operator == "^":
-                        # Use helper function for power constraints with equal priority
-                        normalized = suggestion * (v_max - v_min) + v_min
-                        fallback = clamp_value(normalized, v_min, v_max)
+                        fallback = self._map_suggestion_to_float(suggestion, v_min, v_max)
+                        fallback = clamp_value(fallback, v_min, v_max)
                         quantized = float(self._apply_power_constraint_with_equal_priority(
                             v_min, v_max, factor, fallback))
                     else:
-                        # Regular sampling for non-power constraints
-                        normalized = suggestion * (v_max - v_min) + v_min
-                        quantized = clamp_value(normalized, v_min, v_max)
+                        quantized = self._map_suggestion_to_float(suggestion, v_min, v_max)
+                        quantized = clamp_value(quantized, v_min, v_max)
             else:
-                # No math condition, regular sampling
-                normalized = suggestion * (v_max - v_min) + v_min
-                quantized = clamp_value(normalized, v_min, v_max)
+                quantized = self._map_suggestion_to_float(suggestion, v_min, v_max)
+                quantized = clamp_value(quantized, v_min, v_max)
 
             if not (type(parent_param) is float and math.isnan(parent_param)):
                 if (isinstance(parent_param, str) and parent_param != "nan" and parent_param == "TRUE") or (
@@ -483,7 +482,7 @@ class BFBO(AutoMLAlgorithmBase):
             if i == 0:
                 # First restart: use best observed point
                 if len(self.Xs) > 0:
-                    best_idx = np.argmax(self.ys)
+                    best_idx = np.argmin(self.ys) if not self.reverse_sort else np.argmax(self.ys)
                     x0 = self.Xs[best_idx] + np.random.randn(dim) * 0.1
                     x0 = np.clip(x0, 0, 1)
                 else:
@@ -534,10 +533,12 @@ class BFBO(AutoMLAlgorithmBase):
             # Penalize points close to previous evaluations
             penalization = np.prod(np.tanh(distances / self.penalization_radius))
 
-        # UCB acquisition function
-        ucb = mu + self.kappa * sigma * penalization
+        if self.reverse_sort:
+            acq = mu + self.kappa * sigma * penalization
+        else:
+            acq = -mu + self.kappa * sigma * penalization
 
-        return -1 * ucb[0, 0]
+        return -1 * acq[0, 0]
 
     def _probability_of_improvement(self, X, xi=0.01):
         """Calculate the Probability of Improvement at points X
@@ -557,10 +558,13 @@ class BFBO(AutoMLAlgorithmBase):
         mu_sample = self.gp.predict(np.array(self.Xs))
 
         sigma = sigma.reshape(-1, 1)
-        mu_sample_opt = np.max(mu_sample)
 
-        with np.errstate(divide='warn'):
+        if self.reverse_sort:
+            mu_sample_opt = np.max(mu_sample)
             imp = mu - mu_sample_opt - xi
+        else:
+            mu_sample_opt = np.min(mu_sample)
+            imp = mu_sample_opt - mu - xi
             Z = imp / sigma
             pi = norm.cdf(Z)
             pi[sigma == 0.0] = 0.0

@@ -190,9 +190,10 @@ class TestDEHBFlow:
         print("FINAL VERIFICATION")
         print("=" * 80)
 
-        # Check population was built
-        assert len(dehb.population) > 0, "DEHB should have built a population"
-        print(f"✓ DE population size: {len(dehb.population)}")
+        # Check per-budget populations were built
+        total_pop = sum(len(v) for v in dehb.budget_populations.values())
+        assert total_pop > 0, "DEHB should have built per-budget populations"
+        print(f"✓ DE populations: {', '.join(f'budget={k}: {len(v)}' for k, v in dehb.budget_populations.items())}")
 
         successful_configs = [rec for rec in history if rec.status == JobStates.success and rec.result < 0.9]
         assert len(successful_configs) > 0, "Expected successful configurations"
@@ -256,9 +257,10 @@ class TestDEHBFlow:
         # Trigger population building by generating next recommendations
         dehb.generate_recommendations(history)
 
-        # Verify population was built
-        print(f"DE population size: {len(dehb.population)}")
-        assert len(dehb.population) > 0, f"Should have built DE population, got {len(dehb.population)}"
+        # Verify per-budget populations were built
+        total_pop = sum(len(v) for v in dehb.budget_populations.values())
+        print(f"DE per-budget populations: {', '.join(f'budget={k}: {len(v)}' for k, v in dehb.budget_populations.items())}")
+        assert total_pop > 0, f"Should have built DE populations, got {total_pop}"
 
-        print(f"✓ Built DE population with {len(dehb.population)} members")
+        print(f"✓ Built DE populations with {total_pop} total members")
         print("✅ Differential evolution test passed")

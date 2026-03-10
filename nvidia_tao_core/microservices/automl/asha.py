@@ -118,6 +118,8 @@ class ASHA(AutoMLAlgorithmBase):
         self.promoted_from_rung = defaultdict(set)
         # Current epoch target (used for early_stop_epoch by controller)
         self.epoch_number = self.rungs[0]  # Start with first rung
+        # Per-config epoch targets for mixed-rung parallel execution
+        self.config_epoch_targets = {}
 
         # For ETA calculation compatibility with controller
         # ASHA doesn't have fixed brackets like Hyperband, but we provide a
@@ -265,10 +267,10 @@ class ASHA(AutoMLAlgorithmBase):
                         random_float = float(self._apply_power_constraint_with_equal_priority(
                             v_min, v_max, factor, fallback))
                     else:
-                        random_float = np.random.uniform(low=v_min, high=v_max)
+                        random_float = self._sample_float(v_min, v_max)
                         random_float = clamp_value(random_float, v_min, v_max)
             else:
-                random_float = np.random.uniform(low=v_min, high=v_max)
+                random_float = self._sample_float(v_min, v_max)
                 random_float = clamp_value(random_float, v_min, v_max)
 
             if not (type(parent_param) is float and math.isnan(parent_param)):
@@ -317,6 +319,7 @@ class ASHA(AutoMLAlgorithmBase):
         state_dict["config_specs"] = {str(k): v for k, v in self.config_specs.items()}
         state_dict["pending_promotions"] = self.pending_promotions
         state_dict["epoch_number"] = self.epoch_number
+        state_dict["config_epoch_targets"] = {str(k): v for k, v in self.config_epoch_targets.items()}
         state_dict["ni"] = self.ni
         state_dict["ri"] = self.ri
         state_dict["bracket"] = self.bracket
@@ -373,6 +376,7 @@ class ASHA(AutoMLAlgorithmBase):
         brain.config_specs = {int(k): v for k, v in json_loaded["config_specs"].items()}
         brain.pending_promotions = json_loaded.get("pending_promotions", [])
         brain.epoch_number = json_loaded.get("epoch_number", brain.rungs[0])
+        brain.config_epoch_targets = {int(k): v for k, v in json_loaded.get("config_epoch_targets", {}).items()}
         brain.ni = json_loaded.get("ni", brain.ni)
         brain.ri = json_loaded.get("ri", brain.ri)
         brain.bracket = json_loaded.get("bracket", "0")
@@ -383,10 +387,11 @@ class ASHA(AutoMLAlgorithmBase):
         brain.min_top_configs = json_loaded.get("min_top_configs", min_top_configs)
         brain.metric = json_loaded.get("metric", metric)
 
-        # Re-determine reverse_sort based on loaded metric (in case it changed)
         brain.reverse_sort = True
         if brain.metric == "loss" or "loss" in brain.metric.lower() or brain.metric.lower() in ("evaluation_cost",):
             brain.reverse_sort = False
+
+        brain._needs_active_reconciliation = True
 
         return brain
 
@@ -404,9 +409,27 @@ class ASHA(AutoMLAlgorithmBase):
         """Return if ASHA algorithm is complete or not"""
         return self.complete
 
+    def _reconcile_active_configs(self, history):
+        """Reconcile active_configs with actual history state after a restart."""
+        if not history:
+            return
+        stale = set()
+        for config_id in self.active_configs:
+            for rec in history:
+                if rec.id == config_id and rec.status in [JobStates.success, JobStates.failure]:
+                    stale.add(config_id)
+                    break
+        if stale:
+            logger.warning(f"ASHA: Reconciling {len(stale)} stale active_configs after restart: {stale}")
+            self.active_configs -= stale
+
     def generate_recommendations(self, history):
         """Generate recommendations asynchronously"""
         get_flatten_specs(self.default_train_spec, self.default_train_spec_flattened)
+
+        if getattr(self, '_needs_active_reconciliation', False) and history:
+            self._reconcile_active_configs(history)
+            self._needs_active_reconciliation = False
 
         if history == []:
             # Initial recommendations - fill all available worker slots
@@ -419,6 +442,8 @@ class ASHA(AutoMLAlgorithmBase):
                 self.config_to_rung[self.next_config_id] = 0
                 self.active_configs.add(self.next_config_id)
                 self.total_configs_started += 1
+                self.epoch_number = self.rungs[0]
+                self.config_epoch_targets[self.next_config_id] = self.rungs[0]
                 self.next_config_id += 1
                 recommendations.append(specs)
             self.track_id = 0
@@ -535,22 +560,25 @@ class ASHA(AutoMLAlgorithmBase):
 
         # Generate new recommendations to fill available slots
         # ASHA keeps workers busy by launching promotions or new configs
+        # Paper Algorithm 3: iterate from highest rung down, so higher-rung
+        # promotions always take priority over lower-rung ones
+        if self.pending_promotions:
+            self.pending_promotions.sort(key=lambda x: x[1], reverse=True)
+
         new_recommendations = []
         while len(self.active_configs) + len(new_recommendations) < self.max_concurrent:
-            # Priority 1: Process pending promotions
+            # Priority 1: Process pending promotions (highest rung first)
             if self.pending_promotions:
                 config_id, epochs = self.pending_promotions.pop(0)
                 specs = self.config_specs[config_id]
-                # Find the job_id for this config from history
                 config_job_id = None
                 for rec in reversed(history):
                     if rec.id == config_id:
                         config_job_id = rec.job_id
                         break
                 self.active_configs.add(config_id)
-                # Set epoch_number for controller to use as early_stop_epoch (interruption point)
-                # Training is configured for max epochs, but will be interrupted at this rung
                 self.epoch_number = epochs
+                self.config_epoch_targets[config_id] = epochs
                 resume_rec = ResumeRecommendation(config_id, specs, config_job_id)
                 self.track_id = config_id
                 new_recommendations.append(resume_rec)
@@ -564,9 +592,8 @@ class ASHA(AutoMLAlgorithmBase):
                 self.config_to_rung[self.next_config_id] = 0
                 self.active_configs.add(self.next_config_id)
                 self.total_configs_started += 1
-                # Set epoch_number for controller to use as early_stop_epoch (interruption point)
-                # Training is configured for max epochs, but will be interrupted at first rung
                 self.epoch_number = self.rungs[0]
+                self.config_epoch_targets[self.next_config_id] = self.rungs[0]
                 self.track_id = self.next_config_id
                 logger.info(
                     f"Launching new config: {self.next_config_id} @ {self.rungs[0]} epochs "

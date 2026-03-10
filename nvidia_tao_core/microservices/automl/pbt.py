@@ -19,7 +19,7 @@ import copy
 
 from nvidia_tao_core.microservices.utils.automl_utils import (
     ResumeRecommendation, JobStates, get_valid_range, clamp_value,
-    get_valid_options, get_option_weights
+    get_valid_options, get_option_weights, fix_input_dimension
 )
 from nvidia_tao_core.microservices.automl.automl_algorithm_base import AutoMLAlgorithmBase
 from nvidia_tao_core.microservices.utils.handler_utils import get_flatten_specs
@@ -83,11 +83,16 @@ class PBT(AutoMLAlgorithmBase):
             self.reverse_sort = False
         self.next_member_id = 0
         self.epoch_number = eval_interval  # Current epoch target (used for early_stop_epoch)
+        self.gen_history_start = 0
+        self.gen_member_order = []
 
         # Track which parameters are perturbable
         self.perturbable_params = [
             p for p in parameters
-            if p.get("value_type") in ("float", "int", "integer", "ordered_int")
+            if p.get("value_type") in (
+                "float", "int", "integer", "ordered_int",
+                "bool", "categorical", "ordered"
+            )
         ]
 
         # Set training parameters once at initialization
@@ -158,6 +163,8 @@ class PBT(AutoMLAlgorithmBase):
         state_dict["eval_interval"] = self.eval_interval
         state_dict["epoch_number"] = self.epoch_number
         state_dict["metric"] = self.metric
+        state_dict["gen_history_start"] = self.gen_history_start
+        state_dict["gen_member_order"] = self.gen_member_order
 
         save_automl_brain_info(self.job_context.id, state_dict)
 
@@ -186,6 +193,8 @@ class PBT(AutoMLAlgorithmBase):
         # Load epoch_number if available
         if "epoch_number" in json_loaded:
             brain.epoch_number = json_loaded["epoch_number"]
+        brain.gen_history_start = json_loaded.get("gen_history_start", 0)
+        brain.gen_member_order = json_loaded.get("gen_member_order", [])
 
         return brain
 
@@ -216,17 +225,31 @@ class PBT(AutoMLAlgorithmBase):
                 return current_value
 
             v_min, v_max = get_valid_range(param_config, self.parent_params, self.custom_ranges)
+            math_cond = param_config.get("math_cond", None)
 
-            # Multiply or divide by perturbation_factor
-            if np.random.rand() < 0.5:
-                new_value = current_value * self.perturbation_factor
+            if isinstance(current_value, list):
+                new_value = [
+                    clamp_value(
+                        v * (self.perturbation_factor if np.random.rand() < 0.5 else 1.0 / self.perturbation_factor),
+                        v_min, v_max
+                    )
+                    for v in current_value
+                ]
             else:
-                new_value = current_value / self.perturbation_factor
+                if np.random.rand() < 0.5:
+                    new_value = current_value * self.perturbation_factor
+                else:
+                    new_value = current_value / self.perturbation_factor
+                new_value = clamp_value(new_value, v_min, v_max)
 
-            # Clamp to valid range
-            new_value = clamp_value(new_value, v_min, v_max)
+                if math_cond and isinstance(math_cond, str) and "depends_on" not in math_cond:
+                    parts = math_cond.split(" ")
+                    if len(parts) >= 2 and parts[0] == "^":
+                        factor = int(float(parts[1]))
+                        new_value = float(self._apply_power_constraint_with_equal_priority(
+                            v_min, v_max, factor, new_value))
 
-            logger.info(f"Perturbing {param_name}: {current_value:.4f} -> {new_value:.4f}")
+            logger.info(f"Perturbing {param_name}: {current_value} -> {new_value}")
             return new_value
 
         if data_type in ("int", "integer"):
@@ -235,7 +258,8 @@ class PBT(AutoMLAlgorithmBase):
             if v_min == "" or v_max == "":
                 return current_value
 
-            # Add or subtract a percentage
+            math_cond = param_config.get("math_cond", None)
+
             delta = max(1, int(abs(current_value) * (self.perturbation_factor - 1.0)))
             if np.random.rand() < 0.5:
                 new_value = current_value + delta
@@ -243,23 +267,38 @@ class PBT(AutoMLAlgorithmBase):
                 new_value = current_value - delta
 
             new_value = max(int(v_min), min(int(v_max), new_value))
+
+            if math_cond and isinstance(math_cond, str) and "depends_on" not in math_cond:
+                parts = math_cond.split(" ")
+                if len(parts) >= 2:
+                    operator = parts[0]
+                    factor = int(float(parts[1]))
+                    if operator == "^":
+                        new_value = int(self._apply_power_constraint_with_equal_priority(
+                            int(v_min), int(v_max), factor, new_value))
+                    elif operator == "/":
+                        new_value = fix_input_dimension(new_value, factor)
+
             logger.info(f"Perturbing {param_name}: {current_value} -> {new_value}")
             return new_value
 
         if data_type == "ordered_int":
-            # Pick adjacent value in ordered list
             valid_options = get_valid_options(param_config, self.custom_ranges)
-            if not valid_options or current_value not in valid_options:
+            if not valid_options:
                 return current_value
 
-            current_idx = valid_options.index(current_value)
-            # Move up or down one step
-            if np.random.rand() < 0.5 and current_idx < len(valid_options) - 1:
-                new_value = valid_options[current_idx + 1]
+            int_options = [int(o) for o in valid_options]
+            try:
+                current_idx = int_options.index(int(current_value))
+            except (ValueError, TypeError):
+                return current_value
+
+            if np.random.rand() < 0.5 and current_idx < len(int_options) - 1:
+                new_value = int_options[current_idx + 1]
             elif current_idx > 0:
-                new_value = valid_options[current_idx - 1]
+                new_value = int_options[current_idx - 1]
             else:
-                new_value = current_value
+                new_value = int(current_value)
 
             logger.info(f"Perturbing {param_name}: {current_value} -> {new_value}")
             return new_value
@@ -391,8 +430,8 @@ class PBT(AutoMLAlgorithmBase):
         get_flatten_specs(self.default_train_spec, self.default_train_spec_flattened)
 
         if history == []:
-            # Initialize population with random configurations
             recommendations = []
+            self.gen_member_order = []
             for _ in range(self.population_size):
                 specs = self._generate_random_parameters()
                 member_id = self.next_member_id
@@ -401,23 +440,31 @@ class PBT(AutoMLAlgorithmBase):
                     "result": 0.0,
                     "epochs": 0
                 }
+                self.gen_member_order.append(member_id)
                 self.next_member_id += 1
                 recommendations.append(specs)
+            self.gen_history_start = 0
             self.track_id = 0
             return recommendations
 
-        # Check if generation is complete (all members trained for eval_interval epochs)
+        gen_end = self.gen_history_start + self.population_size
+        if gen_end <= len(history):
+            gen_slice = history[self.gen_history_start:gen_end]
+        else:
+            gen_slice = history[-self.population_size:]
         all_complete = all(
             rec.status in [JobStates.success, JobStates.failure]
-            for rec in history[-self.population_size:]
+            for rec in gen_slice
         )
 
         if not all_complete:
-            return []  # Wait for all members to complete
+            return []
 
-        # Update population results from history
-        for rec in history[-self.population_size:]:
-            member_id = rec.id
+        for i, rec in enumerate(gen_slice):
+            if i < len(self.gen_member_order):
+                member_id = self.gen_member_order[i]
+            else:
+                member_id = rec.id
             if member_id in self.population:
                 self.population[member_id]["result"] = rec.result
                 self.population[member_id]["epochs"] = self.population[member_id].get("epochs", 0) + self.eval_interval
@@ -485,5 +532,7 @@ class PBT(AutoMLAlgorithmBase):
                 resume_rec = ResumeRecommendation(member_id, specs, member_job_id, resume_from_job_id=None)
                 recommendations.append(resume_rec)
 
+        self.gen_history_start = len(history)
+        self.gen_member_order = list(self.population.keys())
         self.track_id = list(self.population.keys())[0]
         return recommendations
