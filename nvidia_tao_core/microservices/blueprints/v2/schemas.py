@@ -2267,6 +2267,7 @@ class ExperimentJobRsp(Schema):
         validate=validate.Length(max=sys.maxsize),
         allow_none=True
     )
+    kind = fields.Constant(JobKindEnum.experiment.value)
 
 
 class JobRsp(OneOfSchema):
