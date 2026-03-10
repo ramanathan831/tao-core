@@ -658,7 +658,7 @@ def replace_placeholder_and_apply_workspace_id(value, placeholder, replacement, 
 
 def process_mapping_entry(mapping, source_root, source_ds, dataset_convert_action,
                           workspace_identifier, dataset_convert_downloaded_locally=False,
-                          parent_job_id=None):
+                          parent_job_id=None, source_ds_metadata=None):
     """Process a single mapping entry.
 
     Handles three types of mappings:
@@ -668,8 +668,8 @@ def process_mapping_entry(mapping, source_root, source_ds, dataset_convert_actio
     """
     # Handle string mappings that reference dataset metadata fields
     if isinstance(mapping, str):
-        # Get dataset metadata to resolve the field reference
-        source_ds_metadata = get_handler_metadata(source_ds, kind="datasets")
+        if source_ds_metadata is None:
+            source_ds_metadata = get_handler_metadata(source_ds, kind="datasets")
         if mapping == "dataset_format":
             return source_ds_metadata.get("format")
         if mapping == "dataset_type":
@@ -1205,7 +1205,8 @@ def apply_data_source_config(config, job_context, handler_metadata):
                         value = process_mapping_entry(
                             mapping, source_root, source_ds,
                             dataset_convert_action, workspace_identifier, network_config,
-                            parent_job_id=job_context.parent_id)
+                            parent_job_id=job_context.parent_id,
+                            source_ds_metadata=source_ds_metadata)
                         if value is not None:
                             entry[key] = value
                     if entry:
@@ -1246,7 +1247,8 @@ def apply_data_source_config(config, job_context, handler_metadata):
                     value = process_mapping_entry(
                         mapping, source_root, source_ds,
                         dataset_convert_action, workspace_identifier, network_config,
-                        parent_job_id=job_context.parent_id)
+                        parent_job_id=job_context.parent_id,
+                        source_ds_metadata=source_ds_metadata)
                     if value is not None:
                         result[key] = value
 
