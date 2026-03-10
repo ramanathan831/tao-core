@@ -1233,26 +1233,38 @@ class CloudStorage:
                         )
 
                 except Exception as file_err:
-                    logger.warning(f"Could not move file {file_path}: {file_err}")
-
-            if moved_files > 0:
-                if job_id:
-                    report_health_beat(job_id, f"Cleaning up source directory after moving {moved_files} files")
-
-                try:
-                    self.fs.rm(full_source, recursive=True)
-                except Exception:
-                    logger.warning("Could not remove source directory after file moves")
-
-                logger.info(f"Successfully moved {moved_files} files using file-by-file approach")
-
-                if job_id:
-                    report_health_beat(
-                        job_id,
-                        f"Completed folder move: {moved_files} files moved to {destination_path}"
+                    logger.error(
+                        "Could not move file %s (will raise after loop if any file failed): %s",
+                        file_path, file_err, exc_info=True
                     )
-            else:
+
+            if moved_files == 0:
                 raise Exception("No files could be moved using any method")
+
+            if moved_files < len(files_only):
+                failed_count = len(files_only) - moved_files
+                msg = (
+                    f"Only {moved_files}/{len(files_only)} files were moved; {failed_count} file(s) failed. "
+                    "Source folder was not removed so no data was lost. Retry may succeed (e.g. after timeout)."
+                )
+                logger.error(msg)
+                raise Exception(msg)
+
+            if job_id:
+                report_health_beat(job_id, f"Cleaning up source directory after moving {moved_files} files")
+
+            try:
+                self.fs.rm(full_source, recursive=True)
+            except Exception:
+                logger.warning("Could not remove source directory after file moves")
+
+            logger.info(f"Successfully moved {moved_files} files using file-by-file approach")
+
+            if job_id:
+                report_health_beat(
+                    job_id,
+                    f"Completed folder move: {moved_files} files moved to {destination_path}"
+                )
         except Exception as e:
             logger.error(f"move_folder error: {e}")
             raise

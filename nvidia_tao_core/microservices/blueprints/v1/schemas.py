@@ -210,6 +210,7 @@ class AllowedDockerEnvVariables(Enum):
     TAO_TELEMETRY_SERVER = "TAO_TELEMETRY_SERVER"
     TAO_CLIENT_TYPE = "TAO_CLIENT_TYPE"  # Client type: container, api, cli, sdk, ui, etc.
     TAO_AUTOML_TRIGGERED = "TAO_AUTOML_TRIGGERED"  # Whether job is triggered by AutoML
+    TAO_LOG_LEVEL = "TAO_LOG_LEVEL"  # Log level passed from brain to train jobs (e.g. INFO, DEBUG)
 
 
 class CloudPullTypesEnum(Enum):

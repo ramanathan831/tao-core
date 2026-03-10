@@ -374,7 +374,7 @@ def update_automl_details_metadata(brain_job_id, handler_id, handler_kind="exper
             automl_interpretable_result["experiments"][exp_id_str]["specs"] = experiment_details.get("specs", {})
 
         # Get the best experiment id from the automl_jobs table
-        best_rec_number, _ = get_automl_best_rec_info(brain_job_id)
+        best_rec_number, _, _ = get_automl_best_rec_info(brain_job_id)
         if best_rec_number and best_rec_number != "-1":
             automl_interpretable_result["best_experiment_id"] = int(best_rec_number)
 
