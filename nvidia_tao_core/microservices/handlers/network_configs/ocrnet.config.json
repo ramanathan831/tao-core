@@ -17,7 +17,9 @@
         ],
         "accepted_ds_intents": [
             "training",
-            "evaluation"
+            "evaluation",
+            "testing",
+            "calibration"
         ],
         "image": "TAO_PYTORCH",
         "spec_backend": "yaml",
@@ -48,6 +50,14 @@
                         },
                         "evaluation": {
                             "path": "test.tar.gz",
+                            "type": "file"
+                        },
+                        "testing": {
+                            "path": "test.tar.gz",
+                            "type": "file"
+                        },
+                        "calibration": {
+                            "path": "train.tar.gz",
                             "type": "file"
                         }
                     }

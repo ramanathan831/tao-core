@@ -55,6 +55,7 @@ from .stateless_handler_utils import (
     get_handler_job_metadata,
     get_job_specs,
     get_automl_brain_info,
+    get_automl_best_rec_info,
     get_automl_controller_info,
     get_dnn_status,
     write_job_metadata,
@@ -974,6 +975,13 @@ def _check_gpu_conditions(field_name, field_value):
             )
 
 
+def is_remote_backend(backend_details):
+    """Check if the backend is a remote scheduler (SLURM or Lepton) from backend_details dict."""
+    if not backend_details or not isinstance(backend_details, dict):
+        return False
+    return backend_details.get('backend_type') in ('slurm', 'lepton')
+
+
 def get_nested_dict_value(data, key_path):
     """Get value from nested dictionary using dot notation key path.
 
@@ -1077,34 +1085,45 @@ def _get_cosmos_rl_num_nodes(spec, gpus_per_node=8):
     return num_nodes
 
 
-def get_num_gpus_from_spec(spec, action, network=None, default=0):
-    """Validate the gpus requested"""
+def get_num_gpus_from_spec(spec, action, network=None, default=0, skip_gpu_conditions_check=False):
+    """Validate the gpus requested.
+
+    Args:
+        skip_gpu_conditions_check: If True, skip per-node GPU validation.
+            Set this for SLURM backends where total GPUs may exceed per-node
+            count because SLURM handles multi-node GPU scheduling itself.
+    """
     if not isinstance(spec, dict):
         return default
 
+    if action == "retrain":
+        action = "train"
+
     gpu_set_values = []
 
-    # Special handling for cosmos-rl to calculate total GPUs correctly
-    if network == "cosmos-rl":
+    # Special handling for cosmos-rl to calculate total GPUs correctly.
+    # Only use training-specific calculation for train/retrain actions;
+    # evaluate/inference use the top-level num_gpus from specs.
+    if network == "cosmos-rl" and action not in ("evaluate", "inference"):
         cosmos_rl_gpus = _get_cosmos_rl_total_gpus(spec)
         if cosmos_rl_gpus is not None and cosmos_rl_gpus > 0:
+            _check_gpu_conditions("num_gpus", cosmos_rl_gpus)
             gpu_set_values.append(cosmos_rl_gpus)
-            # Return early for cosmos-rl since we have the exact calculation
             return cosmos_rl_gpus
 
     # First check for network-specific GPU parameter using gpu_mapper
     if network and network in gpu_mapper:
         gpu_param_path = gpu_mapper[network]
-        if gpu_param_path:  # Only check if there's a non-empty path defined
+        if gpu_param_path:
             network_gpu_value = get_nested_dict_value(spec, gpu_param_path)
             if network_gpu_value is not None and network_gpu_value != 0:
                 if isinstance(network_gpu_value, (int, float)):
-                    # Check GPU conditions for network-specific parameter
-                    _check_gpu_conditions("num_gpus", network_gpu_value)
+                    if not skip_gpu_conditions_check:
+                        _check_gpu_conditions("num_gpus", network_gpu_value)
                     gpu_set_values.append(int(network_gpu_value))
                 elif isinstance(network_gpu_value, list):
-                    # Check GPU conditions for network-specific parameter
-                    _check_gpu_conditions("gpu_ids", network_gpu_value)
+                    if not skip_gpu_conditions_check:
+                        _check_gpu_conditions("gpu_ids", network_gpu_value)
                     gpu_set_values.append(len(set(network_gpu_value)))
 
     # Fall back to original logic for standard GPU parameters
@@ -1114,12 +1133,12 @@ def get_num_gpus_from_spec(spec, action, network=None, default=0):
         if gpu_param_name in spec.keys():
             field_name = gpu_param_name
             field_value = spec[gpu_param_name]
-            if field_value != 0:
+            if field_value != 0 and not skip_gpu_conditions_check:
                 _check_gpu_conditions(field_name, field_value)
         if action in spec and gpu_param_name in spec[action]:
             field_name = gpu_param_name
             field_value = spec[action][gpu_param_name]
-            if field_value != 0:
+            if field_value != 0 and not skip_gpu_conditions_check:
                 _check_gpu_conditions(field_name, field_value)
         if action in spec and "system" in spec[action]:
             gpu_set_values.append(int(spec[action]["system"].get(gpu_param_name, 0)))
@@ -1148,6 +1167,10 @@ def get_num_nodes_from_spec(spec, action, network=None, default=1):
     """
     if not isinstance(spec, dict):
         return default
+
+    if action == "retrain":
+        action = "train"
+
     node_set_values = []
 
     # First check for network-specific node parameter using node_mapper
@@ -1497,6 +1520,8 @@ def latest_model(files, delimiters="_", epoch_number="000", extensions=[".tlt", 
         _, file_extension = os.path.splitext(file)
         if file_extension not in extensions:
             continue
+        if "_latest" in os.path.basename(file):
+            continue
         model_name = file
         for extension in extensions:
             model_name = re.sub(f"{extension}$", "", model_name)
@@ -1810,6 +1835,12 @@ def get_files_from_cloud(handler_metadata, job_id, automl=False, automl_experime
         lookup_job_id = get_automl_experiment_job_id(job_id, automl_experiment_id)
         if not lookup_job_id:
             lookup_job_id = job_id
+    else:
+        # Parent may be an AutoML brain; best model may live in brain or in best experiment folder
+        best_rec_number, _, best_model_results_job_id = get_automl_best_rec_info(job_id)
+        if best_rec_number != "-1":
+            lookup_job_id = best_model_results_job_id
+            action = get_handler_job_metadata(lookup_job_id).get("action") or action
     logger.info("lookup_job_id: %s", lookup_job_id)
 
     # Build results path - for SLURM, use full Lustre path

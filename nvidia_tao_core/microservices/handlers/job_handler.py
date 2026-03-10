@@ -270,7 +270,24 @@ class JobHandler:
         except Exception as e:
             logger.error("Exception thrown in job_run is %s", str(e))
             logger.error(traceback.format_exc())
-            return Code(500, [], "Exception in job_run fn")
+            try:
+                handler_kind = "experiments" if kind == "experiment" else kind + "s"
+                update_job_status(handler_id, job_id, status="Error", kind=handler_kind)
+                from nvidia_tao_core.microservices.utils.stateless_handler_utils import (
+                    write_job_metadata
+                )
+                err_metadata = get_handler_job_metadata(job_id)
+                if err_metadata:
+                    err_metadata["status"] = "Error"
+                    err_metadata.setdefault("job_details", {})[job_id] = {
+                        "detailed_status": {
+                            "message": f"Job creation failed: {e}"
+                        }
+                    }
+                    write_job_metadata(job_id, err_metadata)
+            except Exception as status_err:
+                logger.error("Failed to update job %s status to Error: %s", job_id, status_err)
+            return Code(500, [], f"Job creation failed: {e}")
 
     @staticmethod
     def job_retry(org_name, handler_id, kind, job_id, from_ui=False):
@@ -489,7 +506,7 @@ class JobHandler:
             metric_name = automl_controller_data[0].get("metric")
 
             # Add best experiment id to automl_brain_info
-            best_rec_number, _ = get_automl_best_rec_info(job_id)
+            best_rec_number, _, _ = get_automl_best_rec_info(job_id)
             if best_rec_number and best_rec_number != "-1":
                 # Check if best experiment id is already in the list (added by controller)
                 has_best_exp_id = any(item.get("metric") == "Best experiment id" for item in automl_brain_info)
@@ -1457,7 +1474,11 @@ class JobHandler:
 
         job_metadata = get_handler_job_metadata(job_id)
         if not job_metadata:
-            return Code(404, {"error_desc": "Job not found.", "error_code": 1}, "Job not found.")
+            error_desc = (
+                "Job not found. If you changed config (API URL) or restarted containers, ensure the client "
+                "uses the same API server that created the job and that the server uses the same MongoDB."
+            )
+            return Code(404, {"error_desc": error_desc, "error_code": 1}, "Job not found.")
 
         # Check if this is an AutoML job
         automl_enabled = handler_metadata.get("automl_settings", {}).get("automl_enabled", False)

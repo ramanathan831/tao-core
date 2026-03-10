@@ -291,7 +291,10 @@
         "available_metrics": [
             "mIoU"
         ],
-        "monitoring_metric": "mIoU"
+        "monitoring_metric": "mIoU",
+        "dynamic_metric_patterns": [
+            "^IoU_.*$"
+        ]
     },
     "cloud_upload": {
         "upload_strategy": {

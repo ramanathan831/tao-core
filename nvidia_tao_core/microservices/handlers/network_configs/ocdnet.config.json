@@ -16,7 +16,8 @@
         ],
         "accepted_ds_intents": [
             "training",
-            "evaluation"
+            "evaluation",
+            "calibration"
         ],
         "image": "TAO_PYTORCH",
         "spec_backend": "yaml",

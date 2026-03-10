@@ -204,10 +204,14 @@ def get_all_running_jobs():
             except Exception:
                 pass  # Ignore errors getting workspace metadata
 
+        # AutoML brain jobs store experiment_id instead of handler_id, and may omit kind.
+        resolved_handler_id = job.get('handler_id') or job.get('experiment_id')
+        resolved_kind = job.get('kind') or 'experiment'
+
         job_info = {
             'job_id': job_id,
-            'handler_id': job.get('handler_id'),
-            'kind': job.get('kind', ''),
+            'handler_id': resolved_handler_id,
+            'kind': resolved_kind,
             'status': job.get('status'),
             'user_id': job.get('user_id'),
             'org_name': job.get('org_name'),
@@ -362,13 +366,27 @@ def get_all_running_automl_experiments():
             job_id = job.get('job_id')
             handler_id = job.get('handler_id')
 
-            if not job_id or not handler_id:
+            if not job_id:
                 continue
 
+            # AutoML brain jobs store experiment_id (not handler_id) and may omit kind.
+            # Fall back to reading experiment_id from the raw job document if handler_id is missing.
+            if not handler_id:
+                raw_job = MongoHandler("tao", "jobs").find_one({"id": job_id})
+                if raw_job:
+                    handler_id = raw_job.get("experiment_id") or raw_job.get("handler_id")
+                    if handler_id:
+                        job['handler_id'] = handler_id
+                    if not job.get('kind'):
+                        job['kind'] = raw_job.get("kind", "experiment")
+                if not handler_id:
+                    continue
+
             # Check if this is an AutoML job by looking at handler metadata
+            kind_key = job.get('kind', '') or 'experiment'
             try:
                 handler_metadata = get_handler_metadata(
-                    handler_id, job.get('kind', '') + 's'
+                    handler_id, kind_key + 's'
                 )
                 if (handler_metadata and
                         handler_metadata.get("automl_settings", {}).get("automl_enabled", False)):

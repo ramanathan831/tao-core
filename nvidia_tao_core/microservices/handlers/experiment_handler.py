@@ -281,6 +281,7 @@ class ExperimentHandler:
                     "eval_dataset_uri": request_dict.get("eval_dataset_uri"),
                     "inference_dataset_uri": request_dict.get("inference_dataset_uri"),
                     "calibration_dataset_uri": request_dict.get("calibration_dataset_uri"),
+                    "dataset_format": request_dict.get("dataset_format"),
                     "base_experiment_ids": [],
                     "automl_settings": request_dict.get("automl_settings", {}),
                     "metric": request_dict.get("metric", "kpi"),
@@ -960,7 +961,24 @@ class ExperimentHandler:
         except Exception as e:
             logger.error(f"[RESUME] Exception thrown in resume_experiment_job: job_id={job_id}, error={str(e)}")
             logger.error(f"[RESUME] Traceback: {traceback.format_exc()}")
-            return Code(400, [], "Action cannot be resumed")
+            try:
+                from nvidia_tao_core.microservices.utils.stateless_handler_utils import (
+                    update_job_status as _update_status,
+                    write_job_metadata
+                )
+                _update_status(experiment_id, job_id, status="Error", kind=kind + "s")
+                err_meta = get_handler_job_metadata(job_id)
+                if err_meta:
+                    err_meta["status"] = "Error"
+                    err_meta.setdefault("job_details", {})[job_id] = {
+                        "detailed_status": {
+                            "message": f"Job resume failed: {e}"
+                        }
+                    }
+                    write_job_metadata(job_id, err_meta)
+            except Exception as status_err:
+                logger.error(f"[RESUME] Failed to update job {job_id} status to Error: {status_err}")
+            return Code(400, [], f"Action cannot be resumed: {e}")
 
     @staticmethod
     def automl_details(org_name, experiment_id, job_id):
@@ -1008,7 +1026,7 @@ class ExperimentHandler:
                 automl_interpretable_result["experiments"][exp_id_str]["job_id"] = experiment_details.get("job_id", "")
 
             # Get the best experiment id from the automl_jobs table
-            best_rec_number, _ = get_automl_best_rec_info(job_id)
+            best_rec_number, _, _ = get_automl_best_rec_info(job_id)
             if best_rec_number and best_rec_number != "-1":
                 automl_interpretable_result["best_experiment_id"] = int(best_rec_number)
             return Code(200, automl_interpretable_result, "AutoML results compiled")

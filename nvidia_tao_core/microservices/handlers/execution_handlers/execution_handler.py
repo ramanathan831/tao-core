@@ -34,6 +34,7 @@ from nvidia_tao_core.microservices.utils.stateless_handler_utils import (
     get_automl_controller_info,
     save_dnn_status,
     update_job_message,
+    update_job_status,
     get_job_specs,
     internal_job_status_update
 )
@@ -1292,11 +1293,13 @@ class ExecutionHandler(ABC):
                 handler = self
             else:
                 handler = self.create_handler(cloud_metadata, BACKEND, container_image=microservice_container)
-
             # Handle job-based execution (Slurm or Lepton)
             if handler.backend_type in [Backend.SLURM, Backend.LEPTON]:
+                if docker_env_vars is None:
+                    docker_env_vars = {}
                 docker_env_vars["CLOUD_BASED"] = "False"
-
+                if backend_details is None:
+                    backend_details = {}
                 if handler.backend_type == Backend.LEPTON:
                     self.logger.info(f"Resource shape: {resource_shape}")
                     self.logger.info(f"Dedicated node group: {dedicated_node_group}")
@@ -1374,17 +1377,38 @@ class ExecutionHandler(ABC):
             return None
 
         except Exception as e:
-            self.logger.error(f"Exception in create_microservice_and_send_request: {str(e)}")
+            exc_type = type(e).__name__
+            exc_msg = str(e)
+            self.logger.error(f"Exception in create_microservice_and_send_request: {exc_msg}")
             self.logger.error(traceback.format_exc())
 
-            # Attempt cleanup
+            status_message = (
+                f"Error when creating microservice pod {microservice_pod_id}: "
+                f"{exc_type}: {exc_msg}"
+            )
+            max_msg_len = 2000
+            if len(status_message) > max_msg_len:
+                status_message = status_message[:max_msg_len] + "..."
             try:
+                handler_id = get_handler_id(microservice_pod_id)
+                handler_metadata = get_handler_metadata(microservice_pod_id)
+                handler_kind = get_handler_kind(handler_metadata)
                 internal_job_status_update(
                     microservice_pod_id,
-                    message=f"Error when creating microservice pod {microservice_pod_id}"
+                    message=status_message,
+                    handler_id=handler_id,
+                    kind=handler_kind
                 )
+                update_job_status(handler_id, microservice_pod_id, "Error", kind=handler_kind)
             except Exception as cleanup_error:
                 self.logger.error(f"Error during cleanup: {str(cleanup_error)}")
+                try:
+                    internal_job_status_update(
+                        microservice_pod_id,
+                        message=f"Error when creating microservice pod {microservice_pod_id}"
+                    )
+                except Exception:
+                    pass
 
             return None
 

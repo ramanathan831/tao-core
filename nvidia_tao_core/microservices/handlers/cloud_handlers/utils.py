@@ -380,22 +380,23 @@ def upload_files(local_path, cloud_storage, file_last_modified=None,
         logger.info("Files to upload: %s", [rel_path for rel_path, _ in files_to_upload])
 
     # Process all files to upload
+    # Defer large file removals until after all uploads complete to avoid
+    # breaking symlinks whose targets are removed mid-batch
+    deferred_removals = []
     for idx, (rel_path, file_path) in enumerate(files_to_upload, 1):
         if exit_event and exit_event.is_set() and progress_tracker is None:
             logger.info("Exit event detected during continuous upload, breaking early")
-            return
+            break
         remaining = len(files_to_upload) - idx
         logger.info("Uploading file %d/%d: %s (remaining: %d)", idx, len(files_to_upload), file_path, remaining)
         try:
             send_callbacks = progress_tracker is not None  # Enable callbacks only for batch uploads
             if "graceful_termination_signal" not in file_path:
-                if not file_last_modified:
-                    # Snapshot mode: upload immediately
+                if not file_last_modified or progress_tracker is not None:
                     cloud_storage.upload_file(
                         file_path, file_path, progress_tracker=progress_tracker,
                         send_status_callbacks=send_callbacks)
                 else:
-                    # Continuous monitoring mode: wait before upload
                     time.sleep(10)
                     cloud_storage.upload_file(
                         file_path, file_path, progress_tracker=progress_tracker,
@@ -419,14 +420,11 @@ def upload_files(local_path, cloud_storage, file_last_modified=None,
                     file_last_modified[file_path] = current_mod_time
                     logger.info("Updated modification time for snapshot-mode file: %s", file_path)
 
-        # Remove file after successful upload only if size > 50MB
-        # During continuous monitoring, check retain_patterns to avoid removing files needed later
-        # During final upload (retain_patterns=None), remove all large files
+        # Schedule large files (>50MB) for deferred removal after all uploads
         try:
             if cloud_storage.is_file(file_path):
                 file_size_mb = os.path.getsize(file_path) / (1024 * 1024)
                 if file_size_mb > 50:
-                    # Check if file should be retained during continuous monitoring
                     should_retain = False
                     if retain_patterns:
                         for pattern in retain_patterns:
@@ -442,9 +440,7 @@ def upload_files(local_path, cloud_storage, file_last_modified=None,
                                 logger.warning("Invalid regex pattern '%s', skipping", pattern)
 
                     if not should_retain:
-                        os.remove(file_path)
-                        logger.info("Large file (%.2f MB) successfully uploaded and removed: %s",
-                                    file_size_mb, file_path)
+                        deferred_removals.append((file_path, file_size_mb))
                     else:
                         logger.info(
                             "Large file (%.2f MB) successfully uploaded but retained (matches retain pattern): %s",
@@ -453,6 +449,16 @@ def upload_files(local_path, cloud_storage, file_last_modified=None,
                 else:
                     logger.info("File (%.2f MB) successfully uploaded but retained (under 50MB): %s",
                                 file_size_mb, file_path)
+        except Exception as e:  # pylint: disable=broad-except
+            logger.error("Failed to check file size after upload: {} - Error: {}".format(file_path, str(e)))  # noqa pylint: disable=C0209
+
+    # Remove large files after all uploads complete (prevents breaking symlinks)
+    for file_path, file_size_mb in deferred_removals:
+        try:
+            if os.path.exists(file_path):
+                os.remove(file_path)
+                logger.info("Large file (%.2f MB) successfully uploaded and removed: %s",
+                            file_size_mb, file_path)
         except Exception as e:  # pylint: disable=broad-except
             logger.error("Failed to remove file after upload: {} - Error: {}".format(file_path, str(e)))  # noqa pylint: disable=C0209
 
@@ -804,7 +810,7 @@ def monitor_and_upload(local_path, cloud_storage, exit_event, seek_position=0,
                          retain_patterns=retain_patterns)
 
             seek_position = send_logs_to_server(seek_position)
-            time.sleep(30)  # Adjust the sleep interval as needed
+            exit_event.wait(30)  # Wakes immediately when exit_event is set
 
     except (KeyboardInterrupt, SystemExit, Exception):
         logger.error("traceback: %s", traceback.format_exc())

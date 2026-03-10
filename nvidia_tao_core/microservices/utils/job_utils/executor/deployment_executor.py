@@ -76,7 +76,7 @@ class DeploymentExecutor(KubernetesHandler):
         )
         backend_env = client.V1EnvVar(
             name="BACKEND",
-            value=self.backend,
+            value=self.backend.value,
         )
         image_pull_secret = os.getenv('IMAGEPULLSECRET', default='imagepullsecret')
         tb_container = client.V1Container(

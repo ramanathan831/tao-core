@@ -18,6 +18,7 @@ import json
 import logging
 import os
 import traceback
+from datetime import datetime, timezone
 from dataclasses import dataclass
 from typing import Any, Dict
 
@@ -35,6 +36,7 @@ from nvidia_tao_core.microservices.utils.handler_utils import JobContext
 from nvidia_tao_core.microservices.utils.stateless_handler_utils import (
     update_job_status,
     update_job_metadata,
+    update_job_message,
     get_job_specs
 )
 
@@ -432,8 +434,11 @@ if __name__ == "__main__":
         retain_checkpoints_for_resume = args.retain_checkpoints_for_resume.lower() in ("true", "1")
         timeout_minutes = int(args.timeout_minutes)
 
-        from nvidia_tao_core.microservices.utils.handler_utils import get_num_gpus_from_spec
-        num_gpu = get_num_gpus_from_spec(specs, "train", network=network, default=-1)
+        from nvidia_tao_core.microservices.utils.handler_utils import get_num_gpus_from_spec, is_remote_backend
+        num_gpu = get_num_gpus_from_spec(
+            specs, "train", network=network, default=-1,
+            skip_gpu_conditions_check=is_remote_backend(backend_details)
+        )
         logger.debug(
             f"[AUTOML-START] AutoML brain job {automl_job_id}: num_gpu from spec = {num_gpu}, "
             f"NUM_GPU_PER_NODE={os.getenv('NUM_GPU_PER_NODE', '0')}"
@@ -481,6 +486,13 @@ if __name__ == "__main__":
             override_automl_disabled_params=override_automl_disabled_params,
             decrypted_workspace_metadata=decrypted_workspace_metadata)
 
-    except Exception:
+    except Exception as e:
         logger.error("AutoML start for network %s failed due to exception %s", network, traceback.format_exc())
         update_job_status(handler_id, automl_job_id, status="Error", kind="experiments")
+        error_message = {
+            "date": datetime.now(tz=timezone.utc).strftime("%m/%d/%Y"),
+            "time": datetime.now(tz=timezone.utc).strftime("%H:%M:%S"),
+            "status": "Error",
+            "message": str(e)
+        }
+        update_job_message(handler_id, automl_job_id, "experiments", error_message)

@@ -69,6 +69,7 @@ def find_python_files(root_dir):
     }
     exclude_files = {
         'test_imports.py', 'setup.py', 'conftest.py',
+        'test_airgapped_loader.py',
     }
 
     for path in Path(root_dir).rglob('*.py'):

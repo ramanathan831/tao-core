@@ -213,8 +213,9 @@ class DockerHandler(ExecutionHandler):
             return None
         try:
             container = docker_client.containers.get(container_name)
-            logger.info(f"Found container image {container.image.tags[0]} for {container_name}")
-            return DockerHandler(container.image.tags[0], container=container)
+            image_ref = container.image.tags[0] if container.image.tags else container.image.id
+            logger.info(f"Found container image {image_ref} for {container_name}")
+            return DockerHandler(image_ref, container=container)
         except Exception as e:
             logger.error(traceback.format_exc())
             logger.error(f"Error getting handler for container {container_name}: {e}")

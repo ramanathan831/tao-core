@@ -547,9 +547,10 @@ def process_inference_microservice_auto_deletions():
                     f"Idle time: {job_info.get('idle_time_minutes', 0):.2f} minutes"
                 )
 
-                # Call the actual deletion (has DB access here in workflow)
                 result = InferenceMicroserviceHandler.stop_inference_microservice(
-                    job_id, auto_deletion=True
+                    job_id,
+                    auto_deletion=True,
+                    reason=job_info.get("reason", "unknown"),
                 )
 
                 if result.code == 200:

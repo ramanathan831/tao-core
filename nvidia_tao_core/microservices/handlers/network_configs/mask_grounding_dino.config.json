@@ -223,9 +223,24 @@
     },
     "metrics": {
         "available_metrics": [
-            "bbox_val_mAP50"
+            "[bbox] val_P",
+            "[bbox] val_R",
+            "[bbox] val_mAP@50",
+            "[bbox] val_mAP@50-95",
+            "[bbox] val_mIoU",
+            "[segm] val_P",
+            "[segm] val_R",
+            "[segm] val_mAP@50",
+            "[segm] val_mAP@50-95",
+            "[segm] val_mIoU",
+            "val_mIoU",
+            "val_overall_IoU"
         ],
-        "monitoring_metric": "bbox_val_mAP50"
+        "monitoring_metric": "[bbox] val_mAP@50",
+        "dynamic_metric_patterns": [
+            "^\\[(bbox|segm)\\] (val|test)_(P|R|mAP@50|mAP@50-95|mIoU)$",
+            "^(val|test)_(dataset|mIoU|overall_IoU|mAP50|mAP|T_acc|N_acc)$"
+        ]
     },
     "cloud_upload": {
         "upload_strategy": {
