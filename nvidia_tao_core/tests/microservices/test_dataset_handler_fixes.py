@@ -56,8 +56,8 @@ class TestCalibrationDatasetIntent(unittest.TestCase):
 
 
 class TestVirtualDatasetUseFor(unittest.TestCase):
-    """Bug: _create_virtual_dataset_for_direct_paths computed cloud_file_path
-    instead of use_for, so the virtual dataset had no intent tags."""
+    """Verify _create_virtual_dataset_for_direct_paths populates both use_for
+    intent tags and cloud_file_path from the provided URIs."""
 
     @patch('nvidia_tao_core.microservices.utils.stateless_handler_utils.write_handler_metadata')
     def test_use_for_populated_from_uri_fields(self, mock_write):
@@ -92,10 +92,12 @@ class TestVirtualDatasetUseFor(unittest.TestCase):
         written_metadata = mock_write.call_args[0][1]
         self.assertIn('use_for', written_metadata,
                       "Virtual dataset metadata must contain 'use_for'")
-        self.assertNotIn('cloud_file_path', written_metadata,
-                         "Virtual dataset metadata must NOT contain 'cloud_file_path'")
         self.assertIn('training', written_metadata['use_for'])
         self.assertIn('evaluation', written_metadata['use_for'])
+        self.assertIn('cloud_file_path', written_metadata,
+                      "Virtual dataset metadata must contain 'cloud_file_path'")
+        self.assertEqual(written_metadata['cloud_file_path'], 'train',
+                         "cloud_file_path should be extracted from the primary URI")
 
 
 class TestInferenceDatasetIntentMapping(unittest.TestCase):
