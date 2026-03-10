@@ -276,6 +276,7 @@ class ExperimentHandler:
                     "checkpoint_choose_method": request_dict.get("checkpoint_choose_method", "best_model"),
                     "checkpoint_epoch_number": request_dict.get("checkpoint_epoch_number", {}),
                     "calibration_dataset": None,
+                    "dataset_format": request_dict.get("dataset_format"),
                     # New fields for direct dataset paths
                     "train_dataset_uris": request_dict.get("train_dataset_uris"),
                     "eval_dataset_uri": request_dict.get("eval_dataset_uri"),
