@@ -55,6 +55,7 @@ from .stateless_handler_utils import (
     get_handler_job_metadata,
     get_job_specs,
     get_automl_brain_info,
+    get_automl_best_rec_info,
     get_automl_controller_info,
     get_dnn_status,
     write_job_metadata,
@@ -1834,6 +1835,12 @@ def get_files_from_cloud(handler_metadata, job_id, automl=False, automl_experime
         lookup_job_id = get_automl_experiment_job_id(job_id, automl_experiment_id)
         if not lookup_job_id:
             lookup_job_id = job_id
+    else:
+        # Parent may be an AutoML brain; best model may live in brain or in best experiment folder
+        best_rec_number, _, best_model_results_job_id = get_automl_best_rec_info(job_id)
+        if best_rec_number != "-1":
+            lookup_job_id = best_model_results_job_id
+            action = get_handler_job_metadata(lookup_job_id).get("action") or action
     logger.info("lookup_job_id: %s", lookup_job_id)
 
     # Build results path - for SLURM, use full Lustre path

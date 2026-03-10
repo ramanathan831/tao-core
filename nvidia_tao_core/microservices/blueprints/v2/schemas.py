@@ -106,11 +106,9 @@ class EnumFieldPrefix(fields.Field):
     def _deserialize(self, value, attr, data, **kwargs):
         if value in self.enum._value2member_map_:
             return value
-        # Check for best_ prefixed values
+        # Accept any best_* metric (e.g. best_train_loss, best_None from AutoML)
         if value.startswith('best_'):
-            base_value = value[5:]
-            if base_value in self.enum._value2member_map_:
-                return value
+            return value
 
         # Check against dynamic metric patterns for networks like sparse4d
         if self._validate_dynamic_metric(value):
@@ -217,6 +215,7 @@ class AllowedDockerEnvVariables(Enum):
     TAO_TELEMETRY_SERVER = "TAO_TELEMETRY_SERVER"
     TAO_CLIENT_TYPE = "TAO_CLIENT_TYPE"  # Client type: container, api, cli, sdk, ui, etc.
     TAO_AUTOML_TRIGGERED = "TAO_AUTOML_TRIGGERED"  # Whether job is triggered by AutoML
+    TAO_LOG_LEVEL = "TAO_LOG_LEVEL"  # Log level passed from brain to train jobs (e.g. INFO, DEBUG)
 
     CUDA_OVERRIDE_VERSION = "CUDA_OVERRIDE_VERSION"
 
