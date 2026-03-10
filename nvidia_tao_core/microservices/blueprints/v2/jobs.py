@@ -142,6 +142,7 @@ def _create_virtual_dataset_for_direct_paths(user_id, org_name, request_dict):
         "calibration_dataset_uri": request_dict.get("calibration_dataset_uri"),
         "workspace": request_dict.get("workspace"),
         "cloud_file_path": cloud_file_path,
+        "base_experiment_ids": request_dict.get("base_experiment_ids", []),
     }
 
     write_handler_metadata(dataset_id, metadata, "dataset")

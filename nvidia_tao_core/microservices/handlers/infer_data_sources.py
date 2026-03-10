@@ -668,6 +668,7 @@ def process_mapping_entry(mapping, source_root, source_ds, dataset_convert_actio
     """
     # Handle string mappings that reference dataset metadata fields
     if isinstance(mapping, str):
+        # Use provided metadata if available (e.g. for direct path URIs where source_ds is not a UUID)
         if source_ds_metadata is None:
             source_ds_metadata = get_handler_metadata(source_ds, kind="datasets")
         if mapping == "dataset_format":
