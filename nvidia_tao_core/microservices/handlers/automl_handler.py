@@ -124,6 +124,9 @@ class AutoMLHandler:
         network = get_handler_type(handler_metadata)
         metric = handler_metadata.get("metric", "map")
         automl_settings = handler_metadata.get("automl_settings", {})
+        automl_metric = automl_settings.get("metric")
+        if automl_metric:
+            metric = automl_metric
         automl_algorithm = automl_settings.get("automl_algorithm", "Bayesian")
         # Hyperband-like algorithms need checkpoint retention for resume
         if automl_algorithm.lower() in ("hyperband", "h", "bohb", "asha", "dehb", "hyperband_es", "hes"):
@@ -458,6 +461,9 @@ class AutoMLHandler:
         network = get_handler_type(handler_metadata)
         metric = handler_metadata.get("metric", "map")
         automl_settings = handler_metadata.get("automl_settings", {})
+        automl_metric = automl_settings.get("metric")
+        if automl_metric:
+            metric = automl_metric
         automl_algorithm = automl_settings.get("automl_algorithm", "Bayesian")
         automl_delete_intermediate_ckpt = automl_settings.get("automl_delete_intermediate_ckpt", True)
         automl_hyperparameters = automl_settings.get("automl_hyperparameters", "[]")
