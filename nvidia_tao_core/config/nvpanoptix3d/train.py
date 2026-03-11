@@ -67,8 +67,6 @@ class OptimConfig:
         math_cond="> 0.0",
         display_name="backbone learning rate multiplier",
         description="A multiplier for backbone learning rate.",
-        automl_enabled="TRUE",
-        popular="yes",
     )
     momentum: float = FLOAT_FIELD(
         value=0.9,
@@ -78,18 +76,15 @@ class OptimConfig:
         math_cond="> 0.0",
         display_name="momentum - AdamW",
         description="The momentum for the AdamW optimizer.",
-        automl_enabled="TRUE",
-        popular="yes",
     )
     weight_decay: float = FLOAT_FIELD(
         value=0.05,
+        default_value=0.05,
         valid_min=0.0,
         valid_max=1.0,
         math_cond="> 0.0",
         display_name="weight decay",
         description="The weight decay coefficient.",
-        automl_enabled="TRUE",
-        popular="yes",
     )
     lr_scheduler: str = STR_FIELD(
         value="MultiStep",
@@ -124,12 +119,14 @@ class OptimConfig:
     )
     warmup_factor: float = FLOAT_FIELD(
         value=1.0,
+        default_value=1.0,
         math_cond="> 0.0",
         display_name="warmup factor",
         description="The warmup factor for the learning rate scheduler.",
     )
     warmup_iters: int = INT_FIELD(
         value=0,
+        default_value=0,
         math_cond="> 0",
         display_name="warmup iters",
         description="The number of warmup iterations.",
@@ -237,12 +234,4 @@ class NVPanoptix3DTrainExpConfig(TrainConfig):
         default_value="",
         description="The folder to save the experiment.",
         display_name="results directory"
-    )
-    freeze: Optional[List[str]] = LIST_FIELD(
-        arrList=[],
-        default_value=[],
-        description="""
-        List of layer names to freeze.
-        Example: ["backbone", "transformer.encoder", "input_proj"].""",
-        display_name="freeze"
     )
