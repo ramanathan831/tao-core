@@ -329,7 +329,8 @@
             "^(train|val|test)_(dpq|dpq_th|dpq_st)_(?:-?\\d+(?:\\.\\d+)?|averages)_(?:epoch|step)$",
             "^(train|val|test)_loss(_epoch)?$",
             "^(PRQ|RSQ|RRQ)$",
-            "^(geo|occ|panop)$"
+            "^(geo|occ|panop)$",
+            "^best_.*$"
         ]
     }
   }
