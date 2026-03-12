@@ -892,7 +892,7 @@ def get_cloud_storage_class_object(cloud_data, cloud_string):
 
 def download_from_user_storage(
     cloud_storage=None, job_id="", cloud_data={}, value="", dictionary={}, key="",
-    preserve_source_path=False, reset_value=False, progress_tracker=None
+    preserve_source_path=False, reset_value=False, progress_tracker=None, exclude_filenames=None
 ):
     """Download a file/folder from user storage"""
     try:
@@ -954,7 +954,8 @@ def download_from_user_storage(
             if cloud_file_path.endswith(".tar") or cloud_file_path.endswith(".tar.gz"):
                 _extract_images(destination_path, os.path.dirname(destination_path))
         else:
-            cloud_storage.download_folder(cloud_file_path, destination_path, progress_tracker=progress_tracker)
+            cloud_storage.download_folder(cloud_file_path, destination_path, progress_tracker=progress_tracker,
+                                          exclude_filenames=exclude_filenames)
             for root, _, files in os.walk(destination_path):
                 for file in files:
                     abs_filepath = os.path.join(root, file)
