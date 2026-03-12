@@ -1107,7 +1107,8 @@ def get_num_gpus_from_spec(spec, action, network=None, default=0, skip_gpu_condi
     if network == "cosmos-rl" and action not in ("evaluate", "inference"):
         cosmos_rl_gpus = _get_cosmos_rl_total_gpus(spec)
         if cosmos_rl_gpus is not None and cosmos_rl_gpus > 0:
-            _check_gpu_conditions("num_gpus", cosmos_rl_gpus)
+            if not skip_gpu_conditions_check:
+                _check_gpu_conditions("num_gpus", cosmos_rl_gpus)
             gpu_set_values.append(cosmos_rl_gpus)
             return cosmos_rl_gpus
 
