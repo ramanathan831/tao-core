@@ -1374,7 +1374,7 @@ class Controller:
             self.total_epochs *= self.brain.epoch_multiplier
 
         for result_key in new_results.get(rec_job_id, {}).keys():
-            if result_key in ("epoch", "cur_iter") and new_results[rec_job_id].get(result_key):
+            if result_key in ("epoch", "cur_iter") and new_results[rec_job_id].get(result_key) is not None:
                 current_epoch = new_results[rec_job_id].get(result_key)
                 if result_key == "cur_iter":
                     time_per_key = "time_per_iter"
