@@ -687,7 +687,8 @@ class CloudStorage:
 
     @retry_method
     def download_folder(self, cloud_folder, local_destination,
-                        maintain_src_folder_structure=False, progress_tracker=None, extensions=[]):
+                        maintain_src_folder_structure=False, progress_tracker=None, extensions=[],
+                        exclude_filenames=None):
         """Download a folder from cloud storage to local destination with progress tracking."""
         from nvidia_tao_core.microservices.handlers.cloud_handlers.progress_tracker import ProgressTracker
         from nvidia_tao_core.microservices.handlers.cloud_handlers.progress_tracker_utils import (
@@ -733,7 +734,7 @@ class CloudStorage:
                     self._download_folder_with_progress(
                         file_paths, full_path, local_destination, progress_tracker,
                         maintain_src_folder_structure=True, cloud_folder_normalized=cloud_folder_normalized,
-                        extensions=extensions
+                        extensions=extensions, exclude_filenames=exclude_filenames
                     )
                 else:
                     # Download maintaining the source folder structure (small folders)
@@ -748,7 +749,8 @@ class CloudStorage:
                 os.makedirs(local_destination, exist_ok=True)
                 self._download_folder_with_progress(
                     file_paths, full_path, local_destination, progress_tracker,
-                    maintain_src_folder_structure=False, extensions=extensions
+                    maintain_src_folder_structure=False, extensions=extensions,
+                    exclude_filenames=exclude_filenames
                 )
 
             if create_own_tracker:
@@ -763,11 +765,15 @@ class CloudStorage:
             raise
 
     def _download_folder_with_progress(self, file_paths, full_path, local_destination, progress_tracker,
-                                       maintain_src_folder_structure=False, cloud_folder_normalized="", extensions=[]):
+                                       maintain_src_folder_structure=False, cloud_folder_normalized="", extensions=[],
+                                       exclude_filenames=None):
         """Download folder contents with detailed progress tracking."""
         try:
             for file_path in file_paths:
                 try:
+                    if exclude_filenames and os.path.basename(file_path) in exclude_filenames:
+                        logger.info("Skipping excluded file during folder download: %s", file_path)
+                        continue
                     if maintain_src_folder_structure:
                         # Maintain original folder structure
                         relative_path = file_path[len(self.root + cloud_folder_normalized + '/'):]

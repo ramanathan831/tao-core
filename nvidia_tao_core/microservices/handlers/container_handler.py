@@ -43,7 +43,8 @@ from nvidia_tao_core.microservices.handlers.cloud_handlers.utils import (
     cleanup_cuda_contexts,
     create_tarball,
     upload_tarball_to_cloud,
-    upload_files
+    upload_files,
+    download_from_user_storage
 )
 from nvidia_tao_core.microservices.handlers.cloud_handlers.progress_tracker import ProgressTracker
 import nvidia_tao_core.loggers.logging as status_logging
@@ -155,6 +156,11 @@ def prepare_data_before_job_run(job, docker_env_vars):
     node_rank = os.environ.get('NODE_RANK', 0)
     logger.info(f"Local master task (SLURM_LOCALID=0, NODE_RANK={node_rank}) - performing downloads")
 
+    # Pop companion ONNX folder before counting/downloading so it can be handled separately
+    # with status.json excluded — prevents the parent export job's status.json from being
+    # mistaken as the current job's status (causing false "Done" during download).
+    companion_onnx_folder = specs.pop("_companion_onnx_folder", None)
+
     # Count total files to download before starting
     logger.info("Analyzing spec for download requirements...")
 
@@ -229,11 +235,19 @@ def prepare_data_before_job_run(job, docker_env_vars):
         logger.info("No files to download from main spec")
 
     custom_script = specs.pop("custom_script", None)
-    # Pop internal key added by infer_data_sources for companion folder downloads (e.g. CLIP
-    # large-model exports that produce model.onnx + model.bin).  The folder was already
-    # downloaded as part of the main spec above; we must remove this key so it does not appear
-    # in the YAML spec passed to the CLI tool.
-    specs.pop("_companion_onnx_folder", None)
+
+    # Download companion ONNX folder (e.g. CLIP large-model exports that produce model.onnx +
+    # model.bin). Exclude status.json to prevent the parent export job's status from being
+    # mistaken as the current job's status, which would cause a false "Done" during download.
+    if companion_onnx_folder:
+        logger.info("Downloading companion ONNX folder (excluding status.json): %s", companion_onnx_folder)
+        download_from_user_storage(
+            cloud_data=job.get("cloud_metadata"),
+            value=companion_onnx_folder,
+            job_id=job["job_id"],
+            exclude_filenames=["status.json"],
+        )
+        logger.info("Companion ONNX folder download completed")
 
     # Save spec file with dynamic backend
     network_arch = job["neural_network_name"]
