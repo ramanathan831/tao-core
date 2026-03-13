@@ -752,7 +752,7 @@ class BOHB(AutoMLAlgorithmBase):
             v_min, v_max = get_valid_range(param, self.parent_params, self.custom_ranges)
             if v_max > v_min and value is not None:
                 try:
-                    fval = float(value)
+                    fval = float(value[0]) if isinstance(value, list) else float(value)
                     if v_min > 0 and v_max > 0 and v_max / v_min >= 10 and fval > 0:
                         log_min = np.log10(v_min)
                         log_max = np.log10(v_max)

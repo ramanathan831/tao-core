@@ -336,6 +336,18 @@ class AutoMLAlgorithmBase:
                         (isinstance(parent_param, bool) and parent_param)):
                     self.parent_params[parameter_name] = random_float
 
+            disable_list = parameter_config.get("disable_list", False)
+            if not disable_list:
+                random_float = network_utils.apply_network_specific_param_logic(
+                    network=self.network,
+                    data_type=data_type,
+                    parameter_name=parameter_name,
+                    value=random_float,
+                    v_max=v_max,
+                    default_train_spec=self.default_train_spec,
+                    parent_params=self.parent_params
+                )
+
             return random_float
 
         if data_type in ("int", "integer"):

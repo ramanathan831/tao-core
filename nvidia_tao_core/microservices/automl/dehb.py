@@ -22,6 +22,7 @@ from nvidia_tao_core.microservices.utils.automl_utils import (
     get_valid_options, get_option_weights, fix_input_dimension
 )
 from nvidia_tao_core.microservices.automl.automl_algorithm_base import AutoMLAlgorithmBase
+from nvidia_tao_core.microservices.automl import network_utils
 from nvidia_tao_core.microservices.utils.handler_utils import get_flatten_specs
 from nvidia_tao_core.microservices.utils.stateless_handler_utils import (
     save_job_specs,
@@ -167,7 +168,13 @@ class DEHB(AutoMLAlgorithmBase):
                 if v_max > v_min and value is not None:
                     try:
                         actual = float(value) if not isinstance(value, list) else float(value[0])
-                        normalized = (actual - v_min) / (v_max - v_min)
+                        if (param_type == "float" and v_min > 0 and v_max > 0
+                                and v_max / v_min >= 10 and actual > 0):
+                            log_min = np.log10(v_min)
+                            log_max = np.log10(v_max)
+                            normalized = (np.log10(actual) - log_min) / (log_max - log_min)
+                        else:
+                            normalized = (actual - v_min) / (v_max - v_min)
                         vector.append(np.clip(normalized, 0.0, 1.0))
                     except (TypeError, ValueError):
                         vector.append(0.5)
@@ -234,8 +241,29 @@ class DEHB(AutoMLAlgorithmBase):
 
             if param_type == "float":
                 v_min, v_max = get_valid_range(param, self.parent_params, self.custom_ranges)
-                value = normalized_value * (v_max - v_min) + v_min
+                if v_min > 0 and v_max > 0 and v_max / v_min >= 10:
+                    value = float(10 ** (normalized_value * (np.log10(v_max) - np.log10(v_min)) + np.log10(v_min)))
+                else:
+                    value = normalized_value * (v_max - v_min) + v_min
                 value = clamp_value(value, v_min, v_max)
+
+                parent_param = param.get("parent_param", None)
+                if not (type(parent_param) is float and math.isnan(parent_param)):
+                    if ((isinstance(parent_param, str) and parent_param != "nan" and parent_param == "TRUE") or
+                            (isinstance(parent_param, bool) and parent_param)):
+                        self.parent_params[param_name] = value
+
+                disable_list = param.get("disable_list", False)
+                if not disable_list:
+                    value = network_utils.apply_network_specific_param_logic(
+                        network=self.network,
+                        data_type=param_type,
+                        parameter_name=param_name,
+                        value=value,
+                        v_max=v_max,
+                        default_train_spec=self.default_train_spec,
+                        parent_params=self.parent_params
+                    )
                 specs[param_name] = value
 
             elif param_type in ("int", "integer"):

@@ -198,7 +198,10 @@ class TestDEHBNormalizeVector:
         vector = brain._normalize_config_to_vector(specs)
         assert isinstance(vector, np.ndarray)
         assert len(vector) == len(brain.parameters)
-        expected = (0.0505 - 0.001) / (0.1 - 0.001)
+        # Log-uniform encoding: (log10(0.0505) - log10(0.001)) / (log10(0.1) - log10(0.001))
+        log_min = np.log10(0.001)
+        log_max = np.log10(0.1)
+        expected = (np.log10(0.0505) - log_min) / (log_max - log_min)
         assert abs(vector[0] - expected) < 1e-6
 
     def test_vector_to_config_roundtrip(self):
@@ -206,7 +209,8 @@ class TestDEHBNormalizeVector:
         vector = np.array([0.5])
         config = brain._vector_to_config(vector)
         assert "learning_rate" in config
-        expected_lr = 0.5 * (0.1 - 0.001) + 0.001
+        # Log-uniform decoding: 10^(0.5 * (log10(0.1) - log10(0.001)) + log10(0.001))
+        expected_lr = 10 ** (0.5 * (np.log10(0.1) - np.log10(0.001)) + np.log10(0.001))
         assert abs(config["learning_rate"] - expected_lr) < 1e-6
 
     def test_normalize_clamps_to_bounds(self):
