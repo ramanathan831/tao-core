@@ -56,7 +56,7 @@ BACKBONE_AND_FULL_MODEL_PTM_SUPPORTING_NETWORKS = set([
     "dino", "grounding_dino", "mask_grounding_dino", "classification_pyt"
 ])
 
-AUTOML_DISABLED_NETWORKS = ["mal"]  # These networks can't support AutoML
+AUTOML_DISABLED_NETWORKS = ["mal", "nvpanoptix3d"]  # These networks can't support AutoML
 TENSORBOARD_DISABLED_NETWORKS = [
     'classification_pyt',
 ]  # These networks currently don't produce tfevents logs as they are third party models

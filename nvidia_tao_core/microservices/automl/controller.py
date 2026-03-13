@@ -509,8 +509,9 @@ class Controller:
                     }
                 }
             elif self.best_rec_id >= 0:
-                # Fallback: move to brain folder failed but best experiment is known. Only mark Done
-                # if valid checkpoint files exist in the best experiment folder.
+                # Fallback: find_best_model failed to move (or match) but write_results
+                # identified the best successful experiment. Verify checkpoints exist and
+                # persist the mapping so downstream export/inference can resolve the path.
                 best_rec = next(
                     (r for r in self.recommendations if r.id == self.best_rec_id),
                     None
@@ -526,6 +527,36 @@ class Controller:
                         find_trained_tlt or find_trained_hdf5 or find_trained_pth or find_trained_safetensors
                     )
                 if has_checkpoints:
+                    save_automl_best_rec_info(
+                        self.automl_context.id, best_rec.id, best_rec.job_id,
+                        best_model_results_job_id=best_rec.job_id
+                    )
+                    best_specs = get_job_specs(
+                        best_rec.job_id, automl=True,
+                        automl_experiment_id=str(best_rec.id)
+                    )
+                    save_job_specs(
+                        self.automl_context.id, specs=best_specs,
+                        automl=True, automl_experiment_id="-1"
+                    )
+                    handler_metadata = get_handler_metadata(
+                        self.automl_context.handler_id, "experiments"
+                    )
+                    best_epoch = self.best_epoch_number.get(self.best_rec_id, 0)
+                    handler_metadata["checkpoint_epoch_number"][
+                        f"best_model_{self.automl_context.id}"
+                    ] = best_epoch
+                    handler_metadata["checkpoint_epoch_number"][
+                        f"latest_model_{self.automl_context.id}"
+                    ] = best_epoch
+                    write_handler_metadata(
+                        self.automl_context.handler_id, handler_metadata, "experiments"
+                    )
+                    logger.info(
+                        "Fallback: saved best_rec_info for experiment %s (job %s) "
+                        "with checkpoint_epoch=%s",
+                        best_rec.id, best_rec.job_id, best_epoch
+                    )
                     status = "Done"
                     result_metadata["job_details"][self.automl_context.id] = {
                         "detailed_status": {
@@ -1534,7 +1565,13 @@ class Controller:
 
         logger.info("Finding best recommendation config")
         try:
-            best_mAP = self.min_max(self.recommendations, key=lambda rec: rec.result).result
+            successful_recs = [
+                r for r in self.recommendations if r.status == JobStates.success
+            ]
+            if not successful_recs:
+                logger.warning("No successful experiments found for best model selection")
+                return -1
+            best_mAP = self.min_max(successful_recs, key=lambda rec: rec.result).result
         except Exception as e:
             logger.error("Exception thrown in find_best_model is %s", str(e))
             best_mAP = 0.0
