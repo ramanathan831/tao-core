@@ -714,6 +714,15 @@ class KubernetesHandler(ExecutionHandler):
                     self.logger.info(f"Statefulset {statefulset_name} is ready with {ready_replicas} replicas")
                     stateful_set_ready = True
                 else:
+                    # Detect CrashLoopBackOff / repeated container failures early
+                    if job_id:
+                        is_crashed, crash_reason = self._check_pod_crash_loop(job_id, name_space)
+                        if is_crashed:
+                            raise RuntimeError(
+                                f"Pod for job {job_id} crashed during startup "
+                                f"({crash_reason}). Check pod logs with: "
+                                f"kubectl logs ims-{job_id}-0"
+                            )
                     self.logger.info(
                         f"Statefulset {statefulset_name} pending with "
                         f"{ready_replicas}/{desired_replicas} ready"
@@ -839,20 +848,27 @@ class KubernetesHandler(ExecutionHandler):
                     client.V1ContainerPort(container_port=8080)]
 
             # Configure command
+            # custom_command may arrive as a list ["/bin/bash","-c","<shell>"]
+            # (from Docker-compatible callers) or as a plain string.
+            # Extract the shell string so it can be safely interpolated.
+            if isinstance(custom_command, (list, tuple)):
+                shell_cmd = custom_command[-1] if len(custom_command) > 1 else custom_command[0]
+            else:
+                shell_cmd = custom_command
+
             if statefulset_type == "inference_microservice" and custom_command:
-                # Auto-format inference microservice command with proper initialization
                 container_command = ["/bin/bash", "-c"]
                 inference_microservice_command = f"""
 umask 0 &&
 
 
 echo "Starting Inference Microservice..." &&
-{custom_command}
+{shell_cmd}
 """
                 container_args = [inference_microservice_command]
             elif custom_command:
                 container_command = ["/bin/bash", "-c"]
-                container_args = [custom_command]
+                container_args = [shell_cmd]
             else:
                 container_command = ["/bin/bash", "-c"]
                 container_args = ["flask run --host 0.0.0.0 --port 8000"]
@@ -1010,6 +1026,8 @@ echo "Starting Inference Microservice..." &&
             # Ensure the statefulset is ready, monitoring image pull status
             self.wait_for_statefulset_ready(statefulset_name, name_space, job_id=job_id, image=image)
             return True
+        except RuntimeError:
+            raise
         except Exception as e:
             self.logger.error(f"Exception thrown in create_statefulset is {str(e)}")
             self.logger.error(traceback.format_exc())
@@ -1332,6 +1350,45 @@ echo "Starting Inference Microservice..." &&
             self.logger.error(traceback.format_exc())
             return False
 
+    def _check_pod_crash_loop(self, job_id, namespace):
+        """Check if the IMS pod is in CrashLoopBackOff or has repeatedly failed.
+
+        Uses read_namespaced_pod with the deterministic StatefulSet pod name
+        (ims-{job_id}-0) instead of list_namespaced_pod, because the default
+        service account typically lacks the pods list permission.
+        """
+        terminal_waiting_reasons = (
+            "CrashLoopBackOff", "ErrImagePull", "ImagePullBackOff",
+            "CreateContainerError", "InvalidImageName", "CreateContainerConfigError",
+        )
+        restart_threshold = 2
+        pod_name = f"ims-{job_id}-0"
+        try:
+            pod = client.CoreV1Api().read_namespaced_pod(
+                name=pod_name, namespace=namespace
+            )
+            if not pod.status or not pod.status.container_statuses:
+                return False, None
+            for cs in pod.status.container_statuses:
+                if cs.state and cs.state.waiting:
+                    reason = cs.state.waiting.reason
+                    if reason in terminal_waiting_reasons:
+                        return True, reason
+                if cs.restart_count is not None and cs.restart_count >= restart_threshold:
+                    last_exit = ""
+                    if cs.last_state and cs.last_state.terminated:
+                        last_exit = f", last exit_code={cs.last_state.terminated.exit_code}"
+                    return True, f"restart_count={cs.restart_count}{last_exit}"
+            return False, None
+        except ApiException as e:
+            if e.status == 404:
+                return False, None
+            self.logger.warning(f"Could not check pod crash status for {pod_name}: {e.reason}")
+            return False, None
+        except Exception as e:
+            self.logger.warning(f"Could not check pod crash status for {pod_name}: {e}")
+            return False, None
+
     def wait_for_service(self, job_id, service_name=None):
         """Wait until the specified service is ready or timeout is reached."""
         service_name = service_name or self.get_statefulset_service_name(job_id)
@@ -1375,6 +1432,15 @@ echo "Starting Inference Microservice..." &&
             except Exception as e:
                 # Don't fail the wait if we can't check DNN status
                 self.logger.debug(f"Could not check DNN status for {job_id}: {e}")
+
+            # Detect CrashLoopBackOff / repeated container failures early
+            is_crashed, crash_reason = self._check_pod_crash_loop(job_id, namespace)
+            if is_crashed:
+                self.logger.error(
+                    f"Pod for job {job_id} is in a crash loop ({crash_reason}). "
+                    f"Exiting wait_for_service early."
+                )
+                return "Error"
 
             # Check if service is ready
             if (self.check_service_ready(service_name, namespace) and

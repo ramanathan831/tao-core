@@ -290,7 +290,14 @@ umask 0 &&
                 )
             except RuntimeError as e:
                 error_msg = str(e)
-                # Extract GPU-specific error messages for better user feedback
+                try:
+                    from nvidia_tao_core.microservices.handlers.execution_handlers.execution_handler import (
+                        ExecutionHandler,
+                    )
+                    ExecutionHandler.delete_job_with_handler(job_id, inference_microservice=True)
+                    logger.info("Cleaned up failed IMS resources for job %s", job_id)
+                except Exception as cleanup_err:
+                    logger.warning("Failed to clean up IMS resources for job %s: %s", job_id, cleanup_err)
                 if "GPU" in error_msg or "gpu" in error_msg:
                     logger.error("GPU allocation failed: %s", error_msg)
                     return Code(503, {}, f"Insufficient GPU resources: {error_msg}")
@@ -309,6 +316,14 @@ umask 0 &&
                 service_status = kubernetes_handler.wait_for_service(job_id, service_name=service_id)
                 if service_status != "Running":
                     logger.error("Inference Microservice service failed to become ready. Status: %s", service_status)
+                    try:
+                        from nvidia_tao_core.microservices.handlers.execution_handlers.execution_handler import (
+                            ExecutionHandler,
+                        )
+                        ExecutionHandler.delete_job_with_handler(job_id, inference_microservice=True)
+                        logger.info("Cleaned up failed IMS resources for job %s", job_id)
+                    except Exception as cleanup_err:
+                        logger.warning("Failed to clean up IMS resources for job %s: %s", job_id, cleanup_err)
                     return Code(500, {}, f"Inference Microservice service failed to become ready: {service_status}")
 
             # For Kubernetes services, we typically use cluster IP for internal communication
@@ -379,7 +394,7 @@ umask 0 &&
 
         try:
             from nvidia_tao_core.microservices.handlers.execution_handlers.execution_handler import ExecutionHandler
-            success = ExecutionHandler.delete_job_with_handler(job_id)
+            success = ExecutionHandler.delete_job_with_handler(job_id, inference_microservice=True)
 
             if success:
                 is_failure = reason in (
