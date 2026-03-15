@@ -291,7 +291,9 @@ umask 0 &&
             except RuntimeError as e:
                 error_msg = str(e)
                 try:
-                    from nvidia_tao_core.microservices.handlers.execution_handlers.execution_handler import ExecutionHandler
+                    from nvidia_tao_core.microservices.handlers.execution_handlers.execution_handler import (
+                        ExecutionHandler,
+                    )
                     ExecutionHandler.delete_job_with_handler(job_id, inference_microservice=True)
                     logger.info("Cleaned up failed IMS resources for job %s", job_id)
                 except Exception as cleanup_err:
@@ -315,7 +317,9 @@ umask 0 &&
                 if service_status != "Running":
                     logger.error("Inference Microservice service failed to become ready. Status: %s", service_status)
                     try:
-                        from nvidia_tao_core.microservices.handlers.execution_handlers.execution_handler import ExecutionHandler
+                        from nvidia_tao_core.microservices.handlers.execution_handlers.execution_handler import (
+                            ExecutionHandler,
+                        )
                         ExecutionHandler.delete_job_with_handler(job_id, inference_microservice=True)
                         logger.info("Cleaned up failed IMS resources for job %s", job_id)
                     except Exception as cleanup_err:
