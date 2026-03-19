@@ -1330,6 +1330,28 @@ def apply_data_source_config(config, job_context, handler_metadata):
                     onnx_file_path
                 )
 
+    # For trt_inference, the deploy script requires a *_config.yaml alongside model.engine
+    # (produced during ONNX export).  Only model.engine is in the spec, so the config yaml is
+    # never downloaded.  We reuse _companion_onnx_folder to download the full parent TRT folder
+    # (excluding status.json) before job launch.  The .endswith(".engine") check distinguishes
+    # TRT inference (parent action == gen_trt_engine) from TAO inference (parent is a checkpoint).
+    elif (job_action == "inference" and
+            network_config.get("companion_onnx_bin_download", False)):
+        trt_engine_path = get_nested_config_value(config, "inference.trt_engine")
+        if trt_engine_path and isinstance(trt_engine_path, str) and trt_engine_path.endswith(".engine"):
+            trt_folder_path = os.path.dirname(trt_engine_path)
+            if trt_folder_path:
+                config["_companion_onnx_folder"] = trt_folder_path
+                logger.info(
+                    "Added parent TRT engine folder for companion download: %s", trt_folder_path
+                )
+            else:
+                logger.warning(
+                    "Could not derive parent TRT folder from trt_engine path '%s'; "
+                    "companion artefacts (e.g. *_config.yaml) will not be pre-downloaded.",
+                    trt_engine_path
+                )
+
     return config
 
 
