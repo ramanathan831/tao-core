@@ -570,6 +570,15 @@ class CLIPTrtConfig(TrtConfig):
         description="TensorRT precision: FP32 or FP16.",
         display_name="Data Type",
     )
+    max_batch_size: int = INT_FIELD(
+        value=16,
+        default_value=16,
+        valid_min=1,
+        description="Maximum batch size in the TRT optimization profile. "
+                    "Matches the default inference batch size of 16.",
+        display_name="Maximum batch size",
+        popular="yes",
+    )
 
 
 @dataclass
