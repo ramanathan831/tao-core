@@ -5,7 +5,7 @@ stages:
   - mr-standards
   - static-tests
   - check-jenkins-status
-  # - notebook-testing
+  - notebook-testing
 
 
 include:
@@ -147,83 +147,82 @@ check_jenkins_status:
       - merge_requests
 
 
-# trigger_notebook_testing:
-#   stage: notebook-testing
-#   needs: [static_tests]
-#   script:
-#     - |
-#       BRANCH_NAME=$CI_MERGE_REQUEST_SOURCE_BRANCH_NAME
+trigger_notebook_testing:
+  stage: notebook-testing
+  script:
+    - |
+      BRANCH_NAME=$CI_COMMIT_BRANCH
 
-#       JENKINS_URL="https://prod.blsm.nvidia.com/metropolis-iva-tlt-jenkins"
-#       JENKINS_JOB="notebook-testing-release"
-#       JENKINS_PARAMS="token=$JENKINS_JOB_TOKEN&BRANCH_NAME=$BRANCH_NAME"
+      JENKINS_URL="https://prod.blsm.nvidia.com/metropolis-iva-tlt-jenkins"
+      JENKINS_JOB="notebook-testing-release"
+      JENKINS_PARAMS="token=$JENKINS_JOB_TOKEN&BRANCH_NAME=$BRANCH_NAME"
 
-#       echo "Triggering notebook-testing-release pipeline for branch: $BRANCH_NAME"
+      echo "Triggering notebook-testing-release pipeline for branch: $BRANCH_NAME"
 
-#       # Step 1: Fetch the last build number before triggering a new build
-#       last_build_number=$(curl -s -X POST -u "$JENKINS_USER:$JENKINS_TOKEN" "$JENKINS_URL/job/$JENKINS_JOB/lastBuild/buildNumber")
+      # Step 1: Fetch the last build number before triggering a new build
+      last_build_number=$(curl -s -X POST -u "$JENKINS_USER:$JENKINS_TOKEN" "$JENKINS_URL/job/$JENKINS_JOB/lastBuild/buildNumber")
 
-#       # Step 2: Trigger the new build
-#       curl -s -X POST -u "$JENKINS_USER:$JENKINS_TOKEN" \
-#       "$JENKINS_URL/view/notebook-testing/job/$JENKINS_JOB/buildWithParameters?$JENKINS_PARAMS"
+      # Step 2: Trigger the new build
+      curl -s -X POST -u "$JENKINS_USER:$JENKINS_TOKEN" \
+      "$JENKINS_URL/view/notebook-testing/job/$JENKINS_JOB/buildWithParameters?$JENKINS_PARAMS"
 
-#       # Step 3: Poll until a new build number is detected
-#       while true; do
-#           current_build_number=$(curl -s -X POST -u "$JENKINS_USER:$JENKINS_TOKEN" "$JENKINS_URL/job/$JENKINS_JOB/lastBuild/buildNumber")
+      # Step 3: Poll until a new build number is detected
+      while true; do
+          current_build_number=$(curl -s -X POST -u "$JENKINS_USER:$JENKINS_TOKEN" "$JENKINS_URL/job/$JENKINS_JOB/lastBuild/buildNumber")
 
-#           if [ "$current_build_number" -gt "$last_build_number" ]; then
-#               echo "New build detected: Build Number $current_build_number"
-#               break
-#           fi
+          if [ "$current_build_number" -gt "$last_build_number" ]; then
+              echo "New build detected: Build Number $current_build_number"
+              break
+          fi
 
-#           sleep 1
-#       done
+          sleep 1
+      done
 
-#       build_url="$JENKINS_URL/view/notebook-testing/job/$JENKINS_JOB/${current_build_number}/"
-#       echo "You can view the build details at: $build_url"
+      build_url="$JENKINS_URL/view/notebook-testing/job/$JENKINS_JOB/${current_build_number}/"
+      echo "You can view the build details at: $build_url"
 
-#       # Step 4: Poll Jenkins job status and stream console output
-#       echo "---------- Console Output of the Jenkins job ----------"
-#       start=0
-#       while true; do
-#           response=$(curl -si -w "\n%{size_header},%{size_download}" -u "$JENKINS_USER:$JENKINS_TOKEN" \
-#           "$JENKINS_URL/job/$JENKINS_JOB/${current_build_number}/logText/progressiveText?start=${start}")
+      # Step 4: Poll Jenkins job status and stream console output
+      echo "---------- Console Output of the Jenkins job ----------"
+      start=0
+      while true; do
+          response=$(curl -si -w "\n%{size_header},%{size_download}" -u "$JENKINS_USER:$JENKINS_TOKEN" \
+          "$JENKINS_URL/job/$JENKINS_JOB/${current_build_number}/logText/progressiveText?start=${start}")
 
-#           header_size=$(sed -n '$ s/^\([0-9]*\),.*$/\1/ p' <<< "${response}")
-#           body_size=$(sed -n '$ s/^.*,\([0-9]*\)$/\1/ p' <<< "${response}")
-#           header="${response:0:${header_size}}"
-#           body="$(sed '$d' <<< ${response:${header_size}:${body_size}})"
+          header_size=$(sed -n '$ s/^\([0-9]*\),.*$/\1/ p' <<< "${response}")
+          body_size=$(sed -n '$ s/^.*,\([0-9]*\)$/\1/ p' <<< "${response}")
+          header="${response:0:${header_size}}"
+          body="$(sed '$d' <<< ${response:${header_size}:${body_size}})"
 
-#           start=$(echo "$header" | grep "X-Text-Size" | sed "s/[^0-9]//g")
+          start=$(echo "$header" | grep "X-Text-Size" | sed "s/[^0-9]//g")
 
-#           job_status=$(curl -s -u "$JENKINS_USER:$JENKINS_TOKEN" \
-#           "$JENKINS_URL/job/$JENKINS_JOB/${current_build_number}/api/json?tree=result" | \
-#           jq -r '.result') || true
+          job_status=$(curl -s -u "$JENKINS_USER:$JENKINS_TOKEN" \
+          "$JENKINS_URL/job/$JENKINS_JOB/${current_build_number}/api/json?tree=result" | \
+          jq -r '.result') || true
 
-#           echo "$body"
+          echo "$body"
 
-#           if [ "$job_status" == "SUCCESS" ]; then
-#               echo "-------------- End of the Console Output --------------"
-#               echo "Jenkins job succeeded"
-#               break
-#           elif [ "$job_status" == "UNSTABLE" ]; then
-#               echo "-------------- End of the Console Output --------------"
-#               echo "Jenkins job is UNSTABLE"
-#               break
-#           elif [ "$job_status" == "FAILURE" ]; then
-#               echo "-------------- End of the Console Output --------------"
-#               echo "Jenkins job failed"
-#               exit 1
-#           elif [ "$job_status" == "ABORTED" ]; then
-#               echo "Jenkins job was aborted"
-#               exit 1
-#           else
-#               sleep 10
-#           fi
-#       done
+          if [ "$job_status" == "SUCCESS" ]; then
+              echo "-------------- End of the Console Output --------------"
+              echo "Jenkins job succeeded"
+              break
+          elif [ "$job_status" == "UNSTABLE" ]; then
+              echo "-------------- End of the Console Output --------------"
+              echo "Jenkins job is UNSTABLE"
+              break
+          elif [ "$job_status" == "FAILURE" ]; then
+              echo "-------------- End of the Console Output --------------"
+              echo "Jenkins job failed"
+              exit 1
+          elif [ "$job_status" == "ABORTED" ]; then
+              echo "Jenkins job was aborted"
+              exit 1
+          else
+              sleep 10
+          fi
+      done
 
-#   timeout: 2h
-#   tags: ["trigger-jenkins"]
-#   only:
-#     refs:
-#       - merge_requests
+  timeout: 2h
+  tags: ["trigger-jenkins"]
+  only:
+    refs:
+      - branches
