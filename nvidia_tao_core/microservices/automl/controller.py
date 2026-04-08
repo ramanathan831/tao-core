@@ -186,6 +186,28 @@ class Controller:
         self.cs_instance, _ = create_cs_instance_with_decrypted_metadata(self.decrypted_workspace_metadata)
         self.retain_checkpoints_for_resume = automl_context.retain_checkpoints_for_resume
 
+        # LLM Analyzer (Option 3): optional post-analysis after each batch of experiments
+        self.llm_analyzer = None
+        self.llm_analyzer_narrow_ranges = False
+        try:
+            import os
+            if os.getenv("AUTOML_LLM_ANALYZER_ENABLED", "").lower() in ("true", "1"):
+                from nvidia_tao_core.microservices.automl.llm_analyzer import LLMAnalyzer
+                self.llm_analyzer_narrow_ranges = (
+                    os.getenv("AUTOML_LLM_ANALYZER_NARROW_RANGES", "").lower() in ("true", "1")
+                )
+                self.llm_analyzer = LLMAnalyzer(
+                    analysis_interval=int(os.getenv("AUTOML_LLM_ANALYZER_INTERVAL", "3")),
+                    narrow_ranges=self.llm_analyzer_narrow_ranges,
+                )
+                logger.info(
+                    "LLM Analyzer enabled (interval=%s, narrow_ranges=%s)",
+                    os.getenv("AUTOML_LLM_ANALYZER_INTERVAL", "3"),
+                    self.llm_analyzer_narrow_ranges,
+                )
+        except Exception as e:
+            logger.debug("LLM Analyzer not initialized: %s", e)
+
     def _get_checkpoint_config(self):
         """Get checkpoint config from network config"""
         network_config = get_network_config(self.network)
@@ -277,6 +299,8 @@ class Controller:
                 config["reduction_factor"] = self.automl_algorithm_settings.automl_reduction_factor
                 config["epoch_multiplier"] = self.automl_algorithm_settings.epoch_multiplier
             elif self.automl_algorithm in ("bayesian", "b", "bfbo"):
+                config["max_recommendations"] = self.automl_algorithm_settings.automl_max_recommendations
+            elif self.automl_algorithm in ("llm", "autoresearch", "hybrid"):
                 config["max_recommendations"] = self.automl_algorithm_settings.automl_max_recommendations
             else:
                 raise ValueError(f"AutoML Algorithm {self.automl_algorithm} is not valid")
@@ -853,7 +877,7 @@ class Controller:
                 )
 
                 # Sequential algorithms: check max_recommendations
-                sequential_algos = ("bayesian", "b", "bfbo")
+                sequential_algos = ("bayesian", "b", "bfbo", "llm", "autoresearch", "hybrid")
                 # Parallel algorithms with done() method
                 parallel_algos = ("hyperband", "h", "bohb", "asha", "dehb", "hyperband_es", "hes", "pbt")
 
@@ -922,8 +946,8 @@ class Controller:
         """
         report_health_beat(self.automl_context.id, "Running experiments")
 
-        # Sequential algorithms (Bayesian, BFBO) are limited by max_recommendations
-        sequential_algos = ("bayesian", "b", "bfbo")
+        # Sequential algorithms (Bayesian, BFBO, LLM, Autoresearch, Hybrid) are limited by max_recommendations
+        sequential_algos = ("bayesian", "b", "bfbo", "llm", "autoresearch", "hybrid")
         max_recs = self.automl_algorithm_settings.automl_max_recommendations
         if self.automl_algorithm in sequential_algos and len(self.recommendations) == max_recs:
             return
@@ -1384,9 +1408,10 @@ class Controller:
         global time_per_epoch  # pylint: disable=global-statement
         global time_per_epoch_counter  # pylint: disable=global-statement
         self.total_epochs = 0
-        if self.automl_algorithm in ("bayesian", "b", "bfbo"):
+        if self.automl_algorithm in ("bayesian", "b", "bfbo", "llm", "autoresearch", "hybrid"):
             max_recs = self.automl_algorithm_settings.automl_max_recommendations
-            self.total_epochs = max_recs * self.brain.num_epochs_per_experiment
+            num_epochs = getattr(self.brain, 'num_epochs_per_experiment', 0)
+            self.total_epochs = max_recs * num_epochs if num_epochs else 0
         elif self.automl_algorithm == "pbt":
             # PBT: population_size * max_generations * eval_interval
             population_size = getattr(self.brain, 'population_size', 10)
@@ -1424,7 +1449,7 @@ class Controller:
                 time_per_epoch_counter += 1
                 self.average_time_per_epoch = time_per_epoch / time_per_epoch_counter
 
-                if self.automl_algorithm in ("bayesian", "b", "bfbo"):
+                if self.automl_algorithm in ("bayesian", "b", "bfbo", "llm", "autoresearch", "hybrid"):
                     current_experiment_epoch = get_total_epochs(
                         rec_job_id,
                         os.path.dirname(self.root),
@@ -1556,8 +1581,93 @@ class Controller:
 
         update_automl_stats(self.automl_context.id, result_dict)
 
+        # LLM Analyzer: run periodic analysis if enabled
+        if self.llm_analyzer:
+            completed_count = sum(
+                1 for r in self.recommendations
+                if r.status in (JobStates.success, JobStates.failure)
+            )
+            if self.llm_analyzer.should_analyze(completed_count):
+                try:
+                    brain_params = self.brain.parameters if hasattr(self.brain, 'parameters') else []
+                    experiments = [
+                        {
+                            "config": r.specs if hasattr(r, 'specs') else {},
+                            "metric": r.result,
+                            "status": "success" if r.status == JobStates.success else "failure",
+                        }
+                        for r in self.recommendations
+                        if r.status in (JobStates.success, JobStates.failure)
+                    ]
+                    metric_direction = "maximize" if self.brain.reverse_sort else "minimize"
+                    analysis = self.llm_analyzer.analyze(
+                        experiments=experiments,
+                        parameters=brain_params,
+                        network=self.network,
+                        metric_name=self.metric_key,
+                        metric_direction=metric_direction,
+                        best_metric=result_dict.get(f"best_{self.metric_key}"),
+                        analysis_type="final" if final else "periodic",
+                    )
+                    if analysis:
+                        # Apply range narrowing if enabled and not final analysis
+                        if self.llm_analyzer_narrow_ranges and not final and brain_params:
+                            self._apply_analyzer_range_narrowing(brain_params)
+
+                        update_job_metadata(
+                            self.automl_context.handler_id,
+                            self.automl_context.id,
+                            metadata_key="llm_analysis",
+                            data=self.llm_analyzer.format_for_metadata(),
+                            kind="experiments",
+                        )
+                except Exception as e:
+                    logger.warning("LLM analysis failed: %s", e)
+
         # Update WandB table with current state
         self._update_wandb_table()
+
+    def _apply_analyzer_range_narrowing(self, brain_params):
+        """Apply LLM-suggested range narrowings to the brain's custom_ranges.
+
+        Merges validated narrowings into the brain's custom_ranges dict (in-memory)
+        and persists to MongoDB so they survive brain restarts.
+        """
+        narrowings = self.llm_analyzer.get_validated_range_narrowings(brain_params)
+        if not narrowings:
+            return
+
+        if not hasattr(self.brain, 'custom_ranges'):
+            logger.warning("Brain does not support custom_ranges, skipping range narrowing")
+            return
+
+        existing = self.brain.custom_ranges or {}
+        applied_count = 0
+
+        for param_name, new_bounds in narrowings.items():
+            if param_name not in existing:
+                existing[param_name] = {}
+
+            existing[param_name]["valid_min"] = new_bounds["valid_min"]
+            existing[param_name]["valid_max"] = new_bounds["valid_max"]
+            applied_count += 1
+            logger.info(
+                "Narrowed range for '%s': valid_min=%s, valid_max=%s",
+                param_name, new_bounds["valid_min"], new_bounds["valid_max"],
+            )
+
+        if applied_count > 0:
+            self.brain.custom_ranges = existing
+            from nvidia_tao_core.microservices.utils.stateless_handler_utils import (
+                save_automl_custom_param_ranges,
+            )
+            save_automl_custom_param_ranges(
+                self.automl_context.handler_id, existing
+            )
+            logger.info(
+                "Applied %d LLM-suggested range narrowing(s) and persisted to MongoDB",
+                applied_count,
+            )
 
     def find_best_model(self):
         """Find best model based on metric value chosen and move those artifacts to best_model folder"""

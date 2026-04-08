@@ -292,6 +292,10 @@ class ExperimentHandler:
                     "tags": list({t.lower(): t for t in request_dict.get("tags", [])}.values()),
                     }
 
+        logger.info(
+            "[CREATE-EXPERIMENT] automl_settings from request_dict: keys=%s",
+            list(request_dict.get("automl_settings", {}).keys()),
+        )
         if metadata.get("automl_settings", {}).get("automl_enabled") and mdl_nw in AUTOML_DISABLED_NETWORKS:
             return Code(400, {}, "automl_enabled cannot be True for unsupported network")
         if mdl_nw in TAO_NETWORKS and (not metadata.get("workspace")):

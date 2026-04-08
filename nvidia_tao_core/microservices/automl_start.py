@@ -31,6 +31,9 @@ from nvidia_tao_core.microservices.automl.asha import ASHA
 from nvidia_tao_core.microservices.automl.pbt import PBT
 from nvidia_tao_core.microservices.automl.dehb import DEHB
 from nvidia_tao_core.microservices.automl.hyperband_es import HyperBandES
+from nvidia_tao_core.microservices.automl.llm_brain import LLMBrain
+from nvidia_tao_core.microservices.automl.autoresearch_controller import AutoresearchBrain
+from nvidia_tao_core.microservices.automl.hybrid_controller import HybridBrain
 from nvidia_tao_core.microservices.automl.params import generate_hyperparams_to_search
 from nvidia_tao_core.microservices.utils.handler_utils import JobContext
 from nvidia_tao_core.microservices.utils.stateless_handler_utils import (
@@ -64,6 +67,9 @@ class AlgorithmType:
     PBT = ("pbt",)
     DEHB = ("dehb",)
     HYPERBAND_ES = ("hyperband_es", "hes")
+    LLM = ("llm",)
+    AUTORESEARCH = ("autoresearch",)
+    HYBRID = ("hybrid",)
 
 
 @dataclass
@@ -88,6 +94,12 @@ class AlgorithmParams:
     automl_min_points_in_model: int = 10
     automl_max_trials: int = None  # ASHA: max configs to try (None = unlimited)
     automl_min_top_configs: int = 5  # ASHA: min configs that must reach final rung before stopping
+    llm_api_key: str = ""
+    llm_endpoint: str = ""
+    llm_model: str = ""
+    llm_temperature: float = 0.7
+    llm_max_tokens: int = 4096
+    llm_timeout: int = 120
 
     @classmethod
     def from_dict(cls, params_dict: Dict[str, Any]) -> 'AlgorithmParams':
@@ -110,7 +122,13 @@ class AlgorithmParams:
             automl_top_n_percent=params_dict.get("automl_top_n_percent", 15.0),
             automl_min_points_in_model=params_dict.get("automl_min_points_in_model", 10),
             automl_max_trials=params_dict.get("automl_max_trials", None),
-            automl_min_top_configs=params_dict.get("automl_min_top_configs", 5)
+            automl_min_top_configs=params_dict.get("automl_min_top_configs", 5),
+            llm_api_key=params_dict.get("llm_api_key", ""),
+            llm_endpoint=params_dict.get("llm_endpoint", ""),
+            llm_model=params_dict.get("llm_model", ""),
+            llm_temperature=float(params_dict.get("llm_temperature", 0.7)),
+            llm_max_tokens=int(params_dict.get("llm_max_tokens", 4096)),
+            llm_timeout=int(params_dict.get("llm_timeout", 120)),
         )
 
 
@@ -232,6 +250,50 @@ class BrainFactory:
                 "epoch_multiplier": int(params.epoch_multiplier),
                 "early_stop_threshold": float(params.automl_early_stop_threshold),
                 "min_early_stop_epochs": int(params.automl_min_early_stop_epochs)
+            }
+        elif algo_lower in AlgorithmType.LLM:
+            brain_class = LLMBrain
+            llm_params = {
+                k: v for k, v in (params.__dict__ if hasattr(params, '__dict__') else {}).items()
+                if k.startswith("llm_") and v
+            }
+            kwargs = {
+                "job_context": jc,
+                "root": root,
+                "network": network,
+                "parameters": parameters,
+                "llm_params": llm_params,
+                "metric": metric,
+            }
+        elif algo_lower in AlgorithmType.HYBRID:
+            brain_class = HybridBrain
+            llm_params = {
+                k: v for k, v in (params.__dict__ if hasattr(params, '__dict__') else {}).items()
+                if k.startswith("llm_") and v
+            }
+            kwargs = {
+                "job_context": jc,
+                "root": root,
+                "network": network,
+                "parameters": parameters,
+                "llm_params": llm_params,
+                "metric": metric,
+            }
+        elif algo_lower in AlgorithmType.AUTORESEARCH:
+            brain_class = AutoresearchBrain
+            llm_params = {
+                k: v for k, v in (params.__dict__ if hasattr(params, '__dict__') else {}).items()
+                if k.startswith("llm_") and v
+            }
+            kwargs = {
+                "job_context": jc,
+                "root": root,
+                "network": network,
+                "parameters": parameters,
+                "llm_params": llm_params,
+                "metric": metric,
+                "max_experiments": int(getattr(params, 'automl_max_recommendations', 50)),
+                "research_program": getattr(params, 'research_program', None),
             }
         else:
             raise ValueError(f"AutoML Algorithm {algorithm} is not valid")

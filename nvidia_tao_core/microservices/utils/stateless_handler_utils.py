@@ -127,8 +127,14 @@ def validate_automl_settings(automl_settings):
             if not (1.0 <= perturbation_factor <= 10.0):
                 return "automl_perturbation_factor must be between 1.0 and 10.0"
 
+        # LLM-based algorithms: LLM, Autoresearch
+        elif algorithm in ("llm", "autoresearch", "hybrid"):
+            max_recommendations = algo_params.get("automl_max_recommendations", 20)
+            if max_recommendations <= 0:
+                return "automl_max_recommendations must be greater than 0"
+
         else:
-            return "automl_algorithm must be one of: bayesian, hyperband, bohb, bfbo, asha, pbt, dehb, hyperband_es"
+            return "automl_algorithm must be one of: bayesian, hyperband, bohb, bfbo, asha, pbt, dehb, hyperband_es, llm, autoresearch, hybrid"
     return None
 
 

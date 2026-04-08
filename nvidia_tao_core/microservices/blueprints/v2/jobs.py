@@ -226,6 +226,15 @@ def job_create(org_name):
         schema_dict = schema.dump(schema.load(metadata))
         return make_response(jsonify(schema_dict), 400)
     kind = request_dict.get('kind')  # Already validated by schema deserialization and serialization
+    logger.info(
+        "[V2-JOBS] After schema validation: docker_env_vars present=%s, keys=%s",
+        "docker_env_vars" in request_dict,
+        list(request_dict.get("docker_env_vars", {}).keys()),
+    )
+    logger.info(
+        "[V2-JOBS] Raw request docker_env_vars keys=%s",
+        list(request_data.get("docker_env_vars", {}).keys()) if isinstance(request_data, dict) else "N/A",
+    )
     user_id = authentication.get_user_id(request.headers.get('Authorization', ''), org_name)
     dataset_id = None
     if kind == 'dataset':

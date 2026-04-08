@@ -21,5 +21,11 @@ from nvidia_tao_core.microservices.automl.asha import ASHA
 from nvidia_tao_core.microservices.automl.pbt import PBT
 from nvidia_tao_core.microservices.automl.dehb import DEHB
 from nvidia_tao_core.microservices.automl.hyperband_es import HyperBandES
+from nvidia_tao_core.microservices.automl.llm_brain import LLMBrain
+from nvidia_tao_core.microservices.automl.autoresearch_controller import AutoresearchBrain
+from nvidia_tao_core.microservices.automl.hybrid_controller import HybridBrain
 
-__all__ = ['Bayesian', 'HyperBand', 'BOHB', 'BFBO', 'ASHA', 'PBT', 'DEHB', 'HyperBandES']
+__all__ = [
+    'Bayesian', 'HyperBand', 'BOHB', 'BFBO', 'ASHA', 'PBT', 'DEHB', 'HyperBandES',
+    'LLMBrain', 'AutoresearchBrain', 'HybridBrain',
+]

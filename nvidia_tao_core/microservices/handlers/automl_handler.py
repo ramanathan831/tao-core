@@ -206,7 +206,15 @@ class AutoMLHandler:
         # SSH keys are mounted at /root/.ssh in the brain container
         docker_env_vars["SSH_KEY_PATH"] = "/root/.ssh/id_ed25519"
 
-        docker_env_vars.update(handler_metadata.get("docker_env_vars", {}))
+        handler_docker_env = handler_metadata.get("docker_env_vars", {})
+        logger.info(
+            f"[AUTOML-START] handler_metadata docker_env_vars keys: {list(handler_docker_env.keys())}, "
+            f"non-empty values: {[k for k, v in handler_docker_env.items() if v]}"
+        )
+        docker_env_vars.update(handler_docker_env)
+        logger.info(
+            f"[AUTOML-START] Final docker_env_vars keys for brain: {list(docker_env_vars.keys())}"
+        )
         logger.debug(
             f"[AUTOML-START] Creating brain job {job_id}: "
             f"Setting NUM_GPU_PER_NODE={cluster_num_gpus} in brain container env (no actual GPUs assigned)"

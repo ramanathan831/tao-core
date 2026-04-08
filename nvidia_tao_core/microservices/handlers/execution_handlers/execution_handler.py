@@ -1413,14 +1413,8 @@ class ExecutionHandler(ABC):
             return None
 
     @staticmethod
-    def delete_job_with_handler(job_name, inference_microservice=False):
-        """Delete a job using the appropriate handler
-
-        Args:
-            job_name: Job/microservice identifier
-            inference_microservice: If True, deletes IMS StatefulSet + service
-                instead of a regular K8s Job
-        """
+    def delete_job_with_handler(job_name):
+        """Delete a job using the appropriate handler"""
         try:
             handler = ExecutionHandler.create_handler(backend=BACKEND, job_id=job_name)
             if not handler:
@@ -1429,17 +1423,8 @@ class ExecutionHandler(ABC):
             if handler.backend_type == Backend.LOCAL_K8S:
                 from .kubernetes_handler import KubernetesHandler
                 k8s_handler = KubernetesHandler()
-                if inference_microservice:
-                    k8s_handler.delete_statefulset(
-                        job_name, use_ngc=False,
-                        resource_type="inference_microservice"
-                    )
-                    k8s_handler.delete_service(
-                        service_name=f"ims-svc-{job_name}"
-                    )
-                else:
-                    k8s_handler.delete_service(job_id=job_name, service_type="flask")
-                    k8s_handler.delete_job(job_name)
+                k8s_handler.delete_service(job_id=job_name, service_type="flask")
+                k8s_handler.delete_job(job_name)
             else:
                 handler.delete(job_name)
             return True

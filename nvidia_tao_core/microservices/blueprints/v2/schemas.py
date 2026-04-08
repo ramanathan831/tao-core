@@ -186,6 +186,15 @@ class AllowedDockerEnvVariables(Enum):
     WANDB_PROJECT = "WANDB_PROJECT"
     WANDB_INSECURE_LOGGING = "WANDB_INSECURE_LOGGING"
 
+    AUTOML_LLM_API_KEY = "AUTOML_LLM_API_KEY"
+    AUTOML_LLM_MODEL = "AUTOML_LLM_MODEL"
+    AUTOML_LLM_ENDPOINT = "AUTOML_LLM_ENDPOINT"
+    AUTOML_LLM_TEMPERATURE = "AUTOML_LLM_TEMPERATURE"
+    AUTOML_LLM_MAX_TOKENS = "AUTOML_LLM_MAX_TOKENS"
+    AUTOML_LLM_ANALYZER_ENABLED = "AUTOML_LLM_ANALYZER_ENABLED"
+    AUTOML_LLM_ANALYZER_INTERVAL = "AUTOML_LLM_ANALYZER_INTERVAL"
+    AUTOML_LLM_ANALYZER_NARROW_RANGES = "AUTOML_LLM_ANALYZER_NARROW_RANGES"
+
     CLEARML_WEB_HOST = "CLEARML_WEB_HOST"
     CLEARML_API_HOST = "CLEARML_API_HOST"
     CLEARML_FILES_HOST = "CLEARML_FILES_HOST"
@@ -269,6 +278,9 @@ class AutoMLAlgorithm(Enum):
     pbt = "pbt"
     dehb = "dehb"
     hyperband_es = "hyperband_es"
+    llm = "llm"
+    autoresearch = "autoresearch"
+    hybrid = "hybrid"
 
 
 class SourceType(Enum):
@@ -1423,6 +1435,10 @@ class AutoML(Schema):
             schema = AutoMLHyperBandESParams()
         elif algo_str == 'pbt':
             schema = AutoMLPBTParams()
+        elif algo_str in ('llm', 'autoresearch', 'hybrid'):
+            # LLM-based algorithms accept flexible params (LLM endpoint, model, etc.)
+            # Validation is handled internally by the LLM client
+            return
         else:
             raise ValidationError(f'Unknown automl_algorithm: {algo_str}')
 

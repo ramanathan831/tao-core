@@ -98,7 +98,7 @@ def get_valid_range(parameter_config, parent_params, custom_ranges=None):
     if math.isinf(v_min):
         v_min = default_value
     if math.isinf(v_max):
-        v_max = default_value
+        v_max = max(default_value * 10, 1.0) if default_value > 0 else 1.0
 
     # Apply custom ranges if provided
     if custom_ranges and parameter_name in custom_ranges:
