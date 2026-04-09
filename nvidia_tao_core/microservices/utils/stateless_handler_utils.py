@@ -134,7 +134,10 @@ def validate_automl_settings(automl_settings):
                 return "automl_max_recommendations must be greater than 0"
 
         else:
-            return "automl_algorithm must be one of: bayesian, hyperband, bohb, bfbo, asha, pbt, dehb, hyperband_es, llm, autoresearch, hybrid"
+            return (
+                "automl_algorithm must be one of: bayesian, hyperband, bohb, "
+                "bfbo, asha, pbt, dehb, hyperband_es, llm, autoresearch, hybrid"
+            )
     return None
 
 

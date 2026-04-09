@@ -190,7 +190,6 @@ class Controller:
         self.llm_analyzer = None
         self.llm_analyzer_narrow_ranges = False
         try:
-            import os
             if os.getenv("AUTOML_LLM_ANALYZER_ENABLED", "").lower() in ("true", "1"):
                 from nvidia_tao_core.microservices.automl.llm_analyzer import LLMAnalyzer
                 self.llm_analyzer_narrow_ranges = (
