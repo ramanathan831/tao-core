@@ -65,6 +65,22 @@ class LLMBrain(AutoMLAlgorithmBase):
             job_context, os.path.join(self.handler_root, "specs")
         )
 
+    def _parameters_with_custom_ranges(self):
+        """Return a copy of self.parameters with custom range overrides applied."""
+        if not self.custom_ranges:
+            return self.parameters
+
+        from copy import deepcopy
+        params = deepcopy(self.parameters)
+        for p in params:
+            name = p["parameter"]
+            if name in self.custom_ranges:
+                custom = self.custom_ranges[name]
+                for key in ("valid_min", "valid_max", "valid_options"):
+                    if custom.get(key) is not None:
+                        p[key] = custom[key]
+        return params
+
     def generate_recommendations(self, history):
         """Generate hyperparameter recommendations using an LLM."""
         get_flatten_specs(self.default_train_spec, self.default_train_spec_flattened)
@@ -79,7 +95,7 @@ class LLMBrain(AutoMLAlgorithmBase):
         metric_direction = "minimize" if not self.reverse_sort else "maximize"
 
         messages = build_recommendation_with_reasoning_prompt(
-            parameters=self.parameters,
+            parameters=self._parameters_with_custom_ranges(),
             history=self.experiment_history,
             best_config=self.best_config,
             best_metric=self.best_metric,
@@ -147,13 +163,23 @@ class LLMBrain(AutoMLAlgorithmBase):
 
         return None
 
-    def _validate_config(self, config: Dict[str, Any]) -> Dict[str, Any]:
-        """Validate LLM-proposed values -- trust the LLM's exact values, only check types.
+    def _get_effective_bounds(self, param_dict):
+        """Get effective min/max bounds considering custom range overrides."""
+        name = param_dict["parameter"]
+        v_min = param_dict.get("valid_min")
+        v_max = param_dict.get("valid_max")
 
-        Unlike traditional algorithms that search within a range, LLMBrain proposes
-        specific values with reasoning. We validate types and enforce hard schema
-        constraints (non-negative, valid enum) but do NOT clamp to narrow ranges.
-        """
+        if self.custom_ranges and name in self.custom_ranges:
+            custom = self.custom_ranges[name]
+            if custom.get("valid_min") is not None:
+                v_min = custom["valid_min"]
+            if custom.get("valid_max") is not None:
+                v_max = custom["valid_max"]
+
+        return v_min, v_max
+
+    def _validate_config(self, config: Dict[str, Any]) -> Dict[str, Any]:
+        """Validate and clamp LLM-proposed values against schema and custom ranges."""
         validated = {}
         for param_dict in self.parameters:
             name = param_dict["parameter"]
@@ -163,28 +189,43 @@ class LLMBrain(AutoMLAlgorithmBase):
 
             value = config[name]
             dtype = param_dict.get("value_type", "")
+            v_min, v_max = self._get_effective_bounds(param_dict)
 
             if dtype == "float":
                 try:
                     value = float(value)
-                    hard_min = param_dict.get("valid_min")
-                    if hard_min not in (None, '', "", "inf", "-inf"):
-                        hard_min = float(hard_min)
+                    if v_min not in (None, '', "", "inf", "-inf"):
+                        hard_min = float(v_min)
                         if not np.isinf(hard_min) and value < hard_min:
                             logger.warning(
-                                "LLM proposed %s=%s below hard min %s, using min",
+                                "LLM proposed %s=%s below min %s, clamping",
                                 name, value, hard_min,
                             )
                             value = hard_min
+                    if v_max not in (None, '', "", "inf", "-inf"):
+                        hard_max = float(v_max)
+                        if not np.isinf(hard_max) and value > hard_max:
+                            logger.warning(
+                                "LLM proposed %s=%s above max %s, clamping",
+                                name, value, hard_max,
+                            )
+                            value = hard_max
                 except (ValueError, TypeError):
                     value = self.generate_automl_param_rec_value(param_dict)
 
             elif dtype in ("int", "integer"):
                 try:
                     value = int(round(float(value)))
-                    hard_min = param_dict.get("valid_min")
-                    if hard_min not in (None, '', ""):
-                        value = max(int(hard_min), value)
+                    if v_min not in (None, '', ""):
+                        value = max(int(v_min), value)
+                    if v_max not in (None, '', "", "inf"):
+                        hard_max = int(v_max)
+                        if value > hard_max:
+                            logger.warning(
+                                "LLM proposed %s=%s above max %s, clamping",
+                                name, value, hard_max,
+                            )
+                            value = hard_max
                 except (ValueError, TypeError):
                     value = self.generate_automl_param_rec_value(param_dict)
 

@@ -41,7 +41,9 @@ from nvidia_tao_core.microservices.automl.prompts.autoresearch_prompts import (
 from nvidia_tao_core.microservices.utils.stateless_handler_utils import (
     save_automl_brain_info,
     get_automl_brain_info,
+    get_automl_custom_param_ranges,
 )
+from nvidia_tao_core.microservices.utils.automl_utils import get_valid_options
 
 logger = logging.getLogger(__name__)
 
@@ -80,6 +82,14 @@ class AutoresearchBrain:
         self.metric = metric
         self.max_experiments = max_experiments
         self.research_program = research_program
+
+        experiment_id = getattr(job_context, 'experiment_id', None) or getattr(job_context, 'id', None)
+        self.custom_ranges = get_automl_custom_param_ranges(experiment_id) if experiment_id else {}
+        if self.custom_ranges:
+            logger.info(
+                "Loaded %d custom parameter range(s) for autoresearch experiment %s",
+                len(self.custom_ranges), experiment_id,
+            )
 
         # LLM client shared across all components
         self.llm_client = LLMClient(params=llm_params)
@@ -180,6 +190,10 @@ class AutoresearchBrain:
                 )
             candidate["modifications"] = filtered
 
+        # Validate and clamp values against schema/custom ranges
+        for candidate in candidates:
+            candidate["modifications"] = self._validate_and_clamp(candidate["modifications"])
+
         # Remove candidates that have no valid modifications after filtering
         candidates = [c for c in candidates if c.get("modifications")]
         if not candidates:
@@ -275,6 +289,94 @@ class AutoresearchBrain:
 
         return entry
 
+    def _parameters_with_custom_ranges(self):
+        """Return a copy of self.parameters with custom range overrides applied."""
+        if not self.custom_ranges:
+            return self.parameters
+
+        from copy import deepcopy
+        params = deepcopy(self.parameters)
+        for p in params:
+            name = p["parameter"]
+            if name in self.custom_ranges:
+                custom = self.custom_ranges[name]
+                for key in ("valid_min", "valid_max", "valid_options"):
+                    if custom.get(key) is not None:
+                        p[key] = custom[key]
+        return params
+
+    def _get_effective_bounds(self, param_dict):
+        """Get effective min/max bounds considering custom range overrides."""
+        name = param_dict["parameter"]
+        v_min = param_dict.get("valid_min")
+        v_max = param_dict.get("valid_max")
+
+        if self.custom_ranges and name in self.custom_ranges:
+            custom = self.custom_ranges[name]
+            if custom.get("valid_min") is not None:
+                v_min = custom["valid_min"]
+            if custom.get("valid_max") is not None:
+                v_max = custom["valid_max"]
+        return v_min, v_max
+
+    def _validate_and_clamp(self, modifications: Dict[str, Any]) -> Dict[str, Any]:
+        """Validate and clamp LLM-proposed values against schema and custom ranges."""
+        import numpy as np
+
+        param_lookup = {p["parameter"]: p for p in self.parameters}
+        validated = {}
+
+        for name, value in modifications.items():
+            param_dict = param_lookup.get(name)
+            if param_dict is None:
+                continue
+
+            dtype = param_dict.get("value_type", "")
+            v_min, v_max = self._get_effective_bounds(param_dict)
+
+            if dtype == "float":
+                try:
+                    value = float(value)
+                    if v_min not in (None, '', "", "inf", "-inf"):
+                        hard_min = float(v_min)
+                        if not np.isinf(hard_min) and value < hard_min:
+                            logger.warning("Autoresearch proposed %s=%s below min %s, clamping", name, value, hard_min)
+                            value = hard_min
+                    if v_max not in (None, '', "", "inf", "-inf"):
+                        hard_max = float(v_max)
+                        if not np.isinf(hard_max) and value > hard_max:
+                            logger.warning("Autoresearch proposed %s=%s above max %s, clamping", name, value, hard_max)
+                            value = hard_max
+                except (ValueError, TypeError):
+                    continue
+
+            elif dtype in ("int", "integer"):
+                try:
+                    value = int(round(float(value)))
+                    if v_min not in (None, '', ""):
+                        value = max(int(v_min), value)
+                    if v_max not in (None, '', "", "inf"):
+                        hard_max = int(v_max)
+                        if value > hard_max:
+                            logger.warning("Autoresearch proposed %s=%s above max %s, clamping", name, value, hard_max)
+                            value = hard_max
+                except (ValueError, TypeError):
+                    continue
+
+            elif dtype in ("categorical", "ordered"):
+                valid_options = get_valid_options(param_dict, self.custom_ranges)
+                if valid_options and value not in valid_options:
+                    logger.warning("Autoresearch proposed %s=%s not in valid options %s, dropping", name, value, valid_options)
+                    continue
+
+            elif dtype == "bool":
+                if not isinstance(value, bool):
+                    value = str(value).lower() in ("true", "1", "yes")
+
+            validated[name] = value
+
+        return validated
+
     def _propose_modification(self) -> Optional[Dict[str, Any]]:
         """Use LLM to propose the next spec modification."""
         messages = build_autoresearch_prompt(
@@ -286,7 +388,7 @@ class AutoresearchBrain:
             metric_direction=self.tracker.metric_direction,
             research_program=self.research_program,
             external_knowledge=self.external_knowledge,
-            parameters=self.parameters,
+            parameters=self._parameters_with_custom_ranges(),
         )
 
         response = self.llm_client.chat(messages, json_mode=True, temperature=0.7)
@@ -362,7 +464,7 @@ class AutoresearchBrain:
     def _get_schema_summary(self) -> str:
         """Generate a brief schema summary for verification prompts."""
         lines = []
-        for p in self.parameters[:20]:
+        for p in self._parameters_with_custom_ranges()[:20]:
             name = p.get("parameter", "")
             dtype = p.get("value_type", "")
             v_min = p.get("valid_min", "")
