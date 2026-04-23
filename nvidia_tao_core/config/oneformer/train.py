@@ -265,6 +265,16 @@ class OneFormerTrainExpConfig(TrainConfig):
         display_name="validation interval",
         description="Number of epochs to validate.",
     )
+    val_check_interval: float = FLOAT_FIELD(
+        value=1.0,
+        math_cond="> 0.0",
+        display_name="val check interval",
+        description=(
+            "How often to run validation within a training epoch. "
+            "A float in (0.0, 1.0] means a fraction of the epoch (e.g. 0.1 = every 10%). "
+            "Overrides validation_interval when set to a value < 1.0."
+        ),
+    )
     pretrained_backbone: Optional[str] = STR_FIELD(
         value=None,
         default_type=None,
@@ -278,5 +288,15 @@ class OneFormerTrainExpConfig(TrainConfig):
     checkpoint_interval: int = INT_FIELD(
         value=1,
         display_name="checkpoint interval",
-        description="Number of epochs to checkpoint.",
+        description="Number of epochs (or steps when checkpoint_interval_unit='step') between checkpoints.",
+    )
+    checkpoint_interval_unit: str = STR_FIELD(
+        value="epoch",
+        display_name="checkpoint interval unit",
+        description=(
+            "Unit for checkpoint_interval. "
+            "'epoch' saves every N epochs (default). "
+            "'step' saves every N training steps, useful for sub-epoch checkpointing "
+            "(e.g. checkpoint_interval=448 with unit='step' saves every ~0.1 epoch when epoch=4480 steps)."
+        ),
     )
