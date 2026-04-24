@@ -25,7 +25,7 @@ TaoConfig.init([
             connection: 'git-lab-master'
         ],
         ARTIFACTORY: [
-            url: 'https://urm.nvidia.com/artifactory/',
+            url: 'https://artifactory.nvidia.com/artifactory/',
             pypiRepo: 'sw-tao-pypi-local'
         ]
     ],
