@@ -365,6 +365,183 @@ class VideoCotConfig:
     )
 
 
+# =============================================================================
+# Image Grounding / Referring Data Engine Configs (image_gd, image_re)
+# =============================================================================
+
+
+# Alias for readability in image_gd / image_re configs. Reuses the same
+# {backend, gemini, openai} layout as video_cot for consistency.
+LLMBackendConfig = VideoCotLLMConfig
+
+
+@dataclass
+class ImageGDWorkflowConfig:
+    """Pipeline execution parameters for image_gd (grounding) pipeline."""
+
+    steps: List[str] = LIST_FIELD(
+        arrList=["0", "1"],
+        default_values=["0", "1"],
+        description="Pipeline steps to execute (0=expression extraction, 1=phrase grounding)",
+    )
+    max_workers: int = INT_FIELD(
+        value=4,
+        default_value=4,
+        valid_min=1,
+        description="Maximum concurrent workers for per-sample API calls",
+    )
+    force_reprocess: bool = BOOL_FIELD(
+        value=False,
+        default_value=False,
+        description="Ignore cached outputs and reprocess from scratch",
+    )
+    long_video_threshold_sec: int = INT_FIELD(
+        value=60,
+        default_value=60,
+        description="Unused by image pipelines; retained for LLMClient compatibility",
+    )
+    long_video_sample_fps: float = FLOAT_FIELD(
+        value=0.5,
+        default_value=0.5,
+        description="Unused by image pipelines; retained for LLMClient compatibility",
+    )
+    long_video_max_frames: int = INT_FIELD(
+        value=60,
+        default_value=60,
+        description="Unused by image pipelines; retained for LLMClient compatibility",
+    )
+
+
+@dataclass
+class ImageGDDataConfig:
+    """Input data specification for image_gd pipeline.
+
+    Input JSONL should have one JSON object per line with at least
+    ``image_path`` and ``caption`` fields. ``width``, ``height``, and
+    ``image_id`` are optional and auto-filled when missing.
+    """
+
+    input_jsonl: str = STR_FIELD(
+        value="",
+        default_value="",
+        description="Path to input JSONL with image_path and caption fields",
+    )
+    image_root: str = STR_FIELD(
+        value="",
+        default_value="",
+        description="Optional prefix for resolving relative image_path values",
+    )
+
+
+@dataclass
+class ImageGDConfig:
+    """Image grounding-data-engine configuration."""
+
+    vlm: LLMBackendConfig = DATACLASS_FIELD(
+        LLMBackendConfig(),
+        description="VLM backend configuration for image-based inference",
+    )
+    workflow: ImageGDWorkflowConfig = DATACLASS_FIELD(
+        ImageGDWorkflowConfig(),
+        description="Pipeline workflow parameters",
+    )
+    data: ImageGDDataConfig = DATACLASS_FIELD(
+        ImageGDDataConfig(),
+        description="Input data configuration",
+    )
+
+
+@dataclass
+class ImageREWorkflowConfig:
+    """Pipeline execution parameters for image_re (referring) pipeline."""
+
+    steps: List[str] = LIST_FIELD(
+        arrList=["0", "1", "2", "3"],
+        default_values=["0", "1", "2", "3"],
+        description=(
+            "Pipeline steps to execute "
+            "(0=region_expr, 1=image_caption, 2=grounding_expr, 3=double_check)"
+        ),
+    )
+    max_workers: int = INT_FIELD(
+        value=4,
+        default_value=4,
+        valid_min=1,
+        description="Maximum concurrent workers for per-image API calls within each step",
+    )
+    force_reprocess: bool = BOOL_FIELD(
+        value=False,
+        default_value=False,
+        description="Ignore cached outputs and reprocess from scratch",
+    )
+    output_format: str = STR_FIELD(
+        value="jsonl",
+        default_value="jsonl",
+        description=(
+            "Output format: 'jsonl' (unified schema only), 'legacy' "
+            "(2d-data-engine .txt.stepN files only), or 'both'"
+        ),
+        valid_options="jsonl,legacy,both",
+    )
+    long_video_threshold_sec: int = INT_FIELD(
+        value=60,
+        default_value=60,
+        description="Unused by image pipelines; retained for LLMClient compatibility",
+    )
+    long_video_sample_fps: float = FLOAT_FIELD(
+        value=0.5,
+        default_value=0.5,
+        description="Unused by image pipelines; retained for LLMClient compatibility",
+    )
+    long_video_max_frames: int = INT_FIELD(
+        value=60,
+        default_value=60,
+        description="Unused by image pipelines; retained for LLMClient compatibility",
+    )
+
+
+@dataclass
+class ImageREDataConfig:
+    """Input data specification for image_re pipeline."""
+
+    image_dir: str = STR_FIELD(
+        value="",
+        default_value="",
+        description="Directory containing input images (.jpg/.png)",
+    )
+    kitti_label_dir: str = STR_FIELD(
+        value="",
+        default_value="",
+        description="Directory containing KITTI-format bounding box labels",
+    )
+    input_annotations_jsonl: str = STR_FIELD(
+        value="",
+        default_value="",
+        description=(
+            "Optional unified annotations.jsonl to seed the pipeline "
+            "(for resuming or running on pre-computed regions)"
+        ),
+    )
+
+
+@dataclass
+class ImageREConfig:
+    """Image referring-data-engine configuration."""
+
+    vlm: LLMBackendConfig = DATACLASS_FIELD(
+        LLMBackendConfig(),
+        description="VLM backend configuration for image-based inference",
+    )
+    workflow: ImageREWorkflowConfig = DATACLASS_FIELD(
+        ImageREWorkflowConfig(),
+        description="Pipeline workflow parameters",
+    )
+    data: ImageREDataConfig = DATACLASS_FIELD(
+        ImageREDataConfig(),
+        description="Input data configuration",
+    )
+
+
 @dataclass
 class ExperimentConfig:
     """Experiment configuration template."""
@@ -390,7 +567,7 @@ class ExperimentConfig:
         value="mal",
         default_value="mal",
         description="Type of auto-labeling to run",
-        valid_options="mal,grounding_dino,video_cot"
+        valid_options="mal,grounding_dino,video_cot,image_gd,image_re"
     )
 
     mal: MALConfig = DATACLASS_FIELD(
@@ -405,6 +582,14 @@ class ExperimentConfig:
         VideoCotConfig(),
         description="Configuration parameters for Video CoT pipeline"
     )
+    image_gd: ImageGDConfig = DATACLASS_FIELD(
+        ImageGDConfig(),
+        description="Configuration parameters for image grounding data engine"
+    )
+    image_re: ImageREConfig = DATACLASS_FIELD(
+        ImageREConfig(),
+        description="Configuration parameters for image referring data engine"
+    )
 
     results_dir: str = STR_FIELD(
         value="",
@@ -414,6 +599,6 @@ class ExperimentConfig:
 
     def __post_init__(self):
         """assertion check."""
-        valid_types = ["mal", "grounding_dino", "video_cot"]
+        valid_types = ["mal", "grounding_dino", "video_cot", "image_gd", "image_re"]
         assert self.autolabel_type in valid_types, \
             f"Invalid option encountered. {self.autolabel_type}"
