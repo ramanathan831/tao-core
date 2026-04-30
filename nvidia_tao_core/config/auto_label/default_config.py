@@ -366,18 +366,18 @@ class VideoReasoningAnnotationConfig:
 
 
 # =============================================================================
-# Image Grounding / Referring Data Engine Configs (image_gd, image_re)
+# Image Grounding / Referring Data Engine Configs (image_grounding, image_referring_expression)
 # =============================================================================
 
 
-# Alias for readability in image_gd / image_re configs. Reuses the same
+# Alias for readability in image_grounding / image_referring_expression configs. Reuses the same
 # {backend, gemini, openai} layout as video reasoning annotation for consistency.
 LLMBackendConfig = VideoReasoningAnnotationLLMConfig
 
 
 @dataclass
 class ImageGDWorkflowConfig:
-    """Pipeline execution parameters for image_gd (grounding) pipeline."""
+    """Pipeline execution parameters for image_grounding pipeline."""
 
     steps: List[str] = LIST_FIELD(
         arrList=["0", "1"],
@@ -414,7 +414,7 @@ class ImageGDWorkflowConfig:
 
 @dataclass
 class ImageGDDataConfig:
-    """Input data specification for image_gd pipeline.
+    """Input data specification for image_grounding pipeline.
 
     Input JSONL should have one JSON object per line with at least
     ``image_path`` and ``caption`` fields. ``width``, ``height``, and
@@ -453,7 +453,7 @@ class ImageGDConfig:
 
 @dataclass
 class ImageREWorkflowConfig:
-    """Pipeline execution parameters for image_re (referring) pipeline."""
+    """Pipeline execution parameters for image_referring_expression pipeline."""
 
     steps: List[str] = LIST_FIELD(
         arrList=["0", "1", "2", "3"],
@@ -502,7 +502,7 @@ class ImageREWorkflowConfig:
 
 @dataclass
 class ImageREDataConfig:
-    """Input data specification for image_re pipeline."""
+    """Input data specification for image_referring_expression pipeline."""
 
     image_dir: str = STR_FIELD(
         value="",
@@ -567,7 +567,7 @@ class ExperimentConfig:
         value="mal",
         default_value="mal",
         description="Type of auto-labeling to run",
-        valid_options="mal,grounding_dino,video_reasoning_annotation,image_gd,image_re"
+        valid_options="mal,grounding_dino,video_reasoning_annotation,image_grounding,image_referring_expression"
     )
 
     mal: MALConfig = DATACLASS_FIELD(
@@ -582,11 +582,11 @@ class ExperimentConfig:
         VideoReasoningAnnotationConfig(),
         description="Configuration parameters for video reasoning annotation pipeline"
     )
-    image_gd: ImageGDConfig = DATACLASS_FIELD(
+    image_grounding: ImageGDConfig = DATACLASS_FIELD(
         ImageGDConfig(),
         description="Configuration parameters for image grounding data engine"
     )
-    image_re: ImageREConfig = DATACLASS_FIELD(
+    image_referring_expression: ImageREConfig = DATACLASS_FIELD(
         ImageREConfig(),
         description="Configuration parameters for image referring data engine"
     )
@@ -599,6 +599,6 @@ class ExperimentConfig:
 
     def __post_init__(self):
         """assertion check."""
-        valid_types = ["mal", "grounding_dino", "video_reasoning_annotation", "image_gd", "image_re"]
+        valid_types = ["mal", "grounding_dino", "video_reasoning_annotation", "image_grounding", "image_referring_expression"]
         assert self.autolabel_type in valid_types, \
             f"Invalid option encountered. {self.autolabel_type}"
