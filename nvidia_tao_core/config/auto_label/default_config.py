@@ -137,8 +137,8 @@ class GDINOConfig:
 
 
 @dataclass
-class VideoCotGeminiConfig:
-    """Gemini API configuration for video CoT pipeline."""
+class VideoReasoningAnnotationGeminiConfig:
+    """Gemini API configuration for video reasoning annotation pipeline."""
 
     api_key: str = STR_FIELD(
         value="",
@@ -173,8 +173,8 @@ class VideoCotGeminiConfig:
 
 
 @dataclass
-class VideoCotOpenAIConfig:
-    """OpenAI-compatible endpoint configuration for video CoT pipeline."""
+class VideoReasoningAnnotationOpenAIConfig:
+    """OpenAI-compatible endpoint configuration for video reasoning annotation pipeline."""
 
     api_key: str = STR_FIELD(
         value="",
@@ -209,8 +209,8 @@ class VideoCotOpenAIConfig:
 
 
 @dataclass
-class VideoCotLLMConfig:
-    """LLM backend selection and configuration for video CoT pipeline."""
+class VideoReasoningAnnotationLLMConfig:
+    """LLM backend selection and configuration for video reasoning annotation pipeline."""
 
     backend: str = STR_FIELD(
         value="gemini",
@@ -218,19 +218,19 @@ class VideoCotLLMConfig:
         description="LLM backend to use",
         valid_options="gemini,openai",
     )
-    gemini: VideoCotGeminiConfig = DATACLASS_FIELD(
-        VideoCotGeminiConfig(),
+    gemini: VideoReasoningAnnotationGeminiConfig = DATACLASS_FIELD(
+        VideoReasoningAnnotationGeminiConfig(),
         description="Gemini API configuration",
     )
-    openai: VideoCotOpenAIConfig = DATACLASS_FIELD(
-        VideoCotOpenAIConfig(),
+    openai: VideoReasoningAnnotationOpenAIConfig = DATACLASS_FIELD(
+        VideoReasoningAnnotationOpenAIConfig(),
         description="OpenAI-compatible endpoint configuration",
     )
 
 
 @dataclass
-class VideoCotWorkflowConfig:
-    """Pipeline execution parameters for video CoT."""
+class VideoReasoningAnnotationWorkflowConfig:
+    """Pipeline execution parameters for video reasoning annotation."""
 
     steps: List[str] = LIST_FIELD(
         arrList=["0", "1a", "1b", "1c", "2", "3", "4"],
@@ -297,8 +297,8 @@ class VideoCotWorkflowConfig:
 
 
 @dataclass
-class VideoCotDataConfig:
-    """Input data specification for video CoT pipeline.
+class VideoReasoningAnnotationDataConfig:
+    """Input data specification for video reasoning annotation pipeline.
 
     At least one of ``video_root`` or ``input_jsonl_files`` must be provided.
     Both may be used together — the resulting video lists are merged.
@@ -333,23 +333,23 @@ class VideoCotDataConfig:
 
 
 @dataclass
-class VideoCotConfig:
-    """Video Chain-of-Thought annotation pipeline configuration."""
+class VideoReasoningAnnotationConfig:
+    """Video reasoning annotation pipeline configuration."""
 
-    vlm: VideoCotLLMConfig = DATACLASS_FIELD(
-        VideoCotLLMConfig(),
+    vlm: VideoReasoningAnnotationLLMConfig = DATACLASS_FIELD(
+        VideoReasoningAnnotationLLMConfig(),
         description="VLM (vision-language model) configuration for video steps",
     )
-    llm: VideoCotLLMConfig = DATACLASS_FIELD(
-        VideoCotLLMConfig(),
+    llm: VideoReasoningAnnotationLLMConfig = DATACLASS_FIELD(
+        VideoReasoningAnnotationLLMConfig(),
         description="LLM (text-only) configuration for text steps",
     )
-    workflow: VideoCotWorkflowConfig = DATACLASS_FIELD(
-        VideoCotWorkflowConfig(),
+    workflow: VideoReasoningAnnotationWorkflowConfig = DATACLASS_FIELD(
+        VideoReasoningAnnotationWorkflowConfig(),
         description="Pipeline workflow parameters",
     )
-    data: VideoCotDataConfig = DATACLASS_FIELD(
-        VideoCotDataConfig(),
+    data: VideoReasoningAnnotationDataConfig = DATACLASS_FIELD(
+        VideoReasoningAnnotationDataConfig(),
         description="Input data configuration",
     )
     output_format: str = STR_FIELD(
@@ -371,8 +371,8 @@ class VideoCotConfig:
 
 
 # Alias for readability in image_gd / image_re configs. Reuses the same
-# {backend, gemini, openai} layout as video_cot for consistency.
-LLMBackendConfig = VideoCotLLMConfig
+# {backend, gemini, openai} layout as video reasoning annotation for consistency.
+LLMBackendConfig = VideoReasoningAnnotationLLMConfig
 
 
 @dataclass
@@ -567,7 +567,7 @@ class ExperimentConfig:
         value="mal",
         default_value="mal",
         description="Type of auto-labeling to run",
-        valid_options="mal,grounding_dino,video_cot,image_gd,image_re"
+        valid_options="mal,grounding_dino,video_reasoning_annotation,image_gd,image_re"
     )
 
     mal: MALConfig = DATACLASS_FIELD(
@@ -578,9 +578,9 @@ class ExperimentConfig:
         GDINOConfig(),
         description="Configuration parameters for Grounding DINO"
     )
-    video_cot: VideoCotConfig = DATACLASS_FIELD(
-        VideoCotConfig(),
-        description="Configuration parameters for Video CoT pipeline"
+    video_reasoning_annotation: VideoReasoningAnnotationConfig = DATACLASS_FIELD(
+        VideoReasoningAnnotationConfig(),
+        description="Configuration parameters for video reasoning annotation pipeline"
     )
     image_gd: ImageGDConfig = DATACLASS_FIELD(
         ImageGDConfig(),
@@ -599,6 +599,6 @@ class ExperimentConfig:
 
     def __post_init__(self):
         """assertion check."""
-        valid_types = ["mal", "grounding_dino", "video_cot", "image_gd", "image_re"]
+        valid_types = ["mal", "grounding_dino", "video_reasoning_annotation", "image_gd", "image_re"]
         assert self.autolabel_type in valid_types, \
             f"Invalid option encountered. {self.autolabel_type}"
