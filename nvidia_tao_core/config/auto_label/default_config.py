@@ -599,6 +599,9 @@ class ExperimentConfig:
 
     def __post_init__(self):
         """assertion check."""
-        valid_types = ["mal", "grounding_dino", "video_reasoning_annotation", "image_grounding", "image_referring_expression"]
+        valid_types = [
+            "mal", "grounding_dino", "video_reasoning_annotation",
+            "image_grounding", "image_referring_expression"
+        ]
         assert self.autolabel_type in valid_types, \
             f"Invalid option encountered. {self.autolabel_type}"
