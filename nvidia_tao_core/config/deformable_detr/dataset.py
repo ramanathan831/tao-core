@@ -198,6 +198,18 @@ class DDAugmentationConfig:
         valid_min=1,
         valid_max="inf"
     )
+    pad_size_divisor: Optional[int] = INT_FIELD(
+        value=None,
+        default_value=None,
+        description=(
+            "If set, replace FixedPad at val/eval/infer time with a "
+            "pad-to-multiple-of-N op that mirrors mmdet Pad(size_divisor). "
+            "Match the reference Co-DETR test_pipeline by setting this to 32."
+        ),
+        display_name="pad size divisor",
+        valid_min=1,
+        valid_max="inf"
+    )
 
 
 @dataclass
