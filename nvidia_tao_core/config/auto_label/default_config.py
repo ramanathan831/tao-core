@@ -290,8 +290,16 @@ class VideoReasoningAnnotationWorkflowConfig:
         description="Maximum frames to sample from long videos",
     )
     qa_types: List[str] = LIST_FIELD(
-        arrList=["mcq", "bcq", "open_qa"],
-        default_values=["mcq", "bcq", "open_qa"],
+        arrList=[
+            "mcq", "bcq", "open_qa",
+            "causal_linkage", "temporal_localization", "temporal_event_desc",
+            "scene_description", "event_summary",
+        ],
+        default_values=[
+            "mcq", "bcq", "open_qa",
+            "causal_linkage", "temporal_localization", "temporal_event_desc",
+            "scene_description", "event_summary",
+        ],
         description="QA types to generate",
     )
 
