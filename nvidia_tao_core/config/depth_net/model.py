@@ -298,6 +298,15 @@ class DepthNetModelConfig:
         ),
         display_name="cost_agg conv_patch padding"
     )
+    concat_channel: int = INT_FIELD(
+        value=24,
+        default_value=24,
+        description=(
+            "Concat-volume channel count. bp2 ckpt invariant — changing "
+            "breaks ckpt key-shape match."
+        ),
+        display_name="concat channel"
+    )
     encoder: str = STR_FIELD(
         value="vitl",
         default_value="vitl",
