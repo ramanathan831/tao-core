@@ -360,11 +360,23 @@ class VideoReasoningAnnotationConfig:
         VideoReasoningAnnotationDataConfig(),
         description="Input data configuration",
     )
-    output_format: str = STR_FIELD(
-        value="both",
-        default_value="both",
-        description="Output format: qa, daft, or both",
-        valid_options="qa,daft,both",
+    license: str = STR_FIELD(
+        value="",
+        default_value="",
+        description=(
+            "License string written to metadata.license in the "
+            "tao-vl-reason-v1.0 output envelope (e.g. 'CC-BY-4.0'). "
+            "Empty string by default."
+        ),
+    )
+    description_extra: str = STR_FIELD(
+        value="",
+        default_value="",
+        description=(
+            "Extra text appended to the per-task description in the "
+            "tao-vl-reason-v1.0 output metadata. Useful for naming "
+            "the dataset, source, or other context."
+        ),
     )
     prompts_module: str = STR_FIELD(
         value="",
