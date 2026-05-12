@@ -100,12 +100,12 @@ def inference_microservice_start(org_name):
         if hasattr(network_arch, 'value'):
             network_arch = network_arch.value
 
-        # Create experiment request dict with only the fields needed
+        # Create experiment request dict with only the fields needed.
+        # Inference microservice does not depend on cloud storage, so no
+        # workspace is associated with the experiment.
         experiment_request = {
             "network_arch": network_arch,
         }
-        if validated_data.get("workspace"):
-            experiment_request["workspace"] = validated_data.get("workspace")
         if validated_data.get("docker_env_vars"):
             experiment_request["docker_env_vars"] = validated_data.get("docker_env_vars")
         user_id = authentication.get_user_id(request.headers.get('Authorization', ''), org_name)
