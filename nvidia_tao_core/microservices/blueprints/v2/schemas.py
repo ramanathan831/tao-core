@@ -1545,7 +1545,6 @@ class InferenceMicroserviceReq(Schema):
         description="Number of GPUs required",
         example=1
     )
-    workspace = fields.Str(format="uuid", validate=fields.validate.Length(max=36), allow_none=True)
     docker_env_vars = fields.Dict(
         keys=fields.Str(validate=validate.OneOf([e.value for e in AllowedDockerEnvVariables])),
         values=fields.Str(
