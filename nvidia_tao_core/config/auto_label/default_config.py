@@ -14,6 +14,7 @@
 
 """Default config file."""
 
+import warnings
 from typing import List, Optional, Dict
 from dataclasses import dataclass
 from nvidia_tao_core.config.utils.types import (
@@ -34,6 +35,24 @@ from nvidia_tao_core.config.mal.default_config import (
     MALDatasetConfig,
     MALModelConfig,
 )
+from nvidia_tao_core.config.vllm_caption.default_config import (
+    VLLMCaptionInferenceExpConfig,
+    VLLMCaptionModelConfig,
+)
+
+
+@dataclass
+class VLLMCaptionConfig:
+    """Configuration for vLLM-based video captioning."""
+
+    inference: VLLMCaptionInferenceExpConfig = DATACLASS_FIELD(
+        VLLMCaptionInferenceExpConfig(),
+        description="Inference configuration for vLLM captioning."
+    )
+    model: VLLMCaptionModelConfig = DATACLASS_FIELD(
+        VLLMCaptionModelConfig(),
+        description="Model configuration for vLLM captioning."
+    )
 
 
 @dataclass
@@ -587,7 +606,10 @@ class ExperimentConfig:
         value="mal",
         default_value="mal",
         description="Type of auto-labeling to run",
-        valid_options="mal,grounding_dino,video_reasoning_annotation,image_grounding,image_referring_expression"
+        valid_options=(
+            "mal,grounding_dino,video_reasoning_annotation,"
+            "image_grounding,image_referring_expression,vllm_captioning"
+        )
     )
 
     mal: MALConfig = DATACLASS_FIELD(
@@ -610,6 +632,10 @@ class ExperimentConfig:
         ImageREConfig(),
         description="Configuration parameters for image referring data engine"
     )
+    vllm_captioning: VLLMCaptionConfig = DATACLASS_FIELD(
+        VLLMCaptionConfig(),
+        description="Configuration parameters for vLLM captioning"
+    )
 
     results_dir: str = STR_FIELD(
         value="",
@@ -621,7 +647,17 @@ class ExperimentConfig:
         """assertion check."""
         valid_types = [
             "mal", "grounding_dino", "video_reasoning_annotation",
-            "image_grounding", "image_referring_expression"
+            "image_grounding", "image_referring_expression", "vllm_captioning"
         ]
         assert self.autolabel_type in valid_types, \
             f"Invalid option encountered. {self.autolabel_type}"
+        if self.autolabel_type == "vllm_captioning":
+            tensor_parallel_size = self.vllm_captioning.model.llm.tensor_parallel_size
+            assert self.num_gpus == tensor_parallel_size, (
+                f"num_gpus ({self.num_gpus}) must match vllm_captioning.model.llm.tensor_parallel_size "
+                f"({tensor_parallel_size})."
+            )
+            warnings.warn(
+                "batch_size is not used for vllm_captioning; vLLM manages batching internally.",
+                UserWarning,
+            )
