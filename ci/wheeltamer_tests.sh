@@ -1,5 +1,7 @@
 #!/bin/bash
-# Copyright (c) 2022, NVIDIA CORPORATION. All rights reserved.
+# SPDX-FileCopyrightText: Copyright (c) 2022 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
 # Description: Script testing the wheel using DL Framework's wheeltamer.
 # Usage: sh wheeltamer_test.sh path_to_whl_file
 
