@@ -3,9 +3,9 @@
 
 """Version string for the TAO-Core"""
 
-MAJOR = "6"
-MINOR = "25"
-PATCH = "11"
+MAJOR = "7"
+MINOR = "0"
+PATCH = "0"
 PRE_RELEASE = ''
 
 
