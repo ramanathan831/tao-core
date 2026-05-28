@@ -32,8 +32,7 @@ TEST_MODULES = [
     "nvidia_tao_core/hydra",
     "nvidia_tao_core/logging",
     "nvidia_tao_core/mlops",
-    "nvidia_tao_core/proto",
-    "nvidia_tao_core/telemetry"
+    "nvidia_tao_core/proto"
 ]
 
 

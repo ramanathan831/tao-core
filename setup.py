@@ -3,7 +3,6 @@
 
 """Setup script to build TAO-Core."""
 
-import os
 import setuptools
 
 from release.python.utils import utils
@@ -22,10 +21,6 @@ version_locals = utils.get_version_details()
 setuptools_packages = []
 for package_name in PACKAGE_LIST:
     setuptools_packages.extend(utils.find_packages(package_name))
-
-if os.path.exists("pyarmor_runtime_001219"):
-    pyarmor_packages = ["pyarmor_runtime_001219"]
-    setuptools_packages += pyarmor_packages
 
 setuptools.setup(
     name=version_locals['__package_name__'],
