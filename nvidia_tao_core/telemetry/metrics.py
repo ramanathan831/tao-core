@@ -1,9 +1,6 @@
 #!/usr/bin/env python3
-
-# Copyright (c) 2024, NVIDIA CORPORATION.  All rights reserved.
-
-# CONFIDENTIAL! DO NOT SPREAD!
-# DO NOT CHANGE THIS FILE!
+# SPDX-FileCopyrightText: Copyright (c) 2024 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
 
 """Authentication utils metrics modules"""
 import json
