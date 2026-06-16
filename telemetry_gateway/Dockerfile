@@ -24,5 +24,4 @@ RUN ls -la
 EXPOSE 9877
 
 # Default command
-CMD /bin/bash start.sh
-
+CMD ["/bin/bash", "start.sh"]
