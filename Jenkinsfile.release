@@ -213,14 +213,12 @@ podTemplate(cloud: TaoConfig.kubernetes.cloud, yaml: PodTemplates.generate(
                         stage('rc_wheel') {
                             withGitLabStatus('rc_wheel') {
                                 script {
-                                    // Build RC wheel with pyarmor obfuscation
-                                    def rcBuildResult = buildObfuscatedWheel(
+                                    // Build RC wheel (PyPI does not accept obfuscated content)
+                                    def rcBuildResult = buildWheel(
                                         version: TAO_VERSION,
                                         buildType: BUILD_TYPE,
                                         isRC: true,
                                         packageName: 'nvidia_tao_core',
-                                        pyarmorRegFile: 'release/python/pyarmor-regfile-1219.zip',
-                                        obfuscateFile: 'telemetry/metrics.py',
                                         cleanBefore: true
                                     )
                                     
@@ -244,18 +242,16 @@ podTemplate(cloud: TaoConfig.kubernetes.cloud, yaml: PodTemplates.generate(
                                 script {
                                     def FINAL_VER = "${MAJOR_MINOR}.${PATCH_NUMBER}"
                                     
-                                    // Build final wheel (non-RC version) with pyarmor obfuscation
+                                    // Build final wheel (non-RC version)
                                     // Need to rebuild if we already built RC wheel
                                     if (params.RC) {
                                         sh "rm -rf dist/*"
                                     }
-                                    
-                                    buildObfuscatedWheel(
+
+                                    buildWheel(
                                         version: TAO_VERSION,
                                         isRC: false,
                                         packageName: 'nvidia_tao_core',
-                                        pyarmorRegFile: 'release/python/pyarmor-regfile-1219.zip',
-                                        obfuscateFile: 'telemetry/metrics.py',
                                         cleanBefore: params.RC ? false : true  // Only clean if we haven't built RC
                                     )
                                     
