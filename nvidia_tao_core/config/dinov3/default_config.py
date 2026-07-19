@@ -389,6 +389,31 @@ class DINOv3TrainExpConfig(NVDINOv2TrainExpConfig):
 
 
 @dataclass
+class DINOv3ExportExpConfig(NVDINOv2ExportExpConfig):
+    """DINOv3 export config (patch-16 trace shape).
+
+    Overrides the nvdinov2 default ONNX trace shape (518, a patch-14 multiple):
+    DINOv3 is patch-16 and single-res 256 in v1, so the default trace matches the
+    backbone ``img_size`` and stays divisible by the patch size.
+    """
+
+    input_width: int = INT_FIELD(
+        value=256,
+        default_value=256,
+        description="Input width",
+        display_name="Input width",
+        valid_min=128
+    )
+    input_height: int = INT_FIELD(
+        value=256,
+        default_value=256,
+        description="Input height",
+        display_name="Input height",
+        valid_min=128
+    )
+
+
+@dataclass
 class DINOv3ConvertConfig:
     """DINOv3 backbone-export (``convert``) config.
 
@@ -460,8 +485,8 @@ class ExperimentConfig(CommonExperimentConfig):
         NVDINOv2InferenceExpConfig(),
         description="Configurable parameters to construct the inference trainer for a DINOv3 experiment.",
     )
-    export: NVDINOv2ExportExpConfig = DATACLASS_FIELD(
-        NVDINOv2ExportExpConfig(),
+    export: DINOv3ExportExpConfig = DATACLASS_FIELD(
+        DINOv3ExportExpConfig(),
         description="Configurable parameters to export for a DINOv3 experiment.",
     )
     gen_trt_engine: GenTrtEngineExpConfig = DATACLASS_FIELD(

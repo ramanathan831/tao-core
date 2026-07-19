@@ -46,3 +46,14 @@ def test_experiment_config_actions():
     schema = create_json_schema(dataclass_to_json(ExperimentConfig()))
     for action in ("train", "inference", "export", "gen_trt_engine", "convert"):
         assert action in schema["properties"], f"missing {action} section"
+
+
+def test_export_trace_shape_matches_backbone():
+    """Export ONNX trace defaults match the patch-16 backbone (256, not nvdinov2's 518)."""
+    schema = create_json_schema(dataclass_to_json(ExperimentConfig()))
+    export = schema["properties"]["export"]["properties"]
+    patch_size = schema["properties"]["model"]["properties"]["backbone"]["properties"]["patch_size"]["default"]
+    assert export["input_width"]["default"] == 256
+    assert export["input_height"]["default"] == 256
+    assert export["input_width"]["default"] % patch_size == 0
+    assert export["input_height"]["default"] % patch_size == 0
