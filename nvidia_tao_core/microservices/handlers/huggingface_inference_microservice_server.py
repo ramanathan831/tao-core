@@ -42,26 +42,48 @@ logger = logging.getLogger(__name__)
 
 def _apply_qwen3vl_cudnn_workaround() -> None:
     # cuDNN 9.20 can have no Conv3d engine for Qwen3-VL's patch embedding under
-    # CUDA minor-version compatibility. vLLM already provides an equivalent
-    # unfold+linear implementation, so use that targeted fallback instead of
-    # changing global cuDNN behavior.
+    # CUDA minor-version compatibility. Both Transformers and vLLM can express
+    # this non-overlapping convolution as an equivalent linear projection, so
+    # use targeted fallbacks instead of changing global cuDNN behavior.
     try:
         import torch
-        from vllm.model_executor.models.qwen3_vl import Qwen3_VisionPatchEmbed
+        import torch.nn.functional as F
     except ImportError:
         return
 
-    if getattr(Qwen3_VisionPatchEmbed.forward, "_tao_linear_conv3d", False):
-        return
+    try:
+        from transformers.models.qwen3_vl.modeling_qwen3_vl import Qwen3VLVisionPatchEmbed
 
-    def forward(self, x: torch.Tensor) -> torch.Tensor:
-        length, _ = x.shape
-        x = x.view(length, -1, self.temporal_patch_size, self.patch_size, self.patch_size)
-        return self.proj._forward_mulmat(x).view(length, self.hidden_size)
+        if not getattr(Qwen3VLVisionPatchEmbed.forward, "_tao_linear_conv3d", False):
+            def transformers_forward(self, hidden_states):
+                weight = self.proj.weight
+                hidden_states = hidden_states.to(dtype=weight.dtype).reshape(
+                    -1, weight[0].numel(),
+                )
+                return F.linear(hidden_states, weight.flatten(1), self.proj.bias).view(
+                    -1, self.embed_dim,
+                )
 
-    forward._tao_linear_conv3d = True
-    Qwen3_VisionPatchEmbed.forward = forward
-    logger.info("Applied vLLM linear Conv3d fallback for Qwen3-VL PatchEmbed")
+            transformers_forward._tao_linear_conv3d = True
+            Qwen3VLVisionPatchEmbed.forward = transformers_forward
+            logger.info("Applied Transformers linear Conv3d fallback for Qwen3-VL PatchEmbed")
+    except ImportError:
+        pass
+
+    try:
+        from vllm.model_executor.models.qwen3_vl import Qwen3_VisionPatchEmbed
+
+        if not getattr(Qwen3_VisionPatchEmbed.forward, "_tao_linear_conv3d", False):
+            def vllm_forward(self, x: torch.Tensor) -> torch.Tensor:
+                length, _ = x.shape
+                x = x.view(length, -1, self.temporal_patch_size, self.patch_size, self.patch_size)
+                return self.proj._forward_mulmat(x).view(length, self.hidden_size)
+
+            vllm_forward._tao_linear_conv3d = True
+            Qwen3_VisionPatchEmbed.forward = vllm_forward
+            logger.info("Applied vLLM linear Conv3d fallback for Qwen3-VL PatchEmbed")
+    except ImportError:
+        pass
 
 
 _apply_qwen3vl_cudnn_workaround()
