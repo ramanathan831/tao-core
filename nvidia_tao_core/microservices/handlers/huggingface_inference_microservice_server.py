@@ -41,38 +41,27 @@ logger = logging.getLogger(__name__)
 
 
 def _apply_qwen3vl_cudnn_workaround() -> None:
-    # cuDNN 9.20 on sm_80 (A100) has no Conv3d engine for kernel spatial size
-    # >= 16 in bf16/fp16 with the default NCDHW layout — Qwen3-VL's PatchEmbed
-    # (patch_size=16, temporal_patch_size=2) hits this exactly and raises
-    # "GET was unable to find an engine to execute this computation". cuDNN's
-    # NDHWC engines cover the same shape, so running the conv in
-    # channels_last_3d memory format avoids the gap without touching dtype.
+    # cuDNN 9.20 can have no Conv3d engine for Qwen3-VL's patch embedding under
+    # CUDA minor-version compatibility. vLLM already provides an equivalent
+    # unfold+linear implementation, so use that targeted fallback instead of
+    # changing global cuDNN behavior.
     try:
         import torch
-        from transformers.models.qwen3_vl.modeling_qwen3_vl import Qwen3VLVisionPatchEmbed
+        from vllm.model_executor.models.qwen3_vl import Qwen3_VisionPatchEmbed
     except ImportError:
         return
 
-    # The missing cuDNN engine is specific to sm_80. Applying this layout
-    # override on sm_90 can itself make Conv3d engine selection fail.
-    if not torch.cuda.is_available() or torch.cuda.get_device_capability()[0] != 8:
+    if getattr(Qwen3_VisionPatchEmbed.forward, "_tao_linear_conv3d", False):
         return
 
-    if getattr(Qwen3VLVisionPatchEmbed.forward, "_tao_channels_last_3d", False):
-        return
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        length, _ = x.shape
+        x = x.view(length, -1, self.temporal_patch_size, self.patch_size, self.patch_size)
+        return self.proj._forward_mulmat(x).view(length, self.hidden_size)
 
-    def forward(self, hidden_states):
-        target_dtype = self.proj.weight.dtype
-        hidden_states = hidden_states.view(
-            -1, self.in_channels, self.temporal_patch_size, self.patch_size, self.patch_size,
-        ).to(dtype=target_dtype, memory_format=torch.channels_last_3d)
-        if not self.proj.weight.is_contiguous(memory_format=torch.channels_last_3d):
-            self.proj.weight.data = self.proj.weight.data.to(memory_format=torch.channels_last_3d)
-        return self.proj(hidden_states).reshape(-1, self.embed_dim)
-
-    forward._tao_channels_last_3d = True
-    Qwen3VLVisionPatchEmbed.forward = forward
-    logger.info("Applied channels_last_3d workaround for Qwen3-VL PatchEmbed (cuDNN 9.20 conv3d gap)")
+    forward._tao_linear_conv3d = True
+    Qwen3_VisionPatchEmbed.forward = forward
+    logger.info("Applied vLLM linear Conv3d fallback for Qwen3-VL PatchEmbed")
 
 
 _apply_qwen3vl_cudnn_workaround()
