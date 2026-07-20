@@ -53,6 +53,11 @@ def _apply_qwen3vl_cudnn_workaround() -> None:
     except ImportError:
         return
 
+    # The missing cuDNN engine is specific to sm_80. Applying this layout
+    # override on sm_90 can itself make Conv3d engine selection fail.
+    if not torch.cuda.is_available() or torch.cuda.get_device_capability()[0] != 8:
+        return
+
     if getattr(Qwen3VLVisionPatchEmbed.forward, "_tao_channels_last_3d", False):
         return
 
